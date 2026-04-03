@@ -37,6 +37,9 @@ export function registerHandlers(bot: Bot): void {
   bot.command("summarize", handleSummarize);
   bot.command("status", handleStatus);
 
+  // Permission callback from inline keyboard
+  bot.on("callback_query:data", handlePermissionCallback);
+
   // Media handlers
   bot.on("message:photo", handlePhoto);
   bot.on("message:document", handleDocument);
@@ -375,6 +378,33 @@ async function handleStatus(ctx: Context): Promise<void> {
   ];
 
   await ctx.reply("Статус:\n\n" + lines.join("\n"));
+}
+
+// === Permission callback ===
+
+async function handlePermissionCallback(ctx: Context): Promise<void> {
+  const data = ctx.callbackQuery?.data;
+  if (!data?.startsWith("perm:")) return;
+
+  const parts = data.split(":");
+  const action = parts[1]; // 'allow' or 'deny'
+  const requestId = parts.slice(2).join(":"); // request_id may contain colons
+
+  // Update DB with response
+  const result = await sql`
+    UPDATE permission_requests SET response = ${action} WHERE id = ${requestId} RETURNING id
+  `;
+
+  if (result.length > 0) {
+    const emoji = action === "allow" ? "✅" : "❌";
+    const label = action === "allow" ? "Разрешено" : "Запрещено";
+
+    // Update the inline keyboard message
+    await ctx.editMessageText(`${emoji} ${label}`);
+    await ctx.answerCallbackQuery({ text: label });
+  } else {
+    await ctx.answerCallbackQuery({ text: "Запрос устарел" });
+  }
 }
 
 // === Media handlers ===

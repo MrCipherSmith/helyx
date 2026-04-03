@@ -83,8 +83,92 @@ const mcp = new Server(
       tools: {},
       experimental: {
         "claude/channel": {},
+        "claude/channel/permission": {},
       },
     },
+  },
+);
+
+// Handle permission requests from Claude Code
+mcp.setNotificationHandler(
+  { method: "notifications/claude/channel/permission_request" } as any,
+  async (params: any) => {
+    const { request_id, tool_name, input, message } = params.params ?? params;
+    if (!sessionId) return;
+
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    if (!token) return;
+
+    // Find which chat_id this session is connected to
+    const chatRows = await sql`
+      SELECT chat_id FROM chat_sessions WHERE active_session_id = ${sessionId}
+    `;
+    const chatId = chatRows.length > 0 ? chatRows[0].chat_id : null;
+    if (!chatId) {
+      process.stderr.write(`[channel] no chat for session ${sessionId}, auto-denying\n`);
+      return;
+    }
+
+    const desc = message ?? `${tool_name}(${JSON.stringify(input ?? {}).slice(0, 200)})`;
+
+    // Send inline keyboard to Telegram
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: Number(chatId),
+        text: `🔐 Разрешить?\n\n${desc}`,
+        reply_markup: {
+          inline_keyboard: [[
+            { text: "✅ Разрешить", callback_data: `perm:allow:${request_id}` },
+            { text: "❌ Запретить", callback_data: `perm:deny:${request_id}` },
+          ]],
+        },
+      }),
+    });
+
+    if (res.ok) {
+      const data = (await res.json()) as any;
+      const msgId = data.result?.message_id;
+
+      // Save to DB for the main bot to handle callback
+      await sql`
+        INSERT INTO permission_requests (id, session_id, chat_id, tool_name, description, message_id)
+        VALUES (${request_id}, ${sessionId}, ${chatId}, ${tool_name ?? "unknown"}, ${desc}, ${msgId})
+        ON CONFLICT (id) DO NOTHING
+      `;
+    }
+
+    // Poll for response
+    const startTime = Date.now();
+    const TIMEOUT = 120_000; // 2 minutes
+
+    while (Date.now() - startTime < TIMEOUT) {
+      const rows = await sql`
+        SELECT response FROM permission_requests WHERE id = ${request_id} AND response IS NOT NULL
+      `;
+      if (rows.length > 0) {
+        const behavior = rows[0].response; // 'allow' or 'deny'
+        await mcp.notification({
+          method: "notifications/claude/channel/permission",
+          params: { request_id, behavior },
+        });
+        process.stderr.write(`[channel] permission ${request_id}: ${behavior}\n`);
+
+        // Cleanup
+        await sql`DELETE FROM permission_requests WHERE id = ${request_id}`;
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 500));
+    }
+
+    // Timeout — deny
+    process.stderr.write(`[channel] permission ${request_id}: timeout, denying\n`);
+    await mcp.notification({
+      method: "notifications/claude/channel/permission",
+      params: { request_id, behavior: "deny" },
+    });
+    await sql`DELETE FROM permission_requests WHERE id = ${request_id}`;
   },
 );
 

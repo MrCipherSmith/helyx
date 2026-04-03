@@ -109,6 +109,20 @@ export async function migrate() {
     ON message_queue(session_id, delivered, created_at)
   `;
 
+  // Permission requests from CLI sessions
+  await sql`
+    CREATE TABLE IF NOT EXISTS permission_requests (
+      id TEXT PRIMARY KEY,
+      session_id INT NOT NULL,
+      chat_id TEXT NOT NULL,
+      tool_name TEXT NOT NULL,
+      description TEXT NOT NULL,
+      response TEXT,
+      message_id INT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `;
+
   console.log("[db] migrations complete");
 }
 
