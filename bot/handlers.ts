@@ -7,6 +7,7 @@ import { routeMessage } from "../sessions/router.ts";
 import { sessionManager } from "../sessions/manager.ts";
 import { sendNotificationToSession } from "../mcp/bridge.ts";
 import { downloadFile } from "../utils/files.ts";
+import { touchIdleTimer, checkOverflow, forceSummarize } from "../memory/summarizer.ts";
 import { sql } from "../memory/db.ts";
 
 // Pending input: chatId -> handler that processes the next text message
@@ -31,6 +32,7 @@ export function registerHandlers(bot: Bot): void {
   // Utility commands
   bot.command("clear", handleClear);
   bot.command("cleanup", handleCleanup);
+  bot.command("summarize", handleSummarize);
   bot.command("status", handleStatus);
 
   // Media handlers
@@ -319,6 +321,25 @@ async function handleCleanup(ctx: Context): Promise<void> {
   await ctx.reply(count > 0 ? `Удалено ${count} неактивных сессий.` : "Нечего чистить.");
 }
 
+async function handleSummarize(ctx: Context): Promise<void> {
+  const chatId = String(ctx.chat!.id);
+  const sessionId = await sessionManager.getActiveSession(chatId);
+
+  if (!process.env.ANTHROPIC_API_KEY) {
+    await ctx.reply("Суммаризация недоступна (нет API-ключа).");
+    return;
+  }
+
+  await ctx.reply("Суммаризирую...");
+  const summary = await forceSummarize(sessionId, chatId);
+
+  if (summary) {
+    await ctx.reply(`Сохранено в долгосрочную память:\n\n${summary}`);
+  } else {
+    await ctx.reply("Недостаточно сообщений для суммаризации.");
+  }
+}
+
 async function handleStatus(ctx: Context): Promise<void> {
   // DB check
   let dbOk = false;
@@ -534,6 +555,7 @@ async function handleText(ctx: Context): Promise<void> {
         ${String(ctx.message?.message_id ?? "")}
       )
     `;
+    touchIdleTimer(route.sessionId, chatId);
     return;
   }
 
@@ -573,6 +595,10 @@ async function handleText(ctx: Context): Promise<void> {
     role: "assistant",
     content: response,
   });
+
+  // Touch idle timer and check overflow
+  touchIdleTimer(sessionId, chatId);
+  await checkOverflow(sessionId, chatId);
 }
 
 // Bot reference set from bot.ts

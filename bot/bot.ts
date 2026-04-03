@@ -27,6 +27,7 @@ export function createBot(): Bot {
     { command: "memories", description: "Список воспоминаний" },
     { command: "forget", description: "Удалить воспоминание" },
     { command: "clear", description: "Очистить контекст сессии" },
+    { command: "summarize", description: "Суммаризировать диалог" },
     { command: "status", description: "Статус бота" },
   ]).catch((err) => console.error("[bot] failed to set commands:", err.message));
 

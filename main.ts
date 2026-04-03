@@ -2,6 +2,7 @@ import { CONFIG } from "./config.ts";
 import { migrate, sql } from "./memory/db.ts";
 import { createBot } from "./bot/bot.ts";
 import { startMcpHttpServer } from "./mcp/server.ts";
+import { stopAllTimers } from "./memory/summarizer.ts";
 
 async function main() {
   console.log("[main] starting claude-bot...");
@@ -24,6 +25,7 @@ async function main() {
   // Graceful shutdown
   const shutdown = async () => {
     console.log("[main] shutting down...");
+    stopAllTimers();
     httpServer.close();
     await bot.stop();
     await sql.end();
