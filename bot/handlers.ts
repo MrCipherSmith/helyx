@@ -382,20 +382,17 @@ async function handleText(ctx: Context): Promise<void> {
       },
     });
 
-    // Forward to CLI session via MCP notification
-    const sent = await sendNotificationToSession(
-      route.clientId,
-      chatId,
-      ctx.from?.username ?? ctx.from?.first_name ?? "user",
-      text,
-      { messageId: ctx.message?.message_id },
-    );
-
-    if (!sent) {
-      await ctx.reply(
-        "Не удалось переслать в CLI-сессию. Возможно, соединение потеряно.\n/sessions для проверки.",
-      );
-    }
+    // Put message into queue for stdio channel adapter
+    await sql`
+      INSERT INTO message_queue (session_id, chat_id, from_user, content, message_id)
+      VALUES (
+        ${route.sessionId},
+        ${chatId},
+        ${ctx.from?.username ?? ctx.from?.first_name ?? "user"},
+        ${text},
+        ${String(ctx.message?.message_id ?? "")}
+      )
+    `;
     return;
   }
 

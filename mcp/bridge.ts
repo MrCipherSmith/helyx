@@ -23,20 +23,26 @@ export async function sendNotificationToSession(
   metadata?: Record<string, unknown>,
 ): Promise<boolean> {
   const server = mcpServers.get(clientId);
-  if (!server) return false;
+  if (!server) {
+    console.error(`[bridge] no server for clientId=${clientId}, known keys: [${[...mcpServers.keys()].join(", ")}]`);
+    return false;
+  }
 
   try {
-    // Send as a logging message — this is the standard way to push info to the client
-    await server.server.sendLoggingMessage({
-      level: "info",
-      data: JSON.stringify({
-        type: "telegram_message",
-        chat_id: chatId,
-        from: fromUser,
-        text,
-        timestamp: new Date().toISOString(),
-        ...metadata,
-      }),
+    // Use the experimental claude/channel notification — same as official Telegram plugin
+    await server.server.notification({
+      method: "notifications/claude/channel",
+      params: {
+        content: text,
+        meta: {
+          chat_id: chatId,
+          user: fromUser,
+          ts: new Date().toISOString(),
+          ...(metadata?.messageId
+            ? { message_id: String(metadata.messageId) }
+            : {}),
+        },
+      },
     });
     return true;
   } catch (err) {

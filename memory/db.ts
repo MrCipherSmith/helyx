@@ -91,6 +91,24 @@ export async function migrate() {
     ON memories USING hnsw (embedding vector_cosine_ops)
   `;
 
+  // Message queue for stdio channel adapters
+  await sql`
+    CREATE TABLE IF NOT EXISTS message_queue (
+      id BIGSERIAL PRIMARY KEY,
+      session_id INT NOT NULL REFERENCES sessions(id),
+      chat_id TEXT NOT NULL,
+      from_user TEXT NOT NULL,
+      content TEXT NOT NULL,
+      message_id TEXT,
+      delivered BOOLEAN NOT NULL DEFAULT false,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_queue_session
+    ON message_queue(session_id, delivered, created_at)
+  `;
+
   console.log("[db] migrations complete");
 }
 
