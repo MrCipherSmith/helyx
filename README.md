@@ -61,12 +61,9 @@ cp .env.example .env
 # Edit .env — set TELEGRAM_BOT_TOKEN and ALLOWED_USERS
 
 docker compose up -d
-
-# Pull the embedding model (first time only)
-docker compose exec ollama ollama pull nomic-embed-text
 ```
 
-This starts PostgreSQL (with pgvector), Ollama, and the bot. The bot runs on port 3847.
+This starts PostgreSQL (with pgvector), Ollama, and the bot. The embedding model (`nomic-embed-text`) is pulled automatically on first start. The bot runs on port 3847.
 
 ## Manual Setup
 
@@ -121,6 +118,99 @@ bun start
 # or for development with auto-reload:
 bun dev
 ```
+
+## Ubuntu Server Setup (from scratch)
+
+Complete setup on a fresh Ubuntu 22.04+ server:
+
+```bash
+# 1. Install Bun
+curl -fsSL https://bun.sh/install | bash
+source ~/.bashrc
+
+# 2. Install PostgreSQL 16 + pgvector
+sudo apt update
+sudo apt install -y postgresql-16 postgresql-16-pgvector
+
+# 3. Create database
+sudo -u postgres psql -c "CREATE USER claude_bot WITH PASSWORD 'your_password';"
+sudo -u postgres psql -c "CREATE DATABASE claude_bot OWNER claude_bot;"
+sudo -u postgres psql -d claude_bot -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
+# 4. Install Ollama
+curl -fsSL https://ollama.ai/install.sh | sh
+ollama pull nomic-embed-text
+
+# 5. Clone and install
+git clone https://github.com/MrCipherSmith/multiclaude-tg-bot.git
+cd multiclaude-tg-bot
+bun install
+
+# 6. Configure
+cp .env.example .env
+nano .env
+# Set:
+#   TELEGRAM_BOT_TOKEN=your_token
+#   ALLOWED_USERS=your_telegram_id
+#   DATABASE_URL=postgres://claude_bot:your_password@localhost:5432/claude_bot
+#   OLLAMA_URL=http://localhost:11434
+
+# 7. Run (choose one)
+bun start                           # foreground
+tmux new -d -s bot 'bun main.ts'    # tmux (survives SSH disconnect)
+```
+
+### Optional: Run as systemd service
+
+```bash
+sudo tee /etc/systemd/system/claude-bot.service > /dev/null <<EOF
+[Unit]
+Description=Claude Telegram Bot
+After=network.target postgresql.service ollama.service
+
+[Service]
+Type=simple
+User=$USER
+WorkingDirectory=$(pwd)
+ExecStart=$(which bun) main.ts
+Restart=always
+RestartSec=5
+EnvironmentFile=$(pwd)/.env
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl enable --now claude-bot
+sudo systemctl status claude-bot
+```
+
+### Install Claude Code CLI
+
+```bash
+# Install Claude Code
+npm install -g @anthropic-ai/claude-code
+
+# Register MCP servers
+claude mcp add --transport http -s user claude-bot http://localhost:3847/mcp
+
+claude mcp add-json -s user claude-bot-channel '{
+  "type": "stdio",
+  "command": "bun",
+  "args": ["'$(pwd)'/channel.ts"],
+  "env": {
+    "DATABASE_URL": "postgres://claude_bot:your_password@localhost:5432/claude_bot",
+    "OLLAMA_URL": "http://localhost:11434",
+    "TELEGRAM_BOT_TOKEN": "your_token"
+  }
+}'
+
+# Launch with Telegram channel
+cd your-project
+claude --dangerously-load-development-channels server:claude-bot-channel
+```
+
+## Connecting Claude Code CLI
 
 ### 6. Connect Claude Code CLI
 

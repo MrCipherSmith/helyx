@@ -8,8 +8,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      ollama:
-        condition: service_started
+      ollama-init:
+        condition: service_completed_successfully
     networks:
       - claude-bot
 
@@ -35,6 +35,24 @@ services:
     restart: unless-stopped
     volumes:
       - ollama:/root/.ollama
+    networks:
+      - claude-bot
+
+  ollama-init:
+    image: curlimages/curl:latest
+    depends_on:
+      - ollama
+    environment:
+      OLLAMA_URL: http://ollama:11434
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-nomic-embed-text}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Waiting for Ollama..."
+        until curl -sf http://ollama:11434/api/tags > /dev/null 2>&1; do sleep 2; done
+        echo "Pulling $$EMBEDDING_MODEL..."
+        curl -sf http://ollama:11434/api/pull -d "{\"name\": \"$$EMBEDDING_MODEL\"}"
+        echo "Done."
     networks:
       - claude-bot
 
