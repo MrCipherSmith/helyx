@@ -3,22 +3,21 @@ import { CONFIG } from "../config.ts";
 
 export type MessageParam = { role: "user" | "assistant"; content: string };
 
-// Provider detection: anthropic > openrouter > ollama
+// Provider detection: anthropic > openai-compatible (openrouter etc) > ollama
+const openaiKey = process.env.OPENROUTER_API_KEY ?? process.env.OPENAI_API_KEY ?? "";
+const openaiUrl = process.env.OPENROUTER_BASE_URL ?? process.env.OPENAI_BASE_URL ?? "https://openrouter.ai/api/v1";
+const openaiModel = process.env.OPENROUTER_MODEL ?? process.env.OPENAI_MODEL ?? "qwen/qwen3-235b-a22b:free";
+const ollamaModel = process.env.OLLAMA_CHAT_MODEL ?? "qwen3:8b";
+
 const provider = process.env.ANTHROPIC_API_KEY
   ? "anthropic"
-  : process.env.OPENROUTER_API_KEY
-    ? "openrouter"
+  : openaiKey
+    ? "openai"
     : "ollama";
-
-const openRouterModel =
-  process.env.OPENROUTER_MODEL ?? "qwen/qwen3-235b-a22b:free";
-const openRouterUrl =
-  process.env.OPENROUTER_BASE_URL ?? "https://openrouter.ai/api/v1";
-const ollamaModel = process.env.OLLAMA_CHAT_MODEL ?? "qwen3:8b";
 
 const anthropic = provider === "anthropic" ? new Anthropic() : null;
 
-console.log(`[client] provider: ${provider}${provider === "openrouter" ? ` (${openRouterModel})` : provider === "ollama" ? ` (${ollamaModel})` : ""}`);
+console.log(`[client] provider: ${provider}${provider === "openai" ? ` (${openaiModel} @ ${openaiUrl})` : provider === "ollama" ? ` (${ollamaModel})` : ""}`);
 
 // --- OpenAI-compatible API (OpenRouter) ---
 
@@ -26,14 +25,14 @@ async function* openaiStream(
   messages: MessageParam[],
   system: string,
 ): AsyncGenerator<string> {
-  const res = await fetch(`${openRouterUrl}/chat/completions`, {
+  const res = await fetch(`${openaiUrl}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      Authorization: `Bearer ${openaiKey}`,
     },
     body: JSON.stringify({
-      model: openRouterModel,
+      model: openaiModel,
       messages: [{ role: "system", content: system }, ...messages],
       stream: true,
     }),
@@ -74,14 +73,14 @@ async function openaiGenerate(
   messages: MessageParam[],
   system: string,
 ): Promise<string> {
-  const res = await fetch(`${openRouterUrl}/chat/completions`, {
+  const res = await fetch(`${openaiUrl}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      Authorization: `Bearer ${openaiKey}`,
     },
     body: JSON.stringify({
-      model: openRouterModel,
+      model: openaiModel,
       messages: [{ role: "system", content: system }, ...messages],
       stream: false,
     }),
@@ -181,7 +180,7 @@ export async function* streamResponse(
   system: string,
 ): AsyncGenerator<string> {
   switch (provider) {
-    case "openrouter":
+    case "openai":
       yield* openaiStream(messages, system);
       break;
     case "ollama":
@@ -211,7 +210,7 @@ export async function generateResponse(
   system: string,
 ): Promise<string> {
   switch (provider) {
-    case "openrouter":
+    case "openai":
       return openaiGenerate(messages, system);
     case "ollama":
       return ollamaGenerate(messages, system);
