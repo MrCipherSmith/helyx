@@ -8,6 +8,7 @@ import { sessionManager } from "../sessions/manager.ts";
 import { sendNotificationToSession } from "../mcp/bridge.ts";
 import { downloadFile } from "../utils/files.ts";
 import { startTyping, type TypingHandle } from "../utils/typing.ts";
+import { transcribe } from "../utils/transcribe.ts";
 import { touchIdleTimer, checkOverflow, forceSummarize } from "../memory/summarizer.ts";
 import { sql } from "../memory/db.ts";
 
@@ -467,7 +468,65 @@ async function handleDocument(ctx: Context): Promise<void> {
 async function handleVoice(ctx: Context): Promise<void> {
   const voice = ctx.message?.voice;
   if (!voice) return;
-  await handleMedia(ctx, voice.file_id, `Голосовое сообщение (${voice.duration}s)`);
+
+  await ctx.replyWithChatAction("typing");
+
+  // Download voice file
+  let filePath: string;
+  try {
+    filePath = await downloadFile(bot, voice.file_id);
+  } catch (err) {
+    console.error("[handler] voice download failed:", err);
+    await ctx.reply("Не удалось скачать голосовое сообщение.");
+    return;
+  }
+
+  // Transcribe via Whisper
+  const fileData = await Bun.file(filePath).arrayBuffer();
+  const text = await transcribe(fileData, "voice.ogg", voice.mime_type ?? "audio/ogg");
+
+  if (text) {
+    // Process as text message with transcription
+    const chatId = String(ctx.chat!.id);
+    const route = await routeMessage(chatId);
+    const content = `🎤 ${text}`;
+
+    if (route.mode === "cli") {
+      await addMessage({
+        sessionId: route.sessionId,
+        chatId,
+        role: "user",
+        content,
+        metadata: { voiceFile: filePath, messageId: ctx.message?.message_id },
+      });
+      await sql`
+        INSERT INTO message_queue (session_id, chat_id, from_user, content, message_id)
+        VALUES (
+          ${route.sessionId}, ${chatId},
+          ${ctx.from?.username ?? ctx.from?.first_name ?? "user"},
+          ${content}, ${String(ctx.message?.message_id ?? "")}
+        )
+      `;
+      touchIdleTimer(route.sessionId, chatId);
+    } else if (route.mode === "standalone" && process.env.ANTHROPIC_API_KEY) {
+      await addMessage({
+        sessionId: route.sessionId,
+        chatId,
+        role: "user",
+        content,
+        metadata: { voiceFile: filePath, messageId: ctx.message?.message_id },
+      });
+      const { system, messages } = await composePrompt(route.sessionId, chatId, content);
+      const response = await streamToTelegram(bot, ctx.chat!.id, system, messages);
+      await addMessage({ sessionId: route.sessionId, chatId, role: "assistant", content: response });
+      touchIdleTimer(route.sessionId, chatId);
+    } else {
+      await ctx.reply(`🎤 Распознано: ${text}`);
+    }
+  } else {
+    // Transcription failed — send as file
+    await handleMedia(ctx, voice.file_id, `Голосовое сообщение (${voice.duration}s, не распознано)`);
+  }
 }
 
 async function handleVideo(ctx: Context): Promise<void> {

@@ -56,6 +56,22 @@ services:
     networks:
       - claude-bot
 
+  # Optional: Whisper ASR for voice message transcription
+  # Uncomment to enable voice-to-text
+  # whisper:
+  #   image: onerahmet/openai-whisper-asr-webservice:latest
+  #   restart: unless-stopped
+  #   environment:
+  #     ASR_MODEL: base
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "curl -sf http://localhost:9000/ || exit 1"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 10
+  #     start_period: 30s
+  #   networks:
+  #     - claude-bot
+
 volumes:
   pgdata:
   ollama:
