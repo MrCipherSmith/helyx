@@ -1,0 +1,46 @@
+services:
+  bot:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3847}:${PORT:-3847}"
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    networks:
+      - claude-bot
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: claude_bot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-claude_bot_secret}
+      POSTGRES_DB: claude_bot
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U claude_bot -d claude_bot"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - claude-bot
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama:/root/.ollama
+    networks:
+      - claude-bot
+
+volumes:
+  pgdata:
+  ollama:
+
+networks:
+  claude-bot:

@@ -49,15 +49,36 @@ A Telegram bot with Claude AI integration, dual-layer memory (short-term + long-
 3. Claude Code processes the message and responds via MCP `reply` tool
 4. Reply goes back to Telegram
 
-## Prerequisites
+## Quick Start (Docker)
+
+The easiest way to run everything — no need to install PostgreSQL or Ollama manually:
+
+```bash
+git clone https://github.com/MrCipherSmith/multiclaude-tg-bot.git
+cd multiclaude-tg-bot
+
+cp .env.example .env
+# Edit .env — set TELEGRAM_BOT_TOKEN and ALLOWED_USERS
+
+docker compose up -d
+
+# Pull the embedding model (first time only)
+docker compose exec ollama ollama pull nomic-embed-text
+```
+
+This starts PostgreSQL (with pgvector), Ollama, and the bot. The bot runs on port 3847.
+
+## Manual Setup
+
+If you prefer to run without Docker (or already have PostgreSQL/Ollama):
+
+### Prerequisites
 
 - [Bun](https://bun.sh) runtime
 - PostgreSQL 16+ with [pgvector](https://github.com/pgvector/pgvector) extension
 - [Ollama](https://ollama.ai) with an embedding model (default: `nomic-embed-text`)
 - Telegram bot token from [@BotFather](https://t.me/BotFather)
 - (Optional) Anthropic API key for standalone mode
-
-## Quick Start
 
 ### 1. Clone and install
 
@@ -70,7 +91,6 @@ bun install
 ### 2. Set up the database
 
 ```bash
-# Create database and enable pgvector
 psql -U postgres -c "CREATE USER claude_bot WITH PASSWORD 'your_password';"
 psql -U postgres -c "CREATE DATABASE claude_bot OWNER claude_bot;"
 psql -U postgres -d claude_bot -c "CREATE EXTENSION IF NOT EXISTS vector;"
@@ -86,10 +106,11 @@ ollama pull nomic-embed-text
 
 ```bash
 cp .env.example .env
-# Edit .env with your values:
+# Edit .env:
 #   TELEGRAM_BOT_TOKEN  — from @BotFather
 #   ALLOWED_USERS       — comma-separated Telegram user IDs
-#   DATABASE_URL        — PostgreSQL connection string
+#   DATABASE_URL        — postgres://claude_bot:password@localhost:5432/claude_bot
+#   OLLAMA_URL          — http://localhost:11434
 #   ANTHROPIC_API_KEY   — (optional) for standalone mode
 ```
 
