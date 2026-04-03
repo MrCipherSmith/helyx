@@ -6,6 +6,7 @@ import { streamToTelegram } from "./streaming.ts";
 import { routeMessage } from "../sessions/router.ts";
 import { sessionManager } from "../sessions/manager.ts";
 import { sendNotificationToSession } from "../mcp/bridge.ts";
+import { downloadFile } from "../utils/files.ts";
 import { sql } from "../memory/db.ts";
 
 // Pending input: chatId -> handler that processes the next text message
@@ -32,7 +33,15 @@ export function registerHandlers(bot: Bot): void {
   bot.command("cleanup", handleCleanup);
   bot.command("status", handleStatus);
 
-  // Text messages → Claude
+  // Media handlers
+  bot.on("message:photo", handlePhoto);
+  bot.on("message:document", handleDocument);
+  bot.on("message:voice", handleVoice);
+  bot.on("message:video", handleVideo);
+  bot.on("message:video_note", handleVideoNote);
+  bot.on("message:sticker", handleSticker);
+
+  // Text messages → Claude (must be last)
   bot.on("message:text", handleText);
 }
 
@@ -343,6 +352,138 @@ async function handleStatus(ctx: Context): Promise<void> {
   ];
 
   await ctx.reply("Статус:\n\n" + lines.join("\n"));
+}
+
+// === Media handlers ===
+
+async function handleMedia(
+  ctx: Context,
+  fileId: string,
+  description: string,
+  caption?: string,
+  filename?: string,
+): Promise<void> {
+  const chatId = String(ctx.chat!.id);
+  const route = await routeMessage(chatId);
+
+  // Download file
+  let filePath: string;
+  try {
+    filePath = await downloadFile(bot, fileId, filename);
+  } catch (err) {
+    console.error("[handler] file download failed:", err);
+    await ctx.reply("Не удалось скачать файл.");
+    return;
+  }
+
+  const text = caption
+    ? `${description}: ${caption}\n[file: ${filePath}]`
+    : `${description}\n[file: ${filePath}]`;
+
+  if (route.mode === "cli") {
+    await addMessage({
+      sessionId: route.sessionId,
+      chatId,
+      role: "user",
+      content: text,
+      metadata: { fileId, filePath, messageId: ctx.message?.message_id },
+    });
+
+    await sql`
+      INSERT INTO message_queue (session_id, chat_id, from_user, content, message_id)
+      VALUES (
+        ${route.sessionId},
+        ${chatId},
+        ${ctx.from?.username ?? ctx.from?.first_name ?? "user"},
+        ${text},
+        ${String(ctx.message?.message_id ?? "")}
+      )
+    `;
+    return;
+  }
+
+  if (route.mode === "standalone" && !process.env.ANTHROPIC_API_KEY) {
+    await ctx.reply("Standalone-режим недоступен (нет API-ключа).");
+    return;
+  }
+
+  // Standalone: save and note the file
+  await addMessage({
+    sessionId: route.sessionId,
+    chatId,
+    role: "user",
+    content: text,
+    metadata: { fileId, filePath, messageId: ctx.message?.message_id },
+  });
+
+  await ctx.reply(`Получен ${description}. Файл сохранён.`);
+}
+
+async function handlePhoto(ctx: Context): Promise<void> {
+  const photos = ctx.message?.photo;
+  if (!photos || photos.length === 0) return;
+  // Get highest resolution
+  const photo = photos[photos.length - 1];
+  await handleMedia(ctx, photo.file_id, "Фото", ctx.message?.caption);
+}
+
+async function handleDocument(ctx: Context): Promise<void> {
+  const doc = ctx.message?.document;
+  if (!doc) return;
+  await handleMedia(
+    ctx,
+    doc.file_id,
+    `Документ (${doc.file_name ?? "file"}, ${doc.mime_type ?? "unknown"})`,
+    ctx.message?.caption,
+    doc.file_name ?? undefined,
+  );
+}
+
+async function handleVoice(ctx: Context): Promise<void> {
+  const voice = ctx.message?.voice;
+  if (!voice) return;
+  await handleMedia(ctx, voice.file_id, `Голосовое сообщение (${voice.duration}s)`);
+}
+
+async function handleVideo(ctx: Context): Promise<void> {
+  const video = ctx.message?.video;
+  if (!video) return;
+  await handleMedia(
+    ctx,
+    video.file_id,
+    `Видео (${video.duration}s)`,
+    ctx.message?.caption,
+    video.file_name ?? undefined,
+  );
+}
+
+async function handleVideoNote(ctx: Context): Promise<void> {
+  const vn = ctx.message?.video_note;
+  if (!vn) return;
+  await handleMedia(ctx, vn.file_id, `Видеосообщение (${vn.duration}s)`);
+}
+
+async function handleSticker(ctx: Context): Promise<void> {
+  const sticker = ctx.message?.sticker;
+  if (!sticker) return;
+  const emoji = sticker.emoji ?? "";
+  const text = `Стикер ${emoji} (${sticker.set_name ?? "без набора"})`;
+  // Don't download sticker, just notify
+  const chatId = String(ctx.chat!.id);
+  const route = await routeMessage(chatId);
+
+  if (route.mode === "cli") {
+    await sql`
+      INSERT INTO message_queue (session_id, chat_id, from_user, content, message_id)
+      VALUES (
+        ${route.sessionId},
+        ${chatId},
+        ${ctx.from?.username ?? ctx.from?.first_name ?? "user"},
+        ${text},
+        ${String(ctx.message?.message_id ?? "")}
+      )
+    `;
+  }
 }
 
 // === Text handler ===
