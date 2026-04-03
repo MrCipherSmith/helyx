@@ -499,6 +499,8 @@ async function handleVoice(ctx: Context): Promise<void> {
   const voice = ctx.message?.voice;
   if (!voice) return;
 
+  // Send status message that we'll update
+  const statusMsg = await ctx.reply(`🎤 Голосовое (${voice.duration}с) — скачиваю...`);
   await ctx.replyWithChatAction("typing");
 
   // Download voice file
@@ -507,15 +509,18 @@ async function handleVoice(ctx: Context): Promise<void> {
     filePath = await downloadFile(bot, voice.file_id);
   } catch (err) {
     console.error("[handler] voice download failed:", err);
-    await ctx.reply("Не удалось скачать голосовое сообщение.");
+    await bot.api.editMessageText(ctx.chat!.id, statusMsg.message_id, "🎤 Не удалось скачать голосовое сообщение.");
     return;
   }
 
   // Transcribe via Whisper
+  await bot.api.editMessageText(ctx.chat!.id, statusMsg.message_id, "🎤 Распознаю речь...");
   const fileData = await Bun.file(filePath).arrayBuffer();
   const text = await transcribe(fileData, "voice.ogg", voice.mime_type ?? "audio/ogg");
 
   if (text) {
+    await bot.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `🎤 Распознано: ${text}`);
+
     // Process as text message with transcription
     const chatId = String(ctx.chat!.id);
     const route = await routeMessage(chatId);
@@ -554,7 +559,8 @@ async function handleVoice(ctx: Context): Promise<void> {
       await ctx.reply(`🎤 Распознано: ${text}`);
     }
   } else {
-    // Transcription failed — send as file
+    // Transcription failed
+    await bot.api.editMessageText(ctx.chat!.id, statusMsg.message_id, "🎤 Не удалось распознать речь. Отправляю как файл...");
     await handleMedia(ctx, voice.file_id, `Голосовое сообщение (${voice.duration}s, не распознано)`);
   }
 }
