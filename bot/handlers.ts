@@ -7,6 +7,7 @@ import { routeMessage } from "../sessions/router.ts";
 import { sessionManager } from "../sessions/manager.ts";
 import { sendNotificationToSession } from "../mcp/bridge.ts";
 import { downloadFile } from "../utils/files.ts";
+import { startTyping, type TypingHandle } from "../utils/typing.ts";
 import { touchIdleTimer, checkOverflow, forceSummarize } from "../memory/summarizer.ts";
 import { sql } from "../memory/db.ts";
 

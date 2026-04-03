@@ -13,6 +13,7 @@
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { startTypingRaw, type TypingHandle } from "./utils/typing.ts";
 import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
@@ -157,7 +158,10 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 
   switch (name) {
     case "reply": {
-      // Forward reply to the main bot via its HTTP API / direct Telegram Bot API
+      const chatId = String(args!.chat_id);
+      // Stop typing indicator for this chat
+      stopTypingForChat(chatId);
+
       const token = process.env.TELEGRAM_BOT_TOKEN;
       if (!token) return text("TELEGRAM_BOT_TOKEN not set");
       const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
@@ -235,6 +239,27 @@ function text(t: string) {
   return { content: [{ type: "text" as const, text: t }] };
 }
 
+// --- Typing indicators ---
+// Track active typing handles per chat_id
+const activeTyping = new Map<string, TypingHandle>();
+
+function startTypingForChat(chatId: string): void {
+  // Don't start if already typing for this chat
+  if (activeTyping.has(chatId)) return;
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) return;
+  const handle = startTypingRaw(token, chatId);
+  activeTyping.set(chatId, handle);
+}
+
+function stopTypingForChat(chatId: string): void {
+  const handle = activeTyping.get(chatId);
+  if (handle) {
+    handle.stop();
+    activeTyping.delete(chatId);
+  }
+}
+
 // --- Message queue poller ---
 let polling = true;
 
@@ -259,6 +284,9 @@ async function pollMessages() {
       `;
 
       for (const row of rows) {
+        // Start typing indicator — will keep sending until CLI replies
+        startTypingForChat(row.chat_id);
+
         await mcp.notification({
           method: "notifications/claude/channel",
           params: {
