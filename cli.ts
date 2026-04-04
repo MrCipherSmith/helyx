@@ -490,11 +490,16 @@ async function connect(dir?: string) {
     // Check if tmux session already exists
     const exists = await run(["tmux", "has-session", "-t", name], { silent: true });
     if (exists.ok) {
-      console.log(`  tmux session ${c.cyan(name)} already exists. Attaching...`);
-      const proc = Bun.spawn(["tmux", "attach", "-t", name], {
-        stdout: "inherit", stderr: "inherit", stdin: "inherit",
-      });
-      await proc.exited;
+      if (process.env.TMUX) {
+        console.log(`  tmux session ${c.cyan(name)} already running.`);
+        console.log(`  ${c.dim("You're inside tmux. Detach first (Ctrl+B, D), then:")} ${c.cyan(`tmux attach -t ${name}`)}`);
+      } else {
+        console.log(`  tmux session ${c.cyan(name)} already exists. Attaching...`);
+        const proc = Bun.spawn(["tmux", "attach", "-t", name], {
+          stdout: "inherit", stderr: "inherit", stdin: "inherit",
+        });
+        await proc.exited;
+      }
       return;
     }
 
