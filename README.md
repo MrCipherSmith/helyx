@@ -12,6 +12,7 @@ A Telegram bot with Claude AI integration, dual-layer memory (short-term + long-
 - **Channel Adapter** — stdio bridge that forwards Telegram messages into Claude Code as channel notifications
 - **Session Switching** — switch between CLI sessions and standalone mode from Telegram
 - **Session Adoption** — reconnecting CLIs reuse existing named sessions, preserving ID and memory
+- **Voice Messages** — transcription via Groq (whisper-large-v3) with local Whisper fallback
 - **Standalone Mode** — bot responds directly via Claude API (requires API key)
 - **CLI Mode** — forward Telegram messages to a connected Claude Code session via channel notifications
 
@@ -58,12 +59,28 @@ git clone https://github.com/MrCipherSmith/multiclaude-tg-bot.git
 cd multiclaude-tg-bot
 
 cp .env.example .env
-# Edit .env — set TELEGRAM_BOT_TOKEN and ALLOWED_USERS
+# Edit .env — set at minimum:
+#   TELEGRAM_BOT_TOKEN  — from @BotFather
+#   ALLOWED_USERS       — your Telegram user ID
+#   GROQ_API_KEY        — (optional) for voice message transcription
 
 docker compose up -d
 ```
 
 This starts PostgreSQL (with pgvector), Ollama, and the bot. The embedding model (`nomic-embed-text`) is pulled automatically on first start. The bot runs on port 3847.
+
+### Voice Transcription Setup
+
+Voice messages are transcribed using **Groq** (free, fast, whisper-large-v3) as the primary provider, with local Whisper ASR as fallback.
+
+1. Go to https://console.groq.com and sign up (Google/GitHub)
+2. Go to **API Keys** → **Create API Key**
+3. Add to `.env`:
+   ```
+   GROQ_API_KEY=gsk_your_key_here
+   ```
+
+Free tier: 7,000 requests/day. If Groq is unavailable, the bot falls back to the local Whisper container (if enabled in docker-compose).
 
 ## Manual Setup
 
@@ -108,6 +125,7 @@ cp .env.example .env
 #   ALLOWED_USERS       — comma-separated Telegram user IDs
 #   DATABASE_URL        — postgres://claude_bot:password@localhost:5432/claude_bot
 #   OLLAMA_URL          — http://localhost:11434
+#   GROQ_API_KEY        — (optional) for voice transcription (free: https://console.groq.com)
 #   ANTHROPIC_API_KEY   — (optional) for standalone mode
 ```
 
@@ -317,13 +335,36 @@ When a CLI reconnects and calls `set_session_name` with an existing name, the bo
 
 ## Running in Production
 
-Use tmux or systemd to keep the bot running:
+### Using tmux (recommended for development)
 
 ```bash
-# tmux
+# Start the bot in a background tmux session
 tmux new-session -d -s bot -c /path/to/multiclaude-tg-bot 'bun main.ts'
+```
 
-# systemd (create /etc/systemd/system/claude-bot.service)
+### Managing the bot
+
+```bash
+# View bot logs (attach to tmux session)
+tmux attach -t bot
+
+# Inside tmux:
+#   Ctrl+C        — stop the bot
+#   bun main.ts   — start the bot again
+#   Ctrl+B, D     — detach from tmux (bot keeps running)
+
+# Restart without attaching
+tmux send-keys -t bot C-c Enter
+tmux send-keys -t bot 'bun main.ts' Enter
+
+# Check if the bot process is running
+ps aux | grep 'bun main.ts' | grep -v grep
+```
+
+### Using systemd (recommended for production)
+
+```bash
+sudo tee /etc/systemd/system/claude-bot.service > /dev/null <<EOF
 [Unit]
 Description=Claude Telegram Bot
 After=network.target postgresql.service
@@ -334,10 +375,20 @@ User=your_user
 WorkingDirectory=/path/to/multiclaude-tg-bot
 ExecStart=/path/to/.bun/bin/bun main.ts
 Restart=always
+RestartSec=5
 EnvironmentFile=/path/to/multiclaude-tg-bot/.env
 
 [Install]
 WantedBy=multi-user.target
+EOF
+
+sudo systemctl enable --now claude-bot
+
+# Managing with systemd:
+sudo systemctl status claude-bot    # check status
+sudo systemctl restart claude-bot   # restart
+sudo systemctl stop claude-bot      # stop
+sudo journalctl -u claude-bot -f    # view logs
 ```
 
 ## Tech Stack
