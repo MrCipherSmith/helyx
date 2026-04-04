@@ -35,6 +35,7 @@ export function registerHandlers(bot: Bot): void {
 
   // Utility commands
   bot.command("clear", handleClear);
+  bot.command("remove", handleRemove);
   bot.command("cleanup", handleCleanup);
   bot.command("summarize", handleSummarize);
   bot.command("status", handleStatus);
@@ -368,6 +369,35 @@ async function handleClear(ctx: Context): Promise<void> {
   await sql`DELETE FROM messages WHERE session_id = ${sessionId} AND chat_id = ${chatId}`;
 
   await ctx.reply("Контекст очищен.");
+}
+
+async function handleRemove(ctx: Context): Promise<void> {
+  const text = ctx.message?.text ?? "";
+  const idStr = text.replace(/^\/remove\s*/, "").trim();
+
+  if (!idStr || isNaN(Number(idStr))) {
+    await ctx.reply("Формат: /remove <id>\nПример: /remove 399");
+    return;
+  }
+
+  const sessionId = Number(idStr);
+  if (sessionId === 0) {
+    await ctx.reply("Нельзя удалить standalone сессию.");
+    return;
+  }
+
+  const session = await sessionManager.get(sessionId);
+  if (!session) {
+    await ctx.reply("Сессия не найдена.");
+    return;
+  }
+
+  await sql`DELETE FROM messages WHERE session_id = ${sessionId}`;
+  await sql`DELETE FROM message_queue WHERE session_id = ${sessionId}`;
+  await sql`DELETE FROM request_logs WHERE session_id = ${sessionId}`;
+  await sql`DELETE FROM sessions WHERE id = ${sessionId}`;
+
+  await ctx.reply(`Удалена сессия #${sessionId} (${session.name ?? "unnamed"}) со всеми данными.`);
 }
 
 async function handleCleanup(ctx: Context): Promise<void> {
