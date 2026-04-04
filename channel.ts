@@ -29,8 +29,8 @@ const PermissionRequestSchema = NotificationSchema.extend({
   params: z.object({
     request_id: z.string(),
     tool_name: z.string().optional(),
-    input: z.any().optional(),
-    message: z.string().optional(),
+    description: z.string().optional(),
+    input_preview: z.string().optional(),
   }).passthrough(),
 });
 
@@ -105,8 +105,20 @@ const mcp = new Server(
 // Handle permission requests from Claude Code
 mcp.setNotificationHandler(
   PermissionRequestSchema,
-  async (params: any) => {
-    const { request_id, tool_name, input, message } = params.params ?? params;
+  async (notification: any) => {
+    const params = notification.params ?? notification;
+    const request_id = params.request_id;
+    const tool_name = params.tool_name;
+    const description = params.description;
+
+    // input_preview is a JSON string, not an object
+    let input: Record<string, any> = {};
+    try {
+      if (params.input_preview) input = JSON.parse(params.input_preview);
+      else if (params.input) input = typeof params.input === "string" ? JSON.parse(params.input) : params.input;
+    } catch {}
+
+    process.stderr.write(`[channel] permission: ${tool_name}(${JSON.stringify(input).slice(0, 100)})\n`);
     if (!sessionId) return;
 
     const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -122,7 +134,7 @@ mcp.setNotificationHandler(
       return;
     }
 
-    const desc = message ?? `${tool_name}(${JSON.stringify(input ?? {}).slice(0, 200)})`;
+    const desc = description ?? `${tool_name}(${JSON.stringify(input).slice(0, 200)})`;
 
     // Update status message with what CLI is doing
     const shortDesc = tool_name === "Bash" ? `Выполняю: ${String(input?.command ?? "").slice(0, 60)}`
