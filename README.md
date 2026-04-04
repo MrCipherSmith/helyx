@@ -9,7 +9,33 @@
 
 Connect multiple Claude Code CLI instances to a single Telegram bot. Switch between projects, send voice messages, approve CLI permissions, and see what Claude is doing — all from your phone.
 
-<!-- TODO: Add screenshot or GIF of bot in action -->
+## Quick Start in 30 Seconds
+
+```bash
+git clone https://github.com/MrCipherSmith/multiclaude-tg-bot.git
+cd multiclaude-tg-bot && bun install && bun cli.ts setup
+```
+
+Then connect any project:
+```bash
+cd your-project && claude-bot connect . --tmux
+```
+
+Done. Open Telegram, type `/sessions` — your project is there.
+
+<!-- TODO: Add screenshots/GIF showing: /sessions list, voice transcription, CLI progress status, permission buttons -->
+
+## Why MCP?
+
+This bot is a full **[Model Context Protocol](https://modelcontextprotocol.io) server**. Claude Code CLI connects to it via MCP — the same protocol used by VS Code, Cursor, and other AI tools.
+
+**What this means:**
+- Any Claude Code instance (terminal, VS Code, SSH) can connect and receive Telegram messages
+- The bot exposes MCP tools: `reply`, `remember`, `recall`, `update_status` — Claude uses them like native capabilities
+- Permission requests flow through MCP channel protocol — approve Bash/Read/Edit from your phone
+- Multiple CLIs share the same memory and session state through the MCP server
+
+**For agent builders:** This bot can serve as a human-in-the-loop interface for any MCP-compatible agent system. Send tasks from Telegram, approve actions, monitor progress.
 
 ## Features
 
@@ -326,11 +352,13 @@ Backups saved to `~/backups/claude-bot/` (gzipped, last 7 retained).
 
 ## Roadmap
 
+- [ ] One-click deploy (Railway / Render / Coolify)
 - [ ] Vision model support for image analysis in standalone mode
 - [ ] Webhook mode for Telegram (instead of polling)
 - [ ] Web dashboard for statistics and session management
-- [ ] Stream-json output parsing for non-tmux terminals
+- [ ] Stream-json output parsing for non-tmux progress monitoring
 - [ ] Multi-user support with separate session namespaces
+- [ ] Inline mode — respond in any Telegram chat via @bot
 
 ## Contributing
 
