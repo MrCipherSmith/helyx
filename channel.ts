@@ -14,6 +14,7 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { startTypingRaw, type TypingHandle } from "./utils/typing.ts";
+import { markdownToTelegramHtml } from "./bot/format.ts";
 import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
@@ -285,14 +286,34 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
         return text("TELEGRAM_BOT_TOKEN not set");
       }
       process.stderr.write(`[channel] sending reply to ${chatId}: ${String(args!.text).slice(0, 50)}...\n`);
-      const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      const replyText = String(args!.text);
+      const htmlText = markdownToTelegramHtml(replyText);
+
+      // Try HTML first, fallback to plain text
+      let res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chat_id: Number(args!.chat_id),
-          text: args!.text,
+          text: htmlText,
+          parse_mode: "HTML",
         }),
       });
+
+      if (!res.ok) {
+        const errBody = await res.text();
+        if (errBody.includes("can't parse entities")) {
+          // Fallback to plain text
+          res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chat_id: Number(args!.chat_id),
+              text: replyText,
+            }),
+          });
+        }
+      }
       if (!res.ok) {
         const errBody = await res.text();
         process.stderr.write(`[channel] Telegram API error: ${res.status} ${errBody}\n`);

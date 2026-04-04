@@ -1,6 +1,7 @@
 import type { Bot } from "grammy";
 import { streamResponse, type MessageParam, type StreamContext } from "../claude/client.ts";
 import { chunkText } from "../utils/chunk.ts";
+import { markdownToTelegramHtml } from "./format.ts";
 
 const EDIT_INTERVAL_MS = 1500;
 const TYPING_INDICATOR = "...";
@@ -24,12 +25,21 @@ export async function streamToTelegram(
     const chunks = chunkText(text);
     const firstChunk = chunks[0];
 
+    // Use HTML formatting only on final edit (partial markdown breaks during streaming)
+    const parseMode = final ? "HTML" : undefined;
+    const formatted = final ? markdownToTelegramHtml(firstChunk) : firstChunk;
+
     try {
-      await bot.api.editMessageText(Number(chatId), messageId, firstChunk);
+      await bot.api.editMessageText(Number(chatId), messageId, formatted, {
+        parse_mode: parseMode,
+      });
     } catch (err: any) {
-      // Ignore "message is not modified" errors
-      if (!err?.description?.includes("message is not modified")) {
-        // On rate limit, wait and retry once
+      if (err?.description?.includes("can't parse entities")) {
+        // HTML parse failed — fallback to plain text
+        try {
+          await bot.api.editMessageText(Number(chatId), messageId, firstChunk);
+        } catch { /* give up */ }
+      } else if (!err?.description?.includes("message is not modified")) {
         if (err?.error_code === 429) {
           const retryAfter = (err?.parameters?.retry_after ?? 3) * 1000;
           await new Promise((r) => setTimeout(r, retryAfter));
@@ -43,7 +53,14 @@ export async function streamToTelegram(
     // Send continuation chunks as separate messages
     if (final && chunks.length > 1) {
       for (let i = 1; i < chunks.length; i++) {
-        await bot.api.sendMessage(Number(chatId), chunks[i]);
+        const chunk = chunks[i];
+        const htmlChunk = markdownToTelegramHtml(chunk);
+        try {
+          await bot.api.sendMessage(Number(chatId), htmlChunk, { parse_mode: "HTML" });
+        } catch {
+          // Fallback to plain text
+          await bot.api.sendMessage(Number(chatId), chunk);
+        }
       }
     }
   };
@@ -56,12 +73,11 @@ export async function streamToTelegram(
       editPending = true;
       lastEditAt = now;
       const snapshot = accumulated;
-      // Fire and forget, don't block the stream
       doEdit(snapshot).finally(() => { editPending = false; });
     }
   }
 
-  // Final edit with complete text
+  // Final edit with complete text + HTML formatting
   if (accumulated.length > 0) {
     await doEdit(accumulated, true);
   } else {

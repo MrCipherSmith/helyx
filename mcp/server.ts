@@ -7,6 +7,7 @@ import { executeTool } from "./tools.ts";
 import { registerMcpSession, unregisterMcpSession } from "./bridge.ts";
 import { sessionManager } from "../sessions/manager.ts";
 import { CONFIG } from "../config.ts";
+import { sql } from "../memory/db.ts";
 import { IncomingMessage, ServerResponse } from "http";
 import { createServer } from "http";
 
@@ -145,6 +146,23 @@ function createMcpServer(bot: Bot | null, getClientId?: () => string | undefined
 export function startMcpHttpServer(bot: Bot | null): ReturnType<typeof createServer> {
   const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", `http://localhost:${CONFIG.PORT}`);
+
+    if (url.pathname === "/health") {
+      try {
+        await sql`SELECT 1`;
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          status: "ok",
+          db: "connected",
+          uptime: Math.round(process.uptime()),
+          sessions: transports.size,
+        }));
+      } catch (err: any) {
+        res.writeHead(503, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ status: "error", db: "disconnected", error: err?.message }));
+      }
+      return;
+    }
 
     if (url.pathname !== "/mcp") {
       res.writeHead(404);

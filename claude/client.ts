@@ -2,7 +2,25 @@ import Anthropic from "@anthropic-ai/sdk";
 import { CONFIG } from "../config.ts";
 import { recordApiRequest } from "../utils/stats.ts";
 
-export type MessageParam = { role: "user" | "assistant"; content: string };
+export type ContentBlock =
+  | { type: "text"; text: string }
+  | { type: "image"; source: { type: "base64"; media_type: string; data: string } };
+
+export type MessageParam = { role: "user" | "assistant"; content: string | ContentBlock[] };
+
+/** Extract text content from a message for non-Anthropic providers */
+function contentToString(content: string | ContentBlock[]): string {
+  if (typeof content === "string") return content;
+  return content
+    .filter((b) => b.type === "text")
+    .map((b) => (b as { type: "text"; text: string }).text)
+    .join("\n");
+}
+
+/** Convert messages to plain text for OpenAI/Ollama */
+function toTextMessages(messages: MessageParam[]): { role: string; content: string }[] {
+  return messages.map((m) => ({ role: m.role, content: contentToString(m.content) }));
+}
 
 // Provider detection: anthropic > openai-compatible (openrouter etc) > ollama
 const openaiKey = process.env.OPENROUTER_API_KEY ?? process.env.OPENAI_API_KEY ?? "";
@@ -47,7 +65,7 @@ async function* openaiStream(
     },
     body: JSON.stringify({
       model: openaiModel,
-      messages: [{ role: "system", content: system }, ...messages],
+      messages: [{ role: "system", content: system }, ...toTextMessages(messages)],
       stream: true,
       stream_options: { include_usage: true },
     }),
@@ -109,7 +127,7 @@ async function openaiGenerate(
     },
     body: JSON.stringify({
       model: openaiModel,
-      messages: [{ role: "system", content: system }, ...messages],
+      messages: [{ role: "system", content: system }, ...toTextMessages(messages)],
       stream: false,
     }),
   });
@@ -139,7 +157,7 @@ async function* ollamaStream(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model: ollamaModel,
-      messages: [{ role: "system", content: system }, ...messages],
+      messages: [{ role: "system", content: system }, ...toTextMessages(messages)],
       stream: true,
     }),
   });
@@ -191,7 +209,7 @@ async function ollamaGenerate(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model: ollamaModel,
-      messages: [{ role: "system", content: system }, ...messages],
+      messages: [{ role: "system", content: system }, ...toTextMessages(messages)],
       stream: false,
     }),
   });

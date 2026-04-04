@@ -13,6 +13,12 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - downloads:/app/downloads
+    healthcheck:
+      test: ["CMD-SHELL", "bun -e \"fetch('http://localhost:${PORT:-3847}/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     depends_on:
       postgres:
         condition: service_healthy

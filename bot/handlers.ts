@@ -1,5 +1,6 @@
 import type { Bot, Context } from "grammy";
 import { composePrompt } from "../claude/prompt.ts";
+import { getProviderInfo, type ContentBlock } from "../claude/client.ts";
 import { addMessage, getContext, clearCache } from "../memory/short-term.ts";
 import { remember, recall, forget, listMemories } from "../memory/long-term.ts";
 import { streamToTelegram } from "./streaming.ts";
@@ -590,18 +591,47 @@ async function handleMedia(
     return;
   }
 
-  if (route.mode === "standalone") {
-    // Standalone uses whatever provider is available (anthropic/openrouter/ollama)
-  }
+  // Standalone: process with available provider
+  const sessionId = route.sessionId;
+  const { provider } = getProviderInfo();
 
-  // Standalone: save and note the file
+  // Save text description to DB (no base64)
   await addMessage({
-    sessionId: route.sessionId,
+    sessionId,
     chatId,
     role: "user",
     content: text,
     metadata: { fileId, filePath, messageId: ctx.message?.message_id },
   });
+
+  // If Anthropic provider and it's a photo, send image to Claude for analysis
+  const isPhoto = description.startsWith("Фото");
+  if (provider === "anthropic" && isPhoto) {
+    try {
+      const fileData = await Bun.file(filePath).arrayBuffer();
+      const base64 = Buffer.from(fileData).toString("base64");
+      const mimeType = "image/jpeg"; // Telegram always sends photos as JPEG
+
+      const { system, messages } = await composePrompt(sessionId, chatId, caption || "Опиши что на изображении");
+
+      // Replace last message content with image + text blocks
+      const lastMsg = messages[messages.length - 1];
+      const imageBlocks: ContentBlock[] = [
+        { type: "image", source: { type: "base64", media_type: mimeType, data: base64 } },
+        { type: "text", text: caption || "Опиши что на изображении" },
+      ];
+      messages[messages.length - 1] = { role: lastMsg.role, content: imageBlocks };
+
+      appendLog(sessionId, chatId, "llm", "analyzing image...");
+      const response = await streamToTelegram(bot, ctx.chat!.id, system, messages, { sessionId, chatId, operation: "chat" });
+      appendLog(sessionId, chatId, "reply", `image reply sent ${response.length} chars`);
+
+      await addMessage({ sessionId, chatId, role: "assistant", content: response });
+      return;
+    } catch (err: any) {
+      appendLog(sessionId, chatId, "llm", `image analysis failed: ${err?.message}`, "error");
+    }
+  }
 
   await ctx.reply(`Получен ${description}. Файл сохранён.`);
 }
