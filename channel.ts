@@ -134,7 +134,15 @@ mcp.setNotificationHandler(
       return;
     }
 
-    const desc = description ?? `${tool_name}(${JSON.stringify(input).slice(0, 200)})`;
+    // Build detailed description
+    let detail = "";
+    if (tool_name === "Bash" && input.command) detail = `$ ${input.command}`;
+    else if (tool_name === "Read" && input.file_path) detail = input.file_path;
+    else if ((tool_name === "Edit" || tool_name === "Write") && input.file_path) detail = input.file_path;
+    else if (tool_name === "Grep" && input.pattern) detail = `grep "${input.pattern}"`;
+    else detail = JSON.stringify(input).slice(0, 200);
+
+    const desc = `${tool_name}: ${description ?? ""}\n${detail}`.trim();
 
     // Update status message with what CLI is doing
     const shortDesc = tool_name === "Bash" ? `Выполняю: ${String(input?.command ?? "").slice(0, 60)}`

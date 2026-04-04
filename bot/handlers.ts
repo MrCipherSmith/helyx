@@ -532,8 +532,10 @@ async function handlePermissionCallback(ctx: Context): Promise<void> {
     const emoji = action === "allow" ? "✅" : "❌";
     const label = action === "allow" ? "Разрешено" : "Запрещено";
 
-    // Update the inline keyboard message
-    await ctx.editMessageText(`${emoji} ${label}`);
+    // Keep original description, replace header with result
+    const originalText = ctx.callbackQuery?.message?.text ?? "";
+    const descPart = originalText.replace(/^🔐 Разрешить\?\n*/, "").trim();
+    await ctx.editMessageText(`${emoji} ${label}\n\n${descPart}`);
     await ctx.answerCallbackQuery({ text: label });
   } else {
     await ctx.answerCallbackQuery({ text: "Запрос устарел" });
