@@ -243,8 +243,9 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
   switch (name) {
     case "reply": {
       const chatId = String(args!.chat_id);
-      // Stop typing indicator for this chat
+      // Stop typing indicator and remove status message
       stopTypingForChat(chatId);
+      await deleteStatusMessage(chatId);
 
       const token = process.env.TELEGRAM_BOT_TOKEN;
       if (!token) {
@@ -332,6 +333,44 @@ function text(t: string) {
   return { content: [{ type: "text" as const, text: t }] };
 }
 
+// --- Status messages ---
+// Track status message IDs per chat so we can delete them when CLI replies
+const statusMessages = new Map<string, number>();
+
+async function sendStatusMessage(chatId: string, text: string): Promise<void> {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) return;
+
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: Number(chatId), text: `⏳ ${text}` }),
+    });
+    if (res.ok) {
+      const data = (await res.json()) as any;
+      statusMessages.set(chatId, data.result?.message_id);
+    }
+  } catch {}
+}
+
+async function deleteStatusMessage(chatId: string): Promise<void> {
+  const msgId = statusMessages.get(chatId);
+  if (!msgId) return;
+  statusMessages.delete(chatId);
+
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) return;
+
+  try {
+    await fetch(`https://api.telegram.org/bot${token}/deleteMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: Number(chatId), message_id: msgId }),
+    });
+  } catch {}
+}
+
 // --- Typing indicators ---
 // Track active typing handles per chat_id
 const activeTyping = new Map<string, TypingHandle>();
@@ -381,6 +420,9 @@ async function pollMessages() {
 
         // Start typing indicator — will keep sending until CLI replies
         startTypingForChat(row.chat_id);
+
+        // Send status message to Telegram
+        await sendStatusMessage(row.chat_id, "Думаю...");
 
         await mcp.notification({
           method: "notifications/claude/channel",
