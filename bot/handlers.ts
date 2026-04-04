@@ -735,27 +735,44 @@ async function handlePermissionCallback(ctx: Context): Promise<void> {
 
     if (action === "always") {
       const toolName = result[0].tool_name;
-      // Add to auto-approve: find project path for this session
-      const sessionRows = await sql`SELECT project_path FROM sessions WHERE id = ${result[0].session_id}`;
+      const sessionId = result[0].session_id;
+
+      // Add to auto-approve in both project and global settings
+      const settingsPaths: string[] = [];
+
+      // Project settings
+      const sessionRows = await sql`SELECT project_path FROM sessions WHERE id = ${sessionId}`;
       const projectPath = sessionRows[0]?.project_path;
       if (projectPath) {
+        settingsPaths.push(`${projectPath}/.claude/settings.local.json`);
+      }
+
+      // Global settings (host path mounted into Docker)
+      const hostConfig = process.env.HOST_CLAUDE_CONFIG;
+      if (hostConfig) {
+        settingsPaths.push(`${hostConfig}/settings.local.json`);
+      }
+
+      const pattern = `${toolName}(*)`;
+      for (const settingsPath of settingsPaths) {
         try {
-          const settingsPath = `${projectPath}/.claude/settings.local.json`;
           let settings: any = {};
           try {
             settings = JSON.parse(await Bun.file(settingsPath).text());
           } catch {}
           if (!settings.permissions) settings.permissions = {};
           if (!settings.permissions.allow) settings.permissions.allow = [];
-          const pattern = `${toolName}(*)`;
           if (!settings.permissions.allow.includes(pattern)) {
             settings.permissions.allow.push(pattern);
+            const dir = settingsPath.split("/").slice(0, -1).join("/");
             await Bun.write(settingsPath, JSON.stringify(settings, null, 2) + "\n");
+            console.log(`[perm] added ${pattern} to ${settingsPath}`);
           }
         } catch (err) {
-          console.error("[perm] failed to save auto-approve:", err);
+          console.error(`[perm] failed to write ${settingsPath}:`, err);
         }
       }
+
       await ctx.editMessageText(`✅ Всегда разрешено: ${toolName}\n\n${descPart}`);
       await ctx.answerCallbackQuery({ text: `Всегда: ${toolName}` });
     } else if (action === "allow") {
