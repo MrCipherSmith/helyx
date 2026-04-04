@@ -336,7 +336,7 @@ When a CLI reconnects and calls `set_session_name` with an existing name, the bo
 
 ## Multi-Session Workflow
 
-1. Start the bot: `bun start` (in tmux or systemd)
+1. Start the bot: `docker compose up -d` (or `bun start` for local dev)
 2. Launch Claude Code in each project with the channel adapter
 3. In Telegram, use `/sessions` to see all connected CLIs
 4. Use `/switch <id>` to route your Telegram messages to a specific CLI
@@ -344,16 +344,58 @@ When a CLI reconnects and calls `set_session_name` with an existing name, the bo
 6. Claude Code responds via the `reply` tool back to Telegram
 7. Switch between projects anytime — context is preserved per session
 
+### Persistent CLI Sessions (survive SSH disconnect)
+
+Use tmux to keep CLI sessions running after you disconnect from SSH:
+
+```bash
+# Start a named tmux session for each project
+tmux new-session -d -s myproject -c /path/to/myproject \
+  'claude --dangerously-load-development-channels server:claude-bot-channel'
+
+# Start another project in its own tmux session
+tmux new-session -d -s another -c /path/to/another-project \
+  'claude --dangerously-load-development-channels server:claude-bot-channel'
+
+# List all tmux sessions
+tmux ls
+
+# Attach to a session (to view/interact)
+tmux attach -t myproject
+
+# Inside tmux: Ctrl+B, D to detach (session keeps running)
+```
+
+Each CLI session auto-registers in the bot and appears in `/sessions`. When Claude Code starts, it reads `CLAUDE.md` and calls `set_session_name` to name itself after the project directory.
+
+**Note:** If a CLI session disconnects and reconnects with the same project name, the bot adopts the old session — preserving its ID, history, and memory.
+
 ## Running in Production
 
-### Using tmux (recommended for development)
+### Using Docker Compose (recommended)
+
+```bash
+# Start the bot (PostgreSQL + bot)
+docker compose up -d
+
+# View bot logs
+docker compose logs bot -f
+
+# Restart the bot (e.g. after code changes)
+docker compose up -d --build bot
+
+# Stop everything
+docker compose down
+```
+
+### Using tmux (without Docker)
 
 ```bash
 # Start the bot in a background tmux session
 tmux new-session -d -s bot -c /path/to/multiclaude-tg-bot 'bun main.ts'
 ```
 
-### Managing the bot
+### Managing the bot (tmux)
 
 ```bash
 # View bot logs (attach to tmux session)
@@ -372,7 +414,7 @@ tmux send-keys -t bot 'bun main.ts' Enter
 ps aux | grep 'bun main.ts' | grep -v grep
 ```
 
-### Using systemd (recommended for production)
+### Using systemd (without Docker)
 
 ```bash
 sudo tee /etc/systemd/system/claude-bot.service > /dev/null <<EOF
