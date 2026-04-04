@@ -10,14 +10,14 @@ A Telegram bot with Claude AI integration, dual-layer memory (short-term + long-
   - Long-term: semantic search via pgvector embeddings (powered by Ollama)
 - **Multi-Session MCP Server** — multiple Claude Code CLI instances connect via HTTP, each as a named session
 - **Channel Adapter** — stdio bridge that forwards Telegram messages into Claude Code as channel notifications
-- **Session Switching** — switch between CLI sessions and standalone mode from Telegram
-- **Session Adoption** — reconnecting CLIs reuse existing named sessions, preserving ID and memory
+- **Session Switching** — switch between CLI sessions and standalone mode from Telegram, with context summary
+- **One Session Per Project** — reconnecting CLIs reuse existing sessions by project path, preserving ID and memory
 - **Voice Messages** — transcription via Groq (whisper-large-v3) with local Whisper fallback
 - **Image Analysis** — photos analyzed by Claude in CLI sessions; standalone mode with Anthropic API
 - **Markdown Rendering** — responses formatted with HTML in Telegram (bold, italic, code blocks, links)
 - **Statistics & Logging** — API usage, token tracking, transcription stats, per-session request logs (`/stats`, `/logs`)
 - **Live Status Updates** — real-time progress in Telegram while CLI processes messages ("Думаю... 5с", "Читаю: file.ts")
-- **Permission Forwarding** — CLI permission requests (Bash, Read, Edit) sent as inline buttons to Telegram
+- **Permission Forwarding** — CLI permission requests sent as inline buttons (Allow / Always / Deny), terminal approvals synced back
 - **Health Endpoint** — `GET /health` with DB status, uptime, active sessions
 - **Auto-Cleanup** — hourly cleanup of old queue messages, logs, and stats
 - **Standalone Mode** — bot responds directly via LLM API (Anthropic / OpenRouter / Ollama)
@@ -356,7 +356,7 @@ Now Telegram messages routed to this session will appear as prompts in Claude Co
 | `/start` | Welcome message |
 | `/help` | Show help |
 | `/sessions` | List all sessions |
-| `/switch [id]` | Switch to a session (interactive if no ID) |
+| `/switch [id]` | Switch to a session (shows context summary) |
 | `/standalone` | Switch to standalone mode |
 | `/session` | Current session info |
 | `/rename <id> <name>` | Rename a session |
@@ -370,6 +370,8 @@ Now Telegram messages routed to this session will appear as prompts in Claude Co
 | `/status` | Bot status (DB, Ollama, counts) |
 | `/stats` | Statistics: API usage, tokens, transcriptions, per session |
 | `/logs [id]` | Request logs for current or specified session |
+| `/pending` | Show pending CLI permission requests |
+| `/tools` | List available MCP tools for current session |
 
 ## MCP Tools
 
@@ -473,7 +475,9 @@ tmux send-keys -t myproject '/path/to/multiclaude-tg-bot/scripts/run-cli.sh /pat
 
 Each CLI session auto-names itself from the working directory via `CLAUDE.md` → `set_session_name`.
 
-**Note:** If a CLI session disconnects and reconnects with the same project name, the bot adopts the old session — preserving its ID, history, and memory.
+**One session per project:** Each project directory gets exactly one session. Reconnecting from the same path reuses the existing session — preserving its ID, messages, and memory. No duplicate sessions are created.
+
+**Context on switch:** When you `/switch` to a session in Telegram, the bot shows the session status, project path, and a preview of recent messages so you know the current context.
 
 ### Remote Connection (laptop → server)
 
