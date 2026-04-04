@@ -173,24 +173,33 @@ async function handleSwitchTo(ctx: Context, sessionId: number): Promise<void> {
     const name = session.name ?? session.clientId;
     const statusIcon = session.status === "active" ? "🟢" : "🔴";
 
-    // Get short context summary
+    // Get last 5 messages (full content, up to 300 chars each)
     const recentMsgs = await sql`
-      SELECT role, LEFT(content, 150) as content FROM messages
+      SELECT role, LEFT(content, 300) as content FROM messages
       WHERE session_id = ${sessionId} AND chat_id = ${chatId}
-      ORDER BY created_at DESC LIMIT 6
+      ORDER BY created_at DESC LIMIT 5
     `;
 
-    let summary = "";
+    // Check pending queue messages
+    const pending = await sql`
+      SELECT count(*)::int as cnt FROM message_queue
+      WHERE session_id = ${sessionId} AND delivered = false
+    `;
+    const pendingCount = pending[0]?.cnt ?? 0;
+
+    let context = "";
     if (recentMsgs.length > 0) {
       const preview = recentMsgs.reverse().map((m) => {
         const icon = m.role === "user" ? "👤" : "🤖";
-        return `${icon} ${m.content.trim()}`;
-      }).join("\n");
-      summary = `\n\nПоследний контекст:\n${preview}`;
+        const text = m.content.trim();
+        return `${icon} ${text}${text.length >= 300 ? "..." : ""}`;
+      }).join("\n\n");
+      context = `\n\nПоследние сообщения:\n${preview}`;
     }
 
+    const pendingText = pendingCount > 0 ? `\n\n⏳ В очереди: ${pendingCount} сообщ.` : "";
     const path = session.projectPath ? `\n📁 ${session.projectPath}` : "";
-    await ctx.reply(`${statusIcon} Переключено на: ${name}${path}${summary}`);
+    await ctx.reply(`${statusIcon} Переключено на: ${name}${path}${pendingText}${context}`);
   }
 }
 
