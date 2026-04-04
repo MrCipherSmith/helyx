@@ -122,6 +122,7 @@ bun cli.ts restart        # Rebuild and restart
 bun cli.ts backup         # Run database backup
 bun cli.ts cleanup        # Clean old sessions and data
 bun cli.ts connect [dir]  # Start CLI session for a project
+bun cli.ts remote         # Connect laptop to remote bot server
 bun cli.ts mcp-register   # Re-register MCP servers in Claude Code
 ```
 
@@ -470,6 +471,44 @@ tmux send-keys -t myproject '/path/to/multiclaude-tg-bot/scripts/run-cli.sh /pat
 Each CLI session auto-names itself from the working directory via `CLAUDE.md` → `set_session_name`.
 
 **Note:** If a CLI session disconnects and reconnects with the same project name, the bot adopts the old session — preserving its ID, history, and memory.
+
+### Remote Connection (laptop → server)
+
+If the bot runs on a server and you want to connect from your laptop:
+
+```bash
+# On your laptop — clone the repo and run remote setup wizard
+git clone https://github.com/MrCipherSmith/multiclaude-tg-bot.git
+cd multiclaude-tg-bot
+bun install
+bun cli.ts remote
+```
+
+The wizard offers two connection methods:
+
+**SSH Tunnel (recommended, full features):**
+```bash
+# Terminal 1: open tunnel
+ssh -L 3847:localhost:3847 -L 5433:localhost:5433 user@server
+
+# Terminal 2: connect your project
+cd your-project
+claude --dangerously-load-development-channels server:claude-bot-channel
+```
+
+Channel notifications, memory, reply — everything works through the tunnel. `channel.ts` runs locally on your laptop but connects to the server's database via the tunnel.
+
+**HTTP Only (simple, limited):**
+```bash
+# Open tunnel for bot port only
+ssh -L 3847:localhost:3847 user@server
+
+# Use Claude Code with MCP tools (no channel adapter)
+cd your-project
+claude
+```
+
+MCP tools (reply, remember, recall) work, but Telegram messages won't auto-push to your CLI. You interact with the bot through tool calls only.
 
 ## Running in Production
 

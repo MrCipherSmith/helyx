@@ -441,6 +441,100 @@ async function mcpRegister() {
   console.log(`\n  ${c.green("MCP servers registered.")}`);
 }
 
+// --- Remote setup ---
+
+async function remote() {
+  console.log(`\n  ${c.bold("Remote Client Setup")}`);
+  console.log(`  ${c.dim("Connect your laptop to a bot running on a remote server")}`);
+  console.log(`  ${"─".repeat(50)}\n`);
+
+  const serverHost = ask("Server hostname or IP");
+  if (!serverHost) {
+    console.log(c.red("\n  Server address is required."));
+    return;
+  }
+
+  const serverUser = ask("SSH user", process.env.USER ?? "");
+  const botPort = ask("Bot port on server", "3847");
+  const dbPort = ask("PostgreSQL port on server", "5433");
+  const botToken = ask("Telegram Bot Token (same as on server)");
+  const botPath = ask("Path to claude-bot on server", "/home/" + serverUser + "/bots/claude-bot");
+
+  // Method choice
+  const methodIdx = askChoice("Connection method:", [
+    "SSH tunnel (full features — channel notifications, memory, reply)",
+    "HTTP only (simple — no channel notifications, use MCP tools manually)",
+  ]);
+
+  if (methodIdx === 0) {
+    // SSH tunnel method
+    console.log(`\n  ${c.bold("Step 1:")} Start SSH tunnel (run in a separate terminal):\n`);
+    console.log(`  ${c.cyan(`ssh -L ${botPort}:localhost:${botPort} -L ${dbPort}:localhost:${dbPort} ${serverUser}@${serverHost}`)}\n`);
+
+    console.log(`  ${c.bold("Step 2:")} Register MCP servers (run now):\n`);
+
+    const registerNow = ask("Register MCP servers now? (y/n)", "y");
+    if (registerNow.toLowerCase() === "y") {
+      step("Removing old MCP registrations");
+      await run(["claude", "mcp", "remove", "claude-bot", "-s", "user"], { silent: true });
+      await run(["claude", "mcp", "remove", "claude-bot-channel", "-s", "user"], { silent: true });
+      done();
+
+      step("Registering HTTP MCP server");
+      await run(["claude", "mcp", "add", "--transport", "http", "-s", "user", "claude-bot", `http://localhost:${botPort}/mcp`]);
+      done();
+
+      step("Registering stdio channel adapter");
+      const channelConfig = JSON.stringify({
+        type: "stdio",
+        command: "bun",
+        args: [`${botPath}/channel.ts`],
+        env: {
+          DATABASE_URL: `postgres://claude_bot:claude_bot_secret@localhost:${dbPort}/claude_bot`,
+          OLLAMA_URL: `http://localhost:11434`,
+          TELEGRAM_BOT_TOKEN: botToken,
+        },
+      });
+      await run(["claude", "mcp", "add-json", "-s", "user", "claude-bot-channel", channelConfig]);
+      done();
+
+      console.log(`\n  ${c.yellow("Important:")} channel.ts runs locally but connects to server DB via tunnel.`);
+      console.log(`  Make sure ${c.cyan("bun")} and ${c.cyan(botPath + "/channel.ts")} exist on this machine.`);
+      console.log(`  If not, clone the repo locally too.\n`);
+    }
+
+    console.log(`  ${c.bold("Step 3:")} Connect a project:\n`);
+    console.log(`  ${c.cyan("cd your-project")}`);
+    console.log(`  ${c.cyan("claude --dangerously-load-development-channels server:claude-bot-channel")}\n`);
+
+  } else {
+    // HTTP-only method
+    console.log(`\n  ${c.bold("Step 1:")} Ensure bot port is accessible from your network.`);
+    console.log(`  ${c.dim("Option A: SSH tunnel —")} ${c.cyan(`ssh -L ${botPort}:localhost:${botPort} ${serverUser}@${serverHost}`)}`);
+    console.log(`  ${c.dim("Option B: Open port —")} expose port ${botPort} on server (less secure)\n`);
+
+    const registerNow = ask("Register HTTP MCP server now? (y/n)", "y");
+    if (registerNow.toLowerCase() === "y") {
+      step("Removing old MCP registration");
+      await run(["claude", "mcp", "remove", "claude-bot", "-s", "user"], { silent: true });
+      done();
+
+      step("Registering HTTP MCP server");
+      await run(["claude", "mcp", "add", "--transport", "http", "-s", "user", "claude-bot", `http://localhost:${botPort}/mcp`]);
+      done();
+    }
+
+    console.log(`\n  ${c.bold("Step 2:")} Use Claude Code with MCP tools (no channel needed):\n`);
+    console.log(`  ${c.cyan("cd your-project")}`);
+    console.log(`  ${c.cyan("claude")}\n`);
+    console.log(`  Available tools: ${c.dim("reply, remember, recall, list_sessions, set_session_name, ...")}`);
+    console.log(`  ${c.yellow("Note:")} No channel notifications — Telegram messages won't auto-push to CLI.`);
+    console.log(`  Use ${c.cyan("reply")} tool to send messages back to Telegram.\n`);
+  }
+
+  console.log(`  ${c.green("Setup complete!")}`);
+}
+
 // --- Utilities ---
 
 function formatUptime(seconds: number): string {
@@ -457,7 +551,8 @@ function help() {
   ${c.bold("Usage:")} bun cli.ts <command>
 
   ${c.bold("Setup:")}
-    setup           Interactive installation wizard
+    setup           Interactive installation wizard (server)
+    remote          Connect laptop to a remote bot server
     mcp-register    Re-register MCP servers in Claude Code
 
   ${c.bold("Manage:")}
@@ -483,6 +578,7 @@ const command = process.argv[2];
 
 switch (command) {
   case "setup":       await setup(); break;
+  case "remote":      await remote(); break;
   case "start":       await start(); break;
   case "stop":        await stop(); break;
   case "restart":     await restart(); break;
