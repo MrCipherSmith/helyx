@@ -123,6 +123,69 @@ export async function migrate() {
     )
   `;
 
+  // API request statistics
+  await sql`
+    CREATE TABLE IF NOT EXISTS api_request_stats (
+      id BIGSERIAL PRIMARY KEY,
+      session_id INT REFERENCES sessions(id),
+      chat_id TEXT,
+      provider TEXT NOT NULL,
+      model TEXT NOT NULL,
+      operation TEXT NOT NULL,
+      duration_ms INT NOT NULL,
+      status TEXT NOT NULL,
+      input_tokens INT,
+      output_tokens INT,
+      total_tokens INT,
+      error_message TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_api_stats_created
+    ON api_request_stats(created_at)
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_api_stats_session
+    ON api_request_stats(session_id)
+  `;
+
+  // Transcription statistics
+  await sql`
+    CREATE TABLE IF NOT EXISTS transcription_stats (
+      id BIGSERIAL PRIMARY KEY,
+      session_id INT REFERENCES sessions(id),
+      chat_id TEXT,
+      provider TEXT NOT NULL,
+      duration_ms INT NOT NULL,
+      audio_duration_sec INT,
+      status TEXT NOT NULL,
+      error_message TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_transcription_stats_created
+    ON transcription_stats(created_at)
+  `;
+
+  // Request logs (structured per-message processing logs)
+  await sql`
+    CREATE TABLE IF NOT EXISTS request_logs (
+      id BIGSERIAL PRIMARY KEY,
+      session_id INT REFERENCES sessions(id),
+      chat_id TEXT NOT NULL,
+      level TEXT NOT NULL DEFAULT 'info',
+      stage TEXT NOT NULL,
+      message TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_request_logs_session_created
+    ON request_logs(session_id, created_at)
+  `;
+
   console.log("[db] migrations complete");
 }
 

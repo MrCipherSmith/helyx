@@ -29,6 +29,8 @@ export function createBot(): Bot {
     { command: "clear", description: "Очистить контекст сессии" },
     { command: "summarize", description: "Суммаризировать диалог" },
     { command: "status", description: "Статус бота" },
+    { command: "stats", description: "Статистика" },
+    { command: "logs", description: "Логи сессии" },
   ]).catch((err) => console.error("[bot] failed to set commands:", err.message));
 
   // Error handler

@@ -11,6 +11,7 @@ import { startTyping, type TypingHandle } from "../utils/typing.ts";
 import { transcribe } from "../utils/transcribe.ts";
 import { touchIdleTimer, checkOverflow, forceSummarize } from "../memory/summarizer.ts";
 import { sql } from "../memory/db.ts";
+import { getApiStats, getTranscriptionStats, getMessageStats, getSessionLogs, getRecentLogs, appendLog } from "../utils/stats.ts";
 
 // Pending input: chatId -> handler that processes the next text message
 const pendingInput = new Map<string, (ctx: Context) => Promise<void>>();
@@ -36,6 +37,8 @@ export function registerHandlers(bot: Bot): void {
   bot.command("cleanup", handleCleanup);
   bot.command("summarize", handleSummarize);
   bot.command("status", handleStatus);
+  bot.command("stats", handleStats);
+  bot.command("logs", handleLogs);
 
   // Permission callback from inline keyboard
   bot.on("callback_query:data", handlePermissionCallback);
@@ -66,6 +69,8 @@ async function handleStart(ctx: Context): Promise<void> {
       "/forget <id> — удалить воспоминание\n" +
       "/clear — очистить контекст\n" +
       "/status — статус бота\n" +
+      "/stats — статистика\n" +
+      "/logs [id] — логи сессии\n" +
       "/help — помощь",
   );
 }
@@ -380,6 +385,133 @@ async function handleStatus(ctx: Context): Promise<void> {
   await ctx.reply("Статус:\n\n" + lines.join("\n"));
 }
 
+// === Stats & Logs commands ===
+
+async function handleStats(ctx: Context): Promise<void> {
+  await ctx.replyWithChatAction("typing");
+
+  const [api, transcription, msgs] = await Promise.all([
+    getApiStats(),
+    getTranscriptionStats(),
+    getMessageStats(),
+  ]);
+
+  const lines: string[] = ["📊 Статистика\n"];
+
+  // API stats
+  for (const window of ["24ч", "запуск", "всего"] as const) {
+    const a = api[window];
+    if (!a?.summary?.total) continue;
+
+    lines.push(`— API (${window}) —`);
+    lines.push(`Запросов: ${a.summary.total} (✓${a.summary.success} ✗${a.summary.errors})`);
+    if (a.summary.total_tokens > 0) {
+      lines.push(`Токены: ${a.summary.input_tokens}→ ${a.summary.output_tokens}← (${a.summary.total_tokens})`);
+    }
+    lines.push(`Ср. латентность: ${a.summary.avg_latency_ms}ms`);
+
+    if (a.byProvider.length > 0) {
+      lines.push("Провайдеры:");
+      for (const p of a.byProvider) {
+        lines.push(`  ${p.provider}/${p.model}: ${p.requests} req, ${p.tokens} tok, ${p.avg_ms}ms`);
+      }
+    }
+
+    if (a.bySession.length > 0) {
+      lines.push("По сессиям:");
+      for (const s of a.bySession) {
+        const name = s.session_name ?? `#${s.session_id}`;
+        lines.push(`  ${name}: ${s.requests} req, ${s.tokens} tok, ${s.avg_ms}ms`);
+      }
+    }
+    lines.push("");
+  }
+
+  // Transcription stats
+  for (const window of ["24ч", "запуск", "всего"] as const) {
+    const t = transcription[window];
+    if (!t?.summary?.total) continue;
+
+    lines.push(`--- Транскрипция (${window}) ---`);
+    lines.push(`Всего: ${t.summary.total} (ok ${t.summary.success} err ${t.summary.errors})`);
+    lines.push(`Ср. латентность: ${t.summary.avg_latency_ms}ms`);
+
+    if (t.byProvider.length > 0) {
+      for (const p of t.byProvider) {
+        lines.push(`  ${p.provider}: ${p.requests} req (✓${p.success}), ${p.avg_ms}ms`);
+      }
+    }
+    lines.push("");
+  }
+
+  // Message stats
+  const msgWindow = msgs["всего"];
+  if (msgWindow?.bySession?.length > 0) {
+    lines.push("— Сообщения (всего) —");
+    for (const s of msgWindow.bySession) {
+      const name = s.session_name ?? `#${s.session_id}`;
+      lines.push(`  ${name}: ${s.total} (👤${s.user_msgs} 🤖${s.assistant_msgs})`);
+    }
+    lines.push("");
+  }
+
+  const text = lines.join("\n").trim();
+  // Telegram max 4096 chars
+  if (text.length > 4000) {
+    await ctx.reply(text.slice(0, 4000) + "\n\n... (обрезано)");
+  } else {
+    await ctx.reply(text);
+  }
+}
+
+async function handleLogs(ctx: Context): Promise<void> {
+  const text = ctx.message?.text ?? "";
+  const arg = text.replace(/^\/logs\s*/, "").trim();
+  const chatId = String(ctx.chat!.id);
+
+  await ctx.replyWithChatAction("typing");
+
+  let logs;
+  let header: string;
+
+  if (arg && !isNaN(Number(arg))) {
+    // /logs <sessionId>
+    const sessionId = Number(arg);
+    const session = await sessionManager.get(sessionId);
+    if (!session) {
+      await ctx.reply("Сессия не найдена.");
+      return;
+    }
+    header = `📋 Логи: ${session.name ?? `#${sessionId}`}`;
+    logs = await getSessionLogs(sessionId, 30);
+  } else {
+    // /logs — current session
+    const activeId = await sessionManager.getActiveSession(chatId);
+    const session = await sessionManager.get(activeId);
+    header = `📋 Логи: ${session?.name ?? `#${activeId}`}`;
+    logs = await getSessionLogs(activeId, 30);
+  }
+
+  if (logs.length === 0) {
+    await ctx.reply(`${header}\n\nЛогов нет.`);
+    return;
+  }
+
+  const lines = [header, ""];
+  for (const log of logs.reverse()) {
+    const time = new Date(log.created_at).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    const levelIcon = log.level === "error" ? "[ERR]" : log.level === "warn" ? "[WARN]" : "[OK]";
+    lines.push(`${levelIcon} ${time} [${log.stage}] ${log.message}`);
+  }
+
+  const output = lines.join("\n");
+  if (output.length > 4000) {
+    await ctx.reply(output.slice(0, 4000) + "\n\n... (обрезано)");
+  } else {
+    await ctx.reply(output);
+  }
+}
+
 // === Permission callback ===
 
 async function handlePermissionCallback(ctx: Context): Promise<void> {
@@ -498,6 +630,11 @@ async function handleVoice(ctx: Context): Promise<void> {
   const voice = ctx.message?.voice;
   if (!voice) return;
 
+  const chatId = String(ctx.chat!.id);
+  const route = await routeMessage(chatId);
+
+  appendLog(route.sessionId, chatId, "voice", `received ${voice.duration}s, route=${route.mode}`);
+
   // Send status message that we'll update
   const statusMsg = await ctx.reply(`🎤 Голосовое (${voice.duration}с) — скачиваю...`);
   await ctx.replyWithChatAction("typing");
@@ -506,23 +643,28 @@ async function handleVoice(ctx: Context): Promise<void> {
   let filePath: string;
   try {
     filePath = await downloadFile(bot, voice.file_id);
+    appendLog(route.sessionId, chatId, "voice", `downloaded: ${filePath}`);
   } catch (err) {
     console.error("[handler] voice download failed:", err);
+    appendLog(route.sessionId, chatId, "voice", `download failed: ${err}`, "error");
     await bot.api.editMessageText(ctx.chat!.id, statusMsg.message_id, "🎤 Не удалось скачать голосовое сообщение.");
     return;
   }
 
-  // Transcribe via Whisper
+  // Transcribe
   await bot.api.editMessageText(ctx.chat!.id, statusMsg.message_id, "🎤 Распознаю речь...");
   const fileData = await Bun.file(filePath).arrayBuffer();
-  const text = await transcribe(fileData, "voice.ogg", voice.mime_type ?? "audio/ogg");
+  const text = await transcribe(fileData, "voice.ogg", voice.mime_type ?? "audio/ogg", {
+    sessionId: route.sessionId,
+    chatId,
+    audioDurationSec: voice.duration,
+  });
 
   if (text) {
+    appendLog(route.sessionId, chatId, "voice", `transcribed: ${text.slice(0, 80)}`);
     await bot.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `🎤 Распознано: ${text}`);
 
     // Process as text message with transcription
-    const chatId = String(ctx.chat!.id);
-    const route = await routeMessage(chatId);
     const content = `🎤 ${text}`;
 
     if (route.mode === "cli") {
@@ -541,8 +683,9 @@ async function handleVoice(ctx: Context): Promise<void> {
           ${content}, ${String(ctx.message?.message_id ?? "")}
         )
       `;
+      appendLog(route.sessionId, chatId, "queue", "voice message queued for CLI");
       touchIdleTimer(route.sessionId, chatId);
-    } else if (route.mode === "standalone" && process.env.ANTHROPIC_API_KEY) {
+    } else if (route.mode === "standalone") {
       await addMessage({
         sessionId: route.sessionId,
         chatId,
@@ -551,14 +694,17 @@ async function handleVoice(ctx: Context): Promise<void> {
         metadata: { voiceFile: filePath, messageId: ctx.message?.message_id },
       });
       const { system, messages } = await composePrompt(route.sessionId, chatId, content);
-      const response = await streamToTelegram(bot, ctx.chat!.id, system, messages);
+      appendLog(route.sessionId, chatId, "llm", "streaming voice response...");
+      const response = await streamToTelegram(bot, ctx.chat!.id, system, messages, { sessionId: route.sessionId, chatId, operation: "chat" });
+      appendLog(route.sessionId, chatId, "reply", `voice reply sent ${response.length} chars`);
       await addMessage({ sessionId: route.sessionId, chatId, role: "assistant", content: response });
       touchIdleTimer(route.sessionId, chatId);
     } else {
-      await ctx.reply(`🎤 Распознано: ${text}`);
+      appendLog(route.sessionId, chatId, "voice", `no handler for mode=${route.mode}`, "warn");
     }
   } else {
     // Transcription failed
+    appendLog(route.sessionId, chatId, "voice", "transcription failed", "error");
     await bot.api.editMessageText(ctx.chat!.id, statusMsg.message_id, "🎤 Не удалось распознать речь. Отправляю как файл...");
     await handleMedia(ctx, voice.file_id, `Голосовое сообщение (${voice.duration}s, не распознано)`);
   }
@@ -622,7 +768,10 @@ async function handleText(ctx: Context): Promise<void> {
 
   const route = await routeMessage(chatId);
 
+  appendLog(route.sessionId, chatId, "route", `mode=${route.mode}, session=#${route.sessionId}`);
+
   if (route.mode === "disconnected") {
+    appendLog(route.sessionId, chatId, "route", `session "${route.sessionName}" disconnected`, "warn");
     await ctx.reply(
       `Сессия "${route.sessionName}" отключена.\n/switch 0 для standalone или /sessions для списка.`,
     );
@@ -630,6 +779,8 @@ async function handleText(ctx: Context): Promise<void> {
   }
 
   if (route.mode === "cli") {
+    appendLog(route.sessionId, chatId, "route", `cli session #${route.sessionId}`);
+
     // Show typing indicator
     await ctx.replyWithChatAction("typing");
 
@@ -656,6 +807,7 @@ async function handleText(ctx: Context): Promise<void> {
         ${String(ctx.message?.message_id ?? "")}
       )
     `;
+    appendLog(route.sessionId, chatId, "queue", "message queued for CLI");
     touchIdleTimer(route.sessionId, chatId);
     return;
   }
@@ -665,6 +817,8 @@ async function handleText(ctx: Context): Promise<void> {
 
   // Show typing indicator
   await ctx.replyWithChatAction("typing");
+
+  appendLog(sessionId, chatId, "receive", `user message: ${text.slice(0, 80)}`);
 
   // Save user message
   await addMessage({
@@ -682,15 +836,22 @@ async function handleText(ctx: Context): Promise<void> {
   const { system, messages } = await composePrompt(sessionId, chatId, text);
 
   // Stream response
-  const response = await streamToTelegram(bot, ctx.chat!.id, system, messages);
+  try {
+    appendLog(sessionId, chatId, "llm", "streaming response...");
+    const response = await streamToTelegram(bot, ctx.chat!.id, system, messages, { sessionId, chatId, operation: "chat" });
+    appendLog(sessionId, chatId, "reply", `sent ${response.length} chars`);
 
-  // Save assistant response
-  await addMessage({
-    sessionId,
-    chatId,
-    role: "assistant",
-    content: response,
-  });
+    // Save assistant response
+    await addMessage({
+      sessionId,
+      chatId,
+      role: "assistant",
+      content: response,
+    });
+  } catch (err: any) {
+    appendLog(sessionId, chatId, "llm", `error: ${err?.message ?? err}`, "error");
+    await ctx.reply(`Ошибка: ${err?.message ?? "неизвестная ошибка"}`);
+  }
 
   // Touch idle timer and check overflow
   touchIdleTimer(sessionId, chatId);

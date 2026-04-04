@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { CONFIG } from "../config.ts";
+import { recordApiRequest } from "../utils/stats.ts";
 
 export type MessageParam = { role: "user" | "assistant"; content: string };
 
@@ -17,14 +18,27 @@ const provider = process.env.ANTHROPIC_API_KEY
 
 const anthropic = provider === "anthropic" ? new Anthropic() : null;
 
+export function getProviderInfo() {
+  const model = provider === "anthropic" ? CONFIG.CLAUDE_MODEL
+    : provider === "openai" ? openaiModel
+    : ollamaModel;
+  return { provider, model };
+}
+
 console.log(`[client] provider: ${provider}${provider === "openai" ? ` (${openaiModel} @ ${openaiUrl})` : provider === "ollama" ? ` (${ollamaModel})` : ""}`);
 
 // --- OpenAI-compatible API (OpenRouter) ---
+
+// Shared usage from last streaming chunk
+let _lastStreamUsage: { input?: number; output?: number } = {};
+export function getLastStreamUsage() { return _lastStreamUsage; }
 
 async function* openaiStream(
   messages: MessageParam[],
   system: string,
 ): AsyncGenerator<string> {
+  _lastStreamUsage = {};
+
   const res = await fetch(`${openaiUrl}/chat/completions`, {
     method: "POST",
     headers: {
@@ -35,6 +49,7 @@ async function* openaiStream(
       model: openaiModel,
       messages: [{ role: "system", content: system }, ...messages],
       stream: true,
+      stream_options: { include_usage: true },
     }),
   });
 
@@ -62,6 +77,13 @@ async function* openaiStream(
       if (data === "[DONE]") return;
       try {
         const parsed = JSON.parse(data);
+        // Capture usage from final chunk
+        if (parsed.usage) {
+          _lastStreamUsage = {
+            input: parsed.usage.prompt_tokens,
+            output: parsed.usage.completion_tokens,
+          };
+        }
         const content = parsed.choices?.[0]?.delta?.content;
         if (content) yield content;
       } catch {}
@@ -69,10 +91,16 @@ async function* openaiStream(
   }
 }
 
+interface GenerateResult {
+  content: string;
+  inputTokens?: number;
+  outputTokens?: number;
+}
+
 async function openaiGenerate(
   messages: MessageParam[],
   system: string,
-): Promise<string> {
+): Promise<GenerateResult> {
   const res = await fetch(`${openaiUrl}/chat/completions`, {
     method: "POST",
     headers: {
@@ -92,9 +120,12 @@ async function openaiGenerate(
 
   const data = (await res.json()) as any;
   let content = data.choices?.[0]?.message?.content ?? "";
-  // Strip thinking blocks if present
   content = content.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
-  return content;
+  return {
+    content,
+    inputTokens: data.usage?.prompt_tokens,
+    outputTokens: data.usage?.completion_tokens,
+  };
 }
 
 // --- Ollama chat API ---
@@ -154,7 +185,7 @@ async function* ollamaStream(
 async function ollamaGenerate(
   messages: MessageParam[],
   system: string,
-): Promise<string> {
+): Promise<GenerateResult> {
   const res = await fetch(`${CONFIG.OLLAMA_URL}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -167,65 +198,159 @@ async function ollamaGenerate(
 
   if (!res.ok) throw new Error(`Ollama chat failed: ${res.status}`);
 
-  const data = (await res.json()) as { message?: { content?: string } };
+  const data = (await res.json()) as any;
   let content = data.message?.content ?? "";
   content = content.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
-  return content;
+  return {
+    content,
+    inputTokens: data.prompt_eval_count,
+    outputTokens: data.eval_count,
+  };
 }
 
 // --- Public API ---
 
+export interface StreamContext {
+  sessionId?: number | null;
+  chatId?: string | null;
+  operation?: string;
+}
+
 export async function* streamResponse(
   messages: MessageParam[],
   system: string,
+  ctx?: StreamContext,
 ): AsyncGenerator<string> {
-  switch (provider) {
-    case "openai":
-      yield* openaiStream(messages, system);
-      break;
-    case "ollama":
-      yield* ollamaStream(messages, system);
-      break;
-    case "anthropic":
-      const stream = anthropic!.messages.stream({
-        model: CONFIG.CLAUDE_MODEL,
-        max_tokens: CONFIG.MAX_TOKENS,
-        system,
-        messages,
-      });
-      for await (const event of stream) {
-        if (
-          event.type === "content_block_delta" &&
-          event.delta.type === "text_delta"
-        ) {
-          yield event.delta.text;
+  const { provider: p, model: m } = getProviderInfo();
+  const start = Date.now();
+  let inputTokens: number | undefined;
+  let outputTokens: number | undefined;
+  let error: string | undefined;
+
+  try {
+    switch (provider) {
+      case "openai":
+        yield* openaiStream(messages, system);
+        // Capture usage from last SSE chunk
+        { const u = getLastStreamUsage(); inputTokens = u.input; outputTokens = u.output; }
+        break;
+      case "ollama":
+        yield* ollamaStream(messages, system);
+        break;
+      case "anthropic": {
+        const stream = anthropic!.messages.stream({
+          model: CONFIG.CLAUDE_MODEL,
+          max_tokens: CONFIG.MAX_TOKENS,
+          system,
+          messages,
+        });
+        for await (const event of stream) {
+          if (
+            event.type === "content_block_delta" &&
+            event.delta.type === "text_delta"
+          ) {
+            yield event.delta.text;
+          }
+          if (event.type === "message_delta" && (event as any).usage) {
+            outputTokens = (event as any).usage.output_tokens;
+          }
         }
+        const final = await stream.finalMessage();
+        inputTokens = final.usage?.input_tokens;
+        outputTokens = final.usage?.output_tokens;
+        break;
       }
-      break;
+    }
+  } catch (err: any) {
+    error = err?.message ?? String(err);
+    throw err;
+  } finally {
+    recordApiRequest({
+      sessionId: ctx?.sessionId,
+      chatId: ctx?.chatId,
+      provider: p,
+      model: m,
+      operation: ctx?.operation ?? "chat",
+      durationMs: Date.now() - start,
+      status: error ? "error" : "success",
+      inputTokens,
+      outputTokens,
+      totalTokens: inputTokens && outputTokens ? inputTokens + outputTokens : null,
+      errorMessage: error,
+    });
   }
 }
 
 export async function generateResponse(
   messages: MessageParam[],
   system: string,
+  ctx?: StreamContext,
 ): Promise<string> {
-  switch (provider) {
-    case "openai":
-      return openaiGenerate(messages, system);
-    case "ollama":
-      return ollamaGenerate(messages, system);
-    case "anthropic": {
-      const response = await anthropic!.messages.create({
-        model: CONFIG.CLAUDE_MODEL,
-        max_tokens: CONFIG.MAX_TOKENS,
-        system,
-        messages,
-      });
-      return response.content
-        .filter((block) => block.type === "text")
-        .map((block) => block.text)
-        .join("");
+  const { provider: p, model: m } = getProviderInfo();
+  const start = Date.now();
+  let inputTokens: number | undefined;
+  let outputTokens: number | undefined;
+
+  try {
+    let result: string;
+    switch (provider) {
+      case "openai": {
+        const r = await openaiGenerate(messages, system);
+        result = r.content;
+        inputTokens = r.inputTokens;
+        outputTokens = r.outputTokens;
+        break;
+      }
+      case "ollama": {
+        const r = await ollamaGenerate(messages, system);
+        result = r.content;
+        inputTokens = r.inputTokens;
+        outputTokens = r.outputTokens;
+        break;
+      }
+      case "anthropic": {
+        const response = await anthropic!.messages.create({
+          model: CONFIG.CLAUDE_MODEL,
+          max_tokens: CONFIG.MAX_TOKENS,
+          system,
+          messages,
+        });
+        inputTokens = response.usage?.input_tokens;
+        outputTokens = response.usage?.output_tokens;
+        result = response.content
+          .filter((block) => block.type === "text")
+          .map((block) => block.text)
+          .join("");
+        break;
+      }
     }
+
+    recordApiRequest({
+      sessionId: ctx?.sessionId,
+      chatId: ctx?.chatId,
+      provider: p,
+      model: m,
+      operation: ctx?.operation ?? "generate",
+      durationMs: Date.now() - start,
+      status: "success",
+      inputTokens,
+      outputTokens,
+      totalTokens: inputTokens && outputTokens ? inputTokens + outputTokens : null,
+    });
+
+    return result;
+  } catch (err: any) {
+    recordApiRequest({
+      sessionId: ctx?.sessionId,
+      chatId: ctx?.chatId,
+      provider: p,
+      model: m,
+      operation: ctx?.operation ?? "generate",
+      durationMs: Date.now() - start,
+      status: "error",
+      errorMessage: err?.message ?? String(err),
+    });
+    throw err;
   }
 }
 

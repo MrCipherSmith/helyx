@@ -5,11 +5,17 @@ services:
     ports:
       - "${PORT:-3847}:${PORT:-3847}"
     env_file: .env
+    environment:
+      # Override for Docker-internal networking
+      DATABASE_URL: postgres://claude_bot:${POSTGRES_PASSWORD:-claude_bot_secret}@postgres:5432/claude_bot
+      OLLAMA_URL: http://host.docker.internal:11434
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - downloads:/app/downloads
     depends_on:
       postgres:
         condition: service_healthy
-      ollama-init:
-        condition: service_completed_successfully
     networks:
       - claude-bot
 
@@ -20,6 +26,8 @@ services:
       POSTGRES_USER: claude_bot
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-claude_bot_secret}
       POSTGRES_DB: claude_bot
+    ports:
+      - "127.0.0.1:5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -30,34 +38,7 @@ services:
     networks:
       - claude-bot
 
-  ollama:
-    image: ollama/ollama:latest
-    restart: unless-stopped
-    volumes:
-      - ollama:/root/.ollama
-    networks:
-      - claude-bot
-
-  ollama-init:
-    image: curlimages/curl:latest
-    depends_on:
-      - ollama
-    environment:
-      OLLAMA_URL: http://ollama:11434
-      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-nomic-embed-text}
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        echo "Waiting for Ollama..."
-        until curl -sf http://ollama:11434/api/tags > /dev/null 2>&1; do sleep 2; done
-        echo "Pulling $$EMBEDDING_MODEL..."
-        curl -sf http://ollama:11434/api/pull -d "{\"name\": \"$$EMBEDDING_MODEL\"}"
-        echo "Done."
-    networks:
-      - claude-bot
-
   # Optional: local Whisper ASR fallback (if GROQ_API_KEY is not set)
-  # Uncomment to enable local voice-to-text
   # whisper:
   #   image: onerahmet/openai-whisper-asr-webservice:latest
   #   restart: unless-stopped
@@ -74,7 +55,7 @@ services:
 
 volumes:
   pgdata:
-  ollama:
+  downloads:
 
 networks:
   claude-bot:

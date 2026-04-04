@@ -1,5 +1,5 @@
 import type { Bot } from "grammy";
-import { streamResponse, type MessageParam } from "../claude/client.ts";
+import { streamResponse, type MessageParam, type StreamContext } from "../claude/client.ts";
 import { chunkText } from "../utils/chunk.ts";
 
 const EDIT_INTERVAL_MS = 1500;
@@ -10,6 +10,7 @@ export async function streamToTelegram(
   chatId: number | string,
   system: string,
   messages: MessageParam[],
+  ctx?: StreamContext,
 ): Promise<string> {
   // Send initial "thinking" message
   const sent = await bot.api.sendMessage(Number(chatId), TYPING_INDICATOR);
@@ -47,7 +48,7 @@ export async function streamToTelegram(
     }
   };
 
-  for await (const delta of streamResponse(messages, system)) {
+  for await (const delta of streamResponse(messages, system, ctx)) {
     accumulated += delta;
 
     const now = Date.now();

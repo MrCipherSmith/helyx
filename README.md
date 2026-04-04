@@ -13,6 +13,7 @@ A Telegram bot with Claude AI integration, dual-layer memory (short-term + long-
 - **Session Switching** — switch between CLI sessions and standalone mode from Telegram
 - **Session Adoption** — reconnecting CLIs reuse existing named sessions, preserving ID and memory
 - **Voice Messages** — transcription via Groq (whisper-large-v3) with local Whisper fallback
+- **Statistics & Logging** — API usage, token tracking, transcription stats, per-session request logs (`/stats`, `/logs`)
 - **Standalone Mode** — bot responds directly via Claude API (requires API key)
 - **CLI Mode** — forward Telegram messages to a connected Claude Code session via channel notifications
 
@@ -52,7 +53,7 @@ A Telegram bot with Claude AI integration, dual-layer memory (short-term + long-
 
 ## Quick Start (Docker)
 
-The easiest way to run everything — no need to install PostgreSQL or Ollama manually:
+The easiest way to run the bot. Docker Compose starts PostgreSQL (with pgvector) and the bot. Ollama must be installed on the host (the bot connects via `host.docker.internal`):
 
 ```bash
 git clone https://github.com/MrCipherSmith/multiclaude-tg-bot.git
@@ -67,7 +68,15 @@ cp .env.example .env
 docker compose up -d
 ```
 
-This starts PostgreSQL (with pgvector), Ollama, and the bot. The embedding model (`nomic-embed-text`) is pulled automatically on first start. The bot runs on port 3847.
+This starts PostgreSQL (with pgvector) and the bot. Requires [Ollama](https://ollama.ai) running on the host with the embedding model:
+
+```bash
+# Install Ollama (if not installed)
+curl -fsSL https://ollama.ai/install.sh | sh
+ollama pull nomic-embed-text
+```
+
+The bot runs on port 3847. PostgreSQL is available at `localhost:5433` for debugging.
 
 ### Voice Transcription Setup
 
@@ -280,6 +289,8 @@ Now Telegram messages routed to this session will appear as prompts in Claude Co
 | `/clear` | Clear current session context |
 | `/cleanup` | Remove stale sessions |
 | `/status` | Bot status (DB, Ollama, counts) |
+| `/stats` | Statistics: API usage, tokens, transcriptions, per session |
+| `/logs [id]` | Request logs for current or specified session |
 
 ## MCP Tools
 

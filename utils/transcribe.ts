@@ -1,6 +1,14 @@
+import { recordTranscription } from "./stats.ts";
+
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const WHISPER_URL = process.env.WHISPER_URL ?? "http://localhost:9000";
 const TIMEOUT_MS = 60000;
+
+export interface TranscribeContext {
+  sessionId?: number | null;
+  chatId?: string | null;
+  audioDurationSec?: number | null;
+}
 
 /** Transcribe via Groq whisper-large-v3 API (primary) */
 async function transcribeGroq(
@@ -17,6 +25,7 @@ async function transcribeGroq(
     fileName,
   );
   form.append("model", "whisper-large-v3");
+  form.append("language", "ru");
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -31,8 +40,9 @@ async function transcribeGroq(
   clearTimeout(timeout);
 
   if (!res.ok) {
-    console.error(`[transcribe] Groq error: ${res.status} ${await res.text()}`);
-    return null;
+    const errText = await res.text();
+    console.error(`[transcribe] Groq error: ${res.status} ${errText}`);
+    throw new Error(`Groq ${res.status}: ${errText}`);
   }
 
   const data = (await res.json()) as { text?: string };
@@ -68,7 +78,7 @@ async function transcribeLocal(
 
   if (!res.ok) {
     console.error(`[transcribe] Whisper error: ${res.status}`);
-    return null;
+    throw new Error(`Whisper ${res.status}`);
   }
 
   const data = (await res.json()) as { text?: string };
@@ -80,26 +90,65 @@ export async function transcribe(
   audioBuffer: ArrayBuffer,
   fileName: string,
   mimeType: string,
+  ctx?: TranscribeContext,
 ): Promise<string | null> {
+  // Try Groq
+  const groqStart = Date.now();
   try {
     const result = await transcribeGroq(audioBuffer, fileName, mimeType);
     if (result) {
       console.error(`[transcribe] Groq OK`);
+      recordTranscription({
+        sessionId: ctx?.sessionId,
+        chatId: ctx?.chatId,
+        provider: "groq",
+        durationMs: Date.now() - groqStart,
+        audioDurationSec: ctx?.audioDurationSec,
+        status: "success",
+      });
       return result;
     }
-  } catch (err) {
+  } catch (err: any) {
     console.error(`[transcribe] Groq failed:`, err);
+    recordTranscription({
+      sessionId: ctx?.sessionId,
+      chatId: ctx?.chatId,
+      provider: "groq",
+      durationMs: Date.now() - groqStart,
+      audioDurationSec: ctx?.audioDurationSec,
+      status: "error",
+      errorMessage: err?.message ?? String(err),
+    });
   }
 
+  // Fallback to local Whisper
+  console.error(`[transcribe] falling back to local Whisper`);
+  const whisperStart = Date.now();
   try {
-    console.error(`[transcribe] falling back to local Whisper`);
     const result = await transcribeLocal(audioBuffer, fileName, mimeType);
     if (result) {
       console.error(`[transcribe] local Whisper OK`);
+      recordTranscription({
+        sessionId: ctx?.sessionId,
+        chatId: ctx?.chatId,
+        provider: "whisper",
+        durationMs: Date.now() - whisperStart,
+        audioDurationSec: ctx?.audioDurationSec,
+        status: "success",
+      });
       return result;
     }
-  } catch (err) {
+  } catch (err: any) {
     console.error(`[transcribe] local Whisper failed:`, err);
+    recordTranscription({
+      sessionId: ctx?.sessionId,
+      chatId: ctx?.chatId,
+      provider: "whisper",
+      durationMs: Date.now() - whisperStart,
+      audioDurationSec: ctx?.audioDurationSec,
+      status: "error",
+      errorMessage: err?.message ?? String(err),
+    });
   }
 
   return null;
