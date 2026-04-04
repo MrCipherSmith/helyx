@@ -336,11 +336,6 @@ async function handleSummarize(ctx: Context): Promise<void> {
   const chatId = String(ctx.chat!.id);
   const sessionId = await sessionManager.getActiveSession(chatId);
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    await ctx.reply("Суммаризация недоступна (нет API-ключа).");
-    return;
-  }
-
   await ctx.reply("Суммаризирую...");
   const summary = await forceSummarize(sessionId, chatId);
 

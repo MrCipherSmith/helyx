@@ -73,12 +73,6 @@ async function trySummarize(
     content: r.content as string,
   }));
 
-  // Need API key for summarization
-  if (!process.env.ANTHROPIC_API_KEY) {
-    console.log(`[summarizer] skipping (no API key), trigger=${trigger}, session=${sessionId}`);
-    return null;
-  }
-
   try {
     console.log(`[summarizer] summarizing ${messages.length} messages, trigger=${trigger}`);
 
