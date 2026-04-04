@@ -383,6 +383,99 @@ async function cleanup() {
   console.log(`\n  ${c.green("Cleanup complete")}`);
 }
 
+async function prune() {
+  console.log(`\n  ${c.bold("Session Cleanup")}`);
+  console.log(`  ${"─".repeat(40)}\n`);
+
+  // Show current sessions
+  const query = await run([
+    "docker", "compose", "exec", "-T", "postgres",
+    "psql", "-U", "claude_bot", "-d", "claude_bot", "-t", "-A",
+    "-c", "SELECT id, name, status, EXTRACT(EPOCH FROM (now() - last_active))::int as ago FROM sessions WHERE id != 0 ORDER BY id",
+  ], { silent: true });
+
+  if (!query.ok || !query.output.trim()) {
+    console.log(`  No sessions found.`);
+    return;
+  }
+
+  const sessions: { id: string; name: string; status: string; ago: number }[] = [];
+  for (const line of query.output.split("\n")) {
+    if (!line.trim()) continue;
+    const [id, name, status, ago] = line.split("|");
+    sessions.push({ id, name, status, ago: parseInt(ago) });
+  }
+
+  console.log(`  Current sessions:\n`);
+  for (const s of sessions) {
+    const icon = s.status === "active" ? c.green("active") : c.yellow("disconnected");
+    const agoStr = formatUptime(s.ago);
+    console.log(`  ${c.cyan(`#${s.id}`)} ${s.name.padEnd(15)} ${icon}  ${c.dim(agoStr + " ago")}`);
+  }
+
+  // Find stale: inactive > 1 hour, unnamed (cli-*), or duplicates
+  const staleIds: string[] = [];
+  const seenPaths = new Set<string>();
+
+  // Get project paths
+  const pathQuery = await run([
+    "docker", "compose", "exec", "-T", "postgres",
+    "psql", "-U", "claude_bot", "-d", "claude_bot", "-t", "-A",
+    "-c", "SELECT id, name, project_path FROM sessions WHERE id != 0 ORDER BY id",
+  ], { silent: true });
+
+  const pathMap = new Map<string, string>();
+  for (const line of (pathQuery.output ?? "").split("\n")) {
+    if (!line.trim()) continue;
+    const [id, , path] = line.split("|");
+    pathMap.set(id, path ?? "");
+  }
+
+  for (const s of sessions) {
+    const path = pathMap.get(s.id) ?? "";
+    // cli-* unnamed
+    if (s.name.startsWith("cli-")) {
+      staleIds.push(s.id);
+      continue;
+    }
+    // duplicate project_path
+    if (path && seenPaths.has(path)) {
+      staleIds.push(s.id);
+      continue;
+    }
+    if (path) seenPaths.add(path);
+    // inactive > 2 hours
+    if (s.ago > 7200 && s.status !== "active") {
+      staleIds.push(s.id);
+    }
+  }
+
+  if (staleIds.length === 0) {
+    console.log(`\n  ${c.green("Nothing to clean.")}`);
+    return;
+  }
+
+  const staleNames = sessions.filter(s => staleIds.includes(s.id)).map(s => `#${s.id} ${s.name}`);
+  console.log(`\n  Will remove ${c.yellow(String(staleIds.length))} sessions:`);
+  for (const name of staleNames) {
+    console.log(`    ${c.red("×")} ${name}`);
+  }
+
+  const confirm = ask("\n  Proceed? (y/n)", "y");
+  if (confirm.toLowerCase() !== "y") {
+    console.log("  Cancelled.");
+    return;
+  }
+
+  await run([
+    "docker", "compose", "exec", "-T", "postgres",
+    "psql", "-U", "claude_bot", "-d", "claude_bot", "-t", "-A",
+    "-c", `DELETE FROM sessions WHERE id IN (${staleIds.join(",")})`,
+  ], { silent: true });
+
+  console.log(`\n  ${c.green(`Removed ${staleIds.length} sessions.`)}`);
+}
+
 async function connect(dir?: string) {
   const projectDir = resolve(dir ?? ".");
   if (!existsSync(projectDir)) {
@@ -564,8 +657,9 @@ function help() {
 
   ${c.bold("Data:")}
     sessions        List active sessions
+    prune           Remove stale/duplicate sessions (interactive)
     backup          Run database backup
-    cleanup         Clean old sessions and data
+    cleanup         Clean old queue, logs, stats
 
   ${c.bold("Connect:")}
     connect [dir]   Start CLI session for a project (default: current dir)
@@ -586,6 +680,7 @@ switch (command) {
   case "sessions":    await sessions(); break;
   case "logs":        await logs(); break;
   case "backup":      await backup(); break;
+  case "prune":       await prune(); break;
   case "cleanup":     await cleanup(); break;
   case "connect":     await connect(process.argv[3]); break;
   case "mcp-register": await mcpRegister(); break;
