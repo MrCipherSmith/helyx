@@ -327,8 +327,22 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
         process.stderr.write(`[channel] reply failed: no TELEGRAM_BOT_TOKEN\n`);
         return text("TELEGRAM_BOT_TOKEN not set");
       }
-      process.stderr.write(`[channel] sending reply to ${chatId}: ${String(args!.text).slice(0, 50)}...\n`);
-      const replyText = String(args!.text);
+
+      // Check if this session is still active for this chat
+      const activeCheck = await sql`
+        SELECT active_session_id FROM chat_sessions WHERE chat_id = ${chatId}
+      `;
+      const isActive = activeCheck.length === 0 || activeCheck[0].active_session_id === sessionId;
+
+      // If not active, prefix with session name so user knows the source
+      let replyText = String(args!.text);
+      if (!isActive && sessionId) {
+        const sessionName = projectName || `#${sessionId}`;
+        replyText = `[${sessionName}]\n${replyText}`;
+        process.stderr.write(`[channel] reply from background session ${sessionName}\n`);
+      }
+
+      process.stderr.write(`[channel] sending reply to ${chatId}: ${replyText.slice(0, 50)}...\n`);
       const htmlText = markdownToTelegramHtml(replyText);
 
       // Try HTML first, fallback to plain text
@@ -465,25 +479,42 @@ function formatElapsed(ms: number): string {
   return `${Math.floor(sec / 60)}м ${sec % 60}с`;
 }
 
-async function sendStatusMessage(chatId: string, stage: string): Promise<void> {
+async function getSessionPrefix(chatId: string): Promise<string> {
+  if (!sessionId) return "";
+  const activeCheck = await sql`
+    SELECT active_session_id FROM chat_sessions WHERE chat_id = ${chatId}
+  `;
+  const isActive = activeCheck.length === 0 || activeCheck[0].active_session_id === sessionId;
+  return isActive ? "" : `[${projectName}] `;
+}
+
+async function sendStatusMessage(chatId: string, stage: string): Promise<string | null> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
-  if (!token) return;
+  if (!token) {
+    process.stderr.write(`[status] no TELEGRAM_BOT_TOKEN\n`);
+    return "no TELEGRAM_BOT_TOKEN";
+  }
+
+  const prefix = await getSessionPrefix(chatId);
 
   // If status already exists, just update the stage
   const existing = activeStatus.get(chatId);
   if (existing) {
-    existing.stage = stage;
-    await editStatusMessage(existing);
-    return;
+    existing.stage = `${prefix}${stage}`;
+    return editStatusMessage(existing);
   }
 
   try {
     const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: Number(chatId), text: `⏳ ${stage}` }),
+      body: JSON.stringify({ chat_id: Number(chatId), text: `⏳ ${prefix}${stage}` }),
     });
-    if (!res.ok) return;
+    if (!res.ok) {
+      const errBody = await res.text();
+      process.stderr.write(`[status] sendMessage error: ${res.status} ${errBody}\n`);
+      return `Telegram API error: ${res.status}`;
+    }
 
     const data = (await res.json()) as any;
     const state: StatusState = {
@@ -504,7 +535,12 @@ async function sendStatusMessage(chatId: string, stage: string): Promise<void> {
       editStatusMessage(state);
     }, 5000);
     activeStatus.set(chatId, state);
-  } catch {}
+    process.stderr.write(`[status] created for chat ${chatId}, msg ${state.messageId}\n`);
+    return null;
+  } catch (e) {
+    process.stderr.write(`[status] sendMessage exception: ${e}\n`);
+    return `Exception: ${e}`;
+  }
 }
 
 async function updateStatus(chatId: string, stage: string): Promise<void> {
