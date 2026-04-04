@@ -483,12 +483,39 @@ async function connect(dir?: string) {
     return;
   }
 
-  console.log(`  Connecting ${c.cyan(basename(projectDir))} to Telegram bot...\n`);
-  const proc = Bun.spawn(
-    ["claude", "--dangerously-load-development-channels", "server:claude-bot-channel"],
-    { cwd: projectDir, stdout: "inherit", stderr: "inherit", stdin: "inherit" },
-  );
-  await proc.exited;
+  const name = basename(projectDir);
+  const useTmux = process.argv.includes("--tmux") || process.argv.includes("-t");
+
+  if (useTmux) {
+    // Check if tmux session already exists
+    const exists = await run(["tmux", "has-session", "-t", name], { silent: true });
+    if (exists.ok) {
+      console.log(`  tmux session ${c.cyan(name)} already exists. Attaching...`);
+      const proc = Bun.spawn(["tmux", "attach", "-t", name], {
+        stdout: "inherit", stderr: "inherit", stdin: "inherit",
+      });
+      await proc.exited;
+      return;
+    }
+
+    // Create tmux session with claude
+    console.log(`  Starting ${c.cyan(name)} in tmux (full Telegram monitoring)...\n`);
+    await run(["tmux", "new-session", "-d", "-s", name, "-c", projectDir]);
+    await run(["tmux", "send-keys", "-t", name,
+      "claude --dangerously-load-development-channels server:claude-bot-channel", "Enter"]);
+
+    console.log(`  ${c.green("Started!")} tmux session: ${c.cyan(name)}`);
+    console.log(`  Attach: ${c.dim(`tmux attach -t ${name}`)}`);
+    console.log(`  Detach: ${c.dim("Ctrl+B, D")}\n`);
+  } else {
+    console.log(`  Connecting ${c.cyan(name)} to Telegram bot...`);
+    console.log(`  ${c.dim("Tip: use --tmux for full progress monitoring in Telegram")}\n`);
+    const proc = Bun.spawn(
+      ["claude", "--dangerously-load-development-channels", "server:claude-bot-channel"],
+      { cwd: projectDir, stdout: "inherit", stderr: "inherit", stdin: "inherit" },
+    );
+    await proc.exited;
+  }
 }
 
 async function mcpRegister() {
@@ -662,7 +689,8 @@ function help() {
     cleanup         Clean old queue, logs, stats
 
   ${c.bold("Connect:")}
-    connect [dir]   Start CLI session for a project (default: current dir)
+    connect [dir]        Start CLI session (default: current dir)
+    connect [dir] --tmux Start in tmux (full Telegram progress monitoring)
 `);
 }
 
