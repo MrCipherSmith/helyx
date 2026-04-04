@@ -13,11 +13,11 @@ function startCleanupTimer() {
       const logs = await sql`DELETE FROM request_logs WHERE created_at < now() - interval '7 days'`;
       const stats = await sql`DELETE FROM api_request_stats WHERE created_at < now() - interval '30 days'`;
       const perms = await sql`DELETE FROM permission_requests WHERE created_at < now() - interval '1 hour'`;
-      // Mark sessions inactive if no activity for 1 hour (except standalone)
-      const stale = await sql`UPDATE sessions SET status = 'disconnected' WHERE id != 0 AND status = 'active' AND last_active < now() - interval '1 hour'`;
-      const total = mq.count + logs.count + stats.count + perms.count + stale.count;
+      // Delete unnamed cli-* sessions that are disconnected
+      const cliJunk = await sql`DELETE FROM sessions WHERE name LIKE 'cli-%' AND status = 'disconnected'`;
+      const total = mq.count + logs.count + stats.count + perms.count + cliJunk.count;
       if (total > 0) {
-        console.log(`[cleanup] queue=${mq.count} logs=${logs.count} stats=${stats.count} perms=${perms.count} stale_sessions=${stale.count}`);
+        console.log(`[cleanup] queue=${mq.count} logs=${logs.count} stats=${stats.count} perms=${perms.count} cli_junk=${cliJunk.count}`);
       }
     } catch (err) {
       console.error("[cleanup] error:", err);
