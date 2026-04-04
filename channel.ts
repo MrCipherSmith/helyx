@@ -481,6 +481,9 @@ async function deleteStatusMessage(chatId: string): Promise<void> {
   if (state.timer) clearInterval(state.timer);
   activeStatus.delete(chatId);
 
+  // Also stop typing indicator
+  stopTypingForChat(chatId);
+
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) return;
 
@@ -497,6 +500,8 @@ async function deleteStatusMessage(chatId: string): Promise<void> {
 // Track active typing handles per chat_id
 const activeTyping = new Map<string, TypingHandle>();
 
+const TYPING_TIMEOUT_MS = 120_000; // 2 minutes max
+
 function startTypingForChat(chatId: string): void {
   // Don't start if already typing for this chat
   if (activeTyping.has(chatId)) return;
@@ -504,6 +509,9 @@ function startTypingForChat(chatId: string): void {
   if (!token) return;
   const handle = startTypingRaw(token, chatId);
   activeTyping.set(chatId, handle);
+
+  // Auto-stop after timeout
+  setTimeout(() => stopTypingForChat(chatId), TYPING_TIMEOUT_MS);
 }
 
 function stopTypingForChat(chatId: string): void {
