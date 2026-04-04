@@ -224,27 +224,31 @@ async function handleSessionInfo(ctx: Context): Promise<void> {
 async function handleRemember(ctx: Context): Promise<void> {
   const text = ctx.message?.text ?? "";
   const content = text.replace(/^\/remember\s*/, "").trim();
+  const chatId = String(ctx.chat!.id);
+  const activeSessionId = await sessionManager.getActiveSession(chatId);
 
   if (!content) {
     await ctx.reply("Что запомнить?");
-    const chatId = String(ctx.chat!.id);
     pendingInput.set(chatId, async (replyCtx) => {
       const input = replyCtx.message?.text?.trim();
       if (!input) return;
-      const m = await remember({ source: "telegram", chatId: String(replyCtx.chat!.id), type: "note", content: input });
-      await replyCtx.reply(`Запомнил (#${m.id}): ${input.slice(0, 100)}${input.length > 100 ? "..." : ""}`);
+      const m = await remember({ source: "telegram", sessionId: activeSessionId, chatId, type: "note", content: input });
+      const session = await sessionManager.get(activeSessionId);
+      await replyCtx.reply(`Запомнил (#${m.id}, ${session?.name ?? "global"}): ${input.slice(0, 100)}${input.length > 100 ? "..." : ""}`);
     });
     return;
   }
 
   const m = await remember({
     source: "telegram",
-    chatId: String(ctx.chat!.id),
+    sessionId: activeSessionId,
+    chatId,
     type: "note",
     content,
   });
 
-  await ctx.reply(`Запомнил (#${m.id}): ${content.slice(0, 100)}${content.length > 100 ? "..." : ""}`);
+  const session = await sessionManager.get(activeSessionId);
+  await ctx.reply(`Запомнил (#${m.id}, ${session?.name ?? "global"}): ${content.slice(0, 100)}${content.length > 100 ? "..." : ""}`);
 }
 
 async function handleRecall(ctx: Context): Promise<void> {
@@ -281,18 +285,30 @@ async function handleRecall(ctx: Context): Promise<void> {
 }
 
 async function handleMemories(ctx: Context): Promise<void> {
-  const mems = await listMemories({ limit: 10 });
+  const chatId = String(ctx.chat!.id);
+  const activeSessionId = await sessionManager.getActiveSession(chatId);
+  const mems = await listMemories({ sessionId: activeSessionId, limit: 10 });
 
   if (mems.length === 0) {
-    await ctx.reply("Память пуста.");
+    // Also check global memories
+    const globalMems = await listMemories({ limit: 10 });
+    if (globalMems.length === 0) {
+      await ctx.reply("Память пуста.");
+      return;
+    }
+    const lines = globalMems.map(
+      (m) => `#${m.id} [${m.type}] s:${m.sessionId ?? "global"} ${m.content.slice(0, 70)}${m.content.length > 70 ? "..." : ""}`,
+    );
+    await ctx.reply("Воспоминания (все сессии):\n\n" + lines.join("\n"));
     return;
   }
 
+  const session = await sessionManager.get(activeSessionId);
   const lines = mems.map(
     (m) => `#${m.id} [${m.type}] ${m.content.slice(0, 80)}${m.content.length > 80 ? "..." : ""}`,
   );
 
-  await ctx.reply("Последние воспоминания:\n\n" + lines.join("\n"));
+  await ctx.reply(`Воспоминания (${session?.name ?? "global"}):\n\n` + lines.join("\n"));
 }
 
 async function handleForget(ctx: Context): Promise<void> {
