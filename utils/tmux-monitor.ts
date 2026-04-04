@@ -26,7 +26,7 @@ async function tmuxSessionExists(sessionName: string): Promise<boolean> {
 }
 
 /** Capture last N lines from tmux pane */
-async function captureTmux(sessionName: string, lines = 15): Promise<string> {
+async function captureTmux(sessionName: string, lines = 25): Promise<string> {
   try {
     const proc = Bun.spawn(
       ["tmux", "capture-pane", "-t", sessionName, "-p", "-S", `-${lines}`],
@@ -40,80 +40,102 @@ async function captureTmux(sessionName: string, lines = 15): Promise<string> {
   }
 }
 
-/** Parse Claude Code terminal output into a status string */
-function parseStatus(output: string): string | null {
-  const lines = output.split("\n").filter((l) => l.trim());
+// UI chrome patterns to skip
+const SKIP_PATTERNS = [
+  /^─+$/,
+  /^❯/,
+  /^\? for shortcuts/,
+  /^esc to interrupt/,
+  /^Enter to confirm/,
+  /ctrl\+[a-z] to/,
+  /^\s*$/,
+];
 
-  // Scan from bottom up for the most recent activity
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i].trim();
+function isChrome(line: string): boolean {
+  return SKIP_PATTERNS.some((p) => p.test(line.trim()));
+}
 
-    // Skip UI chrome
-    if (line.startsWith("─") || line.startsWith("❯") || line.startsWith("?") || line === "") continue;
-    if (line.includes("for shortcuts") || line.includes("esc to interrupt") || line.includes("ctrl+o")) continue;
+/** Parse a single line into a status entry or null */
+function parseLine(line: string): string | null {
+  const trimmed = line.trim();
+  if (!trimmed || isChrome(trimmed)) return null;
 
-    // Spinner/thinking lines: · Brewing… (10s · ↓ 386 tokens · thinking)
-    const spinnerMatch = line.match(/^[·✶✻⏳]\s+(.+?)(?:\s+\((.+?)\))?$/);
-    if (spinnerMatch) {
-      const action = spinnerMatch[1].replace(/…$/, "");
-      const details = spinnerMatch[2] ?? "";
-      if (details) return `${action} (${details})`;
-      return action;
-    }
-
-    // Tool call: ● ToolName(args) or ● Explore(description)
-    const toolMatch = line.match(/^●\s+(.+)/);
-    if (toolMatch) {
-      const toolCall = toolMatch[1];
-
-      // Skip our own MCP reply calls
-      if (toolCall.includes("reply (MCP)") || toolCall.includes("update_status")) continue;
-
-      // Parse tool name and args
-      const parsed = toolCall.match(/^(\w+)\((.+)\)$/);
-      if (parsed) {
-        const [, tool, args] = parsed;
-        const shortArgs = args.length > 60 ? args.slice(0, 60) + "..." : args;
-        return `${tool}: ${shortArgs}`;
-      }
-
-      // MCP tool call: claude-bot - tool_name (MCP)(args)
-      const mcpMatch = toolCall.match(/^\S+\s*-\s*(\w+)\s*\(MCP\)/);
-      if (mcpMatch) {
-        return `MCP: ${mcpMatch[1]}`;
-      }
-
-      // Agent/Explore with description
-      const agentMatch = toolCall.match(/^(Explore|Agent)\((.+)\)/);
-      if (agentMatch) {
-        return `${agentMatch[1]}: ${agentMatch[2].slice(0, 60)}`;
-      }
-
-      // Simple tool reference
-      return toolCall.slice(0, 70);
-    }
-
-    // Sub-operation: ⎿ Read(file), Search(pattern)
-    const subMatch = line.match(/^⎿\s+(.+)/);
-    if (subMatch) {
-      const sub = subMatch[1];
-      const subParsed = sub.match(/^(\w+)\((.+)\)/);
-      if (subParsed) {
-        return `  └ ${subParsed[1]}: ${subParsed[2].slice(0, 50)}`;
-      }
-      // "Read 2 files, listed 1 directory"
-      if (sub.match(/^(Read|Search|Grep|Glob|Write|Edit)\s/)) {
-        return `  └ ${sub.slice(0, 60)}`;
-      }
-    }
-
-    // "+N more tool uses"
-    if (line.match(/^\+\d+ more tool uses/)) {
-      return line;
-    }
+  // Spinner/thinking: · Brewing… (10s · ↓ 386 tokens · thinking)
+  const spinnerMatch = trimmed.match(/^[·✶✻]\s+(.+)/);
+  if (spinnerMatch) {
+    return `⏳ ${spinnerMatch[1]}`;
   }
 
+  // Tool call: ● ToolName(args)
+  const toolMatch = trimmed.match(/^●\s+(.+)/);
+  if (toolMatch) {
+    const call = toolMatch[1];
+    if (call.includes("reply (MCP)") || call.includes("update_status")) return null;
+
+    // Agent/Explore
+    const agentMatch = call.match(/^(Explore|Agent)\((.+)\)/);
+    if (agentMatch) return `● ${agentMatch[1]}: ${agentMatch[2].slice(0, 50)}`;
+
+    // Bash(command)
+    const bashMatch = call.match(/^Bash\((.+)\)$/);
+    if (bashMatch) return `● $ ${bashMatch[1].slice(0, 60)}`;
+
+    // Read/Edit/Write(path)
+    const fileMatch = call.match(/^(Read|Edit|Write)\((.+)\)$/);
+    if (fileMatch) return `● ${fileMatch[1]}: ${fileMatch[2].split("/").pop()}`;
+
+    // MCP tool
+    const mcpMatch = call.match(/^\S+\s*-\s*(\w+)\s*\(MCP\)/);
+    if (mcpMatch) return `● MCP: ${mcpMatch[1]}`;
+
+    return `● ${call.slice(0, 60)}`;
+  }
+
+  // Sub-operation: ⎿ details
+  const subMatch = trimmed.match(/^⎿\s+(.+)/);
+  if (subMatch) {
+    const sub = subMatch[1];
+    // Search/Read/Grep with args
+    const subTool = sub.match(/^(\w+)\((.+)\)/);
+    if (subTool) return `  └ ${subTool[1]}: ${subTool[2].slice(0, 50)}`;
+
+    // "Read 2 files, listed 1 directory"
+    if (sub.match(/^(Read|Search|Grep|Glob|Write|Edit)\s/)) return `  └ ${sub.slice(0, 55)}`;
+
+    // Error output
+    if (sub.startsWith("Error:")) return `  └ ❌ ${sub.slice(0, 55)}`;
+
+    return `  └ ${sub.slice(0, 55)}`;
+  }
+
+  // "+N more tool uses"
+  if (trimmed.match(/^\+\d+ more tool uses/)) return `  ${trimmed}`;
+
+  // Tip line
+  if (trimmed.startsWith("Tip:")) return null;
+
   return null;
+}
+
+/** Parse Claude Code terminal output into a multi-line status block */
+function parseStatus(output: string): string | null {
+  const lines = output.split("\n");
+  const parsed: string[] = [];
+
+  // Scan from bottom up, collect activity lines
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const result = parseLine(lines[i]);
+    if (result) {
+      parsed.unshift(result);
+      // Collect up to 6 lines of context
+      if (parsed.length >= 6) break;
+    }
+    // Stop at prompt line (previous command boundary)
+    if (lines[i].trim().startsWith("❯") && parsed.length > 0) break;
+  }
+
+  if (parsed.length === 0) return null;
+  return parsed.join("\n");
 }
 
 /** Start monitoring a tmux session, calling onStatus with updates */
