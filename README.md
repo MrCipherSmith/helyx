@@ -116,21 +116,27 @@ The wizard will ask for your Telegram token, LLM provider, and other settings, t
 ### CLI Management Commands
 
 ```bash
-bun cli.ts status         # Bot health, uptime, docker status
-bun cli.ts sessions       # List active sessions with activity time
-bun cli.ts logs           # Follow bot logs
-bun cli.ts start          # Start bot (docker compose up)
-bun cli.ts stop           # Stop bot
-bun cli.ts restart        # Rebuild and restart
-bun cli.ts backup         # Run database backup
-bun cli.ts prune          # Remove stale/duplicate sessions (interactive)
-bun cli.ts cleanup        # Clean old queue, logs, stats
-bun cli.ts connect [dir]  # Start CLI session for a project
-bun cli.ts remote         # Connect laptop to remote bot server
-bun cli.ts mcp-register   # Re-register MCP servers in Claude Code
+claude-bot status             # Bot health, uptime, docker status
+claude-bot sessions           # List active sessions with activity time
+claude-bot logs               # Follow bot logs
+claude-bot start              # Start bot (docker compose up)
+claude-bot stop               # Stop bot
+claude-bot restart            # Rebuild and restart
+claude-bot backup             # Run database backup
+claude-bot prune              # Remove stale/duplicate sessions (interactive)
+claude-bot cleanup            # Clean old queue, logs, stats
+claude-bot connect [dir]      # Start CLI session (direct)
+claude-bot connect [dir] -t   # Start CLI session in tmux (recommended)
+claude-bot remote             # Connect laptop to remote bot server
+claude-bot mcp-register       # Re-register MCP servers in Claude Code
 ```
 
-Sessions are automatically marked as `disconnected` after 1 hour of inactivity. Use `prune` to interactively review and remove stale or duplicate sessions.
+**Note:** The `claude-bot` command is a wrapper that avoids tsconfig warnings. Install it with:
+```bash
+ln -sf /path/to/multiclaude-tg-bot/claude-bot ~/.local/bin/claude-bot
+```
+
+Use `prune` to interactively review and remove stale or duplicate sessions.
 
 ## Manual Setup (Docker)
 
@@ -442,41 +448,39 @@ When a CLI reconnects and calls `set_session_name` with an existing name, the bo
 
 ### Connecting CLI Sessions
 
-Any Claude Code instance can connect — from a local laptop terminal, VS Code, SSH session, or a server tmux session. The only requirements are the registered MCP servers (`claude-bot` and `claude-bot-channel`) and network access to the bot.
+**Recommended: tmux mode (full Telegram integration)**
 
-**From any terminal (laptop, desktop, SSH):**
+```bash
+cd /path/to/your-project
+claude-bot connect . --tmux
+```
+
+This creates a background tmux session with full Telegram integration:
+- Telegram messages are delivered to the CLI automatically
+- Real-time progress monitoring (tool calls, thinking status) forwarded to Telegram
+- Survives SSH disconnect
+- Auto-confirms the channel prompt
+
+**Direct mode (interactive work, limited Telegram)**
 
 ```bash
 cd /path/to/your-project
 claude --dangerously-load-development-channels server:claude-bot-channel
 ```
 
-The session appears in Telegram `/sessions` immediately. When you close the terminal, the session disconnects but its data (messages, memory) is preserved. Reconnecting from the same project auto-adopts the old session.
+The session appears in Telegram `/sessions`. However, Telegram messages may not be delivered until the CLI initializes the channel MCP (lazy init). For reliable Telegram ↔ CLI communication, use tmux mode.
 
-### Persistent CLI Sessions (server, survives SSH disconnect)
+**Important:** Each project should have only one CLI session. If you work interactively in a project AND have a tmux session for it, Telegram messages go to the tmux session. Don't run both for the same project.
 
-Use tmux on a server to keep CLI sessions running permanently:
+### Managing tmux sessions
 
 ```bash
-# Create a tmux session for each project
-tmux new-session -d -s myproject -c /path/to/myproject
-tmux send-keys -t myproject 'claude --dangerously-load-development-channels server:claude-bot-channel' Enter
-
-# General session (no specific project)
-tmux new-session -d -s general -c ~
-tmux send-keys -t general 'claude --dangerously-load-development-channels server:claude-bot-channel' Enter
-
-# List / attach / detach
-tmux ls
-tmux attach -t myproject      # view session
+tmux ls                        # list all sessions
+tmux attach -t myproject       # view/interact with a session
 # Ctrl+B, D                   # detach (session keeps running)
-```
 
-For auto-restart on crash:
-
-```bash
-tmux new-session -d -s myproject -c /path/to/myproject
-tmux send-keys -t myproject '/path/to/multiclaude-tg-bot/scripts/run-cli.sh /path/to/myproject' Enter
+claude-bot sessions            # list sessions from CLI
+claude-bot prune               # clean stale sessions
 ```
 
 Each CLI session auto-names itself from the working directory via `CLAUDE.md` → `set_session_name`.
