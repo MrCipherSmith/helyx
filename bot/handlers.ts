@@ -614,11 +614,15 @@ async function handleTools(ctx: Context): Promise<void> {
 
 // === Skills & Rules commands ===
 
-const GOODAI_BASE = process.env.GOODAI_BASE ?? `${process.env.HOME}/goodai-base`;
+const KNOWLEDGE_BASE = process.env.KNOWLEDGE_BASE;
 
 async function handleSkills(ctx: Context): Promise<void> {
+  if (!KNOWLEDGE_BASE) {
+    await ctx.reply("KNOWLEDGE_BASE не настроена. Укажите путь к базе знаний в .env.");
+    return;
+  }
   try {
-    const agents = await Bun.file(`${GOODAI_BASE}/AGENTS.md`).text();
+    const agents = await Bun.file(`${KNOWLEDGE_BASE}/AGENTS.md`).text();
 
     // Extract skills from Skills Catalog section
     const skillsMatch = agents.match(/## 🎨 Skills Catalog[\s\S]*?(?=\n---|\n## [^#])/);
@@ -627,13 +631,27 @@ async function handleSkills(ctx: Context): Promise<void> {
       return;
     }
 
-    const lines: string[] = ["Skills Catalog\n"];
+    const lines: string[] = ["<b>Skills Catalog</b>\n"];
 
-    // Parse skill entries: **`skills/name`** description
-    const skillRegex = /\*\*`skills\/([\w-]+)`\*\*\s*(?:⭐[^*]*)?\n-\s*\*\*Purpose\*\*:\s*(.+)/g;
+    // Parse skill entries with categories
+    const categoryRegex = /### (.+)\n/g;
+    const skillRegex = /\*\*`skills\/([\w-]+)`\*\*\s*(?:⭐\s*\w+[^*]*)?\n-\s*\*\*Purpose\*\*:\s*(.+)/g;
+
+    // Extract categories and their positions
+    const categories: { name: string; pos: number }[] = [];
+    let catMatch;
+    while ((catMatch = categoryRegex.exec(skillsMatch[0])) !== null) {
+      categories.push({ name: catMatch[1], pos: catMatch.index });
+    }
+
     let match;
     while ((match = skillRegex.exec(skillsMatch[0])) !== null) {
-      lines.push(`  ${match[1]} — ${match[2]}`);
+      // Find which category this skill belongs to
+      const cat = categories.filter((c) => c.pos < match!.index).pop();
+      if (cat && !lines.some((l) => l.includes(cat.name))) {
+        lines.push(`\n<b>${cat.name}</b>`);
+      }
+      lines.push(`  <code>${match[1]}</code> — ${match[2]}`);
     }
 
     if (lines.length === 1) {
@@ -641,15 +659,19 @@ async function handleSkills(ctx: Context): Promise<void> {
       return;
     }
 
-    await ctx.reply(lines.join("\n"));
+    await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });
   } catch {
-    await ctx.reply(`goodai-base не найден (${GOODAI_BASE})`);
+    await ctx.reply(`Не удалось прочитать базу з��аний (${KNOWLEDGE_BASE})`);
   }
 }
 
 async function handleRules(ctx: Context): Promise<void> {
+  if (!KNOWLEDGE_BASE) {
+    await ctx.reply("KNOWLEDGE_BASE не настроена. Укажите путь к базе знаний в .env.");
+    return;
+  }
   try {
-    const agents = await Bun.file(`${GOODAI_BASE}/AGENTS.md`).text();
+    const agents = await Bun.file(`${KNOWLEDGE_BASE}/AGENTS.md`).text();
 
     // Extract rules from Core Rule Catalog section
     const rulesMatch = agents.match(/## 📖 Core Rule Catalog[\s\S]*?(?=\n---|\n## [^#])/);
@@ -658,13 +680,25 @@ async function handleRules(ctx: Context): Promise<void> {
       return;
     }
 
-    const lines: string[] = ["Core Rules\n"];
+    const lines: string[] = ["<b>Core Rules</b>\n"];
 
-    // Parse rule entries: - `core/name.mdc`: description
+    // Parse categories and rules
+    const categoryRegex = /\*\*(.+?):\*\*/g;
     const ruleRegex = /-\s*`core\/([\w-]+)\.mdc`:\s*(.+)/g;
+
+    const categories: { name: string; pos: number }[] = [];
+    let catMatch;
+    while ((catMatch = categoryRegex.exec(rulesMatch[0])) !== null) {
+      categories.push({ name: catMatch[1], pos: catMatch.index });
+    }
+
     let match;
     while ((match = ruleRegex.exec(rulesMatch[0])) !== null) {
-      lines.push(`  ${match[1]} — ${match[2]}`);
+      const cat = categories.filter((c) => c.pos < match!.index).pop();
+      if (cat && !lines.some((l) => l.includes(cat.name))) {
+        lines.push(`\n<b>${cat.name}</b>`);
+      }
+      lines.push(`  <code>${match[1]}</code> — ${match[2]}`);
     }
 
     if (lines.length === 1) {
@@ -672,9 +706,9 @@ async function handleRules(ctx: Context): Promise<void> {
       return;
     }
 
-    await ctx.reply(lines.join("\n"));
+    await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });
   } catch {
-    await ctx.reply(`goodai-base не найден (${GOODAI_BASE})`);
+    await ctx.reply(`Не удалось прочитать базу знаний (${KNOWLEDGE_BASE})`);
   }
 }
 
