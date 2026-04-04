@@ -247,7 +247,11 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
       stopTypingForChat(chatId);
 
       const token = process.env.TELEGRAM_BOT_TOKEN;
-      if (!token) return text("TELEGRAM_BOT_TOKEN not set");
+      if (!token) {
+        process.stderr.write(`[channel] reply failed: no TELEGRAM_BOT_TOKEN\n`);
+        return text("TELEGRAM_BOT_TOKEN not set");
+      }
+      process.stderr.write(`[channel] sending reply to ${chatId}: ${String(args!.text).slice(0, 50)}...\n`);
       const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -256,7 +260,12 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
           text: args!.text,
         }),
       });
-      if (!res.ok) return text(`Telegram API error: ${res.status}`);
+      if (!res.ok) {
+        const errBody = await res.text();
+        process.stderr.write(`[channel] Telegram API error: ${res.status} ${errBody}\n`);
+        return text(`Telegram API error: ${res.status} ${errBody}`);
+      }
+      process.stderr.write(`[channel] reply sent OK\n`);
       // Save assistant response to short-term memory
       if (sessionId) {
         await sql`
@@ -368,6 +377,8 @@ async function pollMessages() {
       `;
 
       for (const row of rows) {
+        process.stderr.write(`[channel] polling found msg #${row.id} for session ${sessionId}: ${row.content.slice(0, 50)}\n`);
+
         // Start typing indicator — will keep sending until CLI replies
         startTypingForChat(row.chat_id);
 
