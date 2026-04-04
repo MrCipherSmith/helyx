@@ -97,9 +97,37 @@ A Telegram bot with Claude AI integration, dual-layer memory (short-term + long-
 3. Final edit applies Markdown→HTML formatting
 4. Idle timer starts → auto-summarization after 15 min inactivity
 
-## Quick Start (Docker)
+## Quick Start
 
-The easiest way to run the bot. Docker Compose starts PostgreSQL (with pgvector) and the bot. Ollama must be installed on the host (the bot connects via `host.docker.internal`):
+The fastest way — interactive setup wizard:
+
+```bash
+git clone https://github.com/MrCipherSmith/multiclaude-tg-bot.git
+cd multiclaude-tg-bot
+bun install
+bun cli.ts setup
+```
+
+The wizard will ask for your Telegram token, LLM provider, and other settings, then configure everything automatically.
+
+### CLI Management Commands
+
+```bash
+bun cli.ts status         # Bot health, uptime, docker status
+bun cli.ts sessions       # List active sessions
+bun cli.ts logs           # Follow bot logs
+bun cli.ts start          # Start bot (docker compose up)
+bun cli.ts stop           # Stop bot
+bun cli.ts restart        # Rebuild and restart
+bun cli.ts backup         # Run database backup
+bun cli.ts cleanup        # Clean old sessions and data
+bun cli.ts connect [dir]  # Start CLI session for a project
+bun cli.ts mcp-register   # Re-register MCP servers in Claude Code
+```
+
+## Manual Setup (Docker)
+
+If you prefer to configure manually. Docker Compose starts PostgreSQL (with pgvector) and the bot. Ollama must be installed on the host:
 
 ```bash
 git clone https://github.com/MrCipherSmith/multiclaude-tg-bot.git
