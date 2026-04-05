@@ -132,8 +132,9 @@ export class SessionManager {
       SELECT id, name FROM sessions WHERE client_id = ${clientId}
     `;
     if (rows.length > 0 && rows[0].name?.startsWith("cli-")) {
-      // Unnamed session — just delete
+      // Unnamed session — just delete and reset sequence
       await sql`DELETE FROM sessions WHERE client_id = ${clientId}`;
+      await this.resetSequence();
       console.log(`[session] removed unnamed session: ${clientId}`);
     } else {
       // Named session — keep but mark disconnected

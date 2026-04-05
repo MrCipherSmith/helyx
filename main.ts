@@ -18,10 +18,8 @@ function startCleanupTimer() {
       const stale = await sessionManager.markStale(600);
       // Delete unnamed cli-* sessions that are disconnected
       const cliJunk = await sql`DELETE FROM sessions WHERE name LIKE 'cli-%' AND status = 'disconnected'`;
-      // Reset sequence to avoid ID gaps after deletions
-      if (cliJunk.count > 0) {
-        await sessionManager.resetSequence();
-      }
+      // Always reset sequence to avoid ID gaps
+      await sessionManager.resetSequence();
       const total = mq.count + logs.count + stats.count + perms.count + cliJunk.count + stale;
       if (total > 0) {
         console.log(`[cleanup] queue=${mq.count} logs=${logs.count} stats=${stats.count} perms=${perms.count} cli_junk=${cliJunk.count} stale=${stale}`);
