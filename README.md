@@ -289,32 +289,83 @@ Press Enter to accept defaults. The wizard then:
 5. Registers MCP servers in Claude Code
 6. Sets up global `CLAUDE.md`
 
-### Connect a Project
+### Usage Scenarios
+
+#### Laptop (single project)
+
+The simplest setup — run everything locally, connect one project at a time:
 
 ```bash
-cd /path/to/your-project
+# 1. Start the bot (if not already running)
+claude-bot start
+
+# 2. Open your project and connect
+cd ~/my-project
+claude-bot connect .
+```
+
+That's it. Open Telegram, type `/sessions` — your project is there. Send messages, voice, photos — Claude CLI processes them in the terminal.
+
+You can stop the session with `Ctrl+C` and connect a different project at any time.
+
+> **Note:** Without `--tmux`, you won't see real-time status updates in Telegram, but everything else works — messages, permissions, replies.
+
+#### Laptop with tmux (single project, full monitoring)
+
+Same as above, but with live progress monitoring in Telegram:
+
+```bash
+claude-bot start
+cd ~/my-project
 claude-bot connect . --tmux
 ```
 
-The session appears in Telegram `/sessions`. Send messages, voice, photos — Claude CLI processes them.
+Telegram will show what Claude is doing in real-time ("Reading files...", "Running tests...", etc.).
 
-> **Tip:** Use `--tmux` (or `-t`) for full Telegram progress monitoring. Without it, you won't see real-time status updates.
+#### Server (multiple projects, always-on)
 
-### Multi-Project Setup
-
-Manage multiple projects with built-in tmux orchestration:
+For headless servers where you want multiple projects running 24/7:
 
 ```bash
-claude-bot add ~/project-a        # Add projects
+# Add your projects
+claude-bot add ~/project-a
 claude-bot add ~/project-b
+claude-bot add ~/project-c
+
+# Start all at once in tmux
+claude-bot up
+
+# Attach to monitor (optional)
+tmux attach -t claude
+```
+
+Each project runs in its own tmux window with auto-restart. Connect via SSH anytime:
+
+```bash
+ssh user@server -t "tmux attach -t claude"
+```
+
+Manage projects:
+
+```bash
 claude-bot ps                     # List configured projects
-claude-bot up                     # Start all in tmux
-claude-bot up -a                  # Start + attach
+claude-bot up -a                  # Start all + attach
 claude-bot down                   # Stop all + clean DB
 claude-bot remove project-b       # Remove from config
 ```
 
 Inside tmux: `Ctrl+B, N/P` — next/prev project, `Ctrl+B, W` — list all.
+
+#### Remote (laptop → server)
+
+Run the bot on a server, connect from your laptop via SSH tunnel:
+
+```bash
+# On your laptop:
+claude-bot remote
+```
+
+The wizard will guide you through SSH tunnel setup and MCP registration.
 
 ### CLI Commands
 
