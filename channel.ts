@@ -166,7 +166,7 @@ async function markDisconnected(): Promise<void> {
 }
 
 // --- Auto-approve rules ---
-// Loaded from settings.local.json and updated when user taps "Всегда"
+// Loaded from settings.local.json and updated when user taps "Always"
 const autoApprovePatterns = new Set<string>();
 
 async function loadAutoApproveRules(): Promise<void> {
@@ -408,7 +408,7 @@ mcp.setNotificationHandler(
         process.stderr.write(`[channel] permission ${request_id}: ${behavior} (telegram)\n`);
         if (previewMsgId) deleteTelegramMessage(chatId, previewMsgId);
         await updateStatus(chatId, "Выполняю...");
-        // Reload auto-approve rules in case user tapped "Всегда"
+        // Reload auto-approve rules in case user tapped "Always"
         loadAutoApproveRules().catch(() => {});
         resolved = true;
         break;
