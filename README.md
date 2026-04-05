@@ -575,7 +575,6 @@ Backups saved to `~/backups/claude-bot/` (gzipped, last 7 retained).
 
 ## Roadmap
 
-- [ ] One-click deploy (Railway / Render / Coolify)
 - [ ] Vision model support for image analysis in standalone mode
 - [ ] Webhook mode for Telegram (instead of polling)
 - [ ] Web dashboard for statistics and session management

@@ -872,7 +872,9 @@ async function handlePermissionCallback(ctx: Context): Promise<void> {
         settingsPaths.push(`${hostConfig}/settings.local.json`);
       }
 
-      const pattern = `${toolName}(*)`;
+      // MCP tools use plain name or wildcard (mcp__server__tool), not ToolName(*) pattern
+      const isMcp = toolName.startsWith("mcp__");
+      const pattern = isMcp ? toolName : `${toolName}(*)`;
       for (const settingsPath of settingsPaths) {
         try {
           let settings: any = {};

@@ -324,12 +324,13 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "update_status",
-      description: "Update the status message shown to the user in Telegram while processing. Call this before major operations to keep the user informed.",
+      description: "Update the status message shown to the user in Telegram while processing. Call this before major operations to keep the user informed. Optionally include a diff to show file changes.",
       inputSchema: {
         type: "object",
         properties: {
           chat_id: { type: "string", description: "Telegram chat ID" },
           status: { type: "string", description: "Short status text, e.g. 'Analyzing code', 'Running tests'" },
+          diff: { type: "string", description: "Optional diff/code block to display as a separate message. Supports markdown formatting." },
         },
         required: ["chat_id", "status"],
       },
@@ -469,6 +470,38 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
     case "update_status": {
       const chatId = String(args!.chat_id);
       await updateStatus(chatId, String(args!.status));
+
+      // Send optional diff as a separate formatted message
+      if (args!.diff) {
+        const token = process.env.TELEGRAM_BOT_TOKEN;
+        if (token) {
+          const htmlDiff = markdownToTelegramHtml(String(args!.diff));
+          let res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chat_id: Number(chatId),
+              text: htmlDiff,
+              parse_mode: "HTML",
+            }),
+          });
+          // Fallback to plain text if HTML parse fails
+          if (!res.ok) {
+            const errBody = await res.text();
+            if (errBody.includes("can't parse entities")) {
+              await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  chat_id: Number(chatId),
+                  text: String(args!.diff),
+                }),
+              });
+            }
+          }
+        }
+      }
+
       return text(`Status updated: ${args!.status}`);
     }
 
