@@ -352,6 +352,11 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
 mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
   const { name, arguments: args } = req.params;
 
+  // Touch session activity on every tool call
+  if (sessionId !== null) {
+    sql`UPDATE sessions SET last_active = now() WHERE id = ${sessionId}`.catch(() => {});
+  }
+
   switch (name) {
     case "reply": {
       const chatId = String(args!.chat_id);

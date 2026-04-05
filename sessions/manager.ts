@@ -157,6 +157,34 @@ export class SessionManager {
     return result.length;
   }
 
+  /**
+   * Mark "active" sessions as disconnected if last_active is older than maxAge
+   * and there's no live transport (client not in activeClients map).
+   */
+  async markStale(maxAgeSeconds: number = 600): Promise<number> {
+    // Get all DB-active sessions
+    const rows = await sql`
+      SELECT id, client_id FROM sessions
+      WHERE status = 'active' AND id != 0
+        AND last_active < now() - make_interval(secs => ${maxAgeSeconds})
+    `;
+    let count = 0;
+    for (const row of rows) {
+      // If client is not tracked in-memory, it's a zombie
+      if (!this.activeClients.has(row.client_id)) {
+        await sql`UPDATE sessions SET status = 'disconnected' WHERE id = ${row.id}`;
+        console.log(`[session] marked stale: #${row.id} (${row.client_id.slice(0, 8)})`);
+        count++;
+      }
+    }
+    return count;
+  }
+
+  /** Reset the sessions_id_seq to current MAX(id) to avoid gaps after deletions */
+  async resetSequence(): Promise<void> {
+    await sql`SELECT setval('sessions_id_seq', GREATEST((SELECT MAX(id) FROM sessions), 1))`;
+  }
+
   async touchActivity(sessionId: number): Promise<void> {
     await sql`UPDATE sessions SET last_active = now() WHERE id = ${sessionId}`;
   }

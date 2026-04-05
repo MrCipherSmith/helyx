@@ -380,6 +380,7 @@ async function cleanup() {
       DELETE FROM request_logs WHERE created_at < now() - interval '7 days';
       DELETE FROM api_request_stats WHERE created_at < now() - interval '30 days';
       DELETE FROM permission_requests WHERE created_at < now() - interval '1 hour';
+      SELECT setval('sessions_id_seq', GREATEST((SELECT MAX(id) FROM sessions), 1));
     `,
   ], { silent: true });
 
@@ -473,10 +474,11 @@ async function prune() {
   await run([
     "docker", "compose", "exec", "-T", "postgres",
     "psql", "-U", "claude_bot", "-d", "claude_bot", "-t", "-A",
-    "-c", `DELETE FROM sessions WHERE id IN (${staleIds.join(",")})`,
+    "-c", `DELETE FROM sessions WHERE id IN (${staleIds.join(",")});
+      SELECT setval('sessions_id_seq', GREATEST((SELECT MAX(id) FROM sessions), 1));`,
   ], { silent: true });
 
-  console.log(`\n  ${c.green(`Removed ${staleIds.length} sessions.`)}`);
+  console.log(`\n  ${c.green(`Removed ${staleIds.length} sessions. Sequence reset.`)}`);
 }
 
 // --- Tmux management ---

@@ -15,6 +15,8 @@ import { createServer } from "http";
 const transports = new Map<string, StreamableHTTPServerTransport>();
 
 function registerTools(server: McpServer, bot: Bot | null, getClientId?: () => string | undefined): void {
+  const exec = (name: string, args: Record<string, unknown>) =>
+    executeTool(name, { ...args, _clientId: getClientId?.() }, bot);
   // Memory tools
   server.tool(
     "remember",
@@ -25,7 +27,7 @@ function registerTools(server: McpServer, bot: Bot | null, getClientId?: () => s
       tags: z.array(z.string()).optional().describe("Tags for categorization"),
       source: z.enum(["telegram", "cli", "api"]).default("cli").describe("Source of the memory"),
     },
-    async (args) => executeTool("remember", args, bot),
+    async (args) => exec("remember", args),
   );
 
   server.tool(
@@ -37,14 +39,14 @@ function registerTools(server: McpServer, bot: Bot | null, getClientId?: () => s
       type: z.enum(["fact", "summary", "decision", "note"]).optional().describe("Filter by type"),
       tags: z.array(z.string()).optional().describe("Filter by tags"),
     },
-    async (args) => executeTool("recall", args, bot),
+    async (args) => exec("recall", args),
   );
 
   server.tool(
     "forget",
     "Delete a memory by ID",
     { id: z.number().describe("Memory ID to delete") },
-    async (args) => executeTool("forget", args, bot),
+    async (args) => exec("forget", args),
   );
 
   server.tool(
@@ -56,7 +58,7 @@ function registerTools(server: McpServer, bot: Bot | null, getClientId?: () => s
       limit: z.number().default(20),
       offset: z.number().default(0),
     },
-    async (args) => executeTool("list_memories", args, bot),
+    async (args) => exec("list_memories", args),
   );
 
   // Telegram tools
@@ -68,7 +70,7 @@ function registerTools(server: McpServer, bot: Bot | null, getClientId?: () => s
       text: z.string().describe("Message text"),
       parse_mode: z.enum(["Markdown", "MarkdownV2", "HTML"]).optional(),
     },
-    async (args) => executeTool("reply", args, bot),
+    async (args) => exec("reply", args),
   );
 
   server.tool(
@@ -79,7 +81,7 @@ function registerTools(server: McpServer, bot: Bot | null, getClientId?: () => s
       message_id: z.number().describe("Message ID"),
       emoji: z.string().describe("Reaction emoji"),
     },
-    async (args) => executeTool("react", args, bot),
+    async (args) => exec("react", args),
   );
 
   server.tool(
@@ -91,7 +93,7 @@ function registerTools(server: McpServer, bot: Bot | null, getClientId?: () => s
       text: z.string().describe("New text"),
       parse_mode: z.enum(["Markdown", "MarkdownV2", "HTML"]).optional(),
     },
-    async (args) => executeTool("edit_message", args, bot),
+    async (args) => exec("edit_message", args),
   );
 
   // Session tools
@@ -99,14 +101,14 @@ function registerTools(server: McpServer, bot: Bot | null, getClientId?: () => s
     "list_sessions",
     "List all registered sessions",
     {},
-    async (args) => executeTool("list_sessions", args, bot),
+    async (args) => exec("list_sessions", args),
   );
 
   server.tool(
     "session_info",
     "Get details about a specific session",
     { session_id: z.number().describe("Session ID") },
-    async (args) => executeTool("session_info", args, bot),
+    async (args) => exec("session_info", args),
   );
 
   server.tool(
@@ -116,10 +118,7 @@ function registerTools(server: McpServer, bot: Bot | null, getClientId?: () => s
       name: z.string().describe("Human-readable session name (e.g. project name)"),
       project_path: z.string().optional().describe("Working directory path"),
     },
-    async (args) => {
-      const clientId = getClientId?.();
-      return executeTool("set_session_name", { ...args, _clientId: clientId }, bot);
-    },
+    async (args) => exec("set_session_name", args),
   );
 }
 

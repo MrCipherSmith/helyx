@@ -151,6 +151,15 @@ export async function executeTool(
   args: Record<string, unknown>,
   bot: Bot | null,
 ): Promise<{ content: Array<{ type: "text"; text: string }> }> {
+  // Touch session activity on every tool call
+  const clientId = args._clientId as string | undefined;
+  if (clientId) {
+    const sessionId = sessionManager.getSessionIdByClient(clientId);
+    if (sessionId !== undefined) {
+      sessionManager.touchActivity(sessionId).catch(() => {});
+    }
+  }
+
   switch (name) {
     // Memory tools
     case "remember": {

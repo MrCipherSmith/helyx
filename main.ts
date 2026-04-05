@@ -3,6 +3,7 @@ import { migrate, sql } from "./memory/db.ts";
 import { createBot } from "./bot/bot.ts";
 import { startMcpHttpServer } from "./mcp/server.ts";
 import { stopAllTimers } from "./memory/summarizer.ts";
+import { sessionManager } from "./sessions/manager.ts";
 
 function startCleanupTimer() {
   const INTERVAL = 60 * 60 * 1000; // 1 hour
@@ -13,11 +14,17 @@ function startCleanupTimer() {
       const logs = await sql`DELETE FROM request_logs WHERE created_at < now() - interval '7 days'`;
       const stats = await sql`DELETE FROM api_request_stats WHERE created_at < now() - interval '30 days'`;
       const perms = await sql`DELETE FROM permission_requests WHERE created_at < now() - interval '1 hour'`;
+      // Mark stale "active" sessions that have no live transport (10 min threshold)
+      const stale = await sessionManager.markStale(600);
       // Delete unnamed cli-* sessions that are disconnected
       const cliJunk = await sql`DELETE FROM sessions WHERE name LIKE 'cli-%' AND status = 'disconnected'`;
-      const total = mq.count + logs.count + stats.count + perms.count + cliJunk.count;
+      // Reset sequence to avoid ID gaps after deletions
+      if (cliJunk.count > 0) {
+        await sessionManager.resetSequence();
+      }
+      const total = mq.count + logs.count + stats.count + perms.count + cliJunk.count + stale;
       if (total > 0) {
-        console.log(`[cleanup] queue=${mq.count} logs=${logs.count} stats=${stats.count} perms=${perms.count} cli_junk=${cliJunk.count}`);
+        console.log(`[cleanup] queue=${mq.count} logs=${logs.count} stats=${stats.count} perms=${perms.count} cli_junk=${cliJunk.count} stale=${stale}`);
       }
     } catch (err) {
       console.error("[cleanup] error:", err);
