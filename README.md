@@ -332,14 +332,14 @@ claude-bot add ~/project-a
 claude-bot add ~/project-b
 claude-bot add ~/project-c
 
-# Start all at once in tmux
-claude-bot up
+# Start all at once in tmux (separate windows)
+claude-bot up -a
 
-# Attach to monitor (optional)
-tmux attach -t claude
+# Or all visible at once as split panes
+claude-bot up -a -s
 ```
 
-Each project runs in its own tmux window with auto-restart. Connect via SSH anytime:
+Each project runs in its own tmux window (or pane with `-s`) with auto-restart. Connect via SSH anytime:
 
 ```bash
 ssh user@server -t "tmux attach -t claude"
@@ -349,12 +349,23 @@ Manage projects:
 
 ```bash
 claude-bot ps                     # List configured projects
-claude-bot up -a                  # Start all + attach
+claude-bot up -a                  # Start all + attach (windows)
+claude-bot up -a -s               # Start all + attach (split panes)
 claude-bot down                   # Stop all + clean DB
 claude-bot remove project-b       # Remove from config
 ```
 
-Inside tmux: `Ctrl+B, N/P` — next/prev project, `Ctrl+B, W` — list all.
+**Tmux navigation** (press `Ctrl+B`, release, then the key):
+
+| Mode | Key | Action |
+|---|---|---|
+| Windows | `N` / `P` | Next / previous window |
+| Windows | `W` | List all windows |
+| Windows | `0-9` | Jump to window by number |
+| Panes | `Arrow` | Move to adjacent pane |
+| Panes | `Z` | Zoom current pane (toggle fullscreen) |
+| Panes | `Q` + digit | Jump to pane by number |
+| Both | `D` | Detach from tmux |
 
 #### Remote (laptop → server)
 
@@ -388,7 +399,7 @@ Data:
   claude-bot cleanup            Clean old queue, logs, stats
 
 Tmux:
-  claude-bot up [-a]            Start all projects in tmux
+  claude-bot up [-a] [-s]       Start all projects in tmux (-s split panes)
   claude-bot down               Stop all tmux sessions + clean DB
   claude-bot ps                 List configured projects
   claude-bot add [dir]          Add project to config
