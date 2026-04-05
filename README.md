@@ -534,7 +534,7 @@ When starting a session, call `set_session_name` with:
 When responding to Telegram channel messages, call `update_status` before each major step.
 ```
 
-See [CLAUDE_MD_GUIDE.md](CLAUDE_MD_GUIDE.md) for detailed configuration options.
+See [CLAUDE_MD_GUIDE.md](CLAUDE_MD_GUIDE.md) for detailed configuration options and [Usage Patterns](examples/usage-patterns.md) for practical examples (status updates, sub-agent progress trees, file diffs, memory).
 
 ### Remote Connection (laptop to server)
 
