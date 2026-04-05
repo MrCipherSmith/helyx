@@ -582,9 +582,9 @@ Backups saved to `~/backups/claude-bot/` (gzipped, last 7 retained).
 ## Roadmap
 
 - [x] Vision model support for image analysis in standalone mode
-- [ ] Webhook mode for Telegram (instead of polling)
+- [x] Webhook mode for Telegram (instead of polling)
+- [x] Stream-json output parsing for non-tmux progress monitoring
 - [ ] Web dashboard for statistics and session management
-- [ ] Stream-json output parsing for non-tmux progress monitoring
 - [ ] Multi-user support with separate session namespaces
 - [ ] Inline mode — respond in any Telegram chat via @bot
 
