@@ -387,7 +387,7 @@ Setup:
   claude-bot mcp-register       Re-register MCP servers
 
 Manage:
-  claude-bot start / stop       Docker compose up/down
+  claude-bot start / stop       Docker + tmux up/down
   claude-bot restart            Rebuild and restart bot
   claude-bot status             Bot health, uptime, docker status
   claude-bot logs               Follow bot logs
@@ -549,7 +549,7 @@ claude-bot connect . --tmux
 claude-bot start      # docker compose up -d
 claude-bot restart    # rebuild and restart
 claude-bot logs       # follow logs
-claude-bot stop       # docker compose down
+claude-bot stop       # tmux down + docker compose down
 ```
 
 ### Database Backup

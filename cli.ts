@@ -282,7 +282,10 @@ async function start() {
 }
 
 async function stop() {
-  step("Stopping bot");
+  // First kill tmux and clean DB (while postgres is still running)
+  await tmuxStop();
+
+  step("Stopping docker");
   const result = await run(["docker", "compose", "down"]);
   result.ok ? done() : fail();
 }
@@ -560,19 +563,19 @@ async function tmuxStart() {
 }
 
 async function tmuxStop() {
-  step("Killing tmux sessions");
-  await run(["tmux", "kill-server"], { silent: true });
+  step("Killing tmux session");
+  await run(["tmux", "kill-session", "-t", TMUX_SESSION], { silent: true });
   done();
 
   step("Cleaning DB sessions");
   await run([
     "docker", "compose", "exec", "-T", "postgres",
     "psql", "-U", "claude_bot", "-d", "claude_bot", "-c",
-    "UPDATE sessions SET status = 'disconnected' WHERE id != 0 AND status = 'active'; DELETE FROM sessions WHERE name LIKE 'cli-%';",
+    "DELETE FROM sessions WHERE name LIKE 'cli-%'; UPDATE sessions SET status = 'disconnected' WHERE id != 0 AND status = 'active';",
   ], { silent: true });
   done();
 
-  console.log(`\n  ${c.green("All sessions stopped and DB cleaned.")}`);
+  console.log(`\n  ${c.green("Tmux sessions stopped, standalone untouched.")}`);
   console.log(`  Restart: ${c.cyan("claude-bot up")}`);
 }
 
