@@ -108,4 +108,4 @@ echo -e "  CLI:  ${CYAN}claude-bot${NC} (in $BIN_DIR)"
 echo -e "  Repo: $INSTALL_DIR\n"
 echo -e "${BOLD}Running setup wizard...${NC}\n"
 
-exec claude-bot setup
+exec claude-bot setup < /dev/tty
