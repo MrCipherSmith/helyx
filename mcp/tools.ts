@@ -143,6 +143,18 @@ export const TOOL_DEFINITIONS = [
       required: ["session_id"],
     },
   },
+  {
+    name: "set_session_name",
+    description: "Set a human-readable name and project path for this CLI session. Call this at the start of a session.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        name: { type: "string", description: "Human-readable session name (e.g. project name)" },
+        project_path: { type: "string", description: "Working directory path" },
+      },
+      required: ["name"],
+    },
+  },
 ];
 
 // Tool execution

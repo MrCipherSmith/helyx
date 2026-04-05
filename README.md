@@ -414,6 +414,8 @@ Connect:
 | Command | Description |
 |---------|-------------|
 | **Sessions** | |
+| `/start` | Welcome message and quick help |
+| `/help` | Show available commands |
 | `/sessions` | List all sessions |
 | `/switch [id]` | Switch session (shows context + last messages) |
 | `/session` | Current session info |
