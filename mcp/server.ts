@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { Bot } from "grammy";
 import { randomUUID } from "crypto";
+import { basename } from "path";
 import { z } from "zod";
 import { executeTool } from "./tools.ts";
 import { registerMcpSession, unregisterMcpSession } from "./bridge.ts";
@@ -191,8 +192,9 @@ export function startMcpHttpServer(bot: Bot | null): ReturnType<typeof createSer
           registerMcpSession(id, mcpServer);
           const cwd = req.headers["x-project-path"] as string | undefined;
           const name = req.headers["x-session-name"] as string | undefined;
+          const autoName = cwd ? `${basename(cwd)} · cli` : `cli-${id.slice(0, 8)}`;
           transportSessionId = id;
-          const session = await sessionManager.register(id, name ?? `cli-${id.slice(0, 8)}`, cwd);
+          const session = await sessionManager.register(id, name ?? autoName, cwd);
           console.log(`[mcp] session initialized: ${id} (db #${session.id})`);
         },
       });

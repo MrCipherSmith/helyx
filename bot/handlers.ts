@@ -858,16 +858,17 @@ async function handlePermissionCallback(ctx: Context): Promise<void> {
 
       // Add to auto-approve in both project and global settings
       const settingsPaths: string[] = [];
+      const hostConfig = process.env.HOST_CLAUDE_CONFIG;
 
-      // Project settings
+      // Project settings (use Claude Code convention: ~/.claude/projects/{encoded-path}/)
       const sessionRows = await sql`SELECT project_path FROM sessions WHERE id = ${sessionId}`;
       const projectPath = sessionRows[0]?.project_path;
-      if (projectPath) {
-        settingsPaths.push(`${projectPath}/.claude/settings.local.json`);
+      if (projectPath && hostConfig) {
+        const encodedPath = projectPath.replace(/\//g, "-");
+        settingsPaths.push(`${hostConfig}/projects/${encodedPath}/settings.local.json`);
       }
 
       // Global settings (host path mounted into Docker)
-      const hostConfig = process.env.HOST_CLAUDE_CONFIG;
       if (hostConfig) {
         settingsPaths.push(`${hostConfig}/settings.local.json`);
       }
@@ -886,6 +887,7 @@ async function handlePermissionCallback(ctx: Context): Promise<void> {
           if (!settings.permissions.allow.includes(pattern)) {
             settings.permissions.allow.push(pattern);
             const dir = settingsPath.split("/").slice(0, -1).join("/");
+            await Bun.$.quiet`mkdir -p ${dir}`;
             await Bun.write(settingsPath, JSON.stringify(settings, null, 2) + "\n");
             console.log(`[perm] added ${pattern} to ${settingsPath}`);
           }

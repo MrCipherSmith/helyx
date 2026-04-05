@@ -49,6 +49,10 @@ if (!DATABASE_URL) {
 
 const sql = postgres(DATABASE_URL, { max: 3 });
 
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 // Detect project name from cwd
 const projectName = basename(process.cwd());
 let sessionId: number | null = null;
@@ -147,14 +151,29 @@ mcp.setNotificationHandler(
     const tool_name = params.tool_name;
     const description = params.description;
 
-    // input_preview is a JSON string, not an object
+    // input_preview is a JSON string, often truncated to ~200 chars
     let input: Record<string, any> = {};
+    const rawPreview = params.input_preview ?? params.input ?? "";
+    const previewStr = typeof rawPreview === "string" ? rawPreview : JSON.stringify(rawPreview);
     try {
-      if (params.input_preview) input = JSON.parse(params.input_preview);
-      else if (params.input) input = typeof params.input === "string" ? JSON.parse(params.input) : params.input;
-    } catch {}
+      input = JSON.parse(previewStr);
+    } catch {
+      // Truncated JSON — extract file_path and other fields with regex
+      const fileMatch = previewStr.match(/"file_path"\s*:\s*"([^"]+)"/);
+      const cmdMatch = previewStr.match(/"command"\s*:\s*"([^"]+)"/);
+      const patternMatch = previewStr.match(/"pattern"\s*:\s*"([^"]+)"/);
+      if (fileMatch) input.file_path = fileMatch[1];
+      if (cmdMatch) input.command = cmdMatch[1];
+      if (patternMatch) input.pattern = patternMatch[1];
+      if (Object.keys(input).length === 0 && previewStr.length > 2) {
+        input._raw = previewStr;
+      }
+    }
 
-    process.stderr.write(`[channel] permission: ${tool_name}(${JSON.stringify(input).slice(0, 100)})\n`);
+    process.stderr.write(`[channel] permission: ${tool_name} input=${JSON.stringify(input).slice(0, 200)} raw_keys=${Object.keys(params).join(",")}\n`);
+    if (Object.keys(input).length === 0) {
+      process.stderr.write(`[channel] permission raw params: ${JSON.stringify(params).slice(0, 500)}\n`);
+    }
     if (!sessionId) return;
 
     const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -174,11 +193,38 @@ mcp.setNotificationHandler(
     let detail = "";
     if (tool_name === "Bash" && input.command) detail = `$ ${input.command}`;
     else if (tool_name === "Read" && input.file_path) detail = input.file_path;
-    else if ((tool_name === "Edit" || tool_name === "Write") && input.file_path) detail = input.file_path;
-    else if (tool_name === "Grep" && input.pattern) detail = `grep "${input.pattern}"`;
+    else if ((tool_name === "Edit" || tool_name === "Write") && input.file_path) {
+      detail = input.file_path;
+      // input_preview is truncated to ~200 chars, so old_string/new_string/content are rarely available
+      if (input.old_string != null && input.new_string != null) {
+        const oldLines = String(input.old_string).split("\n").map((l: string) => `- ${l}`);
+        const newLines = String(input.new_string).split("\n").map((l: string) => `+ ${l}`);
+        detail += `\n\n${[...oldLines, ...newLines].join("\n").slice(0, 1500)}`;
+      } else if (input.content) {
+        detail += `\n\n${String(input.content).slice(0, 1500)}`;
+      }
+    } else if (tool_name === "Grep" && input.pattern) detail = `grep "${input.pattern}"`;
+    else if (input._raw) detail = input._raw;
     else detail = JSON.stringify(input).slice(0, 200);
+    // Append description from Claude Code if detail is just a file path (no diff available)
+    if (description && detail && !detail.includes("\n\n")) {
+      detail += `\n${description}`;
+    } else if (description && !detail) {
+      detail = description;
+    }
 
-    const desc = `${tool_name}: ${description ?? ""}\n${detail}`.trim();
+    // Separate diff/content from the main description for <pre> formatting
+    let descMain = tool_name;
+    let descDiff = "";
+    if (detail.includes("\n\n")) {
+      const idx = detail.indexOf("\n\n");
+      descMain += `\n${detail.slice(0, idx)}`;
+      descDiff = detail.slice(idx + 2);
+    } else {
+      descMain += `\n${detail}`;
+    }
+    descMain = descMain.trim();
+    const desc = descMain;
 
     // Update status message with what CLI is doing
     const shortDesc = tool_name === "Bash" ? `Выполняю: ${String(input?.command ?? "").slice(0, 60)}`
@@ -189,12 +235,16 @@ mcp.setNotificationHandler(
     await updateStatus(chatId, shortDesc);
 
     // Send inline keyboard to Telegram (3 buttons: Allow / Always / Deny)
+    const msgText = descDiff
+      ? `🔐 Разрешить?\n\n${escapeHtml(descMain)}\n\n<pre>${escapeHtml(descDiff)}</pre>`
+      : `🔐 Разрешить?\n\n${descMain}`;
     const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: Number(chatId),
-        text: `🔐 Разрешить?\n\n${desc}`,
+        text: msgText,
+        ...(descDiff ? { parse_mode: "HTML" } : {}),
         reply_markup: {
           inline_keyboard: [[
             { text: "✅ Да", callback_data: `perm:allow:${request_id}` },

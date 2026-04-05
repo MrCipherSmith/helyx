@@ -21,11 +21,11 @@ export class SessionManager {
     projectPath?: string,
     metadata?: Record<string, unknown>,
   ): Promise<Session> {
-    // Deduplicate: if a named session with same project_path already exists, adopt it
-    if (projectPath) {
+    // Deduplicate: if a session with the same name and project_path already exists, adopt it
+    if (projectPath && name && !name.startsWith("cli-")) {
       const existing = await sql`
         SELECT id, name, client_id FROM sessions
-        WHERE project_path = ${projectPath} AND id != 0 AND name NOT LIKE 'cli-%'
+        WHERE project_path = ${projectPath} AND name = ${name} AND id != 0
         LIMIT 1
       `;
       if (existing.length > 0) {
