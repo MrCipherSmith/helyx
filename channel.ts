@@ -66,52 +66,30 @@ async function embed(text: string): Promise<number[]> {
 }
 
 // --- Session management ---
-const channelSource = process.env.CHANNEL_SOURCE ?? "cli"; // "tmux" from run-cli.sh, "cli" otherwise
-let sessionName = projectName;
+const channelSource = process.env.CHANNEL_SOURCE ?? "cli"; // "remote" from run-cli.sh, "cli" otherwise
+let sessionName = `${projectName} · ${channelSource}`;
 
 async function resolveSession(): Promise<number> {
-  // Try to find existing named session for this project
+  // Each source (remote/cli) gets its own named session
   const existing = await sql`
-    SELECT id FROM sessions WHERE name = ${projectName} AND id != 0 LIMIT 1
+    SELECT id FROM sessions WHERE name = ${sessionName} AND id != 0 LIMIT 1
   `;
   if (existing.length > 0) {
-    // Try to lock — if another channel.ts already has it, create a new session
     const lockResult = await sql`SELECT pg_try_advisory_lock(${existing[0].id}) as locked`;
     if (lockResult[0].locked) {
-      // Got the lock — attach to existing session
       sessionId = existing[0].id;
       hasPollingLock = true;
       await sql`
         UPDATE sessions SET status = 'active', last_active = now()
         WHERE id = ${sessionId}
       `;
-      process.stderr.write(`[channel] attached to session #${sessionId} (${sessionName}) [${channelSource}]\n`);
+      process.stderr.write(`[channel] attached to session #${sessionId} (${sessionName})\n`);
       return sessionId;
     }
-
-    // Lock taken — create session with source prefix
-    sessionName = `${projectName} · ${channelSource}`;
-    // Check if this source-named session already exists
-    const existingSource = await sql`
-      SELECT id FROM sessions WHERE name = ${sessionName} AND id != 0 LIMIT 1
-    `;
-    if (existingSource.length > 0) {
-      const sourceLock = await sql`SELECT pg_try_advisory_lock(${existingSource[0].id}) as locked`;
-      if (sourceLock[0].locked) {
-        sessionId = existingSource[0].id;
-        hasPollingLock = true;
-        await sql`
-          UPDATE sessions SET status = 'active', last_active = now()
-          WHERE id = ${sessionId}
-        `;
-        process.stderr.write(`[channel] attached to session #${sessionId} (${sessionName}) [${channelSource}]\n`);
-        return sessionId;
-      }
-      // Even source-named is taken — add counter
-      const n = Date.now() % 10000;
-      sessionName = `${projectName} · ${channelSource}-${n}`;
-    }
-    process.stderr.write(`[channel] session "${projectName}" is busy, creating "${sessionName}"\n`);
+    // Same source already running — add counter to avoid conflict
+    const n = Date.now() % 10000;
+    sessionName = `${projectName} · ${channelSource}-${n}`;
+    process.stderr.write(`[channel] session "${projectName} · ${channelSource}" is busy, creating "${sessionName}"\n`);
   }
 
   // Create new session
@@ -123,7 +101,6 @@ async function resolveSession(): Promise<number> {
   `;
   sessionId = row.id;
   hasPollingLock = true;
-  // Lock own session
   await sql`SELECT pg_advisory_lock(${sessionId})`;
   process.stderr.write(`[channel] created session #${sessionId} (${sessionName})\n`);
   return sessionId;
