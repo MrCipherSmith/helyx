@@ -510,9 +510,12 @@ async function tmuxStart() {
     return;
   }
 
-  console.log(`\n  ${c.bold("Starting tmux session")} ${c.cyan(TMUX_SESSION)}\n`);
+  const usePanes = process.argv.includes("--split") || process.argv.includes("-s");
+
+  console.log(`\n  ${c.bold("Starting tmux session")} ${c.cyan(TMUX_SESSION)}${usePanes ? " (split panes)" : ""}\n`);
 
   let first = true;
+  let paneCount = 0;
   for (const p of projects) {
     if (!existsSync(p.path)) {
       console.log(`  ${c.yellow("SKIP")} ${p.name} — ${p.path} not found`);
@@ -520,19 +523,33 @@ async function tmuxStart() {
     }
 
     if (first) {
-      await run(["tmux", "new-session", "-d", "-s", TMUX_SESSION, "-n", p.name, "-c", p.path]);
+      await run(["tmux", "new-session", "-d", "-s", TMUX_SESSION, "-c", p.path]);
+      await run(["tmux", "send-keys", "-t", TMUX_SESSION,
+        `${BOT_DIR}/scripts/run-cli.sh ${p.path}`, "Enter"]);
       first = false;
+    } else if (usePanes) {
+      // Split into panes within the same window
+      const direction = paneCount % 2 === 0 ? "-v" : "-h";
+      await run(["tmux", "split-window", direction, "-t", TMUX_SESSION, "-c", p.path]);
+      await run(["tmux", "send-keys", "-t", TMUX_SESSION,
+        `${BOT_DIR}/scripts/run-cli.sh ${p.path}`, "Enter"]);
+      await run(["tmux", "select-layout", "-t", TMUX_SESSION, "tiled"]);
     } else {
+      // Separate windows (tabs)
       await run(["tmux", "new-window", "-t", TMUX_SESSION, "-n", p.name, "-c", p.path]);
+      await run(["tmux", "send-keys", "-t", `${TMUX_SESSION}:${p.name}`,
+        `${BOT_DIR}/scripts/run-cli.sh ${p.path}`, "Enter"]);
     }
-
-    await run(["tmux", "send-keys", "-t", `${TMUX_SESSION}:${p.name}`,
-      `${BOT_DIR}/scripts/run-cli.sh ${p.path}`, "Enter"]);
+    paneCount++;
     console.log(`  ${c.green("✓")} ${p.name} (${p.path})`);
   }
 
   console.log(`\n  ${c.green("Done!")} Attach: ${c.cyan(`tmux attach -t ${TMUX_SESSION}`)}`);
-  console.log(`  Navigate: ${c.dim("Ctrl+B,N (next) / Ctrl+B,P (prev) / Ctrl+B,W (list)")}`);
+  if (usePanes) {
+    console.log(`  Navigate: ${c.dim("Ctrl+B,Arrow — switch pane / Ctrl+B,Z — zoom pane")}`);
+  } else {
+    console.log(`  Navigate: ${c.dim("Ctrl+B,N (next) / Ctrl+B,P (prev) / Ctrl+B,W (list)")}`);
+  }
 
   if (process.argv.includes("--attach") || process.argv.includes("-a")) {
     const proc = Bun.spawn(["tmux", "attach", "-t", TMUX_SESSION], {
@@ -856,7 +873,7 @@ function help() {
     cleanup         Clean old queue, logs, stats
 
   ${c.bold("Tmux:")}
-    up [-a]         Start all projects in tmux (-a to attach)
+    up [-a] [-s]    Start all projects in tmux (-a attach, -s split panes)
     down            Stop all tmux sessions + clean DB
     ps              List configured projects and status
     add [dir]       Add project to tmux config
