@@ -102,7 +102,7 @@ This bot is a full **[Model Context Protocol](https://modelcontextprotocol.io) s
          │                 │  │  OpenCode TUI ◀──▶ Project Files (host)  │   │
          │                 │  └──────────────────────────────────────────┘   │
          │                 └──────────────────────────────────────────────────┘
-         │                            ▲ HTTP/SSE  (host.docker.internal:4096)
+         │                            ▲ HTTP REST + SSE  (host.docker.internal:4096)
          │                 ┌──────────┴───────────────────────────────────────┐
          │                 │              Docker                              │
          │  direct DB      │                                                  │
@@ -111,8 +111,14 @@ This bot is a full **[Model Context Protocol](https://modelcontextprotocol.io) s
          │                 │  │                                          │   │
          │                 │  │  Telegram polling ◀──▶ Telegram API      │   │
          │                 │  │  HTTP MCP server  ◀──▶ Claude CLIs      │   │
-         │                 │  │  OpenCode SSE monitor ──▶ Telegram       │   │
-         │                 │  │  Standalone LLM   ──▶ Google AI/OpenRouter│  │
+         │                 │  │                                          │   │
+         │                 │  │  adapters/                               │   │
+         │                 │  │  ├─ ClaudeAdapter → message_queue        │   │
+         │                 │  │  ├─ OpencodeAdapter → HTTP /prompt_async │   │
+         │                 │  │  └─ OpencodeMonitor ← SSE /event stream  │   │
+         │                 │  │                                          │   │
+         │                 │  │  sessions/router.ts (standalone/cli/disc)│   │
+         │                 │  │  Standalone LLM   ──▶ Google AI/Openrtr  │   │
          │                 │  │  Voice transcribe ──▶ Groq API           │   │
          │                 │  │  Markdown → HTML  ──▶ Telegram           │   │
          │                 │  │  /health, /stats, cleanup timers         │   │
@@ -122,11 +128,11 @@ This bot is a full **[Model Context Protocol](https://modelcontextprotocol.io) s
          │                 │  ┌──────────────────────────────────────────┐   │
          │                 │  │  PostgreSQL + pgvector            :5433  │   │
          │                 │  │                                          │   │
-         │                 │  │  sessions          message_queue         │   │
-         │                 │  │  messages           permission_requests  │   │
-         │                 │  │  memories (vector)  api_request_stats    │   │
-         │                 │  │  chat_sessions      transcription_stats  │   │
-         │                 │  │                     request_logs         │   │
+         │                 │  │  sessions (cli_type, cli_config)         │   │
+         │                 │  │  message_queue      permission_requests  │   │
+         │                 │  │  messages           api_request_stats    │   │
+         │                 │  │  memories (vector)  transcription_stats  │   │
+         │                 │  │  chat_sessions      request_logs         │   │
          │                 │  └──────────────────────────────────────────┘   │
          │                 └──────────────────────────────────────────────────┘
          │
@@ -315,7 +321,7 @@ The simplest setup — run everything locally, connect one project at a time:
 
 ```bash
 # 1. Start the bot (if not already running)
-claude-bot start
+claude-bot docker-start
 
 # 2. Open your project and connect
 cd ~/my-project
@@ -333,7 +339,7 @@ You can stop the session with `Ctrl+C` and connect a different project at any ti
 Same as above, but with live progress monitoring in Telegram:
 
 ```bash
-claude-bot start
+claude-bot docker-start
 cd ~/my-project
 claude-bot connect . --tmux
 ```
@@ -360,7 +366,7 @@ claude-bot up -a -s
 Each project runs in its own tmux window (or pane with `-s`) with auto-restart. Connect via SSH anytime:
 
 ```bash
-ssh user@server -t "tmux attach -t claude"
+ssh user@server -t "tmux attach -t bots"
 ```
 
 Manage projects:
@@ -405,7 +411,8 @@ Setup:
   claude-bot mcp-register       Re-register MCP servers
 
 Manage:
-  claude-bot start / stop       Docker + tmux up/down
+  claude-bot docker-start       Start Docker containers (docker compose up -d)
+  claude-bot stop               Stop Docker + tmux
   claude-bot restart            Rebuild and restart bot
   claude-bot status             Bot health, uptime, docker status
   claude-bot logs               Follow bot logs
@@ -420,17 +427,20 @@ Tmux:
   claude-bot up [-a] [-s]       Start all projects in tmux (-s split panes)
   claude-bot down               Stop all tmux sessions + clean DB
   claude-bot ps                 List configured projects
-  claude-bot add [dir] [--name] [--provider]  Add project to config
+  claude-bot add [dir] [--name] [--provider]  Register project in config + bot DB (no launch)
+  claude-bot run [dir] [--claude|--opencode]  Launch project in current terminal
+  claude-bot attach [dir] [--claude|--opencode]  Add window to running tmux session (bots)
   claude-bot remove <name>      Remove project from config
 
 Connect:
-  claude-bot connect [dir] [-t] [--provider]  Start single CLI session
-  claude-bot attach <url>       Attach to running OpenCode instance
+  claude-bot start [dir] [--claude|--opencode]  Register + launch in current terminal
+  claude-bot connect [dir] [-t] [--provider]    Start single CLI session
 
 Providers:
-  claude-bot add ~/project --provider opencode   Connect to OpenCode TUI
-  claude-bot add ~/project --provider local      Use local Claude Code
-  claude-bot add ~/project --provider remote     SSH tunnel to remote
+  claude-bot add ~/project --provider opencode   Register OpenCode TUI project
+  claude-bot add ~/project --provider claude     Register Claude Code project
+  claude-bot run ~/project --opencode            Launch as OpenCode TUI
+  claude-bot run ~/project --claude              Launch as Claude Code
 ```
 
 ## Telegram Commands
@@ -465,9 +475,9 @@ Providers:
 | `/commands` | Custom commands — inline buttons, click to execute |
 | `/hooks` | Configured Hookify rules (event matchers + commands) |
 | `/rules` | Coding rules from knowledge base |
-| `/add [model]` | Add/configure LLM provider (Google AI, Anthropic, OpenRouter, Ollama) |
-| `/model` | View current LLM provider and settings |
-| `/connections` | List provider badges and connection status |
+| `/add` | Register project — choose Claude Code or opencode as CLI backend |
+| `/model` | Select model for current session (inline buttons; opencode fetches live model list) |
+| `/connections` | opencode provider API key status with Configure buttons (opencode sessions only) |
 
 ## Skills, Commands & Hooks
 
@@ -518,34 +528,65 @@ Lists configured hooks from `settings.json`:
 - `Stop` — when agent stops
 - `Notification` — on bot notification
 
-## LLM Providers
+## Session CLI Types
 
-### `/add [provider]` — Configure Provider
-Interactive wizard to add or switch LLM providers:
-- **Google AI** — Gemma 4 models, free tier available
-- **Anthropic** — Claude 3 models, requires API key
-- **OpenRouter** — many models, free & paid options
-- **Ollama** — local models, fully free
+Each registered session has a **CLI backend type** — either Claude Code or opencode. This determines how messages are delivered and how responses are received.
 
-Each provider stored in `cli_config` table with connection details. Multiple providers can be configured; `/model` shows the current active one.
+| CLI Type | Transport | Response path |
+|----------|-----------|---------------|
+| `claude` | DB `message_queue` → `channel.ts` stdio | MCP `reply` tool call |
+| `opencode` | HTTP `POST /session/:id/prompt_async` | SSE `/event` stream → Telegram |
 
-### `/model` — View Current Provider
-Shows active provider, model name, API key status, and endpoint.
+### `/add` — Register Project
 
-### `/connections` — Provider Status
-Displays all configured providers as badges with connection status indicators.
+Shows inline keyboard to choose the CLI backend:
+
+```
+[Claude Code]  [opencode]
+```
+
+- **Claude Code** — full MCP integration, permission forwarding, tmux progress
+- **opencode** — sends via HTTP REST to `opencode serve :4096`, receives via SSE monitor
+
+If you're in an active session, the project path is auto-detected. Otherwise the bot asks for the path.
+
+### `/model` — Select Model
+
+Shows inline keyboard with available models:
+
+- **Claude Code session** — static list of Claude models (opus/sonnet/haiku)
+- **opencode session** — fetches live model list from `opencode serve /model` API
+
+Selected model stored in `cli_config.model` in the sessions table.
+
+### `/connections` — opencode Provider Status
+
+**Only available for opencode sessions.** Fetches provider list from `opencode serve /provider`:
+
+- ✅ / ❌ status per provider API key
+- **Configure** button for unconfigured providers → shows `opencode auth <provider>` instructions
+
+### Adapter Architecture
+
+The bot uses a registry-based adapter pattern (`adapters/`):
+
+```
+CliAdapter interface
+├── ClaudeAdapter   — message_queue INSERT → channel.ts picks up → MCP notify
+└── OpencodeAdapter — HTTP POST /prompt_async + SSE monitor forwards responses
+```
+
+Adapters are registered at startup (`adapters/index.ts`) and selected by `cli_type` field on the session. The `sessions/router.ts` resolves the active session to one of three modes: `standalone`, `cli`, or `disconnected`.
 
 ### CLI Provider Support
 
-When adding a project with `/add` or `claude-bot add`, specify provider:
+When adding a project via CLI, specify the backend:
 ```bash
-claude-bot add ~/my-project --provider opencode
+claude-bot add ~/my-project --provider opencode   # Register as opencode project
+claude-bot add ~/my-project --provider claude     # Register as Claude Code project
+claude-bot run ~/my-project --opencode            # Launch as opencode
+claude-bot run ~/my-project --claude              # Launch as Claude Code
 ```
-
-Supported providers:
-- `opencode` — Connect to OpenCode TUI/serve instance
-- `local` — Use local Claude Code
-- `remote` — SSH tunnel to remote machine
 
 ## MCP Tools
 
@@ -691,10 +732,10 @@ claude-bot connect . --tmux
 
 ### Docker Compose
 ```bash
-claude-bot start      # docker compose up -d
-claude-bot restart    # rebuild and restart
-claude-bot logs       # follow logs
-claude-bot stop       # tmux down + docker compose down
+claude-bot docker-start   # docker compose up -d
+claude-bot restart        # rebuild and restart
+claude-bot logs           # follow logs
+claude-bot stop           # tmux down + docker compose down
 ```
 
 ### Database Backup
@@ -728,12 +769,12 @@ Backups saved to `~/backups/claude-bot/` (gzipped, last 7 retained).
 - **Deferred input** — Tools requiring args prompt user then enqueue
 - **Icon support** — 38+ emojis for quick visual identification
 
-### LLM Provider Management
-- **`/add [provider]`** — Configure Google AI, Anthropic, OpenRouter, Ollama
-- **`/model`** — View current provider and settings
-- **`/connections`** — List all configured providers with status
-- **CLI flag** — `claude-bot add ~/project --provider <name>`
-- **Provider types** — `local`, `remote`, `opencode`
+### CLI Backend & Model Selection
+- **`/add`** — Register project, choose CLI backend: Claude Code or opencode (inline buttons)
+- **`/model`** — Select model with inline buttons; opencode sessions fetch live model list from API
+- **`/connections`** — opencode-only: provider API key status, Configure buttons
+- **Adapter pattern** — `adapters/ClaudeAdapter` (message_queue) and `adapters/OpencodeAdapter` (HTTP REST)
+- **Session router** — `sessions/router.ts` typed routing: standalone / cli / disconnected
 
 ### OpenCode TUI Integration
 - **Persistent SSE monitor** — Real-time message forwarding to Telegram
@@ -741,6 +782,14 @@ Backups saved to `~/backups/claude-bot/` (gzipped, last 7 retained).
 - **Auto-start** — Bot launches `opencode serve` automatically
 - **Status updates** — Live progress from OpenCode operations
 - **Two-way control** — Send from Telegram, monitor in TUI
+
+### CLI Refactoring
+- **`start [dir]`** — Register + launch project in current terminal (replaces old start = docker-only)
+- **`docker-start`** — New command for `docker compose up -d` (old `start` behavior)
+- **`add [dir]`** — Now registration-only (saves to config + bot DB, no launch)
+- **`run [dir]`** — New command to launch registered project in terminal
+- **`attach [dir]`** — New command to add window to running tmux `bots` session
+- **tmux session renamed** — `claude` → `bots` (hosts both claude and opencode windows)
 
 ### Database Improvements
 - **JSONB normalization** — Safe PostgreSQL storage with explicit casting
@@ -753,7 +802,7 @@ Backups saved to `~/backups/claude-bot/` (gzipped, last 7 retained).
 - [x] Stream-json output parsing for non-tmux progress monitoring
 - [x] Web dashboard for statistics and session management
 - [x] Skills & commands integration from local Claude config
-- [x] LLM provider management (/add, /model, /connections)
+- [x] Multi-backend CLI sessions (/add Claude Code or opencode, /model, /connections)
 - [x] OpenCode TUI integration with SSE monitoring
 - [ ] Multi-user support with separate session namespaces
 - [ ] Inline mode — respond in any Telegram chat via @bot
