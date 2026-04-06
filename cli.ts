@@ -315,20 +315,16 @@ Keep status messages short (under 50 chars). The status is automatically deleted
     ]);
     const provider = providerChoice === 1 ? "opencode" : "claude";
 
-    try {
-      const res = await fetch(`http://localhost:${port}/api/sessions/register`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectPath: absPath, cliType: provider, cliConfig: provider === "opencode" ? { port: 4096 } : {} }),
-      });
-      if (res.ok) {
-        const data = await res.json() as { sessionId?: number; name?: string };
-        console.log(c.green(`  ✓ Registered: ${data.name ?? basename(absPath)} [${provider}] (session #${data.sessionId})`));
-      } else {
-        console.log(c.red(`  Registration failed: ${res.status}`));
-      }
-    } catch {
-      console.log(c.red(`  Could not reach bot API — add later with: claude-bot add --provider ${provider} ${absPath}`));
+    // Run registration inside the container — avoids Docker bridge NAT causing 401/403
+    const result = await run([
+      "docker", "compose", "exec", "-T", "bot",
+      "bun", "/app/cli.ts", "_register",
+      "--provider", provider,
+      "--path", absPath,
+      "--name", basename(absPath),
+    ]);
+    if (!result.ok) {
+      console.log(c.yellow(`  Add later with: claude-bot add --provider ${provider} ${absPath}`));
     }
 
     const again = ask("Add another project? (y/N)", "N");
@@ -681,26 +677,18 @@ async function tmuxAdd(dir?: string) {
     await saveProjects(projects);
   }
 
-  // 2. Register session in bot via HTTP API
-  const BOT_API_URL = process.env.BOT_API_URL ?? "http://localhost:3847";
-  try {
-    const cliConfig = provider === "opencode" ? { port: 4096, autostart: false } : {};
-    const res = await fetch(`${BOT_API_URL}/api/sessions/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectPath: projectDir, cliType: provider, cliConfig, name }),
-    });
-    if (res.ok) {
-      const data = await res.json() as { sessionId?: number };
-      console.log(`  ${c.green("Added:")} ${name} (${projectDir}) [${provider}]`);
-      if (data.sessionId) console.log(`  Session #${data.sessionId} registered`);
-    } else {
-      console.log(`  ${c.green("Added to tmux:")} ${name} (${projectDir})`);
-      console.log(`  ${c.yellow("Warning:")} bot API unavailable (${res.status}) — session not registered in DB`);
-    }
-  } catch {
+  // 2. Register session via internal command inside the container (avoids Docker bridge NAT 401/403)
+  const result = await run([
+    "docker", "compose", "exec", "-T", "bot",
+    "bun", "/app/cli.ts", "_register",
+    "--provider", provider,
+    "--path", projectDir,
+    "--name", name,
+  ], { silent: false });
+
+  if (!result.ok) {
     console.log(`  ${c.green("Added to tmux:")} ${name} (${projectDir})`);
-    console.log(`  ${c.yellow("Warning:")} bot not running — session will register on next start`);
+    console.log(`  ${c.yellow("Warning:")} bot not running — run 'claude-bot add .' after bot starts`);
   }
 
   console.log(`  ${c.dim("Restart tmux to apply: claude-bot down && claude-bot up")}`);
@@ -948,6 +936,38 @@ async function remote() {
   console.log(`  ${c.green("Setup complete!")}`);
 }
 
+// --- Internal: register session via HTTP (runs inside container where localhost=127.0.0.1) ---
+
+async function internalRegister() {
+  const args = process.argv.slice(3);
+  const get = (flag: string) => { const i = args.indexOf(flag); return i >= 0 ? args[i + 1] : undefined; };
+  const projectPath = get("--path");
+  const provider = (get("--provider") ?? "claude") as "claude" | "opencode";
+  const name = get("--name");
+
+  if (!projectPath) { console.error("_register: --path required"); process.exit(1); }
+
+  const port = process.env.PORT ?? "3847";
+  const cliConfig = provider === "opencode" ? { port: 4096, autostart: false } : {};
+  try {
+    const res = await fetch(`http://localhost:${port}/api/sessions/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectPath, cliType: provider, cliConfig, name }),
+    });
+    const data = await res.json() as { ok?: boolean; sessionId?: number; name?: string; error?: string };
+    if (res.ok) {
+      console.log(`  ${c.green("✓")} ${data.name ?? name ?? projectPath} [${provider}] — session #${data.sessionId}`);
+    } else {
+      console.error(`  ${c.red("Registration failed:")} ${data.error ?? res.status}`);
+      process.exit(1);
+    }
+  } catch (err: unknown) {
+    console.error(`  ${c.red("Bot API unreachable:")} ${(err as Error).message}`);
+    process.exit(1);
+  }
+}
+
 // --- Utilities ---
 
 function formatUptime(seconds: number): string {
@@ -1017,5 +1037,6 @@ switch (command) {
   case "ps":          await tmuxList(); break;
   case "add":         await tmuxAdd(process.argv[3]); break;
   case "remove":      await tmuxRemove(process.argv[3]); break;
+  case "_register":   await internalRegister(); break;
   default:            help(); break;
 }
