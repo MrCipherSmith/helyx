@@ -59,18 +59,20 @@ async function main() {
   // 2. Create Telegram bot
   const bot = createBot();
 
-  // 3. Start MCP HTTP server
-  const httpServer = startMcpHttpServer(bot);
-
-  // 3b. Start opencode session monitors (persistent SSE → Telegram forwarding)
+  // 3. Init opencode monitor BEFORE HTTP server starts (prevents race on /api/sessions/register)
   const { opencodeMonitor } = await import("./adapters/opencode-monitor.ts");
   opencodeMonitor.setBot(bot);
+
+  // 4. Start MCP HTTP server
+  const httpServer = startMcpHttpServer(bot);
+
+  // 4c. Start persistent SSE monitors for existing opencode sessions
   await opencodeMonitor.startAll();
 
-  // 4. Start cleanup timer
+  // 5. Start cleanup timer
   const cleanupTimer = startCleanupTimer();
 
-  // 5. Start Telegram transport
+  // 6. Start Telegram transport
   if (CONFIG.TELEGRAM_TRANSPORT === "webhook") {
     await bot.api.setWebhook(CONFIG.TELEGRAM_WEBHOOK_URL, {
       secret_token: CONFIG.TELEGRAM_WEBHOOK_SECRET || undefined,

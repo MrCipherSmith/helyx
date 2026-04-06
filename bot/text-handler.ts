@@ -98,14 +98,20 @@ export async function handleText(ctx: Context): Promise<void> {
       // OpencodeAdapter: send message, monitor handles the response
       const { opencodeAdapter } = await import("../adapters/opencode.ts");
       const { opencodeMonitor } = await import("../adapters/opencode-monitor.ts");
+      let placeholder: { message_id: number } | undefined;
       try {
         // Send a placeholder "..." message — monitor will edit it with the response
-        const placeholder = await bot.api.sendMessage(Number(chatId), "...");
+        placeholder = await bot.api.sendMessage(Number(chatId), "...");
         opencodeMonitor.setPending(route.sessionId, chatId, placeholder.message_id);
 
         await opencodeAdapter.send(route.sessionId, text, { chatId, fromUser, messageId });
         appendLog(route.sessionId, chatId, "queue", "message sent to opencode");
       } catch (err: any) {
+        // Clean up the pending placeholder so it doesn't linger in chat
+        opencodeMonitor.clearPending(route.sessionId);
+        if (placeholder) {
+          await bot.api.deleteMessage(Number(chatId), placeholder.message_id).catch(() => {});
+        }
         const msg = err?.message ?? String(err);
         appendLog(route.sessionId, chatId, "opencode", `send error: ${msg}`, "error");
         if (msg.includes("ECONNREFUSED") || msg.includes("fetch")) {

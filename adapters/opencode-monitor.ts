@@ -46,6 +46,13 @@ class OpencodeMonitor {
     this.pending.set(sessionId, { chatId, messageId });
   }
 
+  /** Called by handleText if send fails — clears the pending entry and returns it for cleanup */
+  clearPending(sessionId: number): PendingMessage | undefined {
+    const pend = this.pending.get(sessionId);
+    this.pending.delete(sessionId);
+    return pend;
+  }
+
   /** Start monitoring all active opencode sessions */
   async startAll() {
     const rows = await sql`

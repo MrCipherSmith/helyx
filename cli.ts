@@ -1145,9 +1145,25 @@ async function internalSetOpencodeSession() {
   if (!projectPath || !sessionId) { process.exit(1); }
 
   const { sql } = await import("./memory/db.ts");
+  // Read-merge-write to preserve existing fields (port, tmuxSession, autostart, etc.)
+  const rows = await sql`SELECT cli_config FROM sessions WHERE project_path = ${projectPath} AND cli_type = 'opencode' ORDER BY id DESC LIMIT 1`;
+  let current: Record<string, unknown> = {};
+  if (rows[0]?.cli_config) {
+    const raw = rows[0].cli_config;
+    if (Array.isArray(raw)) {
+      for (const item of raw) {
+        try { Object.assign(current, typeof item === "string" ? JSON.parse(item) : item); } catch {}
+      }
+    } else if (typeof raw === "string") {
+      try { current = JSON.parse(raw); } catch {}
+    } else if (typeof raw === "object") {
+      current = raw as Record<string, unknown>;
+    }
+  }
+  const updated = { ...current, opencodeSessionId: sessionId };
   await sql`
     UPDATE sessions
-    SET cli_config = ${JSON.stringify({ port: 4096, autostart: false, opencodeSessionId: sessionId })}::jsonb
+    SET cli_config = ${JSON.stringify(updated)}::jsonb
     WHERE project_path = ${projectPath} AND cli_type = 'opencode'
   `;
   await sql.end();
