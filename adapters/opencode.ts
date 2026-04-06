@@ -217,6 +217,10 @@ export class OpencodeAdapter implements CliAdapter {
     const config = await this.getConfig(sessionId);
     const url = `${baseUrl(config)}/event`;
 
+    // Get the opencode session ID to filter SSE events
+    const rows = await sql`SELECT cli_config FROM sessions WHERE id = ${sessionId}`;
+    const opencodeSessionId = ((rows[0]?.cli_config ?? {}) as Record<string, unknown>).opencodeSessionId as string | undefined;
+
     let stopped = false;
     let doneCalled = false;
     const controller = new AbortController();
