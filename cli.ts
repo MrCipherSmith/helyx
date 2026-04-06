@@ -312,14 +312,12 @@ Keep status messages short (under 50 chars). The status is automatically deleted
 
     const opencodePort = ask("opencode serve port", "4096");
 
-    step("Starting opencode serve in background");
-    Bun.spawn(["opencode", "serve", "--port", opencodePort, "--hostname", "0.0.0.0"], {
-      stdout: Bun.file(`${BOT_DIR}/logs/opencode.log`),
-      stderr: Bun.file(`${BOT_DIR}/logs/opencode.log`),
-      detached: true,
-    });
+    step("Starting opencode serve in tmux");
+    await run(["tmux", "new-session", "-d", "-s", "opencode-serve", "-x", "220", "-y", "50"], { silent: true });
+    await run(["tmux", "send-keys", "-t", "opencode-serve",
+      `opencode serve --port ${opencodePort} --hostname 0.0.0.0`, "Enter"]);
     done();
-    console.log(`  ${c.dim(`Logs: ${BOT_DIR}/logs/opencode.log`)}\n`);
+    console.log(`  ${c.dim(`Logs: tmux attach -t opencode-serve`)}\n`);
   }
 
   // Register projects
@@ -730,12 +728,10 @@ async function tmuxAdd(dir?: string) {
     )).ok;
 
     if (!isAlive) {
-      step("Starting opencode serve");
-      Bun.spawn(["opencode", "serve", "--port", opencodePort, "--hostname", "0.0.0.0"], {
-        stdout: "ignore",
-        stderr: "ignore",
-        detached: true,
-      });
+      step("Starting opencode serve in tmux");
+      await run(["tmux", "new-session", "-d", "-s", "opencode-serve", "-x", "220", "-y", "50"], { silent: true });
+      await run(["tmux", "send-keys", "-t", "opencode-serve",
+        `opencode serve --port ${opencodePort} --hostname 0.0.0.0`, "Enter"]);
       // Wait for it to be ready
       for (let i = 0; i < 10; i++) {
         await new Promise(r => setTimeout(r, 1000));
