@@ -1,19 +1,24 @@
 services:
   opencode:
-    image: oven/bun:latest
-    command: ["bunx", "opencode-ai@latest", "serve", "--port", "4096"]
+    image: node:20-slim
+    command: ["npx", "--yes", "opencode-ai@latest", "serve", "--port", "4096"]
     restart: unless-stopped
+    user: root
     ports:
       - "127.0.0.1:4096:4096"
     env_file: .env
+    environment:
+      HOME: /root
+      npm_config_cache: /root/.npm
     volumes:
-      - ${HOME}:/root:ro
+      - ${HOME}:/root/host:ro
+      - opencode-npm-cache:/root/.npm
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:4096/session >/dev/null 2>&1 || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:4096/session >/dev/null 2>&1 || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 6
-      start_period: 30s
+      start_period: 60s
     networks:
       - claude-bot
 
@@ -87,6 +92,7 @@ services:
 volumes:
   pgdata:
     name: claude-bot-pgdata
+  opencode-npm-cache:
 
 networks:
   claude-bot:
