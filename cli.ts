@@ -723,24 +723,27 @@ async function tmuxStop() {
 }
 
 async function tmuxAdd(dir?: string) {
-  // Parse --name and --provider flags from argv
-  const nameIdx = process.argv.indexOf("--name");
-  const customName = nameIdx >= 0 ? process.argv[nameIdx + 1] : undefined;
-  const providerIdx = process.argv.indexOf("--provider");
-  let provider = (providerIdx >= 0 ? process.argv[providerIdx + 1] : undefined) as "claude" | "opencode" | undefined;
+  console.log(`\n  ${c.bold("Add project")}\n`);
 
-  // Skip --name/--provider and their values when resolving dir
+  // Ask for path interactively if not given
   let resolvedDir = dir;
-  if (resolvedDir === "--name" || resolvedDir === "--provider") resolvedDir = undefined;
-  const projectDir = resolve(resolvedDir ?? ".");
+  if (!resolvedDir || resolvedDir === "--name" || resolvedDir === "--provider") {
+    resolvedDir = ask("Project path", ".");
+  }
+  const projectDir = resolve(resolvedDir);
   if (!existsSync(projectDir)) {
     console.log(c.red(`  Directory not found: ${projectDir}`));
     return;
   }
 
+  // Parse --name flag
+  const nameIdx = process.argv.indexOf("--name");
+  const customName = nameIdx >= 0 ? process.argv[nameIdx + 1] : undefined;
   const name = customName ?? basename(projectDir);
 
-  // Ask provider interactively if not given
+  // Ask provider interactively (or from --provider flag)
+  const providerIdx = process.argv.indexOf("--provider");
+  let provider = (providerIdx >= 0 ? process.argv[providerIdx + 1] : undefined) as "claude" | "opencode" | undefined;
   if (!provider) {
     const choice = askChoice("Provider:", ["claude (Claude Code — full MCP integration)", "opencode (opencode TUI)"]);
     provider = choice === 1 ? "opencode" : "claude";
@@ -758,18 +761,51 @@ async function tmuxAdd(dir?: string) {
   await saveProjects(projects);
   console.log(`  ${c.green("✓")} Saved: ${windowName({ name, path: projectDir, provider })}`);
 
-  if (provider === "claude") {
-    // Register in bot DB
-    const result = await run([
-      "docker", "compose", "exec", "-T", "bot",
-      "bun", "/app/cli.ts", "_register",
-      "--provider", "claude", "--path", projectDir, "--name", name,
-    ], { silent: false });
-    if (result.output) console.log(result.output);
-    if (!result.ok) console.log(`  ${c.yellow("Warning:")} bot not running — session will register on next start`);
+  // Register in bot DB
+  const result = await run([
+    "docker", "compose", "exec", "-T", "bot",
+    "bun", "/app/cli.ts", "_register",
+    "--provider", provider, "--path", projectDir, "--name", name,
+  ], { silent: false });
+  if (result.output) console.log(result.output);
+  if (!result.ok) console.log(`  ${c.yellow("Warning:")} bot not running — session will register on next start`);
 
-    // Launch claude directly in the current terminal
-    console.log(`  ${c.green("Starting claude...")} ${c.dim(`(Ctrl+C to stop)`)}\n`);
+  console.log(`\n  ${c.dim(`Run: claude-bot run ${projectDir}`)}`);
+}
+
+async function tmuxRun(dir?: string) {
+  // Resolve directory
+  let resolvedDir = dir;
+  if (!resolvedDir || resolvedDir.startsWith("--")) resolvedDir = ".";
+  const projectDir = resolve(resolvedDir);
+  if (!existsSync(projectDir)) {
+    console.log(c.red(`  Directory not found: ${projectDir}`));
+    return;
+  }
+
+  // Determine provider: from flag, then from projects file, then ask
+  let provider: "claude" | "opencode" | undefined;
+  if (process.argv.includes("--claude")) provider = "claude";
+  else if (process.argv.includes("--opencode")) provider = "opencode";
+
+  if (!provider) {
+    const projects = await loadProjects();
+    const project = projects.find(p => p.path === projectDir);
+    if (project?.provider) {
+      provider = project.provider as "claude" | "opencode";
+      console.log(`  ${c.dim(`Provider from config: ${provider}`)}`);
+    }
+  }
+
+  if (!provider) {
+    const choice = askChoice("Provider:", ["claude (Claude Code — full MCP integration)", "opencode (opencode TUI)"]);
+    provider = choice === 1 ? "opencode" : "claude";
+  }
+
+  const name = basename(projectDir);
+
+  if (provider === "claude") {
+    console.log(`  ${c.green("Starting claude...")} ${c.dim("(Ctrl+C to stop)")}\n`);
     const proc = Bun.spawn(
       ["bash", `${BOT_DIR}/scripts/run-cli.sh`, projectDir],
       { stdout: "inherit", stderr: "inherit", stdin: "inherit", cwd: projectDir },
@@ -778,21 +814,13 @@ async function tmuxAdd(dir?: string) {
     return;
   }
 
-  // --- opencode: register + open TUI immediately ---
+  // --- opencode: open TUI with shared session ---
   const opencodePort = "4096";
 
-  // 1. Register session in bot DB
-  const regResult = await run([
-    "docker", "compose", "exec", "-T", "bot",
-    "bun", "/app/cli.ts", "_register",
-    "--provider", "opencode", "--path", projectDir, "--name", name, "--port", opencodePort,
-  ], { silent: false });
-  if (regResult.output) console.log(regResult.output);
-
-  // 2. Ensure opencode serve is running
+  // Ensure opencode serve is running
   await ensureOpencodeServe(opencodePort);
 
-  // 3. Get or create a shared opencode session ID (so TUI and bot use the same session)
+  // Get or create a shared opencode session ID (so TUI and bot use the same session)
   let opencodeSessionId: string | undefined;
 
   // Try to get existing session ID from bot DB
@@ -826,7 +854,7 @@ async function tmuxAdd(dir?: string) {
     ], { silent: true });
   }
 
-  // 4. Open TUI attached to the shared session
+  // Open TUI attached to the shared session
   console.log(`\n  ${c.cyan("opencode TUI")} — ${c.dim("Ctrl+C or q to exit (session → disconnected)")}\n`);
   const tuiArgs = ["opencode", "attach", `http://localhost:${opencodePort}`];
   if (opencodeSessionId) tuiArgs.push("--session", opencodeSessionId);
@@ -838,7 +866,7 @@ async function tmuxAdd(dir?: string) {
   });
   await tui.exited;
 
-  // 5. Mark session as disconnected when TUI exits
+  // Mark session as disconnected when TUI exits
   await run([
     "docker", "compose", "exec", "-T", "bot",
     "bun", "/app/cli.ts", "_disconnect",
@@ -1246,7 +1274,8 @@ function help() {
     up [-a] [-s]    Start all projects in tmux (-a attach, -s split panes)
     down            Stop all tmux sessions + clean DB
     ps              List configured projects and status
-    add [dir] [--name NAME] [--provider claude|opencode]  Add project
+    add [dir]       Add project (interactive: path + provider)
+    run [dir]       Launch project in terminal (--claude / --opencode)
     remove <name>   Remove project from tmux config
     opencode-stop   Kill opencode serve tmux session
 
@@ -1278,6 +1307,7 @@ switch (command) {
   case "down":        await tmuxStop(); break;
   case "ps":          await tmuxList(); break;
   case "add":         await tmuxAdd(process.argv[3]); break;
+  case "run":         await tmuxRun(process.argv[3]); break;
   case "remove":      await tmuxRemove(process.argv[3]); break;
   case "opencode-stop": {
     const res = await run(["tmux", "kill-session", "-t", "opencode-serve"], { silent: true });
