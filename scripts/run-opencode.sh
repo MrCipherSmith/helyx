@@ -7,6 +7,7 @@
 
 PROJECT_DIR="${1:-.}"
 PORT="${2:-4096}"
+SESSION_ID="${3:-}"
 RESTART_DELAY="${RESTART_DELAY:-5}"
 PROJECT_NAME="$(basename "$PROJECT_DIR")"
 LOG_FILE="/tmp/opencode-${PROJECT_NAME}.log"
@@ -15,11 +16,16 @@ cd "$PROJECT_DIR" || { echo "[run-opencode] Cannot cd to $PROJECT_DIR"; exit 1; 
 
 echo "[run-opencode] Project: $PROJECT_DIR"
 echo "[run-opencode] Connecting to opencode serve at localhost:${PORT}"
+[ -n "$SESSION_ID" ] && echo "[run-opencode] Session: $SESSION_ID"
 
 while true; do
   echo "[run-opencode] Starting at $(date '+%Y-%m-%d %H:%M:%S')" | tee -a "$LOG_FILE"
 
-  opencode attach "http://localhost:${PORT}"
+  if [ -n "$SESSION_ID" ]; then
+    opencode attach "http://localhost:${PORT}" --session "$SESSION_ID"
+  else
+    opencode attach "http://localhost:${PORT}"
+  fi
   EXIT_CODE=$?
 
   echo "[run-opencode] Exited with code $EXIT_CODE at $(date '+%Y-%m-%d %H:%M:%S')" | tee -a "$LOG_FILE"
