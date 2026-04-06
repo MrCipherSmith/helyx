@@ -53,11 +53,7 @@ if ! check claude; then
 fi
 
 if ! check opencode; then
-  echo -e "  ${CYAN}Installing${NC} opencode..."
-  npm install -g opencode-ai 2>/dev/null || bun add -g opencode-ai 2>/dev/null || {
-    echo -e "  ${RED}✗${NC} opencode install failed — install manually: npm i -g opencode-ai"
-  }
-  command -v opencode &>/dev/null && echo -e "  ${GREEN}✓${NC} opencode installed"
+  echo -e "    ${DIM}Optional — needed for opencode sessions. Setup wizard will install it.${NC}"
 fi
 
 if [ "$MISSING" -eq 1 ]; then

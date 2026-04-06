@@ -204,6 +204,9 @@ async function setup() {
   await Bun.write(`${BOT_DIR}/.env`, envLines.join("\n") + "\n");
   done();
 
+  // Ensure logs dir exists
+  await run(["mkdir", "-p", `${BOT_DIR}/logs`], { silent: true });
+
   // Install dependencies
   step("Installing dependencies");
   const install = await run(["bun", "install", "--frozen-lockfile"]);
@@ -289,10 +292,44 @@ Keep status messages short (under 50 chars). The status is automatically deleted
     console.log(` ${c.yellow("exists, skipping")}`);
   }
 
-  // opencode info (Docker only — service starts automatically)
-  if (useDocker) {
-    console.log(`\n  ${c.bold("opencode")} ${c.dim("(bundled, starts automatically)")}`);
-    console.log(`  opencode serve runs on port 4096. Configure providers via ${c.cyan("opencode")} TUI.\n`);
+  // opencode: install + start serve
+  console.log();
+  const setupOpencode = askChoice("opencode (AI coding CLI for opencode sessions):", [
+    "Install opencode-ai and start opencode serve",
+    "Skip (I'll set it up later)",
+  ]);
+
+  if (setupOpencode === 0) {
+    // Install opencode-ai globally if not present
+    const hasOpencode = (await run(["which", "opencode"], { silent: true })).ok;
+    if (!hasOpencode) {
+      step("Installing opencode-ai");
+      const install = await run(["npm", "install", "-g", "opencode-ai"]);
+      install.ok ? done() : fail("try manually: npm i -g opencode-ai");
+    } else {
+      console.log(`  ${c.green("✓")} opencode already installed`);
+    }
+
+    // Start opencode serve in tmux (window "opencode") if tmux is available
+    const hasTmux = (await run(["which", "tmux"], { silent: true })).ok;
+    const opencodePort = ask("opencode serve port", "4096");
+
+    if (hasTmux) {
+      step("Starting opencode serve in tmux");
+      // Kill existing window if any, then create fresh
+      await run(["tmux", "new-session", "-d", "-s", "opencode-serve", "-x", "220", "-y", "50"], { silent: true });
+      await run(["tmux", "send-keys", "-t", "opencode-serve",
+        `opencode serve --port ${opencodePort}`, "Enter"]);
+      done();
+      console.log(`  ${c.dim(`Attach: tmux attach -t opencode-serve`)}`);
+    } else {
+      step("Starting opencode serve in background");
+      Bun.spawn(["opencode", "serve", "--port", opencodePort], {
+        stdout: Bun.file(`${BOT_DIR}/logs/opencode.log`),
+        stderr: Bun.file(`${BOT_DIR}/logs/opencode.log`),
+      });
+      done();
+    }
   }
 
   // Register projects
