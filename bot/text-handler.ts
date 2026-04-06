@@ -1,0 +1,118 @@
+import type { Context } from "grammy";
+import { composePrompt } from "../claude/prompt.ts";
+import { addMessage } from "../memory/short-term.ts";
+import { streamToTelegram } from "./streaming.ts";
+import { routeMessage } from "../sessions/router.ts";
+import { touchIdleTimer, checkOverflow } from "../memory/summarizer.ts";
+import { sql } from "../memory/db.ts";
+import { appendLog } from "../utils/stats.ts";
+import { pendingInput, clearPendingInput, getBotRef } from "./handlers.ts";
+
+export async function handleText(ctx: Context): Promise<void> {
+  const bot = getBotRef();
+  const chatId = String(ctx.chat!.id);
+  const text = ctx.message?.text;
+  if (!text) return;
+
+  // Check for pending input (e.g. waiting for session ID after /switch)
+  const handler = pendingInput.get(chatId);
+  if (handler) {
+    clearPendingInput(chatId);
+    await handler(ctx);
+    return;
+  }
+
+  const route = await routeMessage(chatId);
+
+  appendLog(route.sessionId, chatId, "route", `mode=${route.mode}, session=#${route.sessionId}`);
+
+  if (route.mode === "disconnected") {
+    appendLog(route.sessionId, chatId, "route", `session "${route.sessionName}" disconnected`, "warn");
+    await ctx.reply(
+      `Session "${route.sessionName}" disconnected.\n/switch 0 for standalone or /sessions for list.`,
+    );
+    return;
+  }
+
+  if (route.mode === "cli") {
+    appendLog(route.sessionId, chatId, "route", `cli session #${route.sessionId}`);
+
+    // Show typing indicator
+    await ctx.replyWithChatAction("typing");
+
+    // Save message to short-term memory
+    await addMessage({
+      sessionId: route.sessionId,
+      projectPath: route.projectPath,
+      chatId,
+      role: "user",
+      content: text,
+      metadata: {
+        messageId: ctx.message?.message_id,
+        from: ctx.from?.username ?? ctx.from?.first_name,
+      },
+    });
+
+    // Put message into queue for stdio channel adapter
+    await sql`
+      INSERT INTO message_queue (session_id, chat_id, from_user, content, message_id)
+      VALUES (
+        ${route.sessionId},
+        ${chatId},
+        ${ctx.from?.username ?? ctx.from?.first_name ?? "user"},
+        ${text},
+        ${String(ctx.message?.message_id ?? "")}
+      )
+    `;
+    appendLog(route.sessionId, chatId, "queue", "message queued for CLI");
+    touchIdleTimer(route.sessionId, chatId, route.projectPath);
+    return;
+  }
+
+  // Standalone mode: process with available provider (anthropic/openrouter/ollama)
+  const sessionId = route.sessionId;
+
+  // Show typing indicator
+  await ctx.replyWithChatAction("typing");
+
+  appendLog(sessionId, chatId, "receive", `user message: ${text.slice(0, 80)}`);
+
+  // Save user message
+  await addMessage({
+    sessionId,
+    projectPath: route.projectPath,
+    chatId,
+    role: "user",
+    content: text,
+    metadata: {
+      messageId: ctx.message?.message_id,
+      from: ctx.from?.username ?? ctx.from?.first_name,
+    },
+  });
+
+  // Compose prompt with memory context
+  const { system, messages } = await composePrompt(sessionId, chatId, text);
+
+  // Stream response
+  try {
+    appendLog(sessionId, chatId, "llm", "streaming response...");
+    const response = await streamToTelegram(bot, ctx.chat!.id, system, messages, { sessionId, chatId, operation: "chat" });
+    appendLog(sessionId, chatId, "reply", `sent ${response.length} chars`);
+
+    // Save assistant response
+    await addMessage({
+      sessionId,
+      projectPath: route.projectPath,
+      chatId,
+      role: "assistant",
+      content: response,
+    });
+  } catch (err: any) {
+    appendLog(sessionId, chatId, "llm", `error: ${err?.message ?? err}`, "error");
+    await ctx.reply(`Error: ${err?.message ?? "unknown error"}`);
+  }
+
+  // Touch idle timer and check overflow
+  touchIdleTimer(sessionId, chatId, route.projectPath);
+  await checkOverflow(sessionId, chatId, route.projectPath);
+}
