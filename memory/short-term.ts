@@ -13,7 +13,20 @@ export interface Message {
 }
 
 // In-memory cache: "sessionId:chatId" -> Message[]
+// LRU eviction: when cache exceeds MAX_CACHE_ENTRIES, delete least recently used
+const MAX_CACHE_ENTRIES = 100;
 const cache = new Map<string, Message[]>();
+
+function touchCache(key: string, value: Message[]): void {
+  // Map preserves insertion order — delete+set moves to end (most recent)
+  cache.delete(key);
+  cache.set(key, value);
+  // Evict oldest entries if over limit
+  while (cache.size > MAX_CACHE_ENTRIES) {
+    const oldest = cache.keys().next().value;
+    if (oldest) cache.delete(oldest);
+  }
+}
 
 function cacheKey(sessionId: number, chatId: string): string {
   return `${sessionId}:${chatId}`;
@@ -37,7 +50,7 @@ export async function addMessage(msg: Message): Promise<void> {
   if (messages.length > CONFIG.SHORT_TERM_WINDOW * 2) {
     messages.splice(0, messages.length - CONFIG.SHORT_TERM_WINDOW * 2);
   }
-  cache.set(key, messages);
+  touchCache(key, messages);
 }
 
 export async function getContext(
@@ -71,7 +84,7 @@ export async function getContext(
     createdAt: r.created_at,
   }));
 
-  cache.set(key, messages);
+  touchCache(key, messages);
   return messages.slice(-CONFIG.SHORT_TERM_WINDOW);
 }
 

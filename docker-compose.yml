@@ -10,7 +10,7 @@ services:
       DATABASE_URL: postgres://claude_bot:${POSTGRES_PASSWORD:-claude_bot_secret}@postgres:5432/claude_bot
       OLLAMA_URL: http://host.docker.internal:11434
       DOWNLOADS_DIR: /app/downloads
-      HOST_DOWNLOADS_DIR: /home/altsay/bots/claude-bot/downloads
+      HOST_DOWNLOADS_DIR: ${HOST_DOWNLOADS_DIR:-${PWD}/downloads}
       KNOWLEDGE_BASE: ${KNOWLEDGE_BASE:-}
       HOST_CLAUDE_CONFIG: /host-claude-config
     extra_hosts:

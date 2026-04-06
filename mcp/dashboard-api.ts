@@ -1,5 +1,6 @@
 import { IncomingMessage, ServerResponse } from "http";
-import { readFileSync, existsSync } from "fs";
+import { existsSync } from "fs";
+import { readFile } from "fs/promises";
 import { join, extname, resolve } from "path";
 import { sql } from "../memory/db.ts";
 import { deleteSessionCascade } from "../sessions/delete.ts";
@@ -267,7 +268,7 @@ async function handleDeleteMemory(res: ServerResponse, id: number): Promise<void
 
 // --- Static file serving ---
 
-function serveStatic(res: ServerResponse, pathname: string): boolean {
+async function serveStatic(res: ServerResponse, pathname: string): Promise<boolean> {
   let filePath = resolve(join(DIST_DIR, pathname));
   if (!filePath.startsWith(DIST_DIR)) return false; // path traversal protection
   if (!existsSync(filePath) || pathname === "/") {
@@ -278,7 +279,7 @@ function serveStatic(res: ServerResponse, pathname: string): boolean {
   const ext = extname(filePath);
   const contentType = MIME_TYPES[ext] || "application/octet-stream";
   try {
-    const content = readFileSync(filePath);
+    const content = await readFile(filePath);
     res.writeHead(200, { "Content-Type": contentType });
     res.end(content);
     return true;
@@ -381,7 +382,7 @@ export async function handleDashboardRequest(
 
   // Static files (dashboard SPA)
   if (method === "GET" && !pathname.startsWith("/mcp") && pathname !== "/health" && pathname !== CONFIG.TELEGRAM_WEBHOOK_PATH) {
-    if (serveStatic(res, pathname)) return true;
+    if (await serveStatic(res, pathname)) return true;
   }
 
   return false;
