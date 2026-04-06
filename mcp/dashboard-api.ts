@@ -218,7 +218,6 @@ async function handleLogs(res: ServerResponse, url: URL): Promise<void> {
   const offset = Number(url.searchParams.get("offset") ?? 0);
 
   const conditions = [];
-  const values: any[] = [];
 
   if (sessionId) conditions.push(sql`r.session_id = ${Number(sessionId)}`);
   if (level) conditions.push(sql`r.level = ${level}`);

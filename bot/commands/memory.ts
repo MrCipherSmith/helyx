@@ -66,7 +66,6 @@ export async function handleRecall(ctx: Context): Promise<void> {
   }
 
   const lines = results.map((r) => {
-    const dist = (1 - Number(r.distance)).toFixed(0);
     return `#${r.id} [${r.type}] ${r.content.slice(0, 120)}${r.content.length > 120 ? "..." : ""}`;
   });
 

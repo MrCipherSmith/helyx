@@ -109,6 +109,10 @@ const migrations: Migration[] = [
       await tx`CREATE INDEX IF NOT EXISTS idx_memories_tags ON memories USING gin(tags)`;
       await tx`CREATE INDEX IF NOT EXISTS idx_memories_session ON memories(session_id)`;
       await tx`CREATE INDEX IF NOT EXISTS idx_memories_project_path ON memories(project_path)`;
+      // HNSW index for fast approximate nearest-neighbor search on embeddings.
+      // Default pgvector HNSW params: m=16 (max connections per node), ef_construction=64 (build-time search width).
+      // Increase m and ef_construction for higher recall at the cost of build time and memory.
+      // At query time, SET hnsw.ef_search (default 40) to trade speed for accuracy.
       await tx`CREATE INDEX IF NOT EXISTS idx_memories_embedding ON memories USING hnsw (embedding vector_cosine_ops)`;
 
       await tx`
