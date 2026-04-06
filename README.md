@@ -415,11 +415,17 @@ Tmux:
   claude-bot up [-a] [-s]       Start all projects in tmux (-s split panes)
   claude-bot down               Stop all tmux sessions + clean DB
   claude-bot ps                 List configured projects
-  claude-bot add [dir] [--name]  Add project to config (custom name)
+  claude-bot add [dir] [--name] [--provider]  Add project to config
   claude-bot remove <name>      Remove project from config
 
 Connect:
-  claude-bot connect [dir] -t   Start single CLI session in tmux
+  claude-bot connect [dir] [-t] [--provider]  Start single CLI session
+  claude-bot attach <url>       Attach to running OpenCode instance
+
+Providers:
+  claude-bot add ~/project --provider opencode   Connect to OpenCode TUI
+  claude-bot add ~/project --provider local      Use local Claude Code
+  claude-bot add ~/project --provider remote     SSH tunnel to remote
 ```
 
 ## Telegram Commands
@@ -450,8 +456,91 @@ Connect:
 | `/pending` | Pending CLI permission requests |
 | **Tools & Knowledge** | |
 | `/tools` | Available MCP tools |
-| `/skills` | Skills catalog from knowledge base |
+| `/skills` | Skills catalog — inline buttons with descriptions, click to run |
+| `/commands` | Custom commands — inline buttons, click to execute |
+| `/hooks` | Configured Hookify rules (event matchers + commands) |
 | `/rules` | Coding rules from knowledge base |
+| `/add [model]` | Add/configure LLM provider (Google AI, Anthropic, OpenRouter, Ollama) |
+| `/model` | View current LLM provider and settings |
+| `/connections` | List provider badges and connection status |
+
+## Skills, Commands & Hooks
+
+The bot integrates with your local Claude Code configuration:
+
+### `/skills` — AI Assistant Skills
+Displays all skills from `~/.claude/skills/` (e.g., `code-review`, `feature-dev`, `deploy`).
+
+- **Inline buttons** with skill name and short description
+- **Click to run** — no-args skills execute immediately, args-required skills prompt for input
+- **Scanned from**: `HOST_CLAUDE_CONFIG` (docker mount of ~/.claude)
+- **Example skills**: code-ai-review, feature-analyzer, job-orchestrator, task-implementer, etc.
+
+### `/commands` — Custom Commands
+Displays commands from `~/.claude/commands/*.md` with YAML frontmatter.
+
+Example command file (`~/.claude/commands/my-review.md`):
+```markdown
+---
+description: "Run full code review with fixes"
+args: "optional"
+---
+# My Review Script
+...
+```
+
+- **Callback routing** — click button → `cmd:<name>` callback
+- **Deferred input** — if args required, bot prompts user then enqueues on next message
+- **5-minute timeout** for pending input
+
+### `/hooks` — Hookify Rules
+Lists configured hooks from `settings.json`:
+```json
+{
+  "hooks": [
+    {
+      "event": "PreToolUse",
+      "matcher": "Bash.*npm",
+      "command": "echo 'Running npm...'"
+    }
+  ]
+}
+```
+
+**Events supported:**
+- `PreToolUse` — before any tool runs
+- `PostToolUse` — after any tool completes
+- `Stop` — when agent stops
+- `Notification` — on bot notification
+
+## LLM Providers
+
+### `/add [provider]` — Configure Provider
+Interactive wizard to add or switch LLM providers:
+- **Google AI** — Gemma 4 models, free tier available
+- **Anthropic** — Claude 3 models, requires API key
+- **OpenRouter** — many models, free & paid options
+- **Ollama** — local models, fully free
+
+Each provider stored in `cli_config` table with connection details. Multiple providers can be configured; `/model` shows the current active one.
+
+### `/model` — View Current Provider
+Shows active provider, model name, API key status, and endpoint.
+
+### `/connections` — Provider Status
+Displays all configured providers as badges with connection status indicators.
+
+### CLI Provider Support
+
+When adding a project with `/add` or `claude-bot add`, specify provider:
+```bash
+claude-bot add ~/my-project --provider opencode
+```
+
+Supported providers:
+- `opencode` — Connect to OpenCode TUI/serve instance
+- `local` — Use local Claude Code
+- `remote` — SSH tunnel to remote machine
 
 ## MCP Tools
 
@@ -481,6 +570,35 @@ Connect:
 ```
 GET http://localhost:3847/health
 → { "status": "ok", "db": "connected", "uptime": 3600, "sessions": 5 }
+```
+
+## OpenCode Integration
+
+Claude Bot can connect to [OpenCode](https://opencode.ai) — a TUI-based AI coding tool with advanced reasoning:
+
+### Connect OpenCode Project
+
+```bash
+# Start OpenCode in background (persistent tmux session)
+claude-bot add ~/my-project --provider opencode
+
+# Or connect existing OpenCode instance
+claude-bot attach <opencode-url>
+```
+
+### Features
+
+- **SSE Monitor** — real-time monitoring of OpenCode operations
+- **Message Forwarding** — TUI responses automatically forwarded to Telegram
+- **Session Persistence** — shared session state between TUI and Telegram
+- **Status Updates** — live progress from OpenCode ("Exploring files...", "Running tests...", etc.)
+- **Two-Way Control** — send messages from Telegram, monitor output in TUI
+
+### Setup
+
+The bot auto-detects OpenCode via port 8000. Ensure OpenCode is running:
+```bash
+opencode serve --hostname 0.0.0.0 --port 8000
 ```
 
 ## Setup Guide
@@ -517,6 +635,8 @@ ollama pull nomic-embed-text
 | `JWT_SECRET` | No | JWT signing secret (auto-derived from bot token if not set) |
 | `SECURE_COOKIES` | No | Force Secure flag on cookies (`true`/`false`, auto-detected) |
 | `KNOWLEDGE_BASE` | No | Path to knowledge base for `/skills` and `/rules` |
+| `HOST_CLAUDE_CONFIG` | No | Mount point for ~/.claude in Docker (default: `/host-claude-config`) |
+| `OPENCODE_PORT` | No | OpenCode serve port (default: `8000`) |
 
 ### Manual Setup (without Docker)
 
@@ -594,12 +714,42 @@ Backups saved to `~/backups/claude-bot/` (gzipped, last 7 retained).
 | DB Client | [postgres](https://github.com/porsager/postgres) |
 | Dashboard | [React](https://react.dev) + [Tailwind CSS](https://tailwindcss.com) + [Vite](https://vite.dev) |
 
+## Recent Changes (v1.8.0)
+
+### Skills & Commands Integration
+- **`/skills`** — Interactive skill browser with inline buttons (reads from `~/.claude/skills/`)
+- **`/commands`** — Custom command launcher (reads from `~/.claude/commands/`)
+- **`/hooks`** — View configured Hookify rules
+- **Deferred input** — Tools requiring args prompt user then enqueue
+- **Icon support** — 38+ emojis for quick visual identification
+
+### LLM Provider Management
+- **`/add [provider]`** — Configure Google AI, Anthropic, OpenRouter, Ollama
+- **`/model`** — View current provider and settings
+- **`/connections`** — List all configured providers with status
+- **CLI flag** — `claude-bot add ~/project --provider <name>`
+- **Provider types** — `local`, `remote`, `opencode`
+
+### OpenCode TUI Integration
+- **Persistent SSE monitor** — Real-time message forwarding to Telegram
+- **Session sharing** — Shared state between TUI and Telegram
+- **Auto-start** — Bot launches `opencode serve` automatically
+- **Status updates** — Live progress from OpenCode operations
+- **Two-way control** — Send from Telegram, monitor in TUI
+
+### Database Improvements
+- **JSONB normalization** — Safe PostgreSQL storage with explicit casting
+- **Read-merge-write** — Concurrent-safe provider config updates
+
 ## Roadmap
 
 - [x] Vision model support for image analysis in standalone mode
 - [x] Webhook mode for Telegram (instead of polling)
 - [x] Stream-json output parsing for non-tmux progress monitoring
 - [x] Web dashboard for statistics and session management
+- [x] Skills & commands integration from local Claude config
+- [x] LLM provider management (/add, /model, /connections)
+- [x] OpenCode TUI integration with SSE monitoring
 - [ ] Multi-user support with separate session namespaces
 - [ ] Inline mode — respond in any Telegram chat via @bot
 
