@@ -4,8 +4,21 @@ import { sql } from "../memory/db.ts";
 const DEFAULT_PORT = 4096;
 const REQUEST_TIMEOUT_MS = 30_000;
 
+/** Validate and return base URL — prevents SSRF via user-controlled port */
 function baseUrl(config: CliConfig): string {
-  return `http://localhost:${config.port ?? DEFAULT_PORT}`;
+  const port = Number(config.port ?? DEFAULT_PORT);
+  if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+    throw new Error(`Invalid opencode port: ${port}`);
+  }
+  return `http://localhost:${port}`;
+}
+
+/** Validate tmux session name — prevents command injection via user-controlled cliConfig */
+function validateTmuxSession(name: string): string {
+  if (!/^[a-zA-Z0-9_\-]{1,64}$/.test(name)) {
+    throw new Error(`Invalid tmuxSession value: "${name}"`);
+  }
+  return name;
 }
 
 async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
@@ -88,11 +101,12 @@ export class OpencodeAdapter implements CliAdapter {
     const opencodeSessionId = data.id;
     if (!opencodeSessionId) throw new Error("opencode session creation returned no ID");
 
-    // Persist the opencode session ID into our sessions.cli_config
+    // Persist atomically — only if no session ID was set yet (prevents race condition)
     await sql`
       UPDATE sessions
       SET cli_config = cli_config || ${JSON.stringify({ opencodeSessionId })}::jsonb
       WHERE id = ${sessionId}
+        AND (cli_config->>'opencodeSessionId') IS NULL
     `;
 
     console.log(`[opencode] created session ${opencodeSessionId} for bot session #${sessionId}`);
@@ -109,23 +123,23 @@ export class OpencodeAdapter implements CliAdapter {
 
     const opencodeSessionId = await this.ensureOpencodeSession(sessionId, config);
 
-    const res = await withRetry(
-      () => fetchWithTimeout(
-        `${baseUrl(config)}/session/${opencodeSessionId}/prompt_async`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            parts: [{ type: "text", text }],
-          }),
-        },
-      ),
+    // Throw inside withRetry so 5xx actually triggers retries
+    await withRetry(
+      async () => {
+        const r = await fetchWithTimeout(
+          `${baseUrl(config)}/session/${opencodeSessionId}/prompt_async`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ parts: [{ type: "text", text }] }),
+          },
+        );
+        if (!r.ok && r.status !== 204) {
+          throw new Error(`opencode prompt_async failed: ${r.status}`);
+        }
+      },
       "send message",
     );
-
-    if (!res.ok && res.status !== 204) {
-      throw new Error(`opencode prompt_async failed: ${res.status} ${await res.text()}`);
-    }
 
     // Persist message to short-term memory (same as Claude path)
     await sql`
@@ -157,9 +171,10 @@ export class OpencodeAdapter implements CliAdapter {
     console.log(`[opencode] autostart: spawning opencode serve --port ${port}`);
 
     if (config.tmuxSession) {
-      // Spawn in tmux window
+      // Spawn in tmux window — validate session name against strict pattern
+      const tmuxTarget = validateTmuxSession(config.tmuxSession);
       Bun.spawn([
-        "tmux", "new-window", "-t", config.tmuxSession,
+        "tmux", "new-window", "-t", tmuxTarget,
         "-n", "opencode",
         "opencode", "serve", "--port", String(port),
       ]);
@@ -201,7 +216,15 @@ export class OpencodeAdapter implements CliAdapter {
     const url = `${baseUrl(config)}/event`;
 
     let stopped = false;
+    let doneCalled = false;
     const controller = new AbortController();
+
+    // Guard against double-fire of onDone (multiple completion signals in SSE)
+    const safeDone = () => {
+      if (doneCalled) return;
+      doneCalled = true;
+      onDone();
+    };
 
     const run = async () => {
       try {
@@ -232,7 +255,7 @@ export class OpencodeAdapter implements CliAdapter {
             if (!line.startsWith("data: ")) continue;
             const data = line.slice(6).trim();
             if (!data || data === "[DONE]") {
-              onDone();
+              safeDone();
               return;
             }
             try {
@@ -242,7 +265,7 @@ export class OpencodeAdapter implements CliAdapter {
                 const text = (event.text ?? (event as any).delta?.text ?? "") as string;
                 if (text) onChunk(text);
               } else if (event.type === "message.completed" || event.type === "message_stop") {
-                onDone();
+                safeDone();
                 return;
               }
             } catch {
@@ -250,7 +273,7 @@ export class OpencodeAdapter implements CliAdapter {
             }
           }
         }
-        onDone();
+        safeDone();
       } catch (err: unknown) {
         if (!stopped) onError(err as Error);
       }

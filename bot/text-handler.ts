@@ -104,12 +104,19 @@ export async function handleText(ctx: Context): Promise<void> {
         // Subscribe to SSE response and stream to Telegram
         let fullResponse = "";
         let sentMsgId: number | undefined;
+        // Declare before callbacks to avoid temporal dead zone
+        let unsubscribe: (() => void) | undefined;
+        let watchdog: ReturnType<typeof setTimeout> | undefined;
 
-        const unsubscribe = await opencodeAdapter.subscribeToResponses(
+        const cleanup = () => {
+          if (watchdog) { clearTimeout(watchdog); watchdog = undefined; }
+          unsubscribe?.();
+        };
+
+        unsubscribe = await opencodeAdapter.subscribeToResponses(
           route.sessionId,
           async (chunk) => {
             fullResponse += chunk;
-            // Update or send streaming message
             if (!sentMsgId) {
               const msg = await bot.api.sendMessage(Number(chatId), chunk);
               sentMsgId = msg.message_id;
@@ -122,7 +129,7 @@ export async function handleText(ctx: Context): Promise<void> {
             }
           },
           async () => {
-            // On done: save assistant response
+            cleanup();
             if (fullResponse) {
               await addMessage({
                 sessionId: route.sessionId,
@@ -133,14 +140,19 @@ export async function handleText(ctx: Context): Promise<void> {
               });
             }
             appendLog(route.sessionId, chatId, "reply", `opencode response: ${fullResponse.length} chars`);
-            unsubscribe();
           },
           async (err) => {
+            cleanup();
             appendLog(route.sessionId, chatId, "opencode", `SSE error: ${err.message}`, "error");
             await ctx.reply(`opencode error: ${err.message}`);
-            unsubscribe();
           },
         );
+
+        // Watchdog: abort SSE if no response within 2 minutes
+        watchdog = setTimeout(() => {
+          cleanup();
+          ctx.reply("opencode response timed out (2 min).").catch(() => {});
+        }, 120_000);
       } catch (err: any) {
         const msg = err?.message ?? String(err);
         appendLog(route.sessionId, chatId, "opencode", `send error: ${msg}`, "error");

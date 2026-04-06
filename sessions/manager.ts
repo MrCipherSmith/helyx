@@ -114,9 +114,10 @@ export class SessionManager {
         SET client_id = ${currentClientId}, status = 'active', last_active = now(),
             project_path = COALESCE(${projectPath ?? null}, project_path)
         WHERE id = ${oldId}
-        RETURNING id, name, project_path, client_id, status, metadata, connected_at, last_active
+        RETURNING id, name, project_path, client_id, status, metadata, connected_at, last_active, cli_type, cli_config
       `;
 
+      if (!row) throw new Error(`[session] adoptOrRename: session #${oldId} not found for update`);
       const session = this.rowToSession(row);
       this.activeClients.delete(oldClientId);
       this.activeClients.set(currentClientId, session.id);
@@ -128,8 +129,9 @@ export class SessionManager {
         UPDATE sessions
         SET name = ${name}, project_path = COALESCE(${projectPath ?? null}, project_path)
         WHERE client_id = ${currentClientId}
-        RETURNING id, name, project_path, client_id, status, metadata, connected_at, last_active
+        RETURNING id, name, project_path, client_id, status, metadata, connected_at, last_active, cli_type, cli_config
       `;
+      if (!row) throw new Error(`[session] adoptOrRename: session not found for clientId ${currentClientId}`);
       const session = this.rowToSession(row);
       console.log(`[session] renamed session #${session.id} to ${name}`);
       return session;
