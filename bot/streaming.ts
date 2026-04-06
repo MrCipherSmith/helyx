@@ -19,7 +19,7 @@ export async function streamToTelegram(
 
   let accumulated = "";
   let lastEditAt = 0;
-  let editPending = false;
+  let editInFlight: Promise<void> | null = null;
 
   const doEdit = async (text: string, final = false) => {
     const chunks = chunkText(text);
@@ -38,14 +38,20 @@ export async function streamToTelegram(
         // HTML parse failed — fallback to plain text
         try {
           await bot.api.editMessageText(Number(chatId), messageId, firstChunk);
-        } catch { /* give up */ }
+        } catch (e) {
+          console.warn("[streaming] fallback edit failed:", (e as Error)?.message);
+        }
       } else if (!err?.description?.includes("message is not modified")) {
         if (err?.error_code === 429) {
           const retryAfter = (err?.parameters?.retry_after ?? 3) * 1000;
           await new Promise((r) => setTimeout(r, retryAfter));
           try {
             await bot.api.editMessageText(Number(chatId), messageId, firstChunk);
-          } catch { /* give up */ }
+          } catch (e) {
+            console.warn("[streaming] retry edit failed:", (e as Error)?.message);
+          }
+        } else {
+          console.warn("[streaming] edit error:", err?.message);
         }
       }
     }
@@ -69,13 +75,18 @@ export async function streamToTelegram(
     accumulated += delta;
 
     const now = Date.now();
-    if (now - lastEditAt >= EDIT_INTERVAL_MS && !editPending) {
-      editPending = true;
+    if (now - lastEditAt >= EDIT_INTERVAL_MS && !editInFlight) {
       lastEditAt = now;
       const snapshot = accumulated;
-      doEdit(snapshot).finally(() => { editPending = false; });
+      // Sequential: wait for previous edit before starting next
+      editInFlight = doEdit(snapshot)
+        .catch((err) => console.warn("[streaming] edit failed:", err?.message))
+        .finally(() => { editInFlight = null; });
     }
   }
+
+  // Wait for any in-flight edit to complete before final edit
+  if (editInFlight) await editInFlight;
 
   // Final edit with complete text + HTML formatting
   if (accumulated.length > 0) {

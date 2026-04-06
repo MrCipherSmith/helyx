@@ -70,14 +70,20 @@ async function main() {
     });
   }
 
-  // Graceful shutdown
+  // Graceful shutdown with request drain
   const shutdown = async () => {
     console.log("[main] shutting down...");
     clearInterval(cleanupTimer);
     stopAllTimers();
-    httpServer.close();
+
+    // Stop accepting new connections, drain in-flight requests (5s timeout)
+    await new Promise<void>((resolve) => {
+      httpServer.close(() => resolve());
+      setTimeout(resolve, 5000);
+    });
+
     if (CONFIG.TELEGRAM_TRANSPORT === "webhook") {
-      await bot.api.deleteWebhook();
+      await bot.api.deleteWebhook().catch(() => {});
     } else {
       await bot.stop();
     }

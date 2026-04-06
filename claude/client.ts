@@ -182,7 +182,11 @@ async function openaiGenerate(
     throw new Error(`API failed: ${res.status} ${await res.text()}`);
   }
 
-  const data = (await res.json()) as any;
+  interface OpenAIResponse {
+    choices?: { message?: { content?: string } }[];
+    usage?: { prompt_tokens?: number; completion_tokens?: number };
+  }
+  const data = (await res.json()) as OpenAIResponse;
   let content = data.choices?.[0]?.message?.content ?? "";
   content = content.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
   return {
