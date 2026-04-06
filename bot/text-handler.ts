@@ -113,6 +113,9 @@ export async function handleText(ctx: Context): Promise<void> {
           unsubscribe?.();
         };
 
+        const EDIT_INTERVAL_MS = 1500;
+        let lastEditAt = 0;
+
         unsubscribe = await opencodeAdapter.subscribeToResponses(
           route.sessionId,
           async (chunk) => {
@@ -120,16 +123,27 @@ export async function handleText(ctx: Context): Promise<void> {
             if (!sentMsgId) {
               const msg = await bot.api.sendMessage(Number(chatId), chunk);
               sentMsgId = msg.message_id;
+              lastEditAt = Date.now();
             } else {
-              try {
-                await bot.api.editMessageText(Number(chatId), sentMsgId, fullResponse);
-              } catch {
-                // edit throttle — ignore
+              const now = Date.now();
+              if (now - lastEditAt >= EDIT_INTERVAL_MS) {
+                lastEditAt = now;
+                try {
+                  await bot.api.editMessageText(Number(chatId), sentMsgId, fullResponse);
+                } catch {
+                  // edit throttle — ignore
+                }
               }
             }
           },
           async () => {
             cleanup();
+            // Final edit to show complete response (bypasses throttle)
+            if (sentMsgId && fullResponse) {
+              try {
+                await bot.api.editMessageText(Number(chatId), sentMsgId, fullResponse);
+              } catch { /* ignore if not modified */ }
+            }
             if (fullResponse) {
               await addMessage({
                 sessionId: route.sessionId,

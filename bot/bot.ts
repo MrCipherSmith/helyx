@@ -1,10 +1,14 @@
 import { Bot } from "grammy";
+import { autoRetry } from "@grammyjs/auto-retry";
 import { CONFIG } from "../config.ts";
 import { accessMiddleware } from "./access.ts";
 import { registerHandlers, setBotRef } from "./handlers.ts";
 
 export function createBot(): Bot {
   const bot = new Bot(CONFIG.TELEGRAM_BOT_TOKEN);
+
+  // Auto-retry on 429 Too Many Requests — waits retry_after and retries automatically
+  bot.api.config.use(autoRetry({ maxRetryAttempts: 3, rethrowInternalServerErrors: false }));
 
   // Access control middleware
   bot.use(accessMiddleware);
