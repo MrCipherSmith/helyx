@@ -315,7 +315,7 @@ export async function handleDashboardRequest(
   }
 
   // CLI registration endpoint — protected by isLocalRequest in server.ts, not JWT
-  if (pathname === "/api/sessions/register") return false;
+  if (pathname === "/api/sessions/register" || pathname === "/api/sessions/disconnect") return false;
 
   // All other /api/* routes require auth
   if (pathname.startsWith("/api/")) {

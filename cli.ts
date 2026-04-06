@@ -695,63 +695,68 @@ async function tmuxAdd(dir?: string) {
 
   const name = customName ?? basename(projectDir);
 
-  // 1. Add to tmux-projects.json (existing behavior)
-  const projects = await loadProjects();
-  if (!projects.some(p => p.path === projectDir)) {
-    projects.push({ name, path: projectDir });
-    await saveProjects(projects);
+  if (provider === "claude") {
+    // --- Claude Code flow (unchanged) ---
+    const projects = await loadProjects();
+    if (!projects.some(p => p.path === projectDir)) {
+      projects.push({ name, path: projectDir });
+      await saveProjects(projects);
+    }
+    const result = await run([
+      "docker", "compose", "exec", "-T", "bot",
+      "bun", "/app/cli.ts", "_register",
+      "--provider", "claude", "--path", projectDir, "--name", name,
+    ], { silent: false });
+    if (result.output) console.log(result.output);
+    if (!result.ok) console.log(`  ${c.yellow("Warning:")} bot not running — register later with: claude-bot add .`);
+    console.log(`  ${c.dim("Restart tmux to apply: claude-bot down && claude-bot up")}`);
+    return;
   }
 
-  // 2. Register session via internal command inside the container (avoids Docker bridge NAT 401/403)
-  const result = await run([
+  // --- opencode flow ---
+  const opencodePort = "4096";
+
+  // 1. Register session (or reuse existing for this project)
+  const regResult = await run([
     "docker", "compose", "exec", "-T", "bot",
     "bun", "/app/cli.ts", "_register",
-    "--provider", provider,
-    "--path", projectDir,
-    "--name", name,
+    "--provider", "opencode", "--path", projectDir, "--name", name,
   ], { silent: false });
+  if (regResult.output) console.log(regResult.output);
 
-  if (result.output) console.log(result.output);
-  if (!result.ok) {
-    console.log(`  ${c.green("Added to tmux:")} ${name} (${projectDir})`);
-    console.log(`  ${c.yellow("Warning:")} bot not running — run 'claude-bot add .' after bot starts`);
-  }
-
-  if (provider === "claude") {
-    console.log(`  ${c.dim("Restart tmux to apply: claude-bot down && claude-bot up")}`);
-  } else if (provider === "opencode") {
-    // Ensure opencode serve is running with 0.0.0.0 (needed for Docker bot to reach it)
-    const opencodePort = "4096";
-    const isAlive = (await run(
-      ["curl", "-sf", `http://localhost:${opencodePort}/session`],
-      { silent: true }
-    )).ok;
-
-    if (!isAlive) {
-      step("Starting opencode serve in tmux");
-      await run(["tmux", "new-session", "-d", "-s", "opencode-serve", "-x", "220", "-y", "50"], { silent: true });
-      await run(["tmux", "send-keys", "-t", "opencode-serve",
-        `opencode serve --port ${opencodePort} --hostname 0.0.0.0`, "Enter"]);
-      // Wait for it to be ready
-      for (let i = 0; i < 10; i++) {
-        await new Promise(r => setTimeout(r, 1000));
-        if ((await run(["curl", "-sf", `http://localhost:${opencodePort}/session`], { silent: true })).ok) break;
-      }
-      done();
-    } else {
-      console.log(`  ${c.green("✓")} opencode serve already running on port ${opencodePort}`);
+  // 2. Ensure opencode serve is running on 0.0.0.0 (Docker bot needs to reach it)
+  const isAlive = (await run(["curl", "-sf", `http://localhost:${opencodePort}/session`], { silent: true })).ok;
+  if (!isAlive) {
+    step("Starting opencode serve");
+    await run(["tmux", "new-session", "-d", "-s", "opencode-serve", "-x", "220", "-y", "50"], { silent: true });
+    await run(["tmux", "send-keys", "-t", "opencode-serve",
+      `opencode serve --port ${opencodePort} --hostname 0.0.0.0`, "Enter"]);
+    for (let i = 0; i < 10; i++) {
+      await new Promise(r => setTimeout(r, 1000));
+      if ((await run(["curl", "-sf", `http://localhost:${opencodePort}/session`], { silent: true })).ok) break;
     }
-
-    // Launch opencode TUI in the project directory
-    console.log(`  ${c.cyan("Launching opencode TUI...")} ${c.dim("(Ctrl+C to exit)")}\n`);
-    const proc = Bun.spawn(["opencode"], {
-      cwd: projectDir,
-      stdout: "inherit",
-      stderr: "inherit",
-      stdin: "inherit",
-    });
-    await proc.exited;
+    done();
+  } else {
+    console.log(`  ${c.green("✓")} opencode serve on :${opencodePort}`);
   }
+
+  // 3. Open TUI connected to the serve instance, in the project directory
+  console.log(`\n  ${c.cyan("opencode TUI")} — ${c.dim("Ctrl+C or q to exit (session → disconnected)")}\n`);
+  const tui = Bun.spawn(["opencode", "--server", `http://localhost:${opencodePort}`], {
+    cwd: projectDir,
+    stdout: "inherit",
+    stderr: "inherit",
+    stdin: "inherit",
+  });
+  await tui.exited;
+
+  // 4. Mark session as disconnected when TUI exits
+  await run([
+    "docker", "compose", "exec", "-T", "bot",
+    "bun", "/app/cli.ts", "_disconnect",
+    "--path", projectDir,
+  ], { silent: true });
+  console.log(`\n  ${c.dim("Session disconnected.")}`);
 }
 
 async function tmuxRemove(name?: string) {
@@ -996,6 +1001,24 @@ async function remote() {
   console.log(`  ${c.green("Setup complete!")}`);
 }
 
+// --- Internal: disconnect session by project path ---
+
+async function internalDisconnect() {
+  const args = process.argv.slice(3);
+  const get = (flag: string) => { const i = args.indexOf(flag); return i >= 0 ? args[i + 1] : undefined; };
+  const projectPath = get("--path");
+  if (!projectPath) return;
+
+  const port = process.env.PORT ?? "3847";
+  try {
+    await fetch(`http://localhost:${port}/api/sessions/disconnect`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectPath }),
+    });
+  } catch { /* bot may be unavailable, ignore */ }
+}
+
 // --- Internal: register session via HTTP (runs inside container where localhost=127.0.0.1) ---
 
 async function internalRegister() {
@@ -1098,5 +1121,6 @@ switch (command) {
   case "add":         await tmuxAdd(process.argv[3]); break;
   case "remove":      await tmuxRemove(process.argv[3]); break;
   case "_register":   await internalRegister(); break;
+  case "_disconnect": await internalDisconnect(); break;
   default:            help(); break;
 }

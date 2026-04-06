@@ -292,6 +292,22 @@ export function startMcpHttpServer(bot: Bot | null): ReturnType<typeof createSer
       return;
     }
 
+    // API: disconnect session when opencode TUI exits (local only)
+    if (url.pathname === "/api/sessions/disconnect" && req.method === "POST") {
+      if (!isLocalRequest(req)) { res.writeHead(403); res.end(); return; }
+      try {
+        const body = await new Promise<string>((resolve, reject) => {
+          let d = ""; req.on("data", c => d += c); req.on("end", () => resolve(d)); req.on("error", reject);
+        });
+        const { projectPath } = JSON.parse(body);
+        if (projectPath) {
+          await sql`UPDATE sessions SET status = 'disconnected' WHERE project_path = ${projectPath} AND cli_type = 'opencode'`;
+        }
+        res.writeHead(200); res.end(JSON.stringify({ ok: true }));
+      } catch (err: any) { res.writeHead(500); res.end(JSON.stringify({ error: err?.message })); }
+      return;
+    }
+
     // Telegram webhook endpoint
     if (webhookHandler && req.method === "POST" && url.pathname === CONFIG.TELEGRAM_WEBHOOK_PATH) {
       try {
