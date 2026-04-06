@@ -6,17 +6,28 @@ export const CONFIG = {
     .map(Number)
     .filter(Boolean),
 
-  // Claude
+  // Claude (Anthropic)
+  ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? "",
   CLAUDE_MODEL: process.env.CLAUDE_MODEL ?? "claude-sonnet-4-20250514",
   MAX_TOKENS: Number(process.env.MAX_TOKENS ?? "8192"),
 
-  // PostgreSQL
-  DATABASE_URL: process.env.DATABASE_URL!,
+  // Google AI
+  GOOGLE_AI_API_KEY: process.env.GOOGLE_AI_API_KEY ?? "",
+  GOOGLE_AI_MODEL: process.env.GOOGLE_AI_MODEL ?? "gemma-4-31b-it",
+
+  // OpenRouter / OpenAI-compatible
+  OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY ?? process.env.OPENAI_API_KEY ?? "",
+  OPENROUTER_MODEL: process.env.OPENROUTER_MODEL ?? process.env.OPENAI_MODEL ?? "qwen/qwen3-235b-a22b:free",
+  OPENROUTER_BASE_URL: process.env.OPENROUTER_BASE_URL ?? process.env.OPENAI_BASE_URL ?? "https://openrouter.ai/api/v1",
 
   // Ollama
   OLLAMA_URL: process.env.OLLAMA_URL ?? "http://localhost:11434",
+  OLLAMA_CHAT_MODEL: process.env.OLLAMA_CHAT_MODEL ?? "qwen3:8b",
   EMBEDDING_MODEL: process.env.EMBEDDING_MODEL ?? "nomic-embed-text",
   VECTOR_DIMENSIONS: 768,
+
+  // PostgreSQL
+  DATABASE_URL: process.env.DATABASE_URL!,
 
   // Telegram transport
   TELEGRAM_TRANSPORT: (process.env.TELEGRAM_TRANSPORT ?? "polling") as "polling" | "webhook",

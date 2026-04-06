@@ -1,8 +1,14 @@
 import { SignJWT, jwtVerify } from "jose";
-import { createHmac, createHash } from "crypto";
+import { createHmac, createHash, timingSafeEqual } from "crypto";
 import { CONFIG } from "../config.ts";
 
-const secret = new TextEncoder().encode(CONFIG.TELEGRAM_BOT_TOKEN);
+// Derive JWT secret from bot token (separate domain from Telegram auth)
+// Use JWT_SECRET env var if provided, otherwise HMAC-derive from bot token
+const jwtSecret = process.env.JWT_SECRET
+  ? new TextEncoder().encode(process.env.JWT_SECRET)
+  : new TextEncoder().encode(
+      createHash("sha256").update("jwt:" + CONFIG.TELEGRAM_BOT_TOKEN).digest("hex"),
+    );
 
 export interface AuthPayload {
   id: number;
@@ -16,12 +22,12 @@ export async function signJwt(payload: AuthPayload): Promise<string> {
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("7d")
-    .sign(secret);
+    .sign(jwtSecret);
 }
 
 export async function verifyJwt(token: string): Promise<AuthPayload | null> {
   try {
-    const { payload } = await jwtVerify(token, secret);
+    const { payload } = await jwtVerify(token, jwtSecret);
     return payload as unknown as AuthPayload;
   } catch {
     return null;
@@ -46,5 +52,10 @@ export function verifyTelegramLogin(data: Record<string, string>): boolean {
   const secretKey = createHash("sha256").update(CONFIG.TELEGRAM_BOT_TOKEN).digest();
   const hmac = createHmac("sha256", secretKey).update(checkString).digest("hex");
 
-  return hmac === hash;
+  // Constant-time comparison to prevent timing attacks
+  try {
+    return timingSafeEqual(Buffer.from(hmac, "hex"), Buffer.from(hash, "hex"));
+  } catch {
+    return false; // different lengths
+  }
 }

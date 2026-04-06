@@ -17,6 +17,25 @@ import { getApiStats, getTranscriptionStats, getMessageStats, getSessionLogs, ge
 
 // Pending input: chatId -> handler that processes the next text message
 const pendingInput = new Map<string, (ctx: Context) => Promise<void>>();
+const pendingInputTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function setPendingInput(chatId: string, handler: (ctx: Context) => Promise<void>): void {
+  // Clear existing timer
+  const existing = pendingInputTimers.get(chatId);
+  if (existing) clearTimeout(existing);
+
+  pendingInput.set(chatId, handler);
+  pendingInputTimers.set(chatId, setTimeout(() => {
+    pendingInput.delete(chatId);
+    pendingInputTimers.delete(chatId);
+  }, 60_000)); // 60s TTL
+}
+
+function clearPendingInput(chatId: string): void {
+  pendingInput.delete(chatId);
+  const timer = pendingInputTimers.get(chatId);
+  if (timer) { clearTimeout(timer); pendingInputTimers.delete(chatId); }
+}
 
 export function registerHandlers(bot: Bot): void {
   // Session commands
@@ -140,7 +159,7 @@ async function handleSwitch(ctx: Context): Promise<void> {
       return `${s.id}. ${s.name ?? s.clientId}${status}${marker}`;
     });
     await ctx.reply("Enter session ID:\n\n" + lines.join("\n"));
-    pendingInput.set(chatId, async (replyCtx) => {
+    setPendingInput(chatId, async (replyCtx) => {
       const id = Number(replyCtx.message?.text?.trim());
       if (isNaN(id)) {
         await replyCtx.reply("Invalid ID.");
@@ -267,7 +286,7 @@ async function handleRemember(ctx: Context): Promise<void> {
 
   if (!content) {
     await ctx.reply("What to remember?");
-    pendingInput.set(chatId, async (replyCtx) => {
+    setPendingInput(chatId, async (replyCtx) => {
       const input = replyCtx.message?.text?.trim();
       if (!input) return;
       const session = await sessionManager.get(activeSessionId);
@@ -300,7 +319,7 @@ async function handleRecall(ctx: Context): Promise<void> {
 
   if (!query) {
     await ctx.reply("What to search?");
-    pendingInput.set(chatId, async (replyCtx) => {
+    setPendingInput(chatId, async (replyCtx) => {
       const input = replyCtx.message?.text?.trim();
       if (!input) return;
       const results = await recall(input, { limit: 5, projectPath });
@@ -361,7 +380,7 @@ async function handleForget(ctx: Context): Promise<void> {
   if (!idStr || isNaN(Number(idStr))) {
     await ctx.reply("Enter memory ID:");
     const chatId = String(ctx.chat!.id);
-    pendingInput.set(chatId, async (replyCtx) => {
+    setPendingInput(chatId, async (replyCtx) => {
       const id = Number(replyCtx.message?.text?.trim());
       if (isNaN(id)) { await replyCtx.reply("Invalid ID."); return; }
       const deleted = await forget(id);
@@ -1158,7 +1177,7 @@ async function handleText(ctx: Context): Promise<void> {
   // Check for pending input (e.g. waiting for session ID after /switch)
   const handler = pendingInput.get(chatId);
   if (handler) {
-    pendingInput.delete(chatId);
+    clearPendingInput(chatId);
     await handler(ctx);
     return;
   }

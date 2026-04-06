@@ -1,4 +1,6 @@
 node_modules
+dashboard/node_modules
+dashboard/dist
 dist
 .env
 .env.*
@@ -6,3 +8,5 @@ dist
 .git
 .claude
 *.log
+downloads
+docs

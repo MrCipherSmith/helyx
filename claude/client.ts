@@ -49,41 +49,35 @@ async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
 }
 
 // Provider detection: anthropic > google-ai > openai-compatible (openrouter etc) > ollama
-const googleAiKey = process.env.GOOGLE_AI_API_KEY ?? "";
-const openaiKey = process.env.OPENROUTER_API_KEY ?? process.env.OPENAI_API_KEY ?? "";
-const openaiUrl = process.env.OPENROUTER_BASE_URL ?? process.env.OPENAI_BASE_URL ?? "https://openrouter.ai/api/v1";
-const openaiModel = process.env.OPENROUTER_MODEL ?? process.env.OPENAI_MODEL ?? "qwen/qwen3-235b-a22b:free";
-const googleAiModel = process.env.GOOGLE_AI_MODEL ?? "gemma-4-31b-it";
 const googleAiUrl = "https://generativelanguage.googleapis.com/v1beta/openai";
-const ollamaModel = process.env.OLLAMA_CHAT_MODEL ?? "qwen3:8b";
 
-const provider = process.env.ANTHROPIC_API_KEY
+const provider = CONFIG.ANTHROPIC_API_KEY
   ? "anthropic"
-  : googleAiKey
+  : CONFIG.GOOGLE_AI_API_KEY
     ? "google-ai"
-    : openaiKey
+    : CONFIG.OPENROUTER_API_KEY
       ? "openai"
       : "ollama";
 
 const anthropic = provider === "anthropic" ? new Anthropic() : null;
 
 // Resolve effective OpenAI-compat settings (Google AI uses the same protocol)
-const effectiveApiKey = provider === "google-ai" ? googleAiKey : openaiKey;
-const effectiveBaseUrl = provider === "google-ai" ? googleAiUrl : openaiUrl;
-const effectiveModel = provider === "google-ai" ? googleAiModel : openaiModel;
+const effectiveApiKey = provider === "google-ai" ? CONFIG.GOOGLE_AI_API_KEY : CONFIG.OPENROUTER_API_KEY;
+const effectiveBaseUrl = provider === "google-ai" ? googleAiUrl : CONFIG.OPENROUTER_BASE_URL;
+const effectiveModel = provider === "google-ai" ? CONFIG.GOOGLE_AI_MODEL : CONFIG.OPENROUTER_MODEL;
 
 export function getProviderInfo() {
   const model = provider === "anthropic" ? CONFIG.CLAUDE_MODEL
-    : provider === "google-ai" ? googleAiModel
-    : provider === "openai" ? openaiModel
-    : ollamaModel;
+    : provider === "google-ai" ? CONFIG.GOOGLE_AI_MODEL
+    : provider === "openai" ? CONFIG.OPENROUTER_MODEL
+    : CONFIG.OLLAMA_CHAT_MODEL;
   return { provider, model };
 }
 
 console.log(`[client] provider: ${provider}${
-  provider === "google-ai" ? ` (${googleAiModel} @ Google AI)`
-  : provider === "openai" ? ` (${openaiModel} @ ${openaiUrl})`
-  : provider === "ollama" ? ` (${ollamaModel})`
+  provider === "google-ai" ? ` (${CONFIG.GOOGLE_AI_MODEL} @ Google AI)`
+  : provider === "openai" ? ` (${CONFIG.OPENROUTER_MODEL} @ ${CONFIG.OPENROUTER_BASE_URL})`
+  : provider === "ollama" ? ` (${CONFIG.OLLAMA_CHAT_MODEL})`
   : ""
 }`);
 
@@ -208,7 +202,7 @@ async function* ollamaStream(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: ollamaModel,
+      model: CONFIG.OLLAMA_CHAT_MODEL,
       messages: [{ role: "system", content: system }, ...toTextMessages(messages)],
       stream: true,
     }),
@@ -262,7 +256,7 @@ async function ollamaGenerate(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: ollamaModel,
+      model: CONFIG.OLLAMA_CHAT_MODEL,
       messages: [{ role: "system", content: system }, ...toTextMessages(messages)],
       stream: false,
     }),

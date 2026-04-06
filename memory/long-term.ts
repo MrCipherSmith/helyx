@@ -1,5 +1,5 @@
 import { sql } from "./db.ts";
-import { embed } from "./embeddings.ts";
+import { embed, embedSafe } from "./embeddings.ts";
 
 export interface Memory {
   id?: number;
@@ -16,8 +16,8 @@ export interface Memory {
 }
 
 export async function remember(memory: Memory): Promise<Memory> {
-  const embedding = await embed(memory.content);
-  const embeddingStr = `[${embedding.join(",")}]`;
+  const embedding = await embedSafe(memory.content);
+  const embeddingStr = embedding ? `[${embedding.join(",")}]` : null;
 
   const [row] = await sql`
     INSERT INTO memories (source, session_id, project_path, chat_id, type, content, tags, embedding)

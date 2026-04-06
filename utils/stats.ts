@@ -117,94 +117,77 @@ export async function getApiStats() {
   const windows = getWindows();
   const results: Record<string, any> = {};
 
-  for (const w of windows) {
+  await Promise.all(windows.map(async (w) => {
     const where = w.cutoff ? sql`WHERE created_at >= ${w.cutoff}` : sql``;
+    const joinWhere = w.cutoff ? sql`WHERE s.created_at >= ${w.cutoff}` : sql``;
 
-    const [summary] = await sql`
-      SELECT
-        count(*)::int as total,
-        count(*) FILTER (WHERE status = 'success')::int as success,
-        count(*) FILTER (WHERE status = 'error')::int as errors,
-        coalesce(sum(input_tokens), 0)::int as input_tokens,
-        coalesce(sum(output_tokens), 0)::int as output_tokens,
-        coalesce(sum(total_tokens), 0)::int as total_tokens,
-        coalesce(avg(duration_ms) FILTER (WHERE status = 'success'), 0)::int as avg_latency_ms
-      FROM api_request_stats ${where}
-    `;
+    // Run all 5 queries in parallel within each window
+    const [summaryRows, byProvider, bySession, byProject, byOperation] = await Promise.all([
+      sql`
+        SELECT
+          count(*)::int as total,
+          count(*) FILTER (WHERE status = 'success')::int as success,
+          count(*) FILTER (WHERE status = 'error')::int as errors,
+          coalesce(sum(input_tokens), 0)::int as input_tokens,
+          coalesce(sum(output_tokens), 0)::int as output_tokens,
+          coalesce(sum(total_tokens), 0)::int as total_tokens,
+          coalesce(avg(duration_ms) FILTER (WHERE status = 'success'), 0)::int as avg_latency_ms
+        FROM api_request_stats ${where}
+      `,
+      sql`
+        SELECT provider, model, count(*)::int as requests,
+          coalesce(sum(input_tokens), 0)::int as input_tokens,
+          coalesce(sum(output_tokens), 0)::int as output_tokens,
+          coalesce(sum(total_tokens), 0)::int as tokens,
+          coalesce(avg(duration_ms), 0)::int as avg_ms
+        FROM api_request_stats ${where}
+        GROUP BY provider, model ORDER BY requests DESC
+      `,
+      sql`
+        SELECT s.session_id, sess.name as session_name, sess.project_path,
+          count(*)::int as requests,
+          coalesce(sum(s.input_tokens), 0)::int as input_tokens,
+          coalesce(sum(s.output_tokens), 0)::int as output_tokens,
+          coalesce(sum(s.total_tokens), 0)::int as tokens,
+          coalesce(avg(s.duration_ms), 0)::int as avg_ms
+        FROM api_request_stats s LEFT JOIN sessions sess ON sess.id = s.session_id
+        ${joinWhere}
+        GROUP BY s.session_id, sess.name, sess.project_path ORDER BY requests DESC
+      `,
+      sql`
+        SELECT coalesce(sess.project_path, 'standalone') as project,
+          count(*)::int as requests,
+          coalesce(sum(s.input_tokens), 0)::int as input_tokens,
+          coalesce(sum(s.output_tokens), 0)::int as output_tokens,
+          coalesce(sum(s.total_tokens), 0)::int as tokens,
+          coalesce(avg(s.duration_ms), 0)::int as avg_ms,
+          count(DISTINCT s.session_id)::int as sessions
+        FROM api_request_stats s LEFT JOIN sessions sess ON sess.id = s.session_id
+        ${joinWhere}
+        GROUP BY sess.project_path ORDER BY tokens DESC
+      `,
+      sql`
+        SELECT operation, count(*)::int as requests,
+          coalesce(sum(input_tokens), 0)::int as input_tokens,
+          coalesce(sum(output_tokens), 0)::int as output_tokens,
+          coalesce(sum(total_tokens), 0)::int as tokens,
+          count(*) FILTER (WHERE status = 'error')::int as errors,
+          coalesce(avg(duration_ms) FILTER (WHERE status = 'success'), 0)::int as avg_ms
+        FROM api_request_stats ${where}
+        GROUP BY operation ORDER BY tokens DESC
+      `,
+    ]);
 
-    const byProvider = await sql`
-      SELECT
-        provider,
-        model,
-        count(*)::int as requests,
-        coalesce(sum(input_tokens), 0)::int as input_tokens,
-        coalesce(sum(output_tokens), 0)::int as output_tokens,
-        coalesce(sum(total_tokens), 0)::int as tokens,
-        coalesce(avg(duration_ms), 0)::int as avg_ms
-      FROM api_request_stats ${where}
-      GROUP BY provider, model
-      ORDER BY requests DESC
-    `;
-
-    // Add cost estimation to byProvider
+    const summary = summaryRows[0];
     for (const row of byProvider) {
       row.cost = estimateCost(row.model, row.input_tokens, row.output_tokens);
     }
-
-    const bySession = await sql`
-      SELECT
-        s.session_id,
-        sess.name as session_name,
-        sess.project_path,
-        count(*)::int as requests,
-        coalesce(sum(s.input_tokens), 0)::int as input_tokens,
-        coalesce(sum(s.output_tokens), 0)::int as output_tokens,
-        coalesce(sum(s.total_tokens), 0)::int as tokens,
-        coalesce(avg(s.duration_ms), 0)::int as avg_ms
-      FROM api_request_stats s
-      LEFT JOIN sessions sess ON sess.id = s.session_id
-      ${w.cutoff ? sql`WHERE s.created_at >= ${w.cutoff}` : sql``}
-      GROUP BY s.session_id, sess.name, sess.project_path
-      ORDER BY requests DESC
-    `;
-
-    const byProject = await sql`
-      SELECT
-        coalesce(sess.project_path, 'standalone') as project,
-        count(*)::int as requests,
-        coalesce(sum(s.input_tokens), 0)::int as input_tokens,
-        coalesce(sum(s.output_tokens), 0)::int as output_tokens,
-        coalesce(sum(s.total_tokens), 0)::int as tokens,
-        coalesce(avg(s.duration_ms), 0)::int as avg_ms,
-        count(DISTINCT s.session_id)::int as sessions
-      FROM api_request_stats s
-      LEFT JOIN sessions sess ON sess.id = s.session_id
-      ${w.cutoff ? sql`WHERE s.created_at >= ${w.cutoff}` : sql``}
-      GROUP BY sess.project_path
-      ORDER BY tokens DESC
-    `;
-
-    const byOperation = await sql`
-      SELECT
-        operation,
-        count(*)::int as requests,
-        coalesce(sum(input_tokens), 0)::int as input_tokens,
-        coalesce(sum(output_tokens), 0)::int as output_tokens,
-        coalesce(sum(total_tokens), 0)::int as tokens,
-        count(*) FILTER (WHERE status = 'error')::int as errors,
-        coalesce(avg(duration_ms) FILTER (WHERE status = 'success'), 0)::int as avg_ms
-      FROM api_request_stats ${where}
-      GROUP BY operation
-      ORDER BY tokens DESC
-    `;
-
-    // Add total estimated cost to summary
     let totalCost = 0;
     for (const row of byProvider) totalCost += row.cost;
     summary.estimated_cost = totalCost;
 
     results[w.label] = { summary, byProvider, bySession, byProject, byOperation };
-  }
+  }));
 
   return results;
 }
