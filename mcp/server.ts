@@ -228,6 +228,39 @@ export function startMcpHttpServer(bot: Bot | null): ReturnType<typeof createSer
       return;
     }
 
+    // API: register a project session from shell CLI (local requests only)
+    if (url.pathname === "/api/sessions/register" && req.method === "POST") {
+      if (!isLocalRequest(req)) {
+        res.writeHead(403, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Forbidden" }));
+        return;
+      }
+      try {
+        const body = await new Promise<string>((resolve, reject) => {
+          let data = "";
+          req.on("data", (chunk) => (data += chunk));
+          req.on("end", () => resolve(data));
+          req.on("error", reject);
+        });
+        const { projectPath, cliType = "claude", cliConfig = {}, name } = JSON.parse(body);
+        if (!projectPath) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "projectPath required" }));
+          return;
+        }
+        const { basename } = await import("path");
+        const sessionName = name ?? `${basename(projectPath)} · ${cliType}`;
+        const clientId = `${cliType}-${basename(projectPath)}-${Date.now()}`;
+        const session = await sessionManager.register(clientId, sessionName, projectPath, undefined, cliType, cliConfig);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true, sessionId: session.id, name: session.name }));
+      } catch (err: any) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: err?.message }));
+      }
+      return;
+    }
+
     // Telegram webhook endpoint
     if (webhookHandler && req.method === "POST" && url.pathname === CONFIG.TELEGRAM_WEBHOOK_PATH) {
       try {
