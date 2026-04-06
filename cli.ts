@@ -407,15 +407,6 @@ async function start(dir?: string) {
     provider = choice === 1 ? "opencode" : "claude";
   }
 
-  // Register in bot DB
-  const regResult = await run([
-    "docker", "compose", "exec", "-T", "bot",
-    "bun", "/app/cli.ts", "_register",
-    "--provider", provider, "--path", projectDir, "--name", name,
-  ], { silent: false });
-  if (regResult.output) console.log(regResult.output);
-  if (!regResult.ok) console.log(`  ${c.yellow("Warning:")} bot not running — session will register on next start`);
-
   if (provider === "claude") {
     console.log(`  ${c.green("Starting claude...")} ${c.dim("(Ctrl+C to stop)")}\n`);
     const proc = Bun.spawn(
