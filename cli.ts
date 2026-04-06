@@ -581,15 +581,42 @@ async function prune() {
 const TMUX_SESSION = "claude";
 const TMUX_PROJECTS_FILE = `${BOT_DIR}/tmux-projects.json`;
 
-async function loadProjects(): Promise<{ name: string; path: string }[]> {
+type Project = { name: string; path: string; provider?: "claude" | "opencode" };
+
+async function loadProjects(): Promise<Project[]> {
   if (existsSync(TMUX_PROJECTS_FILE)) {
     return JSON.parse(await Bun.file(TMUX_PROJECTS_FILE).text());
   }
   return [];
 }
 
-async function saveProjects(projects: { name: string; path: string }[]) {
+async function saveProjects(projects: Project[]) {
   await Bun.write(TMUX_PROJECTS_FILE, JSON.stringify(projects, null, 2) + "\n");
+}
+
+function windowName(p: Project): string {
+  const prov = p.provider ?? "claude";
+  return `[${prov}] ${p.name}`;
+}
+
+async function ensureOpencodeServe(port = "4096"): Promise<void> {
+  const isAlive = (await run(["curl", "-sf", `http://localhost:${port}/session`], { silent: true })).ok;
+  if (isAlive) {
+    console.log(`  ${c.green("✓")} opencode serve on :${port}`);
+    return;
+  }
+  step("Starting opencode serve");
+  // Kill stale session if exists
+  await run(["tmux", "kill-session", "-t", "opencode-serve"], { silent: true });
+  await run(["tmux", "new-session", "-d", "-s", "opencode-serve", "-x", "220", "-y", "50"], { silent: true });
+  await run(["tmux", "send-keys", "-t", "opencode-serve",
+    `opencode serve --port ${port} --hostname 0.0.0.0`, "Enter"]);
+  for (let i = 0; i < 10; i++) {
+    await new Promise(r => setTimeout(r, 1000));
+    if ((await run(["curl", "-sf", `http://localhost:${port}/session`], { silent: true })).ok) break;
+  }
+  done();
+  console.log(`  ${c.dim(`Stop: tmux kill-session -t opencode-serve`)}`);
 }
 
 async function tmuxStart() {
@@ -615,6 +642,10 @@ async function tmuxStart() {
 
   console.log(`\n  ${c.bold("Starting tmux session")} ${c.cyan(TMUX_SESSION)}${usePanes ? " (split panes)" : ""}\n`);
 
+  // Ensure opencode serve is running if any project uses opencode
+  const hasOpencode = projects.some(p => (p.provider ?? "claude") === "opencode" && existsSync(p.path));
+  if (hasOpencode) await ensureOpencodeServe();
+
   let first = true;
   let paneCount = 0;
   for (const p of projects) {
@@ -623,26 +654,27 @@ async function tmuxStart() {
       continue;
     }
 
+    const provider = p.provider ?? "claude";
+    const wname = windowName(p);
+    const cmd = provider === "opencode"
+      ? `${BOT_DIR}/scripts/run-opencode.sh ${p.path}`
+      : `${BOT_DIR}/scripts/run-cli.sh ${p.path}`;
+
     if (first) {
-      await run(["tmux", "new-session", "-d", "-s", TMUX_SESSION, "-c", p.path]);
-      await run(["tmux", "send-keys", "-t", TMUX_SESSION,
-        `${BOT_DIR}/scripts/run-cli.sh ${p.path}`, "Enter"]);
+      await run(["tmux", "new-session", "-d", "-s", TMUX_SESSION, "-n", wname, "-c", p.path]);
+      await run(["tmux", "send-keys", "-t", `${TMUX_SESSION}:${wname}`, cmd, "Enter"]);
       first = false;
     } else if (usePanes) {
-      // Split into panes within the same window
       const direction = paneCount % 2 === 0 ? "-v" : "-h";
       await run(["tmux", "split-window", direction, "-t", TMUX_SESSION, "-c", p.path]);
-      await run(["tmux", "send-keys", "-t", TMUX_SESSION,
-        `${BOT_DIR}/scripts/run-cli.sh ${p.path}`, "Enter"]);
+      await run(["tmux", "send-keys", "-t", TMUX_SESSION, cmd, "Enter"]);
       await run(["tmux", "select-layout", "-t", TMUX_SESSION, "tiled"]);
     } else {
-      // Separate windows (tabs)
-      await run(["tmux", "new-window", "-t", TMUX_SESSION, "-n", p.name, "-c", p.path]);
-      await run(["tmux", "send-keys", "-t", `${TMUX_SESSION}:${p.name}`,
-        `${BOT_DIR}/scripts/run-cli.sh ${p.path}`, "Enter"]);
+      await run(["tmux", "new-window", "-t", TMUX_SESSION, "-n", wname, "-c", p.path]);
+      await run(["tmux", "send-keys", "-t", `${TMUX_SESSION}:${wname}`, cmd, "Enter"]);
     }
     paneCount++;
-    console.log(`  ${c.green("✓")} ${p.name} (${p.path})`);
+    console.log(`  ${c.green("✓")} ${wname} — ${p.path}`);
   }
 
   console.log(`\n  ${c.green("Done!")} Attach: ${c.cyan(`tmux attach -t ${TMUX_SESSION}`)}`);
@@ -682,7 +714,7 @@ async function tmuxAdd(dir?: string) {
   const nameIdx = process.argv.indexOf("--name");
   const customName = nameIdx >= 0 ? process.argv[nameIdx + 1] : undefined;
   const providerIdx = process.argv.indexOf("--provider");
-  const provider = (providerIdx >= 0 ? process.argv[providerIdx + 1] : "claude") as "claude" | "opencode";
+  let provider = (providerIdx >= 0 ? process.argv[providerIdx + 1] : undefined) as "claude" | "opencode" | undefined;
 
   // Skip --name/--provider and their values when resolving dir
   let resolvedDir = dir;
@@ -695,25 +727,38 @@ async function tmuxAdd(dir?: string) {
 
   const name = customName ?? basename(projectDir);
 
+  // Ask provider interactively if not given
+  if (!provider) {
+    const choice = askChoice("Provider:", ["claude (Claude Code — full MCP integration)", "opencode (opencode TUI)"]);
+    provider = choice === 1 ? "opencode" : "claude";
+  }
+
+  // Save to projects file (add or update)
+  const projects = await loadProjects();
+  const existing = projects.find(p => p.path === projectDir);
+  if (existing) {
+    existing.name = name;
+    existing.provider = provider;
+  } else {
+    projects.push({ name, path: projectDir, provider });
+  }
+  await saveProjects(projects);
+  console.log(`  ${c.green("✓")} Saved: ${windowName({ name, path: projectDir, provider })}`);
+
   if (provider === "claude") {
-    // --- Claude Code flow (unchanged) ---
-    const projects = await loadProjects();
-    if (!projects.some(p => p.path === projectDir)) {
-      projects.push({ name, path: projectDir });
-      await saveProjects(projects);
-    }
+    // Register in bot DB
     const result = await run([
       "docker", "compose", "exec", "-T", "bot",
       "bun", "/app/cli.ts", "_register",
       "--provider", "claude", "--path", projectDir, "--name", name,
     ], { silent: false });
     if (result.output) console.log(result.output);
-    if (!result.ok) console.log(`  ${c.yellow("Warning:")} bot not running — register later with: claude-bot add .`);
-    console.log(`  ${c.dim("Restart tmux to apply: claude-bot down && claude-bot up")}`);
+    if (!result.ok) console.log(`  ${c.yellow("Warning:")} bot not running — session will register on next claude-bot up`);
+    console.log(`  ${c.dim("Apply: claude-bot down && claude-bot up")}`);
     return;
   }
 
-  // --- opencode flow ---
+  // --- opencode: register + open TUI immediately ---
   const opencodePort = "4096";
 
   // 1. Register session (or reuse existing for this project)
@@ -724,21 +769,8 @@ async function tmuxAdd(dir?: string) {
   ], { silent: false });
   if (regResult.output) console.log(regResult.output);
 
-  // 2. Ensure opencode serve is running on 0.0.0.0 (Docker bot needs to reach it)
-  const isAlive = (await run(["curl", "-sf", `http://localhost:${opencodePort}/session`], { silent: true })).ok;
-  if (!isAlive) {
-    step("Starting opencode serve");
-    await run(["tmux", "new-session", "-d", "-s", "opencode-serve", "-x", "220", "-y", "50"], { silent: true });
-    await run(["tmux", "send-keys", "-t", "opencode-serve",
-      `opencode serve --port ${opencodePort} --hostname 0.0.0.0`, "Enter"]);
-    for (let i = 0; i < 10; i++) {
-      await new Promise(r => setTimeout(r, 1000));
-      if ((await run(["curl", "-sf", `http://localhost:${opencodePort}/session`], { silent: true })).ok) break;
-    }
-    done();
-  } else {
-    console.log(`  ${c.green("✓")} opencode serve on :${opencodePort}`);
-  }
+  // 2. Ensure opencode serve is running
+  await ensureOpencodeServe(opencodePort);
 
   // 3. Open TUI connected to the serve instance, in the project directory
   console.log(`\n  ${c.cyan("opencode TUI")} — ${c.dim("Ctrl+C or q to exit (session → disconnected)")}\n`);
@@ -766,7 +798,10 @@ async function tmuxRemove(name?: string) {
   }
 
   const projects = await loadProjects();
-  const filtered = projects.filter(p => p.name !== name);
+  // Match by name, path basename, or full window name
+  const filtered = projects.filter(p =>
+    p.name !== name && basename(p.path) !== name && windowName(p) !== name
+  );
 
   if (filtered.length === projects.length) {
     console.log(`  ${c.yellow(name)} not found in project list.`);
@@ -787,13 +822,14 @@ async function tmuxList() {
 
   for (const p of projects) {
     const exists = existsSync(p.path);
+    const wname = windowName(p);
     let tmuxStatus = "";
     if (tmuxRunning) {
-      const capture = await run(["tmux", "capture-pane", "-t", `${TMUX_SESSION}:${p.name}`, "-p"], { silent: true });
+      const capture = await run(["tmux", "capture-pane", "-t", `${TMUX_SESSION}:${wname}`, "-p"], { silent: true });
       tmuxStatus = capture.ok ? c.green(" [running]") : c.dim(" [no window]");
     }
     const dirStatus = exists ? "" : c.red(" (dir missing)");
-    console.log(`  ${exists ? c.green("●") : c.red("●")} ${c.cyan(p.name)} — ${p.path}${dirStatus}${tmuxStatus}`);
+    console.log(`  ${exists ? c.green("●") : c.red("●")} ${c.cyan(wname)} — ${p.path}${dirStatus}${tmuxStatus}`);
   }
 
   if (!tmuxRunning) {
@@ -1088,8 +1124,9 @@ function help() {
     up [-a] [-s]    Start all projects in tmux (-a attach, -s split panes)
     down            Stop all tmux sessions + clean DB
     ps              List configured projects and status
-    add [dir] [--name NAME]  Add project to tmux config
+    add [dir] [--name NAME] [--provider claude|opencode]  Add project
     remove <name>   Remove project from tmux config
+    opencode-stop   Kill opencode serve tmux session
 
   ${c.bold("Connect:")}
     connect [dir]        Start single CLI session (default: current dir)
@@ -1120,6 +1157,13 @@ switch (command) {
   case "ps":          await tmuxList(); break;
   case "add":         await tmuxAdd(process.argv[3]); break;
   case "remove":      await tmuxRemove(process.argv[3]); break;
+  case "opencode-stop": {
+    const res = await run(["tmux", "kill-session", "-t", "opencode-serve"], { silent: true });
+    console.log(res.ok
+      ? `  ${c.green("✓")} opencode-serve stopped`
+      : `  ${c.yellow("opencode-serve not running")}`);
+    break;
+  }
   case "_register":   await internalRegister(); break;
   case "_disconnect": await internalDisconnect(); break;
   default:            help(); break;
