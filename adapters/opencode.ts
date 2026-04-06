@@ -245,6 +245,10 @@ export class OpencodeAdapter implements CliAdapter {
         const decoder = new TextDecoder();
         let buffer = "";
 
+        // Track which message IDs are assistant messages, and accumulated text per part
+        const assistantMessageIds = new Set<string>();
+        const partTexts = new Map<string, string>(); // partId → accumulated text so far
+
         while (!stopped) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -256,19 +260,38 @@ export class OpencodeAdapter implements CliAdapter {
           for (const line of lines) {
             if (!line.startsWith("data: ")) continue;
             const data = line.slice(6).trim();
-            if (!data || data === "[DONE]") {
-              safeDone();
-              return;
-            }
+            if (!data || data === "[DONE]") { safeDone(); return; }
             try {
-              const event = JSON.parse(data) as Record<string, unknown>;
-              // opencode event types — empirically determined from GET /doc
-              if (event.type === "message.part.text" || event.type === "content_block_delta") {
-                const text = (event.text ?? (event as any).delta?.text ?? "") as string;
-                if (text) onChunk(text);
-              } else if (event.type === "message.completed" || event.type === "message_stop") {
-                safeDone();
-                return;
+              const event = JSON.parse(data) as Record<string, any>;
+              const props = event.properties ?? {};
+              const evSessionId = props.sessionID;
+
+              // Only process events for our opencode session
+              if (evSessionId && evSessionId !== opencodeSessionId) continue;
+
+              if (event.type === "message.updated") {
+                // Track which message IDs belong to assistant
+                if (props.info?.role === "assistant" && props.info?.id) {
+                  assistantMessageIds.add(props.info.id);
+                }
+              } else if (event.type === "message.part.updated") {
+                const part = props.part ?? {};
+                // Only stream text parts from assistant messages
+                if (part.type === "text" && assistantMessageIds.has(part.messageID)) {
+                  const fullText: string = part.text ?? "";
+                  const prev = partTexts.get(part.id) ?? "";
+                  const delta = fullText.slice(prev.length);
+                  if (delta) {
+                    partTexts.set(part.id, fullText);
+                    onChunk(delta);
+                  }
+                }
+              } else if (event.type === "session.status") {
+                // session.status {type:"idle"} signals response is complete
+                if (props.status?.type === "idle") {
+                  safeDone();
+                  return;
+                }
               }
             } catch {
               // ignore parse errors
