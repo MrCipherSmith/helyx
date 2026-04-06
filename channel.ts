@@ -101,9 +101,32 @@ async function resolveSession(): Promise<number> {
       }
     }
     // Same source still running after retries — create a separate session
+    const displacedSessionId = existing[0].id;
     const n = Date.now() % 10000;
     sessionName = `${projectName} · ${channelSource}-${n}`;
     process.stderr.write(`[channel] session "${projectName} · ${channelSource}" is busy, creating "${sessionName}"\n`);
+
+    // Create new session
+    const clientId = `channel-${projectName}-${channelSource}-${Date.now()}`;
+    const [row] = await sql`
+      INSERT INTO sessions (name, project_path, client_id, status)
+      VALUES (${sessionName}, ${process.cwd()}, ${clientId}, 'active')
+      RETURNING id
+    `;
+    sessionId = row.id;
+    hasPollingLock = true;
+    await sql`SELECT pg_advisory_lock(${sessionId})`;
+    process.stderr.write(`[channel] created session #${sessionId} (${sessionName})\n`);
+
+    // Transfer chat routing from old session to new — old process becomes background
+    const transferred = await sql`
+      UPDATE chat_sessions SET active_session_id = ${sessionId}
+      WHERE active_session_id = ${displacedSessionId}
+    `;
+    if (transferred.count > 0) {
+      process.stderr.write(`[channel] transferred ${transferred.count} chat(s) from session #${displacedSessionId} to #${sessionId}\n`);
+    }
+    return sessionId;
   }
 
   // Create new session
