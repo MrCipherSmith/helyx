@@ -686,12 +686,15 @@ async function tmuxAdd(dir?: string) {
     "--name", name,
   ], { silent: false });
 
+  if (result.output) console.log(result.output);
   if (!result.ok) {
     console.log(`  ${c.green("Added to tmux:")} ${name} (${projectDir})`);
     console.log(`  ${c.yellow("Warning:")} bot not running — run 'claude-bot add .' after bot starts`);
   }
 
-  console.log(`  ${c.dim("Restart tmux to apply: claude-bot down && claude-bot up")}`);
+  if (provider === "claude") {
+    console.log(`  ${c.dim("Restart tmux to apply: claude-bot down && claude-bot up")}`);
+  }
 }
 
 async function tmuxRemove(name?: string) {
