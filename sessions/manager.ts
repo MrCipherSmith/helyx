@@ -9,6 +9,8 @@ export interface Session {
   metadata: Record<string, unknown>;
   connectedAt: Date;
   lastActive: Date;
+  cliType: "claude" | "opencode";
+  cliConfig: Record<string, unknown>;
 }
 
 export class SessionManager {
@@ -20,6 +22,8 @@ export class SessionManager {
     name?: string,
     projectPath?: string,
     metadata?: Record<string, unknown>,
+    cliType?: "claude" | "opencode",
+    cliConfig?: Record<string, unknown>,
   ): Promise<Session> {
     // Deduplicate: if a session with the same name and project_path already exists, adopt it
     if (projectPath && name && !name.startsWith("cli-")) {
@@ -33,9 +37,10 @@ export class SessionManager {
         this.activeClients.delete(old.client_id);
         const [row] = await sql`
           UPDATE sessions
-          SET client_id = ${clientId}, status = 'active', last_active = now()
+          SET client_id = ${clientId}, status = 'active', last_active = now(),
+              cli_type = ${cliType ?? "claude"}, cli_config = ${JSON.stringify(cliConfig ?? {})}
           WHERE id = ${old.id}
-          RETURNING id, name, project_path, client_id, status, metadata, connected_at, last_active
+          RETURNING id, name, project_path, client_id, status, metadata, connected_at, last_active, cli_type, cli_config
         `;
         const session = this.rowToSession(row);
         this.activeClients.set(clientId, session.id);
@@ -45,21 +50,25 @@ export class SessionManager {
     }
 
     const [row] = await sql`
-      INSERT INTO sessions (name, project_path, client_id, status, metadata)
+      INSERT INTO sessions (name, project_path, client_id, status, metadata, cli_type, cli_config)
       VALUES (
         ${name ?? null},
         ${projectPath ?? null},
         ${clientId},
         'active',
-        ${JSON.stringify(metadata ?? {})}
+        ${JSON.stringify(metadata ?? {})},
+        ${cliType ?? "claude"},
+        ${JSON.stringify(cliConfig ?? {})}
       )
       ON CONFLICT (client_id) DO UPDATE SET
         status = 'active',
         name = COALESCE(EXCLUDED.name, sessions.name),
         project_path = COALESCE(EXCLUDED.project_path, sessions.project_path),
         metadata = COALESCE(EXCLUDED.metadata, sessions.metadata),
+        cli_type = EXCLUDED.cli_type,
+        cli_config = EXCLUDED.cli_config,
         last_active = now()
-      RETURNING id, name, project_path, client_id, status, metadata, connected_at, last_active
+      RETURNING id, name, project_path, client_id, status, metadata, connected_at, last_active, cli_type, cli_config
     `;
 
     const session = this.rowToSession(row);
@@ -241,6 +250,8 @@ export class SessionManager {
       metadata: r.metadata ?? {},
       connectedAt: r.connected_at,
       lastActive: r.last_active,
+      cliType: (r.cli_type ?? "claude") as "claude" | "opencode",
+      cliConfig: r.cli_config ?? {},
     };
   }
 }
