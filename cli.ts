@@ -671,7 +671,7 @@ async function prune() {
 
 // --- Tmux management ---
 
-const TMUX_SESSION = "claude";
+const TMUX_SESSION = "bots";
 const TMUX_PROJECTS_FILE = `${BOT_DIR}/tmux-projects.json`;
 
 type Project = { name: string; path: string; provider?: "claude" | "opencode" };
@@ -795,6 +795,96 @@ async function tmuxStart() {
       stdout: "inherit", stderr: "inherit", stdin: "inherit",
     });
     await proc.exited;
+  }
+}
+
+async function tmuxAttach(dir?: string) {
+  // Check tmux session is running
+  const exists = await run(["tmux", "has-session", "-t", TMUX_SESSION], { silent: true });
+  if (!exists.ok) {
+    console.log(c.red(`  Tmux session '${TMUX_SESSION}' not running. Start it first: claude-bot up`));
+    return;
+  }
+
+  // Resolve directory
+  let resolvedDir = dir;
+  if (!resolvedDir || resolvedDir.startsWith("--")) resolvedDir = ".";
+  const projectDir = resolve(resolvedDir);
+  if (!existsSync(projectDir)) {
+    console.log(c.red(`  Directory not found: ${projectDir}`));
+    return;
+  }
+
+  const name = basename(projectDir);
+
+  // Determine provider from flag, projects file, or ask
+  let provider: "claude" | "opencode" | undefined;
+  if (process.argv.includes("--claude")) provider = "claude";
+  else if (process.argv.includes("--opencode")) provider = "opencode";
+
+  if (!provider) {
+    const projects = await loadProjects();
+    const project = projects.find(p => p.path === projectDir);
+    if (project?.provider) {
+      provider = project.provider as "claude" | "opencode";
+      console.log(`  ${c.dim(`Provider from config: ${provider}`)}`);
+    }
+  }
+
+  if (!provider) {
+    const choice = askChoice("Provider:", ["claude (Claude Code — full MCP integration)", "opencode (opencode TUI)"]);
+    provider = choice === 1 ? "opencode" : "claude";
+  }
+
+  const p: Project = { name, path: projectDir, provider };
+  const wname = windowName(p);
+
+  // Check if window already exists
+  const winExists = await run(["tmux", "has-session", "-t", `${TMUX_SESSION}:${wname}`], { silent: true });
+  if (winExists.ok) {
+    console.log(`  ${c.yellow(`Window '${wname}' already exists in session '${TMUX_SESSION}'.`)}`);
+    if (!process.env.TMUX) {
+      const attach = Bun.spawn(["tmux", "attach", "-t", TMUX_SESSION], {
+        stdout: "inherit", stderr: "inherit", stdin: "inherit",
+      });
+      await attach.exited;
+    }
+    return;
+  }
+
+  // Setup opencode serve if needed
+  const opencodePort = "4096";
+  if (provider === "opencode") await ensureOpencodeServe(opencodePort);
+
+  // Get opencode session ID if needed
+  let opencodeSessionArg = "";
+  if (provider === "opencode") {
+    const r = await run([
+      "docker", "compose", "exec", "-T", "bot",
+      "bun", "/app/cli.ts", "_get-opencode-session", "--path", projectDir,
+    ], { silent: true });
+    const sid = r.output?.trim();
+    if (sid) opencodeSessionArg = sid;
+  }
+
+  const cmd = provider === "opencode"
+    ? `${BOT_DIR}/scripts/run-opencode.sh ${projectDir} ${opencodePort} ${opencodeSessionArg}`
+    : `${BOT_DIR}/scripts/run-cli.sh ${projectDir}`;
+
+  // Add new window to existing session
+  await run(["tmux", "new-window", "-t", TMUX_SESSION, "-n", wname, "-c", projectDir]);
+  await run(["tmux", "send-keys", "-t", `${TMUX_SESSION}:${wname}`, cmd, "Enter"]);
+  console.log(`  ${c.green("✓")} Added window: ${wname}`);
+
+  // Attach if not inside tmux
+  if (!process.env.TMUX) {
+    console.log(`  Attaching to ${c.cyan(TMUX_SESSION)}...\n`);
+    const attach = Bun.spawn(["tmux", "attach", "-t", `${TMUX_SESSION}:${wname}`], {
+      stdout: "inherit", stderr: "inherit", stdin: "inherit",
+    });
+    await attach.exited;
+  } else {
+    console.log(`  Switch to window: ${c.cyan(`Ctrl+B, '${wname}'`)}`);
   }
 }
 
@@ -1369,6 +1459,7 @@ function help() {
     ps              List configured projects and status
     add [dir]       Add project (interactive: path + provider)
     run [dir]       Launch project in terminal (--claude / --opencode)
+    attach [dir]    Add project window to running tmux session (--claude / --opencode)
     remove <name>   Remove project from tmux config
     opencode-stop   Kill opencode serve tmux session
 
@@ -1403,6 +1494,7 @@ switch (command) {
   case "ps":          await tmuxList(); break;
   case "add":         await tmuxAdd(process.argv[3]); break;
   case "run":         await tmuxRun(process.argv[3]); break;
+  case "attach":      await tmuxAttach(process.argv[3]); break;
   case "remove":      await tmuxRemove(process.argv[3]); break;
   case "opencode-stop": {
     const res = await run(["tmux", "kill-session", "-t", "opencode-serve"], { silent: true });
