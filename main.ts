@@ -40,6 +40,11 @@ async function main() {
   // 1. Database migrations
   await migrate();
 
+  // Security warnings
+  if (CONFIG.ALLOWED_USERS.length === 0) {
+    console.warn("[main] ⚠ WARNING: ALLOWED_USERS is empty — bot and dashboard are open to ALL Telegram users!");
+  }
+
   // 2. Create Telegram bot
   const bot = createBot();
 

@@ -601,7 +601,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
       if (!res.ok) {
         const errBody = await res.text();
         process.stderr.write(`[channel] Telegram API error: ${res.status} ${errBody}\n`);
-        return text(`Telegram API error: ${res.status} ${errBody}`);
+        return text(`Telegram API error: ${res.status}`);
       }
       process.stderr.write(`[channel] reply sent OK\n`);
       // Save assistant response to short-term memory

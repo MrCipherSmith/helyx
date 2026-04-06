@@ -56,7 +56,7 @@ function parseCookie(req: IncomingMessage, name: string): string | undefined {
 }
 
 function setCookie(res: ServerResponse, name: string, value: string, maxAge: number): void {
-  const secure = CONFIG.TELEGRAM_WEBHOOK_URL.startsWith("https") ? "; Secure" : "";
+  const secure = (process.env.SECURE_COOKIES === "true" || CONFIG.TELEGRAM_WEBHOOK_URL.startsWith("https")) ? "; Secure" : "";
   res.setHeader("Set-Cookie", `${name}=${value}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}${secure}`);
 }
 
