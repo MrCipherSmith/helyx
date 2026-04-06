@@ -620,12 +620,15 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
               ...(replyMarkup && { reply_markup: replyMarkup }),
             }),
           });
+          if (!res.ok) {
+            const fallbackErr = await res.text();
+            process.stderr.write(`[channel] Telegram API error: ${res.status} ${fallbackErr}\n`);
+            return text(`Telegram API error: ${res.status}`);
+          }
+        } else {
+          process.stderr.write(`[channel] Telegram API error: ${res.status} ${errBody}\n`);
+          return text(`Telegram API error: ${res.status}`);
         }
-      }
-      if (!res.ok) {
-        const errBody = await res.text();
-        process.stderr.write(`[channel] Telegram API error: ${res.status} ${errBody}\n`);
-        return text(`Telegram API error: ${res.status}`);
       }
       process.stderr.write(`[channel] reply sent OK\n`);
       // Save assistant response to short-term memory

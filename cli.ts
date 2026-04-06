@@ -766,8 +766,15 @@ async function tmuxAdd(dir?: string) {
       "--provider", "claude", "--path", projectDir, "--name", name,
     ], { silent: false });
     if (result.output) console.log(result.output);
-    if (!result.ok) console.log(`  ${c.yellow("Warning:")} bot not running — session will register on next claude-bot up`);
-    console.log(`  ${c.dim("Apply: claude-bot down && claude-bot up")}`);
+    if (!result.ok) console.log(`  ${c.yellow("Warning:")} bot not running — session will register on next start`);
+
+    // Launch claude directly in the current terminal
+    console.log(`  ${c.green("Starting claude...")} ${c.dim(`(Ctrl+C to stop)`)}\n`);
+    const proc = Bun.spawn(
+      ["bash", `${BOT_DIR}/scripts/run-cli.sh`, projectDir],
+      { stdout: "inherit", stderr: "inherit", stdin: "inherit", cwd: projectDir },
+    );
+    await proc.exited;
     return;
   }
 
