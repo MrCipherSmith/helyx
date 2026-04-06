@@ -5,6 +5,8 @@
 [![Bun](https://img.shields.io/badge/runtime-Bun-f9f1e1)](https://bun.sh)
 [![TypeScript](https://img.shields.io/badge/lang-TypeScript-3178c6)](https://www.typescriptlang.org)
 
+[Dashboard](examples/dashboard.md) | [Usage Patterns](examples/usage-patterns.md) | [Cloudflare Tunnel](guides/cloudflare-tunnel-setup.md) | [CLAUDE.md Guide](CLAUDE_MD_GUIDE.md)
+
 > **Control Claude Code from Telegram.** Multi-session bot with dual-layer memory, voice transcription, image analysis, and real-time CLI progress monitoring.
 
 Connect multiple Claude Code CLI instances to a single Telegram bot. Switch between projects, send voice messages, approve CLI permissions, and see what Claude is doing — all from your phone.
