@@ -89,9 +89,8 @@ console.log(`[client] provider: ${provider}${
 
 // --- OpenAI-compatible API (OpenRouter) ---
 
-// Shared usage from last streaming chunk
-let _lastStreamUsage: { input?: number; output?: number } = {};
-export function getLastStreamUsage() { return _lastStreamUsage; }
+// Per-call usage tracking for streaming (avoids global mutable state race)
+interface StreamUsage { input?: number; output?: number; }
 
 /** Shared fetch for OpenAI-compatible APIs (OpenRouter, Google AI) */
 async function fetchOpenai(
@@ -124,8 +123,8 @@ async function fetchOpenai(
 async function* openaiStream(
   messages: MessageParam[],
   system: string,
+  usage: StreamUsage = {},
 ): AsyncGenerator<string> {
-  _lastStreamUsage = {};
 
   const res = await withRetry(() => fetchOpenai(
     [{ role: "system", content: system }, ...toTextMessages(messages)],
@@ -158,14 +157,14 @@ async function* openaiStream(
         const parsed = JSON.parse(data);
         // Capture usage from final chunk
         if (parsed.usage) {
-          _lastStreamUsage = {
-            input: parsed.usage.prompt_tokens,
-            output: parsed.usage.completion_tokens,
-          };
+          usage.input = parsed.usage.prompt_tokens;
+          usage.output = parsed.usage.completion_tokens;
         }
         const content = parsed.choices?.[0]?.delta?.content;
         if (content) yield content;
-      } catch {}
+      } catch (e) {
+        console.warn("[client] failed to parse SSE chunk:", (e as Error)?.message);
+      }
     }
   }
 }
@@ -248,7 +247,9 @@ async function* ollamaStream(
           }
           yield content;
         }
-      } catch {}
+      } catch (e) {
+        console.warn("[client] failed to parse Ollama chunk:", (e as Error)?.message);
+      }
     }
   }
 }
@@ -301,10 +302,12 @@ export async function* streamResponse(
   try {
     switch (provider) {
       case "google-ai":
-      case "openai":
-        yield* openaiStream(messages, system);
-        // Capture usage from last SSE chunk
-        { const u = getLastStreamUsage(); inputTokens = u.input; outputTokens = u.output; }
+      case "openai": {
+        const streamUsage: StreamUsage = {};
+        yield* openaiStream(messages, system, streamUsage);
+        inputTokens = streamUsage.input;
+        outputTokens = streamUsage.output;
+      }
         break;
       case "ollama":
         yield* ollamaStream(messages, system);
@@ -396,6 +399,8 @@ export async function generateResponse(
           .join("");
         break;
       }
+      default:
+        throw new Error(`Unknown provider: ${provider}`);
     }
 
     recordApiRequest({

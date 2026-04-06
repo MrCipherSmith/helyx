@@ -1,7 +1,8 @@
 import { IncomingMessage, ServerResponse } from "http";
 import { readFileSync, existsSync } from "fs";
-import { join, extname } from "path";
+import { join, extname, resolve } from "path";
 import { sql } from "../memory/db.ts";
+import { deleteSessionCascade } from "../sessions/delete.ts";
 import { CONFIG } from "../config.ts";
 import { signJwt, verifyJwt, verifyTelegramLogin, type AuthPayload } from "../dashboard/auth.ts";
 import { getApiStats, getTranscriptionStats, getMessageStats, getRecentErrors } from "../utils/stats.ts";
@@ -31,10 +32,15 @@ function sendError(res: ServerResponse, message: string, status = 400): void {
   sendJson(res, { error: message }, status);
 }
 
+const MAX_BODY_SIZE = 1_000_000; // 1 MB
+
 async function parseBody(req: IncomingMessage): Promise<any> {
   return new Promise((resolve, reject) => {
     let data = "";
-    req.on("data", (chunk) => (data += chunk));
+    req.on("data", (chunk) => {
+      data += chunk;
+      if (data.length > MAX_BODY_SIZE) { req.destroy(); reject(new Error("Body too large")); }
+    });
     req.on("end", () => {
       try { resolve(JSON.parse(data)); } catch { resolve({}); }
     });
@@ -165,15 +171,7 @@ async function handleSessionMessages(res: ServerResponse, id: number, url: URL):
 }
 
 async function handleDeleteSession(res: ServerResponse, id: number): Promise<void> {
-  await sql`DELETE FROM chat_sessions WHERE active_session_id = ${id}`;
-  await sql`DELETE FROM message_queue WHERE session_id = ${id}`;
-  await sql`DELETE FROM request_logs WHERE session_id = ${id}`;
-  await sql`DELETE FROM api_request_stats WHERE session_id = ${id}`;
-  await sql`DELETE FROM transcription_stats WHERE session_id = ${id}`;
-  await sql`DELETE FROM messages WHERE session_id = ${id}`;
-  await sql`DELETE FROM memories WHERE session_id = ${id}`;
-  await sql`DELETE FROM permission_requests WHERE session_id = ${id}`;
-  await sql`DELETE FROM sessions WHERE id = ${id}`;
+  await deleteSessionCascade(id);
   sendJson(res, { ok: true });
 }
 
@@ -270,7 +268,8 @@ async function handleDeleteMemory(res: ServerResponse, id: number): Promise<void
 // --- Static file serving ---
 
 function serveStatic(res: ServerResponse, pathname: string): boolean {
-  let filePath = join(DIST_DIR, pathname);
+  let filePath = resolve(join(DIST_DIR, pathname));
+  if (!filePath.startsWith(DIST_DIR)) return false; // path traversal protection
   if (!existsSync(filePath) || pathname === "/") {
     filePath = join(DIST_DIR, "index.html");
   }

@@ -11,8 +11,27 @@ import { sessionManager } from "../sessions/manager.ts";
 import { CONFIG } from "../config.ts";
 import { sql } from "../memory/db.ts";
 import { summarizeOnDisconnect } from "../memory/summarizer.ts";
+import { verifyJwt } from "../dashboard/auth.ts";
 import { IncomingMessage, ServerResponse } from "http";
 import { createServer } from "http";
+
+function parseCookie(req: IncomingMessage, name: string): string | undefined {
+  const cookies = req.headers.cookie;
+  if (!cookies) return undefined;
+  const match = cookies.split(";").find((c) => c.trim().startsWith(`${name}=`));
+  return match?.split("=").slice(1).join("=").trim();
+}
+
+async function isAuthenticated(req: IncomingMessage): Promise<boolean> {
+  const token = parseCookie(req, "token");
+  if (!token) return false;
+  return (await verifyJwt(token)) !== null;
+}
+
+function isLocalRequest(req: IncomingMessage): boolean {
+  const addr = req.socket.remoteAddress ?? "";
+  return addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1" || addr.startsWith("172.") || addr.startsWith("10.");
+}
 
 // Track active transports by session
 const transports = new Map<string, StreamableHTTPServerTransport>();
@@ -169,14 +188,20 @@ export function startMcpHttpServer(bot: Bot | null): ReturnType<typeof createSer
           sessions: transports.size,
         }));
       } catch (err: any) {
+        console.error("[health] db check failed:", err?.message);
         res.writeHead(503, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ status: "error", db: "disconnected", error: err?.message }));
+        res.end(JSON.stringify({ status: "error", db: "disconnected" }));
       }
       return;
     }
 
-    // API: trigger summarization for a session
+    // API: trigger summarization for a session (requires auth or local)
     if (url.pathname === "/api/summarize" && req.method === "POST") {
+      if (!isLocalRequest(req) && !(await isAuthenticated(req))) {
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Unauthorized" }));
+        return;
+      }
       try {
         const body = await new Promise<string>((resolve, reject) => {
           let data = "";
@@ -226,6 +251,13 @@ export function startMcpHttpServer(bot: Bot | null): ReturnType<typeof createSer
       return;
     }
 
+    // MCP endpoint restricted to local/Docker network
+    if (!isLocalRequest(req)) {
+      res.writeHead(403);
+      res.end("Forbidden");
+      return;
+    }
+
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
     let transport = sessionId ? transports.get(sessionId) : undefined;
 
@@ -272,7 +304,10 @@ export function startMcpHttpServer(bot: Bot | null): ReturnType<typeof createSer
     if (req.method === "POST") {
       body = await new Promise<unknown>((resolve, reject) => {
         let data = "";
-        req.on("data", (chunk) => (data += chunk));
+        req.on("data", (chunk) => {
+          data += chunk;
+          if (data.length > 5_000_000) { req.destroy(); reject(new Error("Body too large")); }
+        });
         req.on("end", () => {
           try {
             resolve(JSON.parse(data));

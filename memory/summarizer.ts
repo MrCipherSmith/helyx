@@ -25,7 +25,11 @@ export function touchIdleTimer(sessionId: number, chatId: string, projectPath?: 
   // Set new timer
   const timer = setTimeout(async () => {
     idleTimers.delete(key);
-    await trySummarize(sessionId, chatId, "idle", projectPath);
+    try {
+      await trySummarize(sessionId, chatId, "idle", projectPath);
+    } catch (err) {
+      console.error("[summarizer] idle timer error:", err);
+    }
   }, CONFIG.IDLE_TIMEOUT_MS);
 
   idleTimers.set(key, timer);

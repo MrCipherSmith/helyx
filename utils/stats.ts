@@ -199,10 +199,6 @@ export async function getApiStats() {
     `;
 
     // Add total estimated cost to summary
-    summary.estimated_cost = estimateCost(
-      "", // will be 0 for unknown; compute from byProvider instead
-      0, 0,
-    );
     let totalCost = 0;
     for (const row of byProvider) totalCost += row.cost;
     summary.estimated_cost = totalCost;

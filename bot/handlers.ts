@@ -6,6 +6,7 @@ import { remember, recall, forget, listMemories } from "../memory/long-term.ts";
 import { streamToTelegram } from "./streaming.ts";
 import { routeMessage } from "../sessions/router.ts";
 import { sessionManager } from "../sessions/manager.ts";
+import { deleteSessionCascade } from "../sessions/delete.ts";
 import { sendNotificationToSession } from "../mcp/bridge.ts";
 import { downloadFile, toHostPath } from "../utils/files.ts";
 import { startTyping, type TypingHandle } from "../utils/typing.ts";
@@ -406,30 +407,13 @@ async function handleRemove(ctx: Context): Promise<void> {
     return;
   }
 
-  // Delete all related data in correct order (FK constraints)
-  await sql`DELETE FROM chat_sessions WHERE active_session_id = ${sessionId}`;
-  await sql`DELETE FROM permission_requests WHERE session_id = ${sessionId}`;
-  await sql`DELETE FROM memories WHERE session_id = ${sessionId}`;
-  await sql`DELETE FROM messages WHERE session_id = ${sessionId}`;
-  await sql`DELETE FROM message_queue WHERE session_id = ${sessionId}`;
-  await sql`DELETE FROM request_logs WHERE session_id = ${sessionId}`;
-  await sql`DELETE FROM api_request_stats WHERE session_id = ${sessionId}`;
-  await sql`DELETE FROM transcription_stats WHERE session_id = ${sessionId}`;
-  await sql`DELETE FROM sessions WHERE id = ${sessionId}`;
+  await deleteSessionCascade(sessionId);
 
   await ctx.reply(`Deleted session #${sessionId} (${session.name ?? "unnamed"}) with all data.`);
 }
 
 async function cleanupSession(id: number): Promise<void> {
-  await sql`DELETE FROM chat_sessions WHERE active_session_id = ${id}`;
-  await sql`DELETE FROM permission_requests WHERE session_id = ${id}`;
-  await sql`DELETE FROM memories WHERE session_id = ${id}`;
-  await sql`DELETE FROM messages WHERE session_id = ${id}`;
-  await sql`DELETE FROM message_queue WHERE session_id = ${id}`;
-  await sql`DELETE FROM request_logs WHERE session_id = ${id}`;
-  await sql`DELETE FROM api_request_stats WHERE session_id = ${id}`;
-  await sql`DELETE FROM transcription_stats WHERE session_id = ${id}`;
-  await sql`DELETE FROM sessions WHERE id = ${id}`;
+  await deleteSessionCascade(id);
 }
 
 async function handleCleanup(ctx: Context): Promise<void> {
@@ -850,8 +834,9 @@ async function handlePermissionCallback(ctx: Context): Promise<void> {
   // For "always" — treat as allow + save auto-approve rule
   const dbAction = action === "always" ? "allow" : action;
 
+  const chatId = String(ctx.chat?.id ?? "");
   const result = await sql`
-    UPDATE permission_requests SET response = ${dbAction} WHERE id = ${requestId} RETURNING id, tool_name, session_id
+    UPDATE permission_requests SET response = ${dbAction} WHERE id = ${requestId} AND chat_id = ${chatId} RETURNING id, tool_name, session_id
   `;
 
   if (result.length > 0) {
