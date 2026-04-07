@@ -744,17 +744,7 @@ async function tmuxAdd(dir?: string) {
   }
   await saveProjects(projects);
   console.log(`  ${c.green("✓")} Saved: ${windowName({ name, path: projectDir })}`);
-
-  // Register in bot DB
-  const result = await run([
-    "docker", "compose", "exec", "-T", "bot",
-    "bun", "/app/cli.ts", "_register",
-    "--path", projectDir, "--name", name,
-  ], { silent: false });
-  if (result.output) console.log(result.output);
-  if (!result.ok) console.log(`  ${c.yellow("Warning:")} bot not running — session will register on next start`);
-
-  console.log(`\n  ${c.dim(`Run: claude-bot run ${projectDir}`)}`);
+  console.log(`\n  ${c.dim(`Run: claude-bot up to start all projects`)}`);
 }
 
 async function tmuxRun(dir?: string) {
