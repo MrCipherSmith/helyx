@@ -81,7 +81,7 @@ This bot is a full **[Model Context Protocol](https://modelcontextprotocol.io) s
 - **Permission Forwarding** — CLI permission requests as inline buttons (Allow / Always / Deny), with input preview (file path + syntax-highlighted diff), synced with terminal
 - **Auto-Approve Permissions** — configure allowed tools in `settings.local.json` (`permissions.allow` patterns like `"Edit(*)"`, `"Bash(*)"`) to skip Telegram approval for trusted operations
 - **Statistics & Logging** — `/stats` for API usage and tokens, `/logs` for per-session request logs
-- **Web Dashboard** — real-time stats (by provider, project, operation, session), token charts, cost estimation, error drill-down with slide panel, log viewer with full message detail
+- **Web Dashboard** — real-time stats (by provider, project, operation, session), token charts, cost estimation, error drill-down with slide panel, log viewer with full message detail; **Projects page** for creating, starting, and stopping projects from the browser
 
 ### Operations
 - **Health Endpoint** — `GET /health` with DB status, uptime, active sessions
@@ -105,12 +105,8 @@ This bot is a full **[Model Context Protocol](https://modelcontextprotocol.io) s
          │                 │  │           Project Files (host)           │   │
          │                 │  └──────────────────────────────────────────┘   │
          │                 │                                                  │
-         │                 │  ┌──────────────────────────────────────────┐   │
-         │                 │  │  opencode serve (tmux)            :4096  │   │
-         │                 │  │  OpenCode TUI ◀──▶ Project Files (host)  │   │
-         │                 │  └──────────────────────────────────────────┘   │
-         │                 └──────────────────────────────────────────────────┘
-         │                            ▲ HTTP REST + SSE  (host.docker.internal:4096)
+         │                 └──────────────────────────────────────────────────────┘
+         │                            ▲
          │                 ┌──────────┴───────────────────────────────────────┐
          │                 │              Docker                              │
          │  direct DB      │                                                  │
@@ -121,9 +117,7 @@ This bot is a full **[Model Context Protocol](https://modelcontextprotocol.io) s
          │                 │  │  HTTP MCP server  ◀──▶ Claude CLIs      │   │
          │                 │  │                                          │   │
          │                 │  │  adapters/                               │   │
-         │                 │  │  ├─ ClaudeAdapter → message_queue        │   │
-         │                 │  │  ├─ OpencodeAdapter → HTTP /prompt_async │   │
-         │                 │  │  └─ OpencodeMonitor ← SSE /event stream  │   │
+         │                 │  │  └─ ClaudeAdapter → message_queue        │   │
          │                 │  │                                          │   │
          │                 │  │  sessions/router.ts (standalone/cli/disc)│   │
          │                 │  │  Standalone LLM   ──▶ Google AI/Openrtr  │   │
@@ -436,13 +430,9 @@ Tmux:
   claude-bot down               Stop all tmux sessions + clean DB
   claude-bot ps                 List configured projects
   claude-bot add [dir] [--name] [--provider]  Register project in config + bot DB (no launch)
-  claude-bot run [dir] [--claude|--opencode]  Launch project in current terminal
-  claude-bot attach [dir] [--claude|--opencode]  Add window to running tmux session (bots)
-  claude-bot remove <name>      Remove project from config
-
-Connect:
-  claude-bot start [dir] [--claude|--opencode]  Register + launch in current terminal
-  claude-bot connect [dir] [-t] [--provider]    Start single CLI session
+  claude-bot run [dir]              Launch project in current terminal
+  claude-bot attach [dir]           Add window to running tmux session (bots)
+  claude-bot remove <name>          Remove project from config
 
 Connect:
   claude-bot start [dir]            Launch Claude Code in current terminal
@@ -630,6 +620,11 @@ ollama pull nomic-embed-text
 | `ARCHIVE_TTL_DAYS` | No | Days before archived messages/permissions are deleted (default: `30`) |
 | `MEMORY_SIMILARITY_THRESHOLD` | No | Cosine distance threshold for memory reconciliation (default: `0.35`) |
 | `MEMORY_RECONCILE_TOP_K` | No | Number of similar memories checked before LLM reconciliation (default: `5`) |
+| `MEMORY_TTL_FACT_DAYS` | No | Retention days for `fact` memories (default: `90`) |
+| `MEMORY_TTL_SUMMARY_DAYS` | No | Retention days for `summary` memories (default: `60`) |
+| `MEMORY_TTL_DECISION_DAYS` | No | Retention days for `decision` memories (default: `180`) |
+| `MEMORY_TTL_NOTE_DAYS` | No | Retention days for `note` memories (default: `30`) |
+| `MEMORY_TTL_PROJECT_CONTEXT_DAYS` | No | Retention days for `project_context` memories (default: `180`) |
 
 ### Manual Setup (without Docker)
 
@@ -707,6 +702,20 @@ Backups saved to `~/backups/claude-bot/` (gzipped, last 7 retained).
 | DB Client | [postgres](https://github.com/porsager/postgres) |
 | Dashboard | [React](https://react.dev) + [Tailwind CSS](https://tailwindcss.com) + [Vite](https://vite.dev) |
 
+## Recent Changes (v1.11.0)
+
+### Dashboard Project Management
+- **Projects page** — create, start, and stop projects directly from the web dashboard (previously Telegram-only)
+- **SSE notifications** — `GET /api/events` streams `session-state` events to dashboard via Server-Sent Events
+- **Browser notifications** — dashboard requests Notification permission and shows push notifications on session state changes
+- **Projects API** — `GET/POST /api/projects`, `POST /api/projects/:id/start|stop`, `DELETE /api/projects/:id`
+
+### Memory TTL per Type
+- **Per-type retention** — each memory type has its own TTL: `fact` 90d, `summary` 60d, `decision` 180d, `note` 30d, `project_context` 180d
+- **Hourly cleanup** — expired memories deleted automatically based on `created_at`
+- **Configurable** — override via `MEMORY_TTL_FACT_DAYS`, `MEMORY_TTL_SUMMARY_DAYS`, etc.
+- **DB migration v9** — `archived_at` column + partial index on `memories` table
+
 ## Recent Changes (v1.10.0)
 
 ### Smart Memory Reconciliation
@@ -768,7 +777,7 @@ Backups saved to `~/backups/claude-bot/` (gzipped, last 7 retained).
 - [x] Session switch briefing from project context
 - [x] Semantic search via MCP tool and bot command
 - [x] Smart memory reconciliation — LLM-based dedup and update (mem0 approach)
-- [ ] Dashboard UI for project and session management
+- [x] Dashboard UI for project and session management (Projects page + SSE notifications)
 - [ ] Multi-user support with separate session namespaces
 - [ ] Inline mode — respond in any Telegram chat via @bot
 
