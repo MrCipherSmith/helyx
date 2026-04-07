@@ -10,7 +10,7 @@ import { handleDashboardRequest } from "./dashboard-api.ts";
 import { sessionManager } from "../sessions/manager.ts";
 import { CONFIG } from "../config.ts";
 import { sql } from "../memory/db.ts";
-import { summarizeOnDisconnect } from "../memory/summarizer.ts";
+import { summarizeOnDisconnect, summarizeWork } from "../memory/summarizer.ts";
 import { verifyJwt } from "../dashboard/auth.ts";
 import { IncomingMessage, ServerResponse } from "http";
 import { createServer } from "http";
@@ -288,6 +288,22 @@ export function startMcpHttpServer(bot: Bot | null): ReturnType<typeof createSer
       return;
     }
 
+
+    // POST /api/sessions/:id/summarize-work
+    const workSumMatch = url.pathname.match(/^\/api\/sessions\/(\d+)\/summarize-work$/);
+    if (req.method === "POST" && workSumMatch) {
+      const sessionId = parseInt(workSumMatch[1], 10);
+      try {
+        const ok = await summarizeWork(sessionId);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true, skipped: !ok }));
+      } catch (err: any) {
+        console.error("[api] summarize-work error:", err.message);
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: err.message }));
+      }
+      return;
+    }
 
     // Telegram webhook endpoint
     if (webhookHandler && req.method === "POST" && url.pathname === CONFIG.TELEGRAM_WEBHOOK_PATH) {
