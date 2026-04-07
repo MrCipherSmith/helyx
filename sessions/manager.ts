@@ -1,6 +1,7 @@
 import { sql } from "../memory/db.ts";
 import { normalizeCLIConfig } from "../utils/cli-config.ts";
 import { basename } from "path";
+import { broadcast } from "../mcp/notification-broadcaster.ts";
 
 export interface Session {
   id: number;
@@ -65,6 +66,7 @@ export class SessionManager {
     const session = this.rowToSession(row);
     this.activeClients.set(clientId, session.id);
     console.log(`[session] registered: ${session.id} (${session.name ?? clientId})`);
+    broadcast("session-state", { id: session.id, status: session.status, project: session.project });
     return session;
   }
 
@@ -95,6 +97,7 @@ export class SessionManager {
     `;
     const session = this.rowToSession(row);
     console.log(`[session] remote registered: #${session.id} (${name})`);
+    broadcast("session-state", { id: session.id, status: session.status, project: session.project });
     return session;
   }
 
@@ -185,6 +188,7 @@ export class SessionManager {
       const newStatus = source === 'remote' ? 'inactive' : 'terminated';
       await sql`UPDATE sessions SET status = ${newStatus}, last_active = now() WHERE id = ${id}`;
       console.log(`[session] disconnected: #${id} (${name ?? source}) -> ${newStatus}`);
+      broadcast("session-state", { id, status: newStatus, project });
     }
     this.activeClients.delete(clientId);
   }
@@ -218,6 +222,7 @@ export class SessionManager {
         const newStatus = row.source === 'remote' ? 'inactive' : 'terminated';
         await sql`UPDATE sessions SET status = ${newStatus} WHERE id = ${row.id}`;
         console.log(`[session] marked stale: #${row.id} (${row.client_id.slice(0, 8)}) -> ${newStatus}`);
+        broadcast("session-state", { id: row.id, status: newStatus });
         count++;
       }
     }

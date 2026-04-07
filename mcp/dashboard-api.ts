@@ -7,6 +7,7 @@ import { CONFIG } from "../config.ts";
 import { signJwt, verifyJwt, verifyTelegramLogin, type AuthPayload } from "../dashboard/auth.ts";
 import { getApiStats, getTranscriptionStats, getMessageStats, getRecentErrors } from "../utils/stats.ts";
 import { isIndexing } from "../memory/long-term.ts";
+import { addSSEClient, removeSSEClient, getSSEClientCount } from "./notification-broadcaster.ts";
 
 const DIST_DIR = join(import.meta.dirname, "../dashboard/dist");
 
@@ -140,6 +141,7 @@ async function handleOverview(_req: IncomingMessage, res: ServerResponse): Promi
     sessions: { active: sessionCounts.active, total: sessionCounts.total },
     tokens24h: { input: tokens24h.input, output: tokens24h.output, total: tokens24h.total, requests: tokens24h.requests },
     recentSessions,
+    sse_clients: getSSEClientCount(),
   });
 }
 
@@ -409,6 +411,43 @@ export async function handleDashboardRequest(
 
   // CLI registration endpoint — protected by isLocalRequest in server.ts, not JWT
   if (pathname === "/api/sessions/register" || pathname === "/api/sessions/disconnect") return false;
+
+  // SSE endpoint — requires auth cookie but uses streaming response
+  if (pathname === "/api/events" && method === "GET") {
+    const user = await getUser(req);
+    if (!user) { sendError(res, "Unauthorized", 401); return true; }
+
+    const clientId = crypto.randomUUID();
+
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+      "Access-Control-Allow-Origin": "*",
+      "X-Accel-Buffering": "no",
+    });
+
+    const send = (event: string, data: unknown) => {
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    // Send initial heartbeat
+    send("connected", { clientId, timestamp: new Date().toISOString() });
+
+    addSSEClient({ id: clientId, send, close: () => res.end() });
+
+    // Keepalive ping every 30s
+    const pingInterval = setInterval(() => {
+      try { res.write(": ping\n\n"); } catch { clearInterval(pingInterval); }
+    }, 30_000);
+
+    req.on("close", () => {
+      clearInterval(pingInterval);
+      removeSSEClient(clientId);
+    });
+
+    return true;
+  }
 
   // All other /api/* routes require auth
   if (pathname.startsWith("/api/")) {
