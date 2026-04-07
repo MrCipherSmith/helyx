@@ -70,6 +70,7 @@ This bot is a full **[Model Context Protocol](https://modelcontextprotocol.io) s
 ### Memory
 - **Short-Term** — sliding window of recent messages per session (in-memory cache + PostgreSQL)
 - **Long-Term** — semantic search via pgvector embeddings powered by Ollama (nomic-embed-text, 768 dims)
+- **Smart Reconciliation** — `/remember` and work summaries use LLM-based deduplication: new facts are compared against similar existing memories and the system decides ADD / UPDATE / DELETE / NOOP instead of always inserting
 - **Project-Scoped** — memories and project context shared across all sessions in the same project
 - **Cross-Session History** — new CLI sessions automatically load prior conversation context from previous sessions in the same project
 - **Auto-Summarization** — remote session conversations summarized on idle/overflow; messages archived with configurable TTL (default 30 days)
@@ -627,6 +628,8 @@ ollama pull nomic-embed-text
 | `KNOWLEDGE_BASE` | No | Path to knowledge base for `/skills` and `/rules` |
 | `HOST_CLAUDE_CONFIG` | No | Mount point for ~/.claude in Docker (default: `/host-claude-config`) |
 | `ARCHIVE_TTL_DAYS` | No | Days before archived messages/permissions are deleted (default: `30`) |
+| `MEMORY_SIMILARITY_THRESHOLD` | No | Cosine distance threshold for memory reconciliation (default: `0.35`) |
+| `MEMORY_RECONCILE_TOP_K` | No | Number of similar memories checked before LLM reconciliation (default: `5`) |
 
 ### Manual Setup (without Docker)
 
@@ -704,6 +707,15 @@ Backups saved to `~/backups/claude-bot/` (gzipped, last 7 retained).
 | DB Client | [postgres](https://github.com/porsager/postgres) |
 | Dashboard | [React](https://react.dev) + [Tailwind CSS](https://tailwindcss.com) + [Vite](https://vite.dev) |
 
+## Recent Changes (v1.10.0)
+
+### Smart Memory Reconciliation
+- **LLM deduplication** — `/remember` and work summaries no longer blindly insert; similar memories are found via vector search, then `claude-haiku` decides ADD / UPDATE / DELETE / NOOP
+- **Updated replies** — `/remember` now shows `Saved (#N)` / `Updated #N` / `Already known (#N)` based on what actually happened
+- **project_context deduplication** — session exit summaries update existing project context instead of accumulating duplicates
+- **Graceful fallback** — Ollama or Claude API unavailable → falls back to plain insert, no data loss
+- **New config** — `MEMORY_SIMILARITY_THRESHOLD` (default `0.35`) and `MEMORY_RECONCILE_TOP_K` (default `5`)
+
 ## Recent Changes (v1.9.0)
 
 ### Session Management Redesign
@@ -755,6 +767,7 @@ Backups saved to `~/backups/claude-bot/` (gzipped, last 7 retained).
 - [x] Work summary on session exit with vectorized long-term memory
 - [x] Session switch briefing from project context
 - [x] Semantic search via MCP tool and bot command
+- [x] Smart memory reconciliation — LLM-based dedup and update (mem0 approach)
 - [ ] Dashboard UI for project and session management
 - [ ] Multi-user support with separate session namespaces
 - [ ] Inline mode — respond in any Telegram chat via @bot
