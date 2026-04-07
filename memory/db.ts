@@ -223,6 +223,33 @@ const migrations: Migration[] = [
       await tx`CREATE INDEX IF NOT EXISTS idx_sessions_cli_type ON sessions(cli_type)`;
     },
   },
+  {
+    version: 4,
+    name: "add project and source columns to sessions",
+    up: async (tx) => {
+      // project: basename of the project dir (e.g. "keryx")
+      // source: "remote" | "local" | "standalone"
+      await tx`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS project TEXT`;
+      await tx`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'standalone'`;
+
+      // Backfill: standalone session
+      await tx`UPDATE sessions SET project = NULL, source = 'standalone' WHERE id = 0`;
+
+      // Backfill existing named sessions from project_path
+      await tx`
+        UPDATE sessions
+        SET project = regexp_replace(project_path, '^.+/', ''),
+            source = CASE
+              WHEN name LIKE '% · remote%' THEN 'remote'
+              WHEN name LIKE '% · local%'  THEN 'local'
+              ELSE 'local'
+            END
+        WHERE id != 0 AND project_path IS NOT NULL AND project IS NULL
+      `;
+
+      await tx`CREATE INDEX IF NOT EXISTS idx_sessions_project_source ON sessions(project, source)`;
+    },
+  },
 ];
 
 // --- Public API ---

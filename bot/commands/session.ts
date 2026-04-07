@@ -1,5 +1,5 @@
 import type { Context } from "grammy";
-import { sessionManager } from "../../sessions/manager.ts";
+import { sessionManager, sessionDisplayName } from "../../sessions/manager.ts";
 import { deleteSessionCascade } from "../../sessions/delete.ts";
 import { sql } from "../../memory/db.ts";
 import { setPendingInput } from "../handlers.ts";
@@ -50,15 +50,9 @@ export async function handleSessions(ctx: Context): Promise<void> {
 
   const lines = sessions.map((s) => {
     const marker = s.id === activeId ? " ✓" : "";
-    const status =
-      s.id === 0
-        ? ""
-        : s.status === "active"
-          ? ` (active)`
-          : ` (disconnected)`;
-    const name = s.name ?? s.clientId;
-    const badge = s.id === 0 ? "" : ` [${s.cliType ?? "claude"}]`;
-    return `${s.id}. ${name}${badge}${status}${marker}`;
+    const status = s.id === 0 ? "" : s.status === "active" ? ` (active)` : ` (disconnected)`;
+    const display = sessionDisplayName(s);
+    return `${s.id}. ${display}${status}${marker}`;
   });
 
   await ctx.reply(
@@ -78,7 +72,7 @@ export async function handleSwitch(ctx: Context): Promise<void> {
     const lines = sessions.map((s) => {
       const marker = s.id === activeId ? " ✓" : "";
       const status = s.id === 0 ? "" : s.status === "active" ? " (active)" : " (disconnected)";
-      return `${s.id}. ${s.name ?? s.clientId}${status}${marker}`;
+      return `${s.id}. ${sessionDisplayName(s)}${status}${marker}`;
     });
     await ctx.reply("Enter session ID:\n\n" + lines.join("\n"));
     setPendingInput(chatId, async (replyCtx) => {
@@ -112,7 +106,7 @@ export async function handleSwitchTo(ctx: Context, sessionId: number): Promise<v
       parse_mode: "MarkdownV2",
     });
   } else {
-    const name = session.name ?? session.clientId;
+    const name = sessionDisplayName(session);
     const statusIcon = session.status === "active" ? "🟢" : "🔴";
 
     // Get last 5 messages (full content, up to 300 chars each)
@@ -188,7 +182,7 @@ export async function handleSessionInfo(ctx: Context): Promise<void> {
         : `${Math.floor(ago / 3600)}h`;
 
   const lines = [
-    `Session: ${session.name ?? session.clientId}`,
+    `Session: ${sessionDisplayName(session)}`,
     `ID: ${session.id}`,
     `Status: ${session.status}`,
     session.projectPath ? `Path: ${session.projectPath}` : null,
@@ -221,7 +215,7 @@ export async function handleRemove(ctx: Context): Promise<void> {
 
   await deleteSessionCascade(sessionId);
 
-  await ctx.reply(`Deleted session #${sessionId} (${session.name ?? "unnamed"}) with all data.`);
+  await ctx.reply(`Deleted session #${sessionId} (${sessionDisplayName(session)}) with all data.`);
 }
 
 async function cleanupSession(id: number): Promise<void> {
@@ -231,7 +225,7 @@ async function cleanupSession(id: number): Promise<void> {
 export async function handleCleanup(ctx: Context): Promise<void> {
   // Find sessions to remove
   const toRemove = await sql`
-    SELECT id, name, status FROM sessions
+    SELECT id, name, project, source FROM sessions
     WHERE id != 0 AND (name LIKE 'cli-%' OR status = 'disconnected')
   `;
 
@@ -244,10 +238,10 @@ export async function handleCleanup(ctx: Context): Promise<void> {
     await cleanupSession(row.id);
   }
 
-  const names = toRemove.filter((r) => !r.name.startsWith("cli-")).map((r) => r.name);
-  const cliCount = toRemove.filter((r) => r.name.startsWith("cli-")).length;
+  const named = toRemove.filter((r) => r.project || (r.name && !r.name.startsWith("cli-")));
+  const cliCount = toRemove.length - named.length;
   const parts: string[] = [];
-  if (names.length > 0) parts.push(names.join(", "));
+  if (named.length > 0) parts.push(named.map((r) => r.project ? `${r.project} · ${r.source}` : r.name).join(", "));
   if (cliCount > 0) parts.push(`${cliCount} unnamed`);
 
   await ctx.reply(`Cleaned up ${toRemove.length}: ${parts.join(", ")}`);

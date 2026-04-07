@@ -73,25 +73,26 @@ async function embed(text: string): Promise<number[]> {
 }
 
 // --- Session management ---
-const channelSource = process.env.CHANNEL_SOURCE ?? "cli"; // "remote" from run-cli.sh, "cli" otherwise
-let sessionName = `${projectName} · ${channelSource}`;
+// source: "remote" (launched via run-cli.sh/tmux) or "local" (manual terminal)
+const channelSource: "remote" | "local" = (process.env.CHANNEL_SOURCE === "remote") ? "remote" : "local";
+let sessionName = `${projectName} · ${channelSource}`; // for logs only
 
 async function resolveSession(): Promise<number> {
-  // Each source (remote/cli) gets its own named session
+  // Look up session by project + source (not by name string)
   const existing = await sql`
-    SELECT id FROM sessions WHERE name = ${sessionName} AND id != 0 LIMIT 1
+    SELECT id FROM sessions
+    WHERE project = ${projectName} AND source = ${channelSource} AND id != 0
+    LIMIT 1
   `;
+
   if (existing.length > 0) {
-    // Retry lock a few times — previous session's pg connection may still be closing
+    // Try to acquire the advisory lock (previous process may still be closing)
     for (let attempt = 0; attempt < 5; attempt++) {
       const lockResult = await sql`SELECT pg_try_advisory_lock(${existing[0].id}) as locked`;
       if (lockResult[0].locked) {
         sessionId = existing[0].id;
         hasPollingLock = true;
-        await sql`
-          UPDATE sessions SET status = 'active', last_active = now()
-          WHERE id = ${sessionId}
-        `;
+        await sql`UPDATE sessions SET status = 'active', last_active = now() WHERE id = ${sessionId}`;
         process.stderr.write(`[channel] attached to session #${sessionId} (${sessionName})\n`);
         return sessionId;
       }
@@ -100,46 +101,62 @@ async function resolveSession(): Promise<number> {
         await new Promise((r) => setTimeout(r, 1000));
       }
     }
-    // Same source still running after retries — create a separate session
-    const displacedSessionId = existing[0].id;
-    const n = Date.now() % 10000;
-    sessionName = `${projectName} · ${channelSource}-${n}`;
-    process.stderr.write(`[channel] session "${projectName} · ${channelSource}" is busy, creating "${sessionName}"\n`);
 
-    // Create new session
+    // Lock failed — another instance is running, create a parallel session with instance suffix
+    const displacedSessionId = existing[0].id;
+    const instanceNum = (Date.now() % 10000);
+    sessionName = `${projectName} · ${channelSource} #${instanceNum}`;
     const clientId = `channel-${projectName}-${channelSource}-${Date.now()}`;
+    process.stderr.write(`[channel] session busy, creating parallel: "${sessionName}"\n`);
+
     const [row] = await sql`
-      INSERT INTO sessions (name, project_path, client_id, status)
-      VALUES (${sessionName}, ${process.cwd()}, ${clientId}, 'active')
+      INSERT INTO sessions (name, project, source, project_path, client_id, status)
+      VALUES (${sessionName}, ${projectName}, ${channelSource}, ${projectPath}, ${clientId}, 'active')
       RETURNING id
     `;
     sessionId = row.id;
     hasPollingLock = true;
     await sql`SELECT pg_advisory_lock(${sessionId})`;
-    process.stderr.write(`[channel] created session #${sessionId} (${sessionName})\n`);
 
-    // Transfer chat routing from old session to new — old process becomes background
-    const transferred = await sql`
+    // Transfer chat routing from the busy session to this new one
+    await sql`
       UPDATE chat_sessions SET active_session_id = ${sessionId}
       WHERE active_session_id = ${displacedSessionId}
     `;
-    if (transferred.count > 0) {
-      process.stderr.write(`[channel] transferred ${transferred.count} chat(s) from session #${displacedSessionId} to #${sessionId}\n`);
-    }
+    process.stderr.write(`[channel] created session #${sessionId} (${sessionName})\n`);
     return sessionId;
   }
 
-  // Create new session
+  // No existing session — create one
   const clientId = `channel-${projectName}-${channelSource}-${Date.now()}`;
   const [row] = await sql`
-    INSERT INTO sessions (name, project_path, client_id, status)
-    VALUES (${sessionName}, ${process.cwd()}, ${clientId}, 'active')
+    INSERT INTO sessions (name, project, source, project_path, client_id, status)
+    VALUES (${sessionName}, ${projectName}, ${channelSource}, ${projectPath}, ${clientId}, 'active')
     RETURNING id
   `;
   sessionId = row.id;
   hasPollingLock = true;
   await sql`SELECT pg_advisory_lock(${sessionId})`;
   process.stderr.write(`[channel] created session #${sessionId} (${sessionName})\n`);
+
+  // Transfer chat routing from any old sessions with the same project_path
+  await sql`
+    UPDATE chat_sessions SET active_session_id = ${sessionId}
+    WHERE active_session_id IN (
+      SELECT id FROM sessions WHERE project_path = ${projectPath} AND id != ${sessionId}
+    )
+  `;
+
+  // Delete placeholder sessions (registered via API, never had a real process)
+  // identified by client_id pattern 'claude-{project}-{timestamp}'
+  await sql`
+    DELETE FROM sessions
+    WHERE project_path = ${projectPath}
+      AND id != ${sessionId}
+      AND status = 'disconnected'
+      AND client_id LIKE 'claude-%'
+  `;
+
   return sessionId;
 }
 

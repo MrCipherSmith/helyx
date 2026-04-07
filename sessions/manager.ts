@@ -1,9 +1,12 @@
 import { sql } from "../memory/db.ts";
 import { normalizeCLIConfig } from "../utils/cli-config.ts";
+import { basename } from "path";
 
 export interface Session {
   id: number;
   name: string | null;
+  project: string | null;
+  source: "remote" | "local" | "standalone";
   projectPath: string | null;
   clientId: string;
   status: "active" | "disconnected";
@@ -12,6 +15,13 @@ export interface Session {
   lastActive: Date;
   cliType: "claude";
   cliConfig: Record<string, unknown>;
+}
+
+/** Display name shown in Telegram: "keryx · remote", "goodai-base · local", "standalone" */
+export function sessionDisplayName(s: Pick<Session, "id" | "project" | "source" | "name" | "clientId">): string {
+  if (s.id === 0) return "standalone";
+  if (s.project) return `${s.project} · ${s.source}`;
+  return s.name ?? s.clientId;
 }
 
 export class SessionManager {
@@ -25,37 +35,16 @@ export class SessionManager {
     metadata?: Record<string, unknown>,
     cliConfig?: Record<string, unknown>,
   ): Promise<Session> {
-    // Deduplicate: if a session with the same name and project_path already exists, adopt it
-    if (projectPath && name && !name.startsWith("cli-")) {
-      const existing = await sql`
-        SELECT id, name, client_id FROM sessions
-        WHERE project_path = ${projectPath} AND name = ${name} AND id != 0
-        LIMIT 1
-      `;
-      if (existing.length > 0) {
-        const old = existing[0];
-        this.activeClients.delete(old.client_id);
-        const [row] = await sql`
-          UPDATE sessions
-          SET client_id = ${clientId}, status = 'active', last_active = now(),
-              cli_type = 'claude', cli_config = ${JSON.stringify(cliConfig ?? {})}::jsonb
-          WHERE id = ${old.id}
-          RETURNING id, name, project_path, client_id, status, metadata, connected_at, last_active, cli_type, cli_config
-        `;
-        const session = this.rowToSession(row);
-        this.activeClients.set(clientId, session.id);
-        console.log(`[session] reused existing session #${session.id} (${session.name}) for ${projectPath}`);
-        return session;
-      }
-    }
-
+    const project = projectPath ? basename(projectPath) : null;
     const [row] = await sql`
-      INSERT INTO sessions (name, project_path, client_id, status, metadata, cli_type, cli_config)
+      INSERT INTO sessions (name, project, source, project_path, client_id, status, metadata, cli_type, cli_config)
       VALUES (
         ${name ?? null},
+        ${project},
+        ${'local'},
         ${projectPath ?? null},
         ${clientId},
-        'active',
+        'disconnected',
         ${JSON.stringify(metadata ?? {})}::jsonb,
         'claude',
         ${JSON.stringify(cliConfig ?? {})}::jsonb
@@ -63,12 +52,13 @@ export class SessionManager {
       ON CONFLICT (client_id) DO UPDATE SET
         status = 'active',
         name = COALESCE(EXCLUDED.name, sessions.name),
+        project = COALESCE(EXCLUDED.project, sessions.project),
         project_path = COALESCE(EXCLUDED.project_path, sessions.project_path),
         metadata = COALESCE(EXCLUDED.metadata, sessions.metadata),
         cli_type = EXCLUDED.cli_type,
         cli_config = EXCLUDED.cli_config,
         last_active = now()
-      RETURNING id, name, project_path, client_id, status, metadata, connected_at, last_active, cli_type, cli_config
+      RETURNING id, name, project, source, project_path, client_id, status, metadata, connected_at, last_active, cli_type, cli_config
     `;
 
     const session = this.rowToSession(row);
@@ -83,77 +73,86 @@ export class SessionManager {
    * If not, rename the current session.
    * Returns the final session ID.
    */
+  /**
+   * Called by Claude Code's set_session_name MCP tool.
+   * Finds the channel.ts session for this project_path (any source) and links
+   * the current HTTP MCP client_id to it — so both share the same session ID.
+   * Falls back to renaming the current cli session if no channel session exists.
+   */
   async adoptOrRename(
     currentClientId: string,
     name: string,
     projectPath?: string,
   ): Promise<Session> {
-    // Find existing named session (not the current one)
-    const existing = await sql`
+    // Look for an existing channel.ts session for this project (by project_path + source)
+    const channelSession = projectPath ? await sql`
       SELECT id, client_id FROM sessions
-      WHERE name = ${name} AND client_id != ${currentClientId} AND id != 0
+      WHERE project_path = ${projectPath}
+        AND source IN ('remote', 'local')
+        AND client_id != ${currentClientId}
+        AND id != 0
+      ORDER BY last_active DESC
       LIMIT 1
-    `;
+    ` : [];
 
-    if (existing.length > 0) {
-      // Existing named session found — adopt it: update its client_id
-      const oldId = existing[0].id;
-      const oldClientId = existing[0].client_id;
+    if (channelSession.length > 0) {
+      const targetId = channelSession[0].id;
+      const oldClientId = channelSession[0].client_id;
 
-      // Delete the unnamed session we just created
-      const currentSession = await sql`
-        SELECT id FROM sessions WHERE client_id = ${currentClientId}
-      `;
+      // Delete the temporary cli-xxx session Claude Code registered with
+      const currentSession = await sql`SELECT id FROM sessions WHERE client_id = ${currentClientId}`;
       if (currentSession.length > 0) {
         await sql`DELETE FROM sessions WHERE id = ${currentSession[0].id} AND name LIKE 'cli-%'`;
       }
 
-      // Update the existing named session with new client_id
+      // Link current HTTP client to the channel.ts session
       const [row] = await sql`
         UPDATE sessions
-        SET client_id = ${currentClientId}, status = 'active', last_active = now(),
-            project_path = COALESCE(${projectPath ?? null}, project_path)
-        WHERE id = ${oldId}
-        RETURNING id, name, project_path, client_id, status, metadata, connected_at, last_active, cli_type, cli_config
+        SET client_id = ${currentClientId}, status = 'active', last_active = now()
+        WHERE id = ${targetId}
+        RETURNING id, name, project, source, project_path, client_id, status, metadata, connected_at, last_active, cli_type, cli_config
       `;
 
-      if (!row) throw new Error(`[session] adoptOrRename: session #${oldId} not found for update`);
+      if (!row) throw new Error(`[session] adoptOrRename: session #${targetId} not found`);
       const session = this.rowToSession(row);
       this.activeClients.delete(oldClientId);
       this.activeClients.set(currentClientId, session.id);
-      console.log(`[session] adopted existing session #${session.id} (${name})`);
-      return session;
-    } else {
-      // No existing session with this name — just rename current
-      const [row] = await sql`
-        UPDATE sessions
-        SET name = ${name}, project_path = COALESCE(${projectPath ?? null}, project_path)
-        WHERE client_id = ${currentClientId}
-        RETURNING id, name, project_path, client_id, status, metadata, connected_at, last_active, cli_type, cli_config
-      `;
-      if (!row) throw new Error(`[session] adoptOrRename: session not found for clientId ${currentClientId}`);
-      const session = this.rowToSession(row);
-      console.log(`[session] renamed session #${session.id} to ${name}`);
+      console.log(`[session] linked Claude Code to channel session #${session.id} (${sessionDisplayName(session)})`);
       return session;
     }
+
+    // No channel.ts session found — rename the current cli session
+    const [row] = await sql`
+      UPDATE sessions
+      SET name = ${name},
+          project = ${name},
+          source = 'local',
+          project_path = COALESCE(${projectPath ?? null}, project_path)
+      WHERE client_id = ${currentClientId}
+      RETURNING id, name, project, source, project_path, client_id, status, metadata, connected_at, last_active, cli_type, cli_config
+    `;
+    if (!row) throw new Error(`[session] adoptOrRename: session not found for clientId ${currentClientId}`);
+    const session = this.rowToSession(row);
+    console.log(`[session] renamed session #${session.id} to ${sessionDisplayName(session)}`);
+    return session;
   }
 
   async disconnect(clientId: string): Promise<void> {
-    const rows = await sql`
-      SELECT id, name FROM sessions WHERE client_id = ${clientId}
-    `;
-    if (rows.length > 0 && (rows[0].name?.startsWith("cli-") || rows[0].name?.endsWith(" · cli"))) {
-      // CLI session — just delete and reset sequence
+    const rows = await sql`SELECT id, name, source FROM sessions WHERE client_id = ${clientId}`;
+    if (rows.length === 0) { this.activeClients.delete(clientId); return; }
+
+    const { id, name, source, project } = rows[0];
+    // Ephemeral: unnamed cli sessions OR sessions without a project (HTTP MCP temp registrations)
+    const isEphemeral = name?.startsWith("cli-") || !project;
+
+    if (isEphemeral) {
       await sql`DELETE FROM sessions WHERE client_id = ${clientId}`;
       await this.resetSequence();
-      console.log(`[session] removed cli session: ${clientId}`);
+      console.log(`[session] removed ephemeral session: ${clientId}`);
     } else {
-      // Named session — keep but mark disconnected
-      await sql`
-        UPDATE sessions SET status = 'disconnected', last_active = now()
-        WHERE client_id = ${clientId}
-      `;
-      console.log(`[session] disconnected: ${clientId}`);
+      // Named/channel session — keep as disconnected so it shows in /sessions
+      await sql`UPDATE sessions SET status = 'disconnected', last_active = now() WHERE id = ${id}`;
+      console.log(`[session] disconnected: #${id} (${name ?? source})`);
     }
     this.activeClients.delete(clientId);
   }
@@ -210,13 +209,13 @@ export class SessionManager {
   async list(includeUnnamed = false): Promise<Session[]> {
     const rows = includeUnnamed
       ? await sql`
-          SELECT id, name, project_path, client_id, status, metadata, connected_at, last_active, cli_type, cli_config
+          SELECT id, name, project, source, project_path, client_id, status, metadata, connected_at, last_active, cli_type, cli_config
           FROM sessions ORDER BY id
         `
       : await sql`
-          SELECT id, name, project_path, client_id, status, metadata, connected_at, last_active, cli_type, cli_config
+          SELECT id, name, project, source, project_path, client_id, status, metadata, connected_at, last_active, cli_type, cli_config
           FROM sessions
-          WHERE id = 0 OR name NOT LIKE 'cli-%'
+          WHERE id = 0 OR (name NOT LIKE 'cli-%' OR project IS NOT NULL)
           ORDER BY id
         `;
     return rows.map(this.rowToSession);
@@ -224,7 +223,7 @@ export class SessionManager {
 
   async get(sessionId: number): Promise<Session | null> {
     const rows = await sql`
-      SELECT id, name, project_path, client_id, status, metadata, connected_at, last_active, cli_type, cli_config
+      SELECT id, name, project, source, project_path, client_id, status, metadata, connected_at, last_active, cli_type, cli_config
       FROM sessions WHERE id = ${sessionId}
     `;
     return rows.length > 0 ? this.rowToSession(rows[0]) : null;
@@ -253,6 +252,8 @@ export class SessionManager {
     return {
       id: r.id,
       name: r.name,
+      project: r.project ?? null,
+      source: (r.source as Session["source"]) ?? "standalone",
       projectPath: r.project_path,
       clientId: r.client_id,
       status: r.status,
