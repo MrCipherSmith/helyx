@@ -57,8 +57,7 @@ function startCleanupTimer() {
         const result = await sql`
           DELETE FROM memories
           WHERE type = ${mtype}
-            AND archived_at IS NOT NULL
-            AND archived_at < now() - make_interval(days => ${ttlDays})
+            AND created_at < now() - make_interval(days => ${ttlDays})
           RETURNING id
         `;
         deletedMemories += result.length;

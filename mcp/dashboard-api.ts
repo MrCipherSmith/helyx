@@ -305,7 +305,7 @@ async function handleCreateProject(req: IncomingMessage, res: ServerResponse): P
   if (!path || typeof path !== "string") { sendError(res, "path required"); return; }
   if (!path.startsWith("/")) { sendError(res, "path must be absolute"); return; }
 
-  const tmuxName = name.toLowerCase().replace(/\s+/g, "_");
+  const tmuxName = name.toLowerCase().replace(/[^a-z0-9_-]/g, "_");
 
   let project: any;
   try {
@@ -330,17 +330,24 @@ async function handleCreateProject(req: IncomingMessage, res: ServerResponse): P
     INSERT INTO sessions (project_id, name, project_path, source, status)
     VALUES (${project.id}, ${project.name}, ${project.path}, 'remote', 'inactive')
     ON CONFLICT DO NOTHING
-  `.catch(() => {/* ignore if sessions table has no project_id unique constraint */});
+  `.catch((sessionErr: unknown) => {
+    console.error("[projects] failed to create remote session:", sessionErr);
+  });
 
   sendJson(res, project, 201);
 }
 
 async function handleProjectAction(req: IncomingMessage, res: ServerResponse, id: number, action: "start" | "stop"): Promise<void> {
-  const [project] = await sql`SELECT id FROM projects WHERE id = ${id}`;
-  if (!project) { sendError(res, "Project not found", 404); return; }
+  const rows = await sql`SELECT id, name, path, tmux_session_name FROM projects WHERE id = ${id}`;
+  if (rows.length === 0) {
+    res.writeHead(404, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Project not found" }));
+    return;
+  }
+  const project = rows[0];
 
   const command = action === "start" ? "proj_start" : "proj_stop";
-  await sql`INSERT INTO admin_commands (command, payload) VALUES (${command}, ${JSON.stringify({ project_id: id })})`;
+  await sql`INSERT INTO admin_commands (command, payload) VALUES (${command}, ${JSON.stringify({ project_id: id, path: project.path, name: project.name, tmux_session_name: project.tmux_session_name })}::jsonb)`;
   sendJson(res, { ok: true });
 }
 
@@ -423,7 +430,6 @@ export async function handleDashboardRequest(
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       "Connection": "keep-alive",
-      "Access-Control-Allow-Origin": "*",
       "X-Accel-Buffering": "no",
     });
 
@@ -438,7 +444,10 @@ export async function handleDashboardRequest(
 
     // Keepalive ping every 30s
     const pingInterval = setInterval(() => {
-      try { res.write(": ping\n\n"); } catch { clearInterval(pingInterval); }
+      try { res.write(": ping\n\n"); } catch {
+        clearInterval(pingInterval);
+        removeSSEClient(clientId);
+      }
     }, 30_000);
 
     req.on("close", () => {

@@ -7,8 +7,14 @@ type SSEClient = {
 };
 
 const clients = new Map<string, SSEClient>();
+const MAX_SSE_CLIENTS = 50;
 
 export function addSSEClient(client: SSEClient): void {
+  if (clients.size >= MAX_SSE_CLIENTS) {
+    console.warn(`[sse] client limit reached (${MAX_SSE_CLIENTS}), rejecting ${client.id}`);
+    client.close();
+    return;
+  }
   clients.set(client.id, client);
   console.log(`[sse] client connected: ${client.id} (total: ${clients.size})`);
 }
