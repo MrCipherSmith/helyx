@@ -10,13 +10,14 @@ import "./adapters/index.ts"; // Register all CLI adapters at startup
 function startCleanupTimer() {
   const INTERVAL = 60 * 60 * 1000; // 1 hour
 
-  const cleanup = async () => {
+  const cleanup = async ({ skipMarkStale = false } = {}) => {
     try {
       const mq = await sql`DELETE FROM message_queue WHERE delivered = true AND created_at < now() - interval '24 hours'`;
       const logs = await sql`DELETE FROM request_logs WHERE created_at < now() - interval '7 days'`;
       const stats = await sql`DELETE FROM api_request_stats WHERE created_at < now() - interval '30 days'`;
-      // Mark stale "active" sessions that have no live transport (10 min threshold)
-      const stale = await sessionManager.markStale(600);
+      // Mark stale "active" sessions that have no live transport (10 min threshold).
+      // Skipped on startup to give channel.ts time to reconnect and update last_active.
+      const stale = skipMarkStale ? 0 : await sessionManager.markStale(600);
       // Clear chat_sessions referencing disconnected/terminated local sessions, then delete them
       // Must delete child rows first to satisfy FK constraints
       await sql`DELETE FROM chat_sessions WHERE active_session_id IN (SELECT id FROM sessions WHERE source != 'remote' AND status IN ('disconnected', 'terminated') AND id != 0)`;
@@ -73,7 +74,7 @@ function startCleanupTimer() {
     }
   };
 
-  cleanup(); // run once at startup
+  cleanup({ skipMarkStale: true }); // run once at startup — skip markStale to let clients reconnect
   return setInterval(cleanup, INTERVAL);
 }
 

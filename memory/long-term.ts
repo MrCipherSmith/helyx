@@ -1,6 +1,9 @@
 import { sql } from "./db.ts";
 import { embed, embedSafe } from "./embeddings.ts";
 
+let _indexingCount = 0;
+export function isIndexing(): boolean { return _indexingCount > 0; }
+
 export interface Memory {
   id?: number;
   source: "telegram" | "cli" | "api";
@@ -16,7 +19,8 @@ export interface Memory {
 }
 
 export async function remember(memory: Memory): Promise<Memory> {
-  const embedding = await embedSafe(memory.content);
+  _indexingCount++;
+  const embedding = await embedSafe(memory.content).finally(() => { _indexingCount--; });
   const embeddingStr = embedding ? `[${embedding.join(",")}]` : null;
 
   const [row] = await sql`

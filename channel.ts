@@ -1193,12 +1193,21 @@ async function main() {
   // Start polling
   pollMessages();
 
+  // Heartbeat: keep last_active fresh so cleanup doesn't mark this session stale
+  // during long autonomous tasks where no MCP tools are called for >10 minutes.
+  const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+  const heartbeatTimer = setInterval(async () => {
+    if (sessionId === null) return;
+    await sql`UPDATE sessions SET last_active = now() WHERE id = ${sessionId}`.catch(() => {});
+  }, HEARTBEAT_INTERVAL_MS);
+
   // Graceful shutdown (guard against multiple calls)
   let shuttingDown = false;
   const shutdown = async () => {
     if (shuttingDown) return;
     shuttingDown = true;
     polling = false;
+    clearInterval(heartbeatTimer);
     if (idleTimer) clearTimeout(idleTimer);
     await markDisconnected();
     await sql.end();

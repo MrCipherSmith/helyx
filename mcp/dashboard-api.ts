@@ -6,6 +6,7 @@ import { deleteSessionCascade } from "../sessions/delete.ts";
 import { CONFIG } from "../config.ts";
 import { signJwt, verifyJwt, verifyTelegramLogin, type AuthPayload } from "../dashboard/auth.ts";
 import { getApiStats, getTranscriptionStats, getMessageStats, getRecentErrors } from "../utils/stats.ts";
+import { isIndexing } from "../memory/long-term.ts";
 
 const DIST_DIR = join(import.meta.dirname, "../dashboard/dist");
 
@@ -240,6 +241,7 @@ async function handleMemories(res: ServerResponse, url: URL): Promise<void> {
   const type = url.searchParams.get("type");
   const projectPath = url.searchParams.get("project_path");
   const search = url.searchParams.get("search");
+  const tag = url.searchParams.get("tag");
   const limit = Math.min(Number(url.searchParams.get("limit") ?? 50), 200);
   const offset = Number(url.searchParams.get("offset") ?? 0);
 
@@ -247,17 +249,36 @@ async function handleMemories(res: ServerResponse, url: URL): Promise<void> {
   if (type) conditions.push(sql`type = ${type}`);
   if (projectPath) conditions.push(sql`project_path = ${projectPath}`);
   if (search) conditions.push(sql`content ILIKE ${"%" + search + "%"}`);
+  if (tag) conditions.push(sql`${tag} = ANY(tags)`);
 
   const where = conditions.length > 0
     ? sql`WHERE ${conditions.reduce((a, b) => sql`${a} AND ${b}`)}`
     : sql``;
 
-  const memories = await sql`
-    SELECT id, source, type, content, tags, project_path, created_at
-    FROM memories ${where} ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}
+  const [memories, [{ total }], hotContext] = await Promise.all([
+    sql`SELECT id, source, type, content, tags, project_path, created_at FROM memories ${where} ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`,
+    sql`SELECT count(*)::int as total FROM memories ${where}`,
+    sql`SELECT id, source, type, content, tags, project_path, created_at FROM memories ORDER BY created_at DESC LIMIT 10`,
+  ]);
+
+  sendJson(res, { memories, total, hotContext, indexing: isIndexing() });
+}
+
+async function handleMemoryTags(res: ServerResponse): Promise<void> {
+  const rows = await sql`
+    SELECT unnest(tags) as tag, count(*)::int as count
+    FROM memories
+    WHERE tags IS NOT NULL AND array_length(tags, 1) > 0
+    GROUP BY tag ORDER BY count DESC LIMIT 100
   `;
-  const [{ total }] = await sql`SELECT count(*)::int as total FROM memories ${where}`;
-  sendJson(res, { memories, total });
+  sendJson(res, rows);
+}
+
+async function handleDeleteMemoryByTag(res: ServerResponse, tag: string): Promise<void> {
+  const result = await sql`
+    DELETE FROM memories WHERE ${tag} = ANY(tags) RETURNING id
+  `;
+  sendJson(res, { deleted: result.length });
 }
 
 async function handleDeleteMemory(res: ServerResponse, id: number): Promise<void> {
@@ -383,6 +404,15 @@ export async function handleDashboardRequest(
     }
     if (pathname === "/api/memories" && method === "GET") {
       await handleMemories(res, url);
+      return true;
+    }
+    if (pathname === "/api/memories/tags" && method === "GET") {
+      await handleMemoryTags(res);
+      return true;
+    }
+    const memoryTagMatch = pathname.match(/^\/api\/memories\/tag\/(.+)$/);
+    if (memoryTagMatch && method === "DELETE") {
+      await handleDeleteMemoryByTag(res, decodeURIComponent(memoryTagMatch[1]));
       return true;
     }
     if (pathname.match(/^\/api\/memories\/(\d+)$/) && method === "DELETE") {

@@ -58,11 +58,14 @@ export const api = {
     if (params?.type) q.set('type', params.type);
     if (params?.project_path) q.set('project_path', params.project_path);
     if (params?.search) q.set('search', params.search);
+    if (params?.tag) q.set('tag', params.tag);
     if (params?.limit) q.set('limit', String(params.limit));
     if (params?.offset) q.set('offset', String(params.offset));
     return request<PaginatedMemories>(`/memories?${q}`);
   },
   deleteMemory: (id: number) => request<void>(`/memories/${id}`, { method: 'DELETE' }),
+  memoryTags: () => request<MemoryTag[]>('/memories/tags'),
+  deleteMemoriesByTag: (tag: string) => request<{ deleted: number }>(`/memories/tag/${encodeURIComponent(tag)}`, { method: 'DELETE' }),
 };
 
 // Types
@@ -192,6 +195,7 @@ export interface MemoriesParams {
   type?: string;
   project_path?: string;
   search?: string;
+  tag?: string;
   limit?: number;
   offset?: number;
 }
@@ -199,6 +203,13 @@ export interface MemoriesParams {
 export interface PaginatedMemories {
   memories: Memory[];
   total: number;
+  hotContext: Memory[];
+  indexing: boolean;
+}
+
+export interface MemoryTag {
+  tag: string;
+  count: number;
 }
 
 export interface ApiError {
