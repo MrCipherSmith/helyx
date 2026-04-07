@@ -29,18 +29,19 @@ export async function handleProjects(ctx: Context): Promise<void> {
     return;
   }
 
-  // Get active remote sessions for status check
-  const active = await sql`
-    SELECT project FROM sessions WHERE source = 'remote' AND status = 'active'
+  // Get remote session status keyed by project_id
+  const remoteSessions = await sql`
+    SELECT project_id, status FROM sessions WHERE source = 'remote'
   `;
-  const activeProjects = new Set(active.map((r: any) => r.project));
+  const statusMap = new Map(remoteSessions.map(r => [r.project_id as number, r.status as string]));
 
   const kb = new InlineKeyboard();
   const lines: string[] = ["Projects:\n"];
 
   for (const p of projects) {
-    const isActive = activeProjects.has(p.name);
-    const icon = isActive ? "🟢" : "⚫";
+    const sessionStatus = statusMap.get(p.id);
+    const isActive = sessionStatus === "active";
+    const icon = isActive ? "🟢" : "⚪";
     lines.push(`${icon} ${p.name}  (${p.path})`);
     if (isActive) {
       kb.text(`⏹ Stop ${p.name}`, `proj:stop:${p.name}`).row();
