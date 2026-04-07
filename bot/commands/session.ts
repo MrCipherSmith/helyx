@@ -24,6 +24,9 @@ export async function handleStart(ctx: Context): Promise<void> {
       "/tools — MCP tools\n" +
       "/skills — skills from goodai-base\n" +
       "/rules — rules from goodai-base\n" +
+      "/remote_control — tmux status & control\n" +
+      "/projects — manage projects\n" +
+      "/project_add — add a project\n" +
       "/help — help",
   );
 }

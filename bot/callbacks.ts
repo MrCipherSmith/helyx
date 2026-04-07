@@ -17,6 +17,14 @@ export async function handleCallbackQuery(ctx: Context): Promise<void> {
     const { handleSetModelCallback } = await import("./commands/model.ts");
     return handleSetModelCallback(ctx, data.slice("set_model:".length));
   }
+  if (data.startsWith("rc:")) {
+    const { handleRemoteControlCallback } = await import("./commands/remote-control.ts");
+    return handleRemoteControlCallback(ctx);
+  }
+  if (data.startsWith("proj:")) {
+    const { handleProjectCallback } = await import("./commands/projects.ts");
+    return handleProjectCallback(ctx);
+  }
   await ctx.answerCallbackQuery({ text: "Unknown action" });
 }
 

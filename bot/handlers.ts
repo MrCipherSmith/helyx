@@ -65,6 +65,9 @@ import { handleRemember, handleRecall, handleMemories, handleForget, handleSumma
 import { handleStats, handleLogs, handleStatus, handlePending, handleTools, handleSkills, handleCommands, handleHooks, handleRules } from "./commands/admin.ts";
 import { handleAdd } from "./commands/add.ts";
 import { handleModel } from "./commands/model.ts";
+import { handleRemoteControl } from "./commands/remote-control.ts";
+import { handleProjects } from "./commands/projects.ts";
+import { handleProjectAdd } from "./commands/project-add.ts";
 import { handleVoice, handlePhoto, handleDocument, handleVideo, handleVideoNote, handleSticker } from "./media.ts";
 import { handleCallbackQuery } from "./callbacks.ts";
 import { handleText } from "./text-handler.ts";
@@ -105,6 +108,11 @@ export function registerHandlers(b: Bot): void {
   // Session CLI commands
   b.command("add", handleAdd);
   b.command("model", handleModel);
+
+  // Remote control & project management
+  b.command("remote_control", handleRemoteControl);
+  b.command("projects", handleProjects);
+  b.command("project_add", handleProjectAdd);
 
   // Inline keyboard callbacks (permissions, session switch)
   b.on("callback_query:data", handleCallbackQuery);

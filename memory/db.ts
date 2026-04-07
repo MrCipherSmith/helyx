@@ -250,6 +250,24 @@ const migrations: Migration[] = [
       await tx`CREATE INDEX IF NOT EXISTS idx_sessions_project_source ON sessions(project, source)`;
     },
   },
+  {
+    version: 5,
+    name: "admin_commands table",
+    up: async (tx) => {
+      await tx`
+        CREATE TABLE IF NOT EXISTS admin_commands (
+          id BIGSERIAL PRIMARY KEY,
+          command TEXT NOT NULL,
+          payload JSONB NOT NULL DEFAULT '{}',
+          status TEXT NOT NULL DEFAULT 'pending',
+          result TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          executed_at TIMESTAMPTZ
+        )
+      `;
+      await tx`CREATE INDEX IF NOT EXISTS idx_admin_commands_status ON admin_commands(status, created_at)`;
+    },
+  },
 ];
 
 // --- Public API ---
