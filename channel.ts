@@ -73,15 +73,44 @@ async function embed(text: string): Promise<number[]> {
 }
 
 // --- Session management ---
-// source: "remote" (launched via run-cli.sh/tmux) or "local" (manual terminal)
-const channelSource: "remote" | "local" = (process.env.CHANNEL_SOURCE === "remote") ? "remote" : "local";
-let sessionName = `${projectName} · ${channelSource}`; // for logs only
+// source: "remote" (claude-bot up / tmux), "local" (claude-bot start), null (plain claude — no bot involvement)
+const channelSource: "remote" | "local" | null =
+  process.env.CHANNEL_SOURCE === "remote" ? "remote" :
+  process.env.CHANNEL_SOURCE === "local" ? "local" :
+  null;
+let sessionName = `${projectName} · ${channelSource ?? "standalone"}`; // for logs only
 
 async function resolveSession(): Promise<number> {
-  // Look up session by project + source (not by name string)
+  // Mode 1: plain `claude` — no CHANNEL_SOURCE set → no bot involvement, skip DB entirely.
+  if (channelSource === null) {
+    process.stderr.write(`[channel] standalone mode — no DB registration\n`);
+    return -1;
+  }
+
+  // Mode 3: `claude-bot start` → temporary local session, always new (multiple allowed per project).
+  if (channelSource === 'local') {
+    const clientId = `channel-${projectName}-local-${Date.now()}`;
+    let projectId: number | null = null;
+    if (projectPath) {
+      const [proj] = await sql`SELECT id FROM projects WHERE path = ${projectPath}`;
+      projectId = proj?.id ?? null;
+    }
+    const [row] = await sql`
+      INSERT INTO sessions (name, project, source, project_path, project_id, client_id, status)
+      VALUES (${sessionName}, ${projectName}, 'local', ${projectPath}, ${projectId}, ${clientId}, 'active')
+      RETURNING id
+    `;
+    sessionId = row.id;
+    hasPollingLock = true;
+    await sql`SELECT pg_advisory_lock(${sessionId})`;
+    process.stderr.write(`[channel] created local session #${sessionId} (${sessionName})\n`);
+    return sessionId;
+  }
+
+  // Mode 2: `claude-bot up` → persistent remote session, one per project.
   const existing = await sql`
     SELECT id FROM sessions
-    WHERE project = ${projectName} AND source = ${channelSource} AND id != 0
+    WHERE project = ${projectName} AND source = 'remote' AND id != 0
     LIMIT 1
   `;
 
@@ -92,14 +121,13 @@ async function resolveSession(): Promise<number> {
       if (lockResult[0].locked) {
         sessionId = existing[0].id;
         hasPollingLock = true;
-        // Also update project_id in case it wasn't set before
         let reattachProjectId: number | null = null;
         if (projectPath) {
           const [proj] = await sql`SELECT id FROM projects WHERE path = ${projectPath}`;
           reattachProjectId = proj?.id ?? null;
         }
         await sql`UPDATE sessions SET status = 'active', last_active = now(), project_id = ${reattachProjectId} WHERE id = ${sessionId}`;
-        process.stderr.write(`[channel] attached to session #${sessionId} (${sessionName})\n`);
+        process.stderr.write(`[channel] attached to remote session #${sessionId} (${sessionName})\n`);
         return sessionId;
       }
       if (attempt < 4) {
@@ -107,49 +135,12 @@ async function resolveSession(): Promise<number> {
         await new Promise((r) => setTimeout(r, 1000));
       }
     }
-
-    // Lock failed — another instance is running
-    if (channelSource === 'remote') {
-      process.stderr.write(`[channel] remote session for project already active, exiting\n`);
-      process.exit(0);
-    }
-
-    // Local session: create a parallel session with instance suffix
-    const displacedSessionId = existing[0].id;
-    const instanceNum = (Date.now() % 10000);
-    sessionName = `${projectName} · ${channelSource} #${instanceNum}`;
-    const clientId = `channel-${projectName}-${channelSource}-${Date.now()}`;
-    process.stderr.write(`[channel] session busy, creating parallel: "${sessionName}"\n`);
-
-    // Look up project_id from projects table
-    let projectId: number | null = null;
-    if (projectPath) {
-      const [proj] = await sql`SELECT id FROM projects WHERE path = ${projectPath}`;
-      projectId = proj?.id ?? null;
-    }
-
-    const [row] = await sql`
-      INSERT INTO sessions (name, project, source, project_path, project_id, client_id, status)
-      VALUES (${sessionName}, ${projectName}, ${channelSource}, ${projectPath}, ${projectId}, ${clientId}, 'active')
-      RETURNING id
-    `;
-    sessionId = row.id;
-    hasPollingLock = true;
-    await sql`SELECT pg_advisory_lock(${sessionId})`;
-
-    // Transfer chat routing from the busy session to this new one
-    await sql`
-      UPDATE chat_sessions SET active_session_id = ${sessionId}
-      WHERE active_session_id = ${displacedSessionId}
-    `;
-    process.stderr.write(`[channel] created session #${sessionId} (${sessionName})\n`);
-    return sessionId;
+    process.stderr.write(`[channel] remote session for project already active, exiting\n`);
+    process.exit(0);
   }
 
-  // No existing session — create one
-  const clientId = `channel-${projectName}-${channelSource}-${Date.now()}`;
-
-  // Look up project_id from projects table
+  // No existing remote session — create one
+  const clientId = `channel-${projectName}-remote-${Date.now()}`;
   let projectId: number | null = null;
   if (projectPath) {
     const [proj] = await sql`SELECT id FROM projects WHERE path = ${projectPath}`;
@@ -158,13 +149,13 @@ async function resolveSession(): Promise<number> {
 
   const [row] = await sql`
     INSERT INTO sessions (name, project, source, project_path, project_id, client_id, status)
-    VALUES (${sessionName}, ${projectName}, ${channelSource}, ${projectPath}, ${projectId}, ${clientId}, 'active')
+    VALUES (${sessionName}, ${projectName}, 'remote', ${projectPath}, ${projectId}, ${clientId}, 'active')
     RETURNING id
   `;
   sessionId = row.id;
   hasPollingLock = true;
   await sql`SELECT pg_advisory_lock(${sessionId})`;
-  process.stderr.write(`[channel] created session #${sessionId} (${sessionName})\n`);
+  process.stderr.write(`[channel] created remote session #${sessionId} (${sessionName})\n`);
 
   // Transfer chat routing from any old sessions with the same project_path
   await sql`
@@ -175,7 +166,6 @@ async function resolveSession(): Promise<number> {
   `;
 
   // Delete placeholder sessions (registered via API, never had a real process)
-  // identified by client_id pattern 'claude-{project}-{timestamp}'
   await sql`
     DELETE FROM sessions
     WHERE project_path = ${projectPath}
@@ -1186,7 +1176,8 @@ async function main() {
 
   // Notify the HTTP MCP server that an HTTP transport is expected for this session.
   // This allows the server to auto-link the transport without LLM calling set_session_name.
-  if (sessionId !== null) {
+  // Only for remote sessions (launched via run-cli.sh); local terminal sessions don't need HTTP linking.
+  if (sessionId !== null && channelSource === "remote") {
     try {
       const res = await fetch(`${BOT_API_URL}/api/sessions/expect`, {
         method: "POST",

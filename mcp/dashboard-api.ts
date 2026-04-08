@@ -130,7 +130,7 @@ async function handleOverview(_req: IncomingMessage, res: ServerResponse): Promi
     FROM api_request_stats WHERE created_at >= now() - interval '24 hours'
   `;
   const recentSessions = await sql`
-    SELECT id, name, project_path, status, connected_at, last_active
+    SELECT id, name, project_path, source, status, connected_at, last_active
     FROM sessions WHERE id != 0 ORDER BY last_active DESC LIMIT 5
   `;
 
@@ -147,7 +147,7 @@ async function handleOverview(_req: IncomingMessage, res: ServerResponse): Promi
 
 async function handleSessions(_req: IncomingMessage, res: ServerResponse): Promise<void> {
   const rows = await sql`
-    SELECT id, name, project_path, status, connected_at, last_active
+    SELECT id, name, project_path, source, status, connected_at, last_active
     FROM sessions WHERE id != 0 ORDER BY last_active DESC
   `;
   sendJson(res, rows);

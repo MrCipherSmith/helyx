@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   useReactTable, getCoreRowModel, getSortedRowModel, flexRender, createColumnHelper, type SortingState,
 } from '@tanstack/react-table'
@@ -10,10 +10,16 @@ import { useI18n } from '../i18n'
 export function SessionsPage() {
   const [sorting, setSorting] = useState<SortingState>([])
   const { t } = useI18n()
+  const queryClient = useQueryClient()
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['sessions'],
     queryFn: api.sessions,
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => api.deleteSession(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sessions'] }),
   })
 
   const col = createColumnHelper<Session>()
@@ -57,7 +63,24 @@ export function SessionsPage() {
         return t('common.dAgo', { n: Math.floor(diff / 86400) })
       },
     }),
-  ], [t, col])
+    col.display({
+      id: 'actions',
+      header: '',
+      cell: (info) => {
+        const row = info.row.original
+        if (row.source !== 'local' || row.status === 'active') return null
+        return (
+          <button
+            onClick={() => deleteMutation.mutate(row.id)}
+            disabled={deleteMutation.isPending}
+            className="text-xs text-red-500 hover:text-red-400 px-2 py-0.5 rounded hover:bg-red-900/20 disabled:opacity-50"
+          >
+            Delete
+          </button>
+        )
+      },
+    }),
+  ], [t, col, deleteMutation])
 
   const table = useReactTable({
     data: data ?? [],
@@ -103,7 +126,7 @@ export function SessionsPage() {
               </tr>
             ))}
             {(data?.length ?? 0) === 0 && (
-              <tr><td colSpan={5} className="px-4 py-6 text-center text-gray-500">{t('sessions.noSessions')}</td></tr>
+              <tr><td colSpan={6} className="px-4 py-6 text-center text-gray-500">{t('sessions.noSessions')}</td></tr>
             )}
           </tbody>
         </table>

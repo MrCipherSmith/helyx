@@ -1,4 +1,5 @@
 import type { Context } from "grammy";
+import { InlineKeyboard } from "grammy";
 import { sessionManager, sessionDisplayName } from "../../sessions/manager.ts";
 import { deleteSessionCascade } from "../../sessions/delete.ts";
 import { sql } from "../../memory/db.ts";
@@ -59,15 +60,44 @@ export async function handleSessions(ctx: Context): Promise<void> {
       if (s.status === "active") status = " 🟢 active";
       else if (s.status === "terminated") status = " 💀 terminated";
       else if (s.status === "inactive") status = " ⚪ inactive";
-      else status = " ⚪ inactive"; // disconnected or unknown
+      else status = " ⚪ inactive";
     }
     const display = sessionDisplayName(s);
     return `${s.id}. ${display}${status}${marker}`;
   });
 
+  const localSessions = sessions.filter((s) => s.source === "local" && s.id !== 0 && s.status !== "active");
+  const kb = new InlineKeyboard();
+  for (const s of localSessions) {
+    const label = `🗑 Delete #${s.id} ${sessionDisplayName(s)} (${s.status})`;
+    kb.text(label, `sess:delete:${s.id}`).row();
+  }
+
   await ctx.reply(
     "Sessions:\n" + lines.join("\n") + "\n\n/switch <id> to switch",
+    localSessions.length > 0 ? { reply_markup: kb } : undefined,
   );
+}
+
+export async function handleDeleteSession(ctx: Context): Promise<void> {
+  const data = ctx.callbackQuery?.data ?? "";
+  const sessionId = Number(data.split(":")[2]);
+  if (!sessionId) { await ctx.answerCallbackQuery({ text: "Invalid" }); return; }
+
+  const session = await sessionManager.get(sessionId);
+  if (!session || session.source !== "local") {
+    await ctx.answerCallbackQuery({ text: "Session not found or not local" });
+    return;
+  }
+  if (session.status === "active") {
+    await ctx.answerCallbackQuery({ text: "Cannot delete active session" });
+    return;
+  }
+
+  await deleteSessionCascade(sessionId);
+  await ctx.answerCallbackQuery({ text: `Deleted session #${sessionId}` });
+  await ctx.deleteMessage().catch(() => {});
+  await handleSessions(ctx);
 }
 
 export async function handleSwitch(ctx: Context): Promise<void> {

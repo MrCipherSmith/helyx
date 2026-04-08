@@ -26,6 +26,10 @@ export async function handleCallbackQuery(ctx: Context): Promise<void> {
     const { handleProjectCallback } = await import("./commands/projects.ts");
     return handleProjectCallback(ctx);
   }
+  if (data.startsWith("sess:delete:")) {
+    const { handleDeleteSession } = await import("./commands/session.ts");
+    return handleDeleteSession(ctx);
+  }
   await ctx.answerCallbackQuery({ text: "Unknown action" });
 }
 

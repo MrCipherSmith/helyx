@@ -63,7 +63,7 @@ This bot is a full **[Model Context Protocol](https://modelcontextprotocol.io) s
 ### Session Lifecycle
 - **Persistent Projects** — `projects` table as permanent registry; added via `/project_add`, never deleted
 - **Remote Sessions** — one persistent session per project (`source=remote`), started/stopped from bot or terminal; status: 🟢 active / ⚪ inactive
-- **Local Sessions** — temporary, multiple per project, live while Claude process runs; on exit: work summary generated and archived
+- **Local Sessions** — temporary, multiple per project, live while Claude process runs; on exit: work summary generated and archived; deletable from Telegram bot (`/sessions`) or dashboard
 - **Work Summary on Exit** — AI-optimized structured summary ([DECISIONS][FILES][PROBLEMS][PENDING][CONTEXT]) vectorized and saved to long-term memory; raw messages archived with TTL
 - **Switch Briefing** — switching to a session shows its last project-context summary and injects it as system context for the next message
 
@@ -701,6 +701,32 @@ Backups saved to `~/backups/claude-bot/` (gzipped, last 7 retained).
 | Voice | [Groq](https://console.groq.com) (whisper-large-v3) |
 | DB Client | [postgres](https://github.com/porsager/postgres) |
 | Dashboard | [React](https://react.dev) + [Tailwind CSS](https://tailwindcss.com) + [Vite](https://vite.dev) |
+
+## Recent Changes (v1.12.0)
+
+### Local Session Management
+
+- **Delete local sessions from Telegram** — `/sessions` now shows `🗑 Delete` inline buttons for local sessions that are not active; clicking deletes all session data and refreshes the list
+- **Delete local sessions from dashboard** — Sessions table gains a `Delete` action column; button is visible only for `source=local` + non-active rows; uses `useMutation` with query invalidation
+- **`source` field in sessions API** — `GET /api/sessions` and `GET /api/overview` now return `source` (`remote` | `local` | `standalone`); added to `Session` TypeScript interface
+
+### Session Source Refactoring (channel.ts)
+
+Three distinct modes now instead of two:
+
+| `CHANNEL_SOURCE` env | Mode | DB behavior |
+|---|---|---|
+| `remote` | `claude-bot up` / tmux | One persistent session per project; reattaches on reconnect |
+| `local` | `claude-bot start` | New temporary session each run; work summary on exit |
+| _(not set)_ | Plain `claude` | No DB registration (`sessionId = null`), no polling |
+
+Previously, unset `CHANNEL_SOURCE` defaulted to `local`. Now it is a distinct standalone mode that skips DB entirely — preventing phantom sessions when running `claude` without the bot.
+
+### CLI Changes
+
+- **`claude-bot start`** — no longer invokes `run-cli.sh`; spawns `claude` directly with `CHANNEL_SOURCE=local` (simpler path, no auto-restart loop for local sessions)
+- **`claude-bot restart`** — after rebuild, syncs `TELEGRAM_BOT_TOKEN` from `.env` into `~/.claude.json` MCP server config (`syncChannelToken`), so channel auth stays in sync without manual edits
+- **`run()` helper** — new `stream: true` option pipes stdout/stderr directly to terminal (used in restart for real-time build output)
 
 ## Recent Changes (v1.11.0)
 

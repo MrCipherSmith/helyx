@@ -108,6 +108,7 @@ export interface Session {
   id: number;
   name: string | null;
   project_path: string | null;
+  source: 'remote' | 'local' | 'standalone';
   status: string;
   connected_at: string;
   last_active: string;

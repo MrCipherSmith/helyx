@@ -16,8 +16,9 @@
  *   bun cli.ts mcp-register   Register MCP servers in Claude Code
  */
 
-import { existsSync } from "fs";
+import { existsSync, readFileSync, writeFileSync } from "fs";
 import { resolve, basename } from "path";
+import { homedir } from "os";
 
 // --- ANSI colors ---
 const c = {
@@ -49,12 +50,17 @@ function askChoice(question: string, options: string[]): number {
   return 0;
 }
 
-async function run(cmd: string[], opts?: { cwd?: string; silent?: boolean }): Promise<{ ok: boolean; output: string }> {
+async function run(cmd: string[], opts?: { cwd?: string; silent?: boolean; stream?: boolean }): Promise<{ ok: boolean; output: string }> {
+  const stream = opts?.stream ?? false;
   const proc = Bun.spawn(cmd, {
     cwd: opts?.cwd ?? BOT_DIR,
-    stdout: "pipe",
-    stderr: "pipe",
+    stdout: stream ? "inherit" : "pipe",
+    stderr: stream ? "inherit" : "pipe",
   });
+  if (stream) {
+    const code = await proc.exited;
+    return { ok: code === 0, output: "" };
+  }
   const stdout = await new Response(proc.stdout).text();
   const stderr = await new Response(proc.stderr).text();
   const code = await proc.exited;
@@ -352,9 +358,14 @@ async function start(dir?: string) {
   }
 
   console.log(`  ${c.green("Starting Claude Code...")} ${c.dim("(Ctrl+C to stop)")}\n`);
+  // Local session: spawn claude directly with CHANNEL_SOURCE=local so channel.ts creates
+  // a temporary DB session (summarized and deleted on exit), not a persistent remote session.
   const proc = Bun.spawn(
-    ["bash", `${BOT_DIR}/scripts/run-cli.sh`, projectDir],
-    { stdout: "inherit", stderr: "inherit", stdin: "inherit", cwd: projectDir },
+    ["claude", "--dangerously-load-development-channels", "server:claude-bot-channel"],
+    {
+      stdout: "inherit", stderr: "inherit", stdin: "inherit", cwd: projectDir,
+      env: { ...process.env, CHANNEL_SOURCE: "local" },
+    },
   );
   await proc.exited;
 }
@@ -368,10 +379,33 @@ async function stop() {
   result.ok ? done() : fail();
 }
 
+async function syncChannelToken() {
+  const envPath = resolve(BOT_DIR, ".env");
+  if (!existsSync(envPath)) return;
+  const env = Object.fromEntries(
+    readFileSync(envPath, "utf8").split("\n")
+      .filter((l) => l && !l.startsWith("#"))
+      .map((l) => l.split("=").map((s) => s.trim()))
+      .filter((p) => p.length === 2),
+  );
+  const botToken = env.TELEGRAM_BOT_TOKEN ?? "";
+  if (!botToken) return;
+
+  const claudeJson = resolve(homedir(), ".claude.json");
+  if (!existsSync(claudeJson)) return;
+  const data = JSON.parse(readFileSync(claudeJson, "utf8"));
+  if (data?.mcpServers?.["claude-bot-channel"]?.env) {
+    data.mcpServers["claude-bot-channel"].env.TELEGRAM_BOT_TOKEN = botToken;
+    writeFileSync(claudeJson, JSON.stringify(data, null, 4));
+    console.log(`  ${c.dim("channel token synced from .env")}`);
+  }
+}
+
 async function restart() {
-  step("Rebuilding and restarting bot");
-  const result = await run(["docker", "compose", "up", "-d", "--build", "bot"]);
-  result.ok ? done() : fail();
+  console.log("  Rebuilding and restarting bot...\n");
+  const result = await run(["docker", "compose", "up", "-d", "--build", "bot"], { stream: true });
+  result.ok ? console.log(`\n  ${c.green("done")}`) : console.log(`\n  ${c.red("failed")}`);
+  await syncChannelToken();
 }
 
 async function status() {
