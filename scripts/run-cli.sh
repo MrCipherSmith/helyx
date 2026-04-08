@@ -35,7 +35,8 @@ while true; do
     script -qfc "CHANNEL_SOURCE=remote claude --dangerously-load-development-channels server:claude-bot-channel" "$OUTPUT_FILE"
     EXIT_CODE=$?
   else
-    # Inside tmux: tmux-monitor reads pane directly
+    # Inside tmux: auto-confirm channel permission prompt, then run interactively
+    (sleep 2 && tmux send-keys -t "$TMUX_PANE" "" Enter) &
     CHANNEL_SOURCE=remote claude --dangerously-load-development-channels server:claude-bot-channel
     EXIT_CODE=$?
   fi

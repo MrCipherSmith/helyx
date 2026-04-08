@@ -155,19 +155,15 @@ export class SessionManager {
       return session;
     }
 
-    // No channel.ts session found — rename the current cli session
+    // No channel.ts session found — this is a manual (standalone) Claude launch.
+    // Leave the cli-xxx session ephemeral so it doesn't appear in the bot.
     const [row] = await sql`
-      UPDATE sessions
-      SET name = ${name},
-          project = ${name},
-          source = 'local',
-          project_path = COALESCE(${projectPath ?? null}, project_path)
-      WHERE client_id = ${currentClientId}
-      RETURNING id, name, project, source, project_path, project_id, client_id, status, metadata, connected_at, last_active, cli_type, cli_config
+      SELECT id, name, project, source, project_path, project_id, client_id, status, metadata, connected_at, last_active, cli_type, cli_config
+      FROM sessions WHERE client_id = ${currentClientId}
     `;
     if (!row) throw new Error(`[session] adoptOrRename: session not found for clientId ${currentClientId}`);
     const session = this.rowToSession(row);
-    console.log(`[session] renamed session #${session.id} to ${sessionDisplayName(session)}`);
+    console.log(`[session] manual launch, keeping ephemeral: ${currentClientId.slice(0, 12)}`);
     return session;
   }
 
