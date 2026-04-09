@@ -89,11 +89,13 @@ export async function getClaudeCodeUsage(
           try { entry = JSON.parse(line); } catch { continue; }
 
           if (entry.type !== "assistant") continue;
-          const ts = entry.ts ? new Date(entry.ts).getTime() : 0;
+          const ts = entry.timestamp ? new Date(entry.timestamp).getTime() : 0;
           if (cutoffMs > 0 && ts > 0 && ts < cutoffMs) continue;
 
-          const model: string = entry.model ?? "unknown";
-          const usage = entry.usage;
+          // Usage and model are nested under entry.message
+          const msg = entry.message ?? entry;
+          const model: string = msg.model ?? entry.model ?? "unknown";
+          const usage = msg.usage ?? entry.usage;
           if (!usage) continue;
 
           const inp = Number(usage.input_tokens ?? 0);

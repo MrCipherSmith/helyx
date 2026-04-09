@@ -37,9 +37,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /
 # Ensure downloads dir exists and is writable
 RUN mkdir -p /app/downloads
 
-# Non-root user
-RUN useradd --no-create-home --shell /bin/false app && chown -R app /app
-USER app
+# Use uid=1000 (bun) to match host user for volume read access
+RUN chown -R bun /app
+USER bun
 
 EXPOSE 3847
 
