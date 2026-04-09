@@ -3,6 +3,7 @@ import { normalizeCLIConfig } from "../utils/cli-config.ts";
 import { basename } from "path";
 import { broadcast } from "../mcp/notification-broadcaster.ts";
 import { logger } from "../logger.ts";
+import { transitionSession, type SessionStatus } from "./state-machine.ts";
 
 export interface Session {
   id: number;
@@ -211,11 +212,9 @@ export class SessionManager {
       await this.resetSequence();
       logger.info({ clientId }, "removed ephemeral session");
     } else {
-      // Named/channel session — set status based on source
-      const newStatus = source === 'remote' ? 'inactive' : 'terminated';
-      await sql`UPDATE sessions SET status = ${newStatus}, last_active = now() WHERE id = ${id}`;
-      logger.info({ sessionId: id, name: name ?? source, status: newStatus }, "session disconnected");
-      try { broadcast("session-state", { id, status: newStatus, project }); } catch {}
+      // Named/channel session — transition based on source
+      const newStatus: SessionStatus = source === 'remote' ? 'inactive' : 'terminated';
+      await transitionSession(sql, id, newStatus, { name: name ?? source });
     }
     this.activeClients.delete(clientId);
   }
@@ -246,11 +245,9 @@ export class SessionManager {
     for (const row of rows) {
       // If client has no live transport in-memory, it's a zombie
       if (!this.liveTransports.has(row.client_id) && !this.activeClients.has(row.client_id)) {
-        const newStatus = row.source === 'remote' ? 'inactive' : 'terminated';
-        await sql`UPDATE sessions SET status = ${newStatus} WHERE id = ${row.id}`;
-        logger.info({ sessionId: row.id, clientId: row.client_id.slice(0, 8), status: newStatus }, "session marked stale");
-        try { broadcast("session-state", { id: row.id, status: newStatus }); } catch {}
-        count++;
+        const newStatus: SessionStatus = row.source === 'remote' ? 'inactive' : 'terminated';
+        const applied = await transitionSession(sql, row.id, newStatus, { clientId: row.client_id.slice(0, 8), reason: "stale" });
+        if (applied) count++;
       }
     }
     return count;

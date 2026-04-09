@@ -9,6 +9,7 @@
 
 import type postgres from "postgres";
 import { channelLogger } from "../logger.ts";
+import { transitionSession, type SessionStatus } from "../sessions/state-machine.ts";
 
 export interface SessionContext {
   sql: postgres.Sql;
@@ -209,12 +210,8 @@ export class SessionManager {
     if (this.sessionId === null) return;
     await this.triggerSummarize();
     try {
-      const newStatus = this.ctx.channelSource === "remote" ? "inactive" : "terminated";
-      await this.ctx.sql`
-        UPDATE sessions SET status = ${newStatus}, last_active = now()
-        WHERE id = ${this.sessionId}
-      `;
-      channelLogger.info({ sessionId: this.sessionId, status: newStatus }, "session marked disconnected");
+      const newStatus: SessionStatus = this.ctx.channelSource === "remote" ? "inactive" : "terminated";
+      await transitionSession(this.ctx.sql, this.sessionId, newStatus);
       await this.releaseLease();
     } catch (err) {
       channelLogger.error({ err }, "failed to mark disconnected");
