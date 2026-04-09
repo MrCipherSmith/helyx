@@ -463,6 +463,15 @@ async function githubReq<T>(path: string): Promise<T | null> {
   return res.json() as Promise<T>;
 }
 
+/** Resolve the GitHub login for the configured token. Cached after first call. */
+let _githubLoginCache: string | null | undefined = undefined;
+async function getGitHubLogin(): Promise<string | null> {
+  if (_githubLoginCache !== undefined) return _githubLoginCache;
+  const user = await githubReq<{ login: string }>("/user");
+  _githubLoginCache = user?.login ?? null;
+  return _githubLoginCache;
+}
+
 async function handleGitHubPRs(res: ServerResponse, sessionId: number, url: URL): Promise<void> {
   const path = await getSessionPath(sessionId);
   if (!path) { sendError(res, "Session not found", 404); return; }
@@ -473,8 +482,9 @@ async function handleGitHubPRs(res: ServerResponse, sessionId: number, url: URL)
   const repo = await getGitHubRepo(path);
   if (!repo) { sendError(res, "Could not determine GitHub repo from git remote", 400); return; }
 
-  // Filters
-  const filterAuthor = url.searchParams.get("author") || CONFIG.GITHUB_USERNAME || null;
+  // Filters — author defaults to the token's own GitHub login
+  const authorParam = url.searchParams.get("author");
+  const filterAuthor = authorParam === "all" ? null : (authorParam || await getGitHubLogin());
   const filterDraft = url.searchParams.get("draft"); // "true" | "false" | null
 
   // Fetch all open PRs (GitHub API max 100 per page)

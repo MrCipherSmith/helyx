@@ -171,9 +171,9 @@ export const api = {
       req<{ branches: { name: string; current: boolean }[] }>(`/api/git/${sessionId}/branches`),
     commitDiff: (sessionId: number, hash: string) =>
       req<{ diff: string }>(`/api/git/${sessionId}/commit/${hash}`),
-    prs: (sessionId: number, params?: { author?: string; draft?: boolean }) => {
+    prs: (sessionId: number, params?: { author?: "all" | "me"; draft?: boolean }) => {
       const q = new URLSearchParams();
-      if (params?.author) q.set("author", params.author);
+      if (params?.author === "all") q.set("author", "all");
       if (params?.draft !== undefined) q.set("draft", String(params.draft));
       return req<{ prs: GitHubPR[]; repo: { owner: string; repo: string } }>(`/api/git/${sessionId}/prs?${q}`);
     },

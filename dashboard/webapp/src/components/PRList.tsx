@@ -4,6 +4,7 @@ import { api, type Session, type GitHubPR, type GitHubReview, type GitHubComment
 interface Props { session: Session }
 
 type Filter = "all" | "ready" | "draft";
+type AuthorFilter = "me" | "all";
 
 const CONCLUSION_COLOR: Record<string, string> = {
   success: "text-green-500",
@@ -276,6 +277,7 @@ export function PRList({ session }: Props) {
   const [prs, setPrs] = useState<GitHubPR[] | null>(null);
   const [repo, setRepo] = useState<{ owner: string; repo: string } | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
+  const [authorFilter, setAuthorFilter] = useState<AuthorFilter>("me");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedPR, setSelectedPR] = useState<GitHubPR | null>(null);
@@ -283,11 +285,11 @@ export function PRList({ session }: Props) {
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
-    api.git.prs(session.id)
+    api.git.prs(session.id, { author: authorFilter })
       .then((d) => { setPrs(d.prs); setRepo(d.repo); })
       .catch((e) => setError(e.message ?? "Failed to load PRs"))
       .finally(() => setLoading(false));
-  }, [session.id]);
+  }, [session.id, authorFilter]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -312,13 +314,21 @@ export function PRList({ session }: Props) {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Repo header + refresh */}
-      <div className="flex items-center justify-between px-3 py-1.5 border-b border-black/10 shrink-0"
+      {/* Repo header + author toggle + refresh */}
+      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-black/10 shrink-0"
         style={{ background: "var(--tg-secondary-bg)" }}>
-        <span className="text-xs font-mono opacity-50 truncate">
+        <span className="text-xs font-mono opacity-50 truncate flex-1">
           {repo ? `${repo.owner}/${repo.repo}` : "…"}
         </span>
-        <button onClick={load} className="text-xs opacity-50 hover:opacity-100 shrink-0 ml-2">↻</button>
+        <div className="flex rounded overflow-hidden border border-black/10 shrink-0">
+          {(["me", "all"] as AuthorFilter[]).map((a) => (
+            <button key={a} onClick={() => setAuthorFilter(a)}
+              className={`px-2 py-0.5 text-xs ${authorFilter === a ? "bg-[var(--tg-button)] text-white" : "opacity-50"}`}>
+              {a === "me" ? "Mine" : "All"}
+            </button>
+          ))}
+        </div>
+        <button onClick={load} className="text-xs opacity-50 hover:opacity-100 shrink-0">↻</button>
       </div>
 
       {/* Filter tabs */}
