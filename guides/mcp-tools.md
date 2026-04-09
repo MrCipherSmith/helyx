@@ -40,7 +40,9 @@ These tools work in any Claude session — with or without the channel adapter.
 
 ## Channel Adapter Tools
 
-Available when Claude CLI connects via `claude-bot-channel` stdio MCP server. These tools run in the context of a specific session and have direct database access.
+Available when Claude CLI connects via `claude-bot-channel` stdio MCP server. The channel adapter (`channel/`) is a 7-module stdio bridge: `session.ts` (lifecycle), `permissions.ts` (Telegram forwarding), `tools.ts` (MCP dispatch), `poller.ts` (queue polling), `status.ts` (live status), `telegram.ts` (formatting), `index.ts` (entrypoint).
+
+These tools run in the context of a specific session and have direct database access.
 
 All HTTP server tools are also available through the channel adapter, plus:
 
@@ -82,6 +84,33 @@ Running 3 agents...
 ├─ Agent name 2 — done
 └─ Agent name 3 — working...
 ```
+
+---
+
+## Permission State Machine
+
+Permission requests flow through a formal state machine enforced by `PermissionService`:
+
+```
+pending → approved
+        → rejected
+        → expired
+```
+
+Terminal states (`approved`, `rejected`, `expired`) cannot transition again — duplicate Telegram callback deliveries are silently ignored. The bot replies "Already handled" to deduplicated callbacks.
+
+Auto-approve rules stored in `settings.local.json`:
+```json
+{
+  "permissions": {
+    "allow": ["Edit(*)", "Bash(*)", "mcp__claude-bot__reply"]
+  }
+}
+```
+
+Pattern format:
+- Native tools: `ToolName(*)` (e.g., `Edit(*)`, `Bash(*)`)
+- MCP tools: exact tool name (e.g., `mcp__claude-bot__reply`)
 
 ---
 
