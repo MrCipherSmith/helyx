@@ -93,10 +93,11 @@ export function registerHandlers(b: Bot): void {
   b.command("forget", handleForget);
   b.command("memory_export", handleMemoryExport);
   b.command("memory_import", handleMemoryImport);
-  // Import via document with /memory_import caption
-  b.on("message:document", async (ctx) => {
+  // Import via document with /memory_import caption (must call next() for other docs to pass through)
+  b.on("message:document", async (ctx, next) => {
     const caption = ctx.message.caption ?? "";
     if (caption.startsWith("/memory_import")) await handleMemoryImport(ctx);
+    else await next();
   });
 
   // Utility commands
