@@ -176,8 +176,29 @@ async function handleSessionDetail(res: ServerResponse, id: number): Promise<voi
     FROM sessions WHERE id = ${id}
   `;
   if (!session) { sendError(res, "Session not found", 404); return; }
-  const [{ count }] = await sql`SELECT count(*)::int FROM messages WHERE session_id = ${id}`;
-  sendJson(res, { ...session, message_count: count });
+  const [{ count }, tokenStats, recentTools] = await Promise.all([
+    sql`SELECT count(*)::int FROM messages WHERE session_id = ${id}`.then((r) => r[0]),
+    sql`
+      SELECT
+        coalesce(sum(input_tokens), 0)::int AS input_tokens,
+        coalesce(sum(output_tokens), 0)::int AS output_tokens,
+        coalesce(sum(total_tokens), 0)::int AS total_tokens,
+        count(*)::int AS api_calls
+      FROM api_request_stats WHERE session_id = ${id}
+    `.then((r) => r[0]),
+    sql`
+      SELECT tool_name, response, created_at
+      FROM permission_requests
+      WHERE session_id = ${id} AND archived_at IS NULL
+      ORDER BY created_at DESC LIMIT 15
+    `,
+  ]);
+  sendJson(res, {
+    ...session,
+    message_count: count,
+    tokens: tokenStats,
+    recent_tools: recentTools,
+  });
 }
 
 async function handleSessionMessages(res: ServerResponse, id: number, url: URL): Promise<void> {

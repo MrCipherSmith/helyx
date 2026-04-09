@@ -8,8 +8,24 @@ export interface Session {
   last_active: string;
 }
 
+export interface SessionTokens {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  api_calls: number;
+}
+
+export interface RecentTool {
+  tool_name: string;
+  response: string | null;
+  created_at: string;
+}
+
 export interface SessionDetail extends Session {
   connected_at: string;
+  message_count: number;
+  tokens: SessionTokens;
+  recent_tools: RecentTool[];
 }
 
 export interface GitCommit {
