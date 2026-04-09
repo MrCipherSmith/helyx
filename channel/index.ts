@@ -1,0 +1,203 @@
+/**
+ * channel/index.ts — entry point for the Claude Code stdio channel adapter.
+ *
+ * Wires together session, permissions, tools, status, and poller modules.
+ * All mutable state lives in class instances; this file orchestrates startup/shutdown.
+ */
+
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { NotificationSchema } from "@modelcontextprotocol/sdk/types.js";
+import { z } from "zod";
+import postgres from "postgres";
+import { basename } from "path";
+
+import { SessionManager } from "./session.ts";
+import { StatusManager } from "./status.ts";
+import { PermissionHandler } from "./permissions.ts";
+import { MessageQueuePoller } from "./poller.ts";
+import { registerTools } from "./tools.ts";
+
+// --- Env ---
+const ChannelEnvSchema = z.object({
+  DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
+  OLLAMA_URL: z.string().default("http://localhost:11434"),
+  EMBEDDING_MODEL: z.string().default("nomic-embed-text"),
+  BOT_API_URL: z.string().default("http://localhost:3847"),
+  TELEGRAM_BOT_TOKEN: z.string().optional(),
+  CHANNEL_SOURCE: z.enum(["remote", "local"]).optional(),
+  IDLE_TIMEOUT_MS: z.coerce.number().int().positive().default(900_000),
+  HOME: z.string().default("/root"),
+});
+
+const channelEnvResult = ChannelEnvSchema.safeParse(process.env);
+if (!channelEnvResult.success) {
+  for (const issue of channelEnvResult.error.issues) {
+    process.stderr.write(`[channel] config error — ${issue.path.join(".")}: ${issue.message}\n`);
+  }
+  process.exit(1);
+}
+const ENV = channelEnvResult.data;
+
+// --- MCP server ---
+const PermissionRequestSchema = NotificationSchema.extend({
+  method: z.literal("notifications/claude/channel/permission_request"),
+  params: z.object({
+    request_id: z.string(),
+    tool_name: z.string().optional(),
+    description: z.string().optional(),
+    input_preview: z.string().optional(),
+  }).passthrough(),
+});
+
+const mcp = new Server(
+  { name: "claude-bot-channel", version: "0.1.0" },
+  {
+    capabilities: {
+      tools: {},
+      experimental: {
+        "claude/channel": {},
+        "claude/channel/permission": {},
+      },
+    },
+  },
+);
+
+// --- DB ---
+const sql = postgres(ENV.DATABASE_URL, { max: 3 });
+
+// --- Project ---
+const projectName = basename(process.cwd());
+const projectPath = process.cwd();
+const channelSource: "remote" | "local" | null =
+  ENV.CHANNEL_SOURCE === "remote" ? "remote" :
+  ENV.CHANNEL_SOURCE === "local" ? "local" :
+  null;
+
+// --- Session ---
+const sessionMgr = new SessionManager({
+  sql,
+  projectName,
+  projectPath,
+  channelSource,
+  botApiUrl: ENV.BOT_API_URL,
+  idleTimeoutMs: ENV.IDLE_TIMEOUT_MS,
+});
+
+// --- Status ---
+const statusMgr = new StatusManager({
+  sql,
+  sessionId: () => sessionMgr.sessionId,
+  sessionName: () => sessionMgr.sessionName,
+  projectName,
+  token: () => ENV.TELEGRAM_BOT_TOKEN,
+});
+
+// --- Permissions ---
+const permHandler = new PermissionHandler(
+  {
+    sql,
+    mcp,
+    sessionId: () => sessionMgr.sessionId,
+    projectPath,
+    token: () => ENV.TELEGRAM_BOT_TOKEN,
+    homeDir: ENV.HOME,
+  },
+  statusMgr,
+);
+
+mcp.setNotificationHandler(PermissionRequestSchema, async (notification: any) => {
+  const params = notification.params ?? notification;
+  await permHandler.handle(params);
+});
+
+// --- Tools ---
+const triggerSummarize = () => sessionMgr.triggerSummarize();
+
+registerTools(
+  {
+    sql,
+    mcp,
+    sessionId: () => sessionMgr.sessionId,
+    sessionName: () => sessionMgr.sessionName,
+    projectPath,
+    token: () => ENV.TELEGRAM_BOT_TOKEN,
+    ollamaUrl: ENV.OLLAMA_URL,
+    embeddingModel: ENV.EMBEDDING_MODEL,
+  },
+  statusMgr,
+  () => sessionMgr.touchIdleTimer(triggerSummarize),
+);
+
+// --- Poller ---
+const poller = new MessageQueuePoller(
+  {
+    sql,
+    mcp,
+    sessionId: () => sessionMgr.sessionId,
+    pollIntervalMs: 500,
+    databaseUrl: ENV.DATABASE_URL,
+  },
+  statusMgr,
+  () => sessionMgr.touchIdleTimer(triggerSummarize),
+);
+
+// --- Main ---
+async function main() {
+  await sessionMgr.resolve();
+
+  if (sessionMgr.sessionId !== null && channelSource === "remote") {
+    try {
+      const res = await fetch(`${ENV.BOT_API_URL}/api/sessions/expect`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionMgr.sessionId }),
+      });
+      if (res.ok) {
+        process.stderr.write(`[channel] registered expect for session #${sessionMgr.sessionId}\n`);
+      } else {
+        process.stderr.write(`[channel] expect registration failed: ${res.status}\n`);
+      }
+    } catch (err: any) {
+      process.stderr.write(`[channel] expect registration error: ${err?.message}\n`);
+    }
+  }
+
+  await permHandler.loadAutoApproveRules();
+
+  const transport = new StdioServerTransport();
+  await mcp.connect(transport);
+  process.stderr.write(`[channel] connected to Claude Code via stdio\n`);
+
+  poller.start();
+
+  const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
+  const heartbeatTimer = setInterval(async () => {
+    if (sessionMgr.sessionId === null) return;
+    await sql`UPDATE sessions SET last_active = now() WHERE id = ${sessionMgr.sessionId}`.catch(() => {});
+  }, HEARTBEAT_INTERVAL_MS);
+
+  let shuttingDown = false;
+  const shutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    poller.stop();
+    clearInterval(heartbeatTimer);
+    sessionMgr.clearIdleTimer();
+    await sessionMgr.markDisconnected(() => poller.releasePollingLock());
+    await sql.end();
+    process.exit(0);
+  };
+
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+  process.stdin.on("close", shutdown);
+  process.stdin.on("end", shutdown);
+}
+
+main().catch(async (err) => {
+  process.stderr.write(`[channel] fatal: ${err}\n`);
+  await sessionMgr.markDisconnected(() => poller.releasePollingLock());
+  await sql.end();
+  process.exit(1);
+});
