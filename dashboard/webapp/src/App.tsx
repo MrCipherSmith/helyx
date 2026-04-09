@@ -3,7 +3,6 @@ import { api, type Session } from "./api";
 import { GitBrowser } from "./components/GitBrowser";
 import { PermissionList } from "./components/PermissionList";
 import { SessionMonitor } from "./components/SessionMonitor";
-import { MessageHistory } from "./components/MessageHistory";
 import { SessionTimeline } from "./components/SessionTimeline";
 
 declare global {
@@ -22,7 +21,7 @@ declare global {
   }
 }
 
-type Tab = "git" | "permissions" | "monitor" | "messages" | "timeline";
+type Tab = "git" | "permissions" | "monitor" | "timeline";
 
 export function App() {
   const [authed, setAuthed] = useState(false);
@@ -184,7 +183,6 @@ export function App() {
             {tab === "git" && <GitBrowser session={selectedSession} />}
             {tab === "permissions" && <PermissionList session={selectedSession} />}
             {tab === "monitor" && <SessionMonitor session={selectedSession} />}
-            {tab === "messages" && <MessageHistory session={selectedSession} />}
             {tab === "timeline" && <SessionTimeline session={selectedSession} />}
           </>
         )}
@@ -197,7 +195,6 @@ export function App() {
           {([
             ["git", "📁", "Files"],
             ["permissions", "🔑", "Perms"],
-            ["messages", "💬", "Messages"],
             ["monitor", "📊", "Monitor"],
             ["timeline", "🕐", "Timeline"],
           ] as [Tab, string, string][]).map(([t, icon, label]) => (

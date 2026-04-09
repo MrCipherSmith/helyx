@@ -1,7 +1,8 @@
 import { recordTranscription } from "./stats.ts";
+import { CONFIG } from "../config.ts";
 
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const WHISPER_URL = process.env.WHISPER_URL ?? "http://localhost:9000";
+const GROQ_API_KEY = CONFIG.GROQ_API_KEY;
+const WHISPER_URL = CONFIG.WHISPER_URL;
 const TIMEOUT_MS = 60000;
 
 export interface TranscribeContext {

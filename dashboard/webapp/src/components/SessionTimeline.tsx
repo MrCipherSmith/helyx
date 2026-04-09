@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { api, type Session } from "../api";
 
 type TimelineItem = {
-  kind: "message" | "tool";
+  kind: "message" | "tool" | "memory";
   id: number;
   actor: string;
   content: string;
@@ -10,7 +10,7 @@ type TimelineItem = {
   created_at: string;
 };
 
-type FilterType = "all" | "messages" | "tools";
+type FilterType = "all" | "messages" | "memories";
 
 interface Props { session: Session }
 
@@ -88,7 +88,7 @@ export function SessionTimeline({ session }: Props) {
 
   const filtered = items.filter((item) => {
     if (filter === "messages") return item.kind === "message";
-    if (filter === "tools") return item.kind === "tool";
+    if (filter === "memories") return item.kind === "memory";
     return true;
   });
 
@@ -106,7 +106,7 @@ export function SessionTimeline({ session }: Props) {
     <div className="flex flex-col h-full overflow-hidden">
       {/* Filter bar */}
       <div className="flex gap-1.5 px-3 py-2 border-b border-black/5 shrink-0" style={{ background: "var(--tg-secondary-bg)" }}>
-        {(["all", "messages", "tools"] as FilterType[]).map((f) => (
+        {(["all", "messages", "memories"] as FilterType[]).map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
@@ -116,7 +116,7 @@ export function SessionTimeline({ session }: Props) {
                 : "text-[var(--tg-hint)] bg-black/5"
             }`}
           >
-            {f === "all" ? "All" : f === "messages" ? "Messages" : "Tools"}
+            {f === "all" ? "All" : f === "messages" ? "Messages" : "Memories"}
           </button>
         ))}
         <span className="ml-auto text-[10px] text-[var(--tg-hint)] self-center">{total} total</span>
@@ -144,6 +144,8 @@ export function SessionTimeline({ session }: Props) {
           filtered.map((item) =>
             item.kind === "message" ? (
               <MessageItem key={`msg-${item.id}`} item={item} />
+            ) : item.kind === "memory" ? (
+              <MemoryItem key={`mem-${item.id}`} item={item} />
             ) : (
               <ToolItem key={`tool-${item.id}`} item={item} />
             )
@@ -212,6 +214,38 @@ function ToolItem({ item }: { item: TimelineItem }) {
       </code>
       <span className="flex-1 text-[var(--tg-hint)] truncate text-[10px]">{truncatedDesc}</span>
       <span className="text-[var(--tg-hint)] shrink-0 text-[10px]">{relativeTime(item.created_at)}</span>
+    </div>
+  );
+}
+
+function MemoryItem({ item }: { item: TimelineItem }) {
+  const [expanded, setExpanded] = useState(false);
+  const raw = item.content ?? "";
+  // Strip ```json fences if present
+  const content = raw.replace(/^```json\n?/, "").replace(/\n?```$/, "").trim();
+  const truncated = content.length > 120 && !expanded;
+  const display = truncated ? content.slice(0, 120) + "…" : content;
+
+  const typeLabel: Record<string, string> = {
+    fact: "fact", summary: "summary", decision: "decision",
+    note: "note", project_context: "project",
+  };
+
+  return (
+    <div
+      className="flex gap-2 px-2 py-1.5 rounded-xl bg-purple-500/8 text-xs cursor-pointer"
+      onClick={() => setExpanded(!expanded)}
+    >
+      <span className="shrink-0 text-purple-400 mt-0.5">🧠</span>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5 mb-0.5">
+          <span className="text-[10px] font-medium text-purple-400">
+            {typeLabel[item.actor] ?? item.actor}
+          </span>
+          <span className="text-[10px] text-[var(--tg-hint)]">{relativeTime(item.created_at)}</span>
+        </div>
+        <p className="text-[var(--tg-hint)] text-[10px] leading-relaxed break-words">{display}</p>
+      </div>
     </div>
   );
 }

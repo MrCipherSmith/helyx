@@ -1,0 +1,383 @@
+/**
+ * MCP tool registry and dispatch.
+ */
+
+import type postgres from "postgres";
+import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { markdownToTelegramHtml } from "../bot/format.ts";
+import type { StatusManager } from "./status.ts";
+import { sendTelegramMessage } from "./telegram.ts";
+import { channelLogger } from "../logger.ts";
+
+export interface ToolContext {
+  sql: postgres.Sql;
+  mcp: Server;
+  sessionId: () => number | null;
+  sessionName: () => string;
+  projectPath: string;
+  token: () => string | undefined;
+  ollamaUrl: string;
+  embeddingModel: string;
+}
+
+async function embed(text: string, ollamaUrl: string, embeddingModel: string): Promise<number[]> {
+  const res = await fetch(`${ollamaUrl}/api/embed`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model: embeddingModel, input: text }),
+  });
+  if (!res.ok) throw new Error(`Ollama embed failed: ${res.status}`);
+  const data = (await res.json()) as { embeddings: number[][] };
+  return data.embeddings[0];
+}
+
+function text(t: string) {
+  return { content: [{ type: "text" as const, text: t }] };
+}
+
+export function registerTools(
+  ctx: ToolContext,
+  status: StatusManager,
+  touchIdleTimer: () => void,
+): void {
+  ctx.mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: [
+      {
+        name: "reply",
+        description: "Send a message to a Telegram chat",
+        inputSchema: {
+          type: "object",
+          properties: {
+            chat_id: { type: "string", description: "Telegram chat ID" },
+            text: { type: "string", description: "Message text" },
+          },
+          required: ["chat_id", "text"],
+        },
+      },
+      {
+        name: "remember",
+        description: "Save project knowledge or a decision to long-term memory. Use type='fact' for architectural discoveries, non-obvious constraints, important file roles, setup quirks, and conventions that future sessions should know. Write content as a self-contained sentence.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            content: { type: "string", description: "What to remember" },
+            type: { type: "string", enum: ["fact", "summary", "decision", "note"], default: "note" },
+            tags: { type: "array", items: { type: "string" } },
+          },
+          required: ["content"],
+        },
+      },
+      {
+        name: "recall",
+        description: "Semantic search through long-term memory",
+        inputSchema: {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "Search query" },
+            limit: { type: "number", default: 5 },
+          },
+          required: ["query"],
+        },
+      },
+      {
+        name: "forget",
+        description: "Delete a memory by ID",
+        inputSchema: {
+          type: "object",
+          properties: {
+            id: { type: "number", description: "Memory ID" },
+          },
+          required: ["id"],
+        },
+      },
+      {
+        name: "update_status",
+        description: "Update the status message shown to the user in Telegram while processing. Call this before major operations to keep the user informed. Optionally include a diff to show file changes.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            chat_id: { type: "string", description: "Telegram chat ID" },
+            status: { type: "string", description: "Short status text, e.g. 'Analyzing code', 'Running tests'" },
+            diff: { type: "string", description: "Optional diff/code block to display as a separate message. Supports markdown formatting." },
+          },
+          required: ["chat_id", "status"],
+        },
+      },
+      {
+        name: "list_memories",
+        description: "List memories with optional filters",
+        inputSchema: {
+          type: "object",
+          properties: {
+            type: { type: "string", enum: ["fact", "summary", "decision", "note"] },
+            limit: { type: "number", default: 20 },
+          },
+        },
+      },
+      {
+        name: "search_project_context",
+        description: "Semantic search over long-term project context and work summaries. Use when you need knowledge from prior sessions about this project.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "Natural language search query" },
+            project_path: { type: "string", description: "Project path to search in. Defaults to current session project_path." },
+            limit: { type: "number", description: "Number of results to return (default: 5, max: 20)" },
+          },
+          required: ["query"],
+        },
+      },
+      {
+        name: "react",
+        description: "Set an emoji reaction on a Telegram message",
+        inputSchema: {
+          type: "object",
+          properties: {
+            chat_id: { type: "string", description: "Telegram chat ID" },
+            message_id: { type: "number", description: "Message ID to react to" },
+            emoji: { type: "string", description: "Single emoji character (e.g. '👍', '❤️', '🔥')" },
+          },
+          required: ["chat_id", "message_id", "emoji"],
+        },
+      },
+      {
+        name: "edit_message",
+        description: "Edit a previously sent bot message",
+        inputSchema: {
+          type: "object",
+          properties: {
+            chat_id: { type: "string", description: "Telegram chat ID" },
+            message_id: { type: "number", description: "Message ID to edit" },
+            text: { type: "string", description: "New message text" },
+          },
+          required: ["chat_id", "message_id", "text"],
+        },
+      },
+    ],
+  }));
+
+  ctx.mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
+    const { name, arguments: args } = req.params;
+    const sessionId = ctx.sessionId();
+
+    if (sessionId !== null) {
+      ctx.sql`UPDATE sessions SET last_active = now() WHERE id = ${sessionId}`.catch(() => {});
+    }
+
+    switch (name) {
+      case "reply": {
+        const chatId = String(args!.chat_id);
+        status.stopTypingForChat(chatId);
+        status.stopProgressMonitorForChat(chatId);
+        await status.deleteStatusMessage(chatId);
+
+        const token = ctx.token();
+        if (!token) {
+          channelLogger.warn("reply: no TELEGRAM_BOT_TOKEN");
+          return text("TELEGRAM_BOT_TOKEN not set");
+        }
+
+        const activeCheck = await ctx.sql`
+          SELECT active_session_id FROM chat_sessions WHERE chat_id = ${chatId}
+        `;
+        const isActive = activeCheck.length === 0 || activeCheck[0].active_session_id === sessionId;
+
+        let replyText = String(args!.text);
+        const isBackground = !isActive && sessionId;
+        if (isBackground) {
+          const bgName = ctx.sessionName() || `#${sessionId}`;
+          replyText = `📌 **${bgName}**\n\n${replyText}\n\n_/switch ${sessionId} — switch_`;
+          channelLogger.info({ sessionId, name: bgName }, "reply from background session");
+        }
+
+        channelLogger.info({ chatId, preview: replyText.slice(0, 50) }, "sending reply");
+        const htmlText = markdownToTelegramHtml(replyText);
+
+        const replyMarkup = isBackground
+          ? { inline_keyboard: [[{ text: "↩️ Switch and reply", callback_data: `switch:${sessionId}` }]] }
+          : undefined;
+
+        let res = await sendTelegramMessage(token, chatId, htmlText, {
+          parse_mode: "HTML",
+          ...(replyMarkup && { reply_markup: replyMarkup }),
+        });
+
+        if (!res.ok) {
+          if (res.errorBody?.includes("can't parse entities")) {
+            res = await sendTelegramMessage(token, chatId, replyText, replyMarkup ? { reply_markup: replyMarkup } : undefined);
+            if (!res.ok) {
+              channelLogger.warn({ error: res.errorBody }, "reply: Telegram API error (fallback)");
+              return text(`Telegram API error`);
+            }
+          } else {
+            channelLogger.warn({ error: res.errorBody }, "reply: Telegram API error");
+            return text(`Telegram API error`);
+          }
+        }
+
+        channelLogger.info({ chatId }, "reply sent OK");
+        if (sessionId) {
+          await ctx.sql`
+            INSERT INTO messages (session_id, project_path, chat_id, role, content)
+            VALUES (${sessionId}, ${ctx.projectPath}, ${String(args!.chat_id)}, 'assistant', ${String(args!.text)})
+          `;
+        }
+        touchIdleTimer();
+        return text(`Sent to chat ${args!.chat_id}`);
+      }
+
+      case "react": {
+        const token = ctx.token();
+        if (!token) return text("TELEGRAM_BOT_TOKEN not set");
+        const res = await fetch(`https://api.telegram.org/bot${token}/setMessageReaction`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: Number(args!.chat_id),
+            message_id: Number(args!.message_id),
+            reaction: [{ type: "emoji", emoji: String(args!.emoji) }],
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.text();
+          channelLogger.warn({ status: res.status, error: err }, "react: Telegram API error");
+          return text(`Telegram API error: ${res.status}`);
+        }
+        return text(`Reaction ${args!.emoji} set on message ${args!.message_id}`);
+      }
+
+      case "edit_message": {
+        const token = ctx.token();
+        if (!token) return text("TELEGRAM_BOT_TOKEN not set");
+        const htmlText = markdownToTelegramHtml(String(args!.text));
+        let res = await fetch(`https://api.telegram.org/bot${token}/editMessageText`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: Number(args!.chat_id),
+            message_id: Number(args!.message_id),
+            text: htmlText,
+            parse_mode: "HTML",
+          }),
+        });
+        if (!res.ok) {
+          const errBody = await res.text();
+          if (errBody.includes("can't parse entities")) {
+            res = await fetch(`https://api.telegram.org/bot${token}/editMessageText`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                chat_id: Number(args!.chat_id),
+                message_id: Number(args!.message_id),
+                text: String(args!.text),
+              }),
+            });
+            if (!res.ok) return text(`Telegram API error: ${res.status}`);
+          } else {
+            channelLogger.warn({ status: res.status, error: errBody }, "edit_message: Telegram API error");
+            return text(`Telegram API error: ${res.status}`);
+          }
+        }
+        return text(`Message ${args!.message_id} updated`);
+      }
+
+      case "remember": {
+        const content = String(args!.content);
+        const embedding = await embed(content, ctx.ollamaUrl, ctx.embeddingModel);
+        const embeddingStr = `[${embedding.join(",")}]`;
+        const [row] = await ctx.sql`
+          INSERT INTO memories (source, session_id, project_path, type, content, tags, embedding)
+          VALUES ('cli', ${sessionId}, ${ctx.projectPath}, ${String(args!.type ?? "note")}, ${content}, ${(args!.tags as string[]) ?? []}, ${embeddingStr}::vector)
+          RETURNING id
+        `;
+        return text(`Saved memory #${row.id}`);
+      }
+
+      case "recall": {
+        const queryEmb = await embed(String(args!.query), ctx.ollamaUrl, ctx.embeddingModel);
+        const embStr = `[${queryEmb.join(",")}]`;
+        const limit = Number(args!.limit ?? 5);
+        const rows = await ctx.sql`
+          SELECT id, type, content, embedding <=> ${embStr}::vector AS distance
+          FROM memories
+          WHERE project_path = ${ctx.projectPath} OR project_path IS NULL
+          ORDER BY embedding <=> ${embStr}::vector
+          LIMIT ${limit}
+        `;
+        if (rows.length === 0) return text("No relevant memories found.");
+        const formatted = rows
+          .map((r: any) => `#${r.id} [${r.type}] (${Number(r.distance).toFixed(3)}) ${r.content}`)
+          .join("\n\n");
+        return text(formatted);
+      }
+
+      case "forget": {
+        const result = await ctx.sql`DELETE FROM memories WHERE id = ${Number(args!.id)} RETURNING id`;
+        return text(result.length > 0 ? `Deleted #${args!.id}` : `#${args!.id} not found`);
+      }
+
+      case "update_status": {
+        const chatId = String(args!.chat_id);
+        await status.updateStatus(chatId, String(args!.status));
+
+        if (args!.diff) {
+          const token = ctx.token();
+          if (token) {
+            const htmlDiff = markdownToTelegramHtml(String(args!.diff));
+            let res = await sendTelegramMessage(token, chatId, htmlDiff, { parse_mode: "HTML" });
+            if (!res.ok && res.errorBody?.includes("can't parse entities")) {
+              await sendTelegramMessage(token, chatId, String(args!.diff));
+            }
+          }
+        }
+        return text(`Status updated: ${args!.status}`);
+      }
+
+      case "list_memories": {
+        const rows = await ctx.sql`
+          SELECT id, type, content FROM memories
+          WHERE (project_path = ${ctx.projectPath} OR project_path IS NULL)
+            ${args!.type ? ctx.sql`AND type = ${String(args!.type)}` : ctx.sql``}
+          ORDER BY created_at DESC
+          LIMIT ${Number(args!.limit ?? 20)}
+        `;
+        if (rows.length === 0) return text("No memories found.");
+        return text(rows.map((r: any) => `#${r.id} [${r.type}] ${r.content.slice(0, 100)}`).join("\n"));
+      }
+
+      case "search_project_context": {
+        const query = String(args!.query ?? "");
+        if (!query) return text("query is required");
+        const searchPath = String(args!.project_path ?? ctx.projectPath ?? "");
+        if (!searchPath) return text("no project_path available — pass it explicitly");
+        const limit = Math.min(Number(args!.limit ?? 5), 20);
+        const queryEmb = await embed(query, ctx.ollamaUrl, ctx.embeddingModel);
+        const embStr = `[${queryEmb.join(",")}]`;
+        const rows = await ctx.sql`
+          SELECT content, type, created_at,
+                 1 - (embedding <=> ${embStr}::vector) AS score
+          FROM memories
+          WHERE project_path = ${searchPath}
+            AND type IN ('project_context', 'summary')
+            AND embedding IS NOT NULL
+          ORDER BY embedding <=> ${embStr}::vector
+          LIMIT ${limit}
+        `;
+        channelLogger.info({ queryPrefix: query.slice(0, 50), project: searchPath, resultCount: rows.length }, "search_project_context");
+        if (rows.length === 0) return text("No project context found.");
+        return text(JSON.stringify({
+          results: rows.map((r: any) => ({
+            content: r.content as string,
+            type: r.type as string,
+            score: Number(r.score).toFixed(3),
+            date: (r.created_at as Date).toISOString(),
+          })),
+        }, null, 2));
+      }
+
+      default:
+        return text(`Unknown tool: ${name}`);
+    }
+  });
+}

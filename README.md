@@ -5,7 +5,7 @@
 [![Bun](https://img.shields.io/badge/runtime-Bun-f9f1e1)](https://bun.sh)
 [![TypeScript](https://img.shields.io/badge/lang-TypeScript-3178c6)](https://www.typescriptlang.org)
 
-[Dashboard](examples/dashboard.md) | [Usage Patterns](examples/usage-patterns.md) | [Cloudflare Tunnel](guides/cloudflare-tunnel-setup.md) | [Remote Laptop Setup](guides/remote-laptop-setup.md) | [Usage Scenarios](guides/usage-scenarios.md) | [Memory](guides/memory.md) | [MCP Tools](guides/mcp-tools.md) | [Mini App](guides/webapp.md) | [CLAUDE.md Guide](CLAUDE_MD_GUIDE.md)
+[Dashboard](examples/dashboard.md) | [Usage Patterns](examples/usage-patterns.md) | [Architecture](guides/architecture.md) | [Cloudflare Tunnel](guides/cloudflare-tunnel-setup.md) | [Remote Laptop Setup](guides/remote-laptop-setup.md) | [Usage Scenarios](guides/usage-scenarios.md) | [Memory](guides/memory.md) | [MCP Tools](guides/mcp-tools.md) | [Mini App](guides/webapp.md) | [CLAUDE.md Guide](CLAUDE_MD_GUIDE.md)
 
 > **Control Claude Code from Telegram.** Multi-session bot with persistent projects, dual-layer memory, voice transcription, image analysis, and real-time CLI progress monitoring.
 
@@ -86,9 +86,16 @@ This bot is a full **[Model Context Protocol](https://modelcontextprotocol.io) s
 
 ### Operations
 - **Health Endpoint** — `GET /health` with DB status, uptime, active sessions
-- **Auto-Cleanup** — hourly cleanup of old queue messages, logs, stats, and all disconnected sessions
+- **Auto-Cleanup** — hourly cleanup of old queue messages, logs, stats, and all disconnected sessions; supports `CLEANUP_DRY_RUN=true` for safe inspection
 - **CLI Tool** — interactive setup wizard, session management, backup, monitoring
 - **Docker-First** — bot + PostgreSQL in Docker Compose, Ollama on host
+
+### Architecture Quality
+- **Service Layer** — `services/` directory with `SessionService`, `ProjectService`, `PermissionService`, `MemoryService`; typed wrappers over raw SQL with atomic operations
+- **Zod Config Validation** — all env vars parsed and validated at startup via `config.ts`; bot exits immediately on missing required vars
+- **Structured Logging (Pino)** — JSON-structured logs throughout the codebase; `LOG_LEVEL` env var; `channelLogger` writes to stderr fd 2 for MCP stdio compatibility
+- **Unit Test Suite** — 43 pure unit tests in `tests/unit/` covering session lifecycle, permission state machine, and memory reconciliation; runs in ~24ms with `bun test tests/unit/`
+- **Security Defaults** — `ALLOWED_USERS` required at startup; `ALLOW_ALL_USERS=true` must be set explicitly for open access
 
 ## Architecture
 
@@ -97,9 +104,14 @@ This bot is a full **[Model Context Protocol](https://modelcontextprotocol.io) s
                           │      Host / Laptop / Any terminal                │
                           │                                                  │
   ┌─────────────┐ stdio   │  ┌───────────┐  ┌───────────┐  ┌───────────┐   │
-  │ channel.ts  │◀═══════▶│  │ Claude CLI│  │ Claude CLI│  │ Claude CLI│   │
-  │ (per-session│  MCP    │  │ project-a │  │ project-b │  │ general   │   │
-  │  adapter)   │         │  └─────┬─────┘  └─────┬─────┘  └─────┬─────┘  │
+  │ channel/    │◀═══════▶│  │ Claude CLI│  │ Claude CLI│  │ Claude CLI│   │
+  │ (7 modules: │  MCP    │  │ project-a │  │ project-b │  │ general   │   │
+  │  session,   │         │  └─────┬─────┘  └─────┬─────┘  └─────┬─────┘  │
+  │  perms,     │         │        │   Bash/Read/Edit/Write       │         │
+  │  tools,     │         │        ▼              ▼              ▼          │
+  │  poller,    │         │  ┌──────────────────────────────────────────┐   │
+  │  status,    │         │  │           Project Files (host)           │   │
+  │  telegram)  │         │  └──────────────────────────────────────────┘   │
   └──────┬──────┘         │        │   Bash/Read/Edit/Write       │         │
          │ polls           │        ▼              ▼              ▼          │
          │ message_queue   │  ┌──────────────────────────────────────────┐   │
@@ -119,6 +131,11 @@ This bot is a full **[Model Context Protocol](https://modelcontextprotocol.io) s
          │                 │  │                                          │   │
          │                 │  │  adapters/                               │   │
          │                 │  │  └─ ClaudeAdapter → message_queue        │   │
+         │                 │  │                                          │   │
+         │                 │  │  services/  (SessionService,             │   │
+         │                 │  │             ProjectService,              │   │
+         │                 │  │             PermissionService,           │   │
+         │                 │  │             MemoryService)               │   │
          │                 │  │                                          │   │
          │                 │  │  sessions/router.ts (standalone/cli/disc)│   │
          │                 │  │  Standalone LLM   ──▶ Google AI/Openrtr  │   │
@@ -503,7 +520,9 @@ ollama pull nomic-embed-text
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `TELEGRAM_BOT_TOKEN` | Yes | From [@BotFather](https://t.me/BotFather) |
-| `ALLOWED_USERS` | Yes | Comma-separated Telegram user IDs |
+| `ALLOWED_USERS` | Yes* | Comma-separated Telegram user IDs. Required unless `ALLOW_ALL_USERS=true` |
+| `ALLOW_ALL_USERS` | No | Set to `true` to allow all users (no access control). Dangerous in production. |
+| `LOG_LEVEL` | No | Pino log level: `trace`, `debug`, `info`, `warn`, `error` (default: `info`) |
 | `ANTHROPIC_API_KEY` | No | Anthropic API (best quality standalone) |
 | `CLAUDE_MODEL` | No | Claude model for CLI sessions (default: `claude-sonnet-4-20250514`) |
 | `MAX_TOKENS` | No | Max tokens per response (default: `8192`) |
@@ -528,6 +547,7 @@ ollama pull nomic-embed-text
 | `MEMORY_TTL_DECISION_DAYS` | No | Retention days for `decision` memories (default: `180`) |
 | `MEMORY_TTL_NOTE_DAYS` | No | Retention days for `note` memories (default: `30`) |
 | `MEMORY_TTL_PROJECT_CONTEXT_DAYS` | No | Retention days for `project_context` memories (default: `180`) |
+| `CLEANUP_DRY_RUN` | No | Set to `true` to log what cleanup would delete without actually deleting (default: `false`) |
 
 ### Manual Setup (without Docker)
 
@@ -604,6 +624,32 @@ Backups saved to `~/backups/claude-bot/` (gzipped, last 7 retained).
 | Voice | [Groq](https://console.groq.com) (whisper-large-v3) |
 | DB Client | [postgres](https://github.com/porsager/postgres) |
 | Dashboard | [React](https://react.dev) + [Tailwind CSS](https://tailwindcss.com) + [Vite](https://vite.dev) |
+
+## Recent Changes (v1.18.0)
+
+### Service Layer
+
+`services/` directory introduces typed, testable wrappers over raw SQL for all domain operations. `ProjectService.create()` atomically handles INSERT + remote session registration. `PermissionService.transition()` enforces the state machine — `pending → approved | rejected | expired` — and rejects re-transitions into terminal states.
+
+### Structured Logging (Pino)
+
+All `console.log/error/warn` replaced with Pino structured logging. `logger.ts` exports two loggers: `logger` (stdout) and `channelLogger` (stderr fd 2, safe for MCP stdio). Every log entry carries structured fields (`sessionId`, `chatId`, `messageCount`) — searchable with any JSON log aggregator. Set `LOG_LEVEL=debug` in `.env` for verbose output.
+
+### Channel Adapter — 7 Modules
+
+The `channel.ts` monolith is now `channel/` with focused modules: `session.ts`, `permissions.ts`, `tools.ts`, `status.ts`, `poller.ts`, `telegram.ts`, `index.ts`. Each module owns one concern; the entrypoint wires them together.
+
+### Environment Validation (Zod)
+
+`config.ts` validates all env vars with Zod at startup. Missing required variables produce a clear error and immediate exit instead of a runtime crash on first use. `ALLOWED_USERS` is now required — `ALLOW_ALL_USERS=true` must be set explicitly for open access.
+
+### Unit Test Suite
+
+43 pure unit tests with no DB, no network, no Telegram: `tests/unit/session-lifecycle.test.ts`, `tests/unit/permission-flow.test.ts`, `tests/unit/memory-reconciliation.test.ts`. Run with `bun test tests/unit/` — completes in ~24ms.
+
+## Recent Changes (v1.17.0)
+
+See [ROADMAP](docs/ROADMAP.md) for the full version history.
 
 ## Recent Changes (v1.14.0)
 

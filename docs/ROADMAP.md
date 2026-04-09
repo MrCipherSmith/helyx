@@ -14,7 +14,68 @@
 
 ## ✅ Implemented
 
-### v1.17.0 (Latest)
+### v1.18.0 (Latest)
+
+#### Service Layer
+- Introduced `services/` directory — thin typed wrappers over raw SQL for all domain operations
+- `SessionService` — `rename()`, `get()`, `list()`, `delete()`, `create()`
+- `ProjectService` — `create()`, `get()`, `list()`, `start()`, `stop()`, `delete()`; `create()` handles INSERT + remote session registration atomically
+- `PermissionService` — `transition()` with state machine validation (pending → approved/rejected/expired); idempotency guard rejects re-transitions into terminal states
+- `MemoryService` — `reconcile()`, `save()`, `recall()`, `forget()`
+- Bot commands and callbacks now call services instead of raw SQL: `commands/projects.ts`, `commands/session.ts`, `commands/project-add.ts`
+- **Files changed:** `services/session-service.ts` (new), `services/project-service.ts` (new), `services/permission-service.ts` (new), `services/memory-service.ts` (new), `bot/commands/projects.ts`, `bot/commands/session.ts`, `bot/commands/project-add.ts`, `bot/callbacks.ts`
+
+#### Structured Logging (Pino)
+- Replaced all `console.log/error/warn` with Pino structured logging across the entire codebase
+- `logger.ts` exports two loggers: `logger` (stdout, for main bot) and `channelLogger` (stderr fd 2, for MCP stdio compatibility)
+- All log entries include structured fields: `{ sessionId, chatId, messageCount }` — no more string interpolation
+- `LOG_LEVEL` env var controls log verbosity (default: `info`)
+- **Files changed:** `logger.ts` (new), `channel/` modules, `sessions/manager.ts`, `memory/summarizer.ts`, `mcp/dashboard-api.ts`, `bot/bot.ts`, `bot/access.ts`, `bot/streaming.ts`, `bot/media.ts`, `bot/callbacks.ts`, `bot/commands/`
+
+#### Channel Adapter Refactor (7 modules)
+- `channel.ts` monolith (1 file) split into `channel/` directory with 7 focused modules
+- `channel/index.ts` — entrypoint, initialization
+- `channel/session.ts` — session lifecycle (register, stale detection, local/remote modes)
+- `channel/permissions.ts` — permission request forwarding to Telegram
+- `channel/tools.ts` — MCP tool registry and dispatch
+- `channel/status.ts` — live status message management
+- `channel/poller.ts` — `message_queue` polling loop
+- `channel/telegram.ts` — Telegram message formatting helpers
+- **Files changed:** `channel/` directory (new), `channel.ts` (now a thin re-export shim)
+
+#### Environment Validation (Zod)
+- All `process.env.*` reads centralized in `config.ts` with Zod schema validation
+- Bot fails fast at startup on missing required vars (clear error vs. runtime crash)
+- Remaining `process.env.*` scattered across `utils/transcribe.ts`, `utils/files.ts`, `bot/commands/admin.ts` migrated to `CONFIG.*`
+- **Files changed:** `config.ts`, `utils/transcribe.ts`, `utils/files.ts`, `bot/commands/admin.ts`
+
+#### Security Defaults
+- `ALLOWED_USERS` is now required at startup — bot exits with a clear error instead of silently serving all users
+- `ALLOW_ALL_USERS=true` must be set explicitly if you want unrestricted access
+- Protects against accidental public exposure after misconfigured deploys
+- **Files changed:** `config.ts`, `bot/access.ts`
+
+#### Permission State Machine
+- Formal transition table: `pending → approved | rejected | expired` (all terminal)
+- `PermissionService.transition()` validates state before writing — no double-approvals or race conditions
+- Idempotency guard in Telegram callback handler: checks current status before processing, replies "Already handled" on duplicate delivery
+- **Files changed:** `services/permission-service.ts`, `bot/callbacks.ts`
+
+#### Unit Test Suite (43 tests)
+- Pure unit tests with no DB, no network, no Telegram dependencies
+- `tests/unit/session-lifecycle.test.ts` — 15 tests: state transitions, `sessionDisplayName`, disconnect rules per source type
+- `tests/unit/permission-flow.test.ts` — 15 tests: valid transitions, terminal state blocking, idempotency, auto-approve patterns
+- `tests/unit/memory-reconciliation.test.ts` — 13 tests: `parseReconcileDecision()` ADD/NOOP/UPDATE/DELETE parsing, similarity threshold logic
+- `bun test tests/unit/` runs in ~24ms (all pure functions, no I/O)
+- `package.json` scripts: `test` → unit only, `test:unit` → explicit, `test:e2e` → Playwright
+- **Files changed:** `tests/unit/session-lifecycle.test.ts` (new), `tests/unit/permission-flow.test.ts` (new), `tests/unit/memory-reconciliation.test.ts` (new), `package.json`
+
+#### Cleanup Jobs — DRY_RUN Mode
+- Hourly cleanup job now supports `CLEANUP_DRY_RUN=true` for safe inspection without deleting
+- All cleanup actions logged with Pino: counts of deleted rows per table
+- **Files changed:** `memory/cleanup.ts`
+
+### v1.17.0
 
 #### Voice Transcription Live Progress
 - Status message updates every 5s while Groq/Whisper transcribes: `🎤 Transcribing... (15s)`
@@ -23,8 +84,9 @@
 - **Files changed:** `bot/media.ts`
 
 #### Session Timeline
-- `GET /api/sessions/:id/timeline` — merged, chronologically sorted messages + tool calls
-- Webapp: new 🕐 **Timeline** tab — message bubbles + tool event rows interleaved, filter by All/Messages/Tools, "Load older" pagination, auto-refresh 5s (skips reset when paginated)
+- `GET /api/sessions/:id/timeline` — merged, chronologically sorted messages + memories (tool calls included when manually approved via Telegram)
+- Webapp: new 🕐 **Timeline** tab — message bubbles + 🧠 memory events (purple blocks) interleaved, filter by All/Messages/Memories, "Load older" pagination, auto-refresh 5s (skips reset when paginated)
+- Replaced the 💬 Messages tab — Timeline supersedes it with richer context
 - `/session_export [id]` Telegram command — sends full session as a `.md` transcript file (capped at 5000 rows per type)
 - **Files changed:** `mcp/dashboard-api.ts`, `dashboard/webapp/src/api.ts`, `dashboard/webapp/src/components/SessionTimeline.tsx` (new), `dashboard/webapp/src/App.tsx`, `bot/commands/admin.ts`, `bot/handlers.ts`, `bot/bot.ts`
 
@@ -221,7 +283,7 @@ Core features established in foundational releases:
 
 ## 🚧 In Progress
 
-None currently. Latest merged work completed in v1.14.0.
+None currently. Latest merged work completed in v1.18.0.
 
 ---
 
@@ -325,6 +387,7 @@ Features identified as valuable but without PRDs yet.
 ## Quick Links
 
 - **[README](../README.md)** — Features, Quick Start, Architecture diagram
+- **[Architecture](../guides/architecture.md)** — Module map, service layer, logging, testing internals
 - **[Human Spec](spec/en/spec.md)** — Full project specification for developers
 - **[AI Spec](spec/ai/spec.md)** — Machine-readable spec for AI agents
 - **[Usage Scenarios](../guides/usage-scenarios.md)** — Common workflows
@@ -335,4 +398,4 @@ Features identified as valuable but without PRDs yet.
 
 ---
 
-**Last updated:** 2026-04-09 (v1.16.0)
+**Last updated:** 2026-04-09 (v1.18.0)

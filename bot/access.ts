@@ -1,5 +1,6 @@
 import type { Context, NextFunction } from "grammy";
 import { CONFIG } from "../config.ts";
+import { logger } from "../logger.ts";
 
 export async function accessMiddleware(
   ctx: Context,
@@ -9,8 +10,8 @@ export async function accessMiddleware(
 
   if (!userId) return;
 
-  // If no allowlist configured, allow everyone (dev mode)
-  if (CONFIG.ALLOWED_USERS.length === 0) {
+  // If explicitly opened to all users
+  if (CONFIG.ALLOW_ALL_USERS) {
     return next();
   }
 
@@ -19,5 +20,5 @@ export async function accessMiddleware(
   }
 
   // Silently drop unauthorized messages
-  console.log(`[access] denied user ${userId}`);
+  logger.warn({ userId }, "access denied");
 }

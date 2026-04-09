@@ -3,6 +3,7 @@ import { sessionManager } from "../../sessions/manager.ts";
 import { sql } from "../../memory/db.ts";
 import { getApiStats, getTranscriptionStats, getMessageStats, getSessionLogs } from "../../utils/stats.ts";
 import { readSkills, readCommands, readHooks, toolIcon } from "../../utils/tools-reader.ts";
+import { CONFIG } from "../../config.ts";
 
 export async function handleStats(ctx: Context): Promise<void> {
   await ctx.replyWithChatAction("typing");
@@ -140,7 +141,7 @@ export async function handleStatus(ctx: Context): Promise<void> {
   // Ollama check
   let ollamaOk = false;
   try {
-    const res = await fetch(`${process.env.OLLAMA_URL ?? "http://localhost:11434"}/api/tags`);
+    const res = await fetch(`${CONFIG.OLLAMA_URL}/api/tags`);
     ollamaOk = res.ok;
   } catch {}
 
@@ -149,7 +150,7 @@ export async function handleStatus(ctx: Context): Promise<void> {
   const [{ count: memoryCount }] = await sql`SELECT count(*) FROM memories`;
   const [{ count: messageCount }] = await sql`SELECT count(*) FROM messages`;
 
-  const apiKey = process.env.ANTHROPIC_API_KEY ? "configured" : "not set";
+  const apiKey = CONFIG.ANTHROPIC_API_KEY ? "configured" : "not set";
 
   const lines = [
     `PostgreSQL: ${dbOk ? "OK" : "ERROR"}`,
@@ -158,7 +159,7 @@ export async function handleStatus(ctx: Context): Promise<void> {
     `Active sessions: ${sessionCount}`,
     `Memories: ${memoryCount}`,
     `Messages: ${messageCount}`,
-    `MCP port: ${process.env.PORT ?? 3847}`,
+    `MCP port: ${CONFIG.PORT}`,
   ];
 
   await ctx.reply("Status:\n\n" + lines.join("\n"));
@@ -352,7 +353,7 @@ export async function handleHooks(ctx: Context): Promise<void> {
 }
 
 export async function handleRules(ctx: Context): Promise<void> {
-  const KNOWLEDGE_BASE = process.env.KNOWLEDGE_BASE;
+  const KNOWLEDGE_BASE = CONFIG.KNOWLEDGE_BASE;
   if (!KNOWLEDGE_BASE) {
     await ctx.reply("KNOWLEDGE_BASE not configured. Set the path in .env.");
     return;

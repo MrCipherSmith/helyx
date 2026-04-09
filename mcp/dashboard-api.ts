@@ -3,21 +3,28 @@ import { readFile, access, writeFile } from "fs/promises";
 import { join, extname, resolve } from "path";
 import { homedir } from "os";
 import { sql } from "../memory/db.ts";
-import { deleteSessionCascade } from "../sessions/delete.ts";
 import { sessionManager } from "../sessions/manager.ts";
 import { CONFIG } from "../config.ts";
 import { signJwt, verifyJwt, verifyTelegramLogin, verifyWebAppInitData, type AuthPayload } from "../dashboard/auth.ts";
 import { getApiStats, getTranscriptionStats, getMessageStats, getRecentErrors } from "../utils/stats.ts";
 import { isIndexing } from "../memory/long-term.ts";
 import { addSSEClient, removeSSEClient, getSSEClientCount } from "./notification-broadcaster.ts";
+import { sessionService } from "../services/session-service.ts";
+import { projectService } from "../services/project-service.ts";
+import { logger } from "../logger.ts";
 
 const DIST_DIR = join(import.meta.dirname, "../dashboard/dist");
 const WEBAPP_DIST_DIR = join(import.meta.dirname, "../dashboard/webapp/dist");
 
-// Map host project_path to container-accessible path via /host-home mount
-const HOST_HOME = process.env.HOST_HOME ?? homedir();
+// Map host project_path to container-accessible path
+const HOST_PROJECTS_DIR = process.env.HOST_PROJECTS_DIR ?? (homedir() + "/bots");
 function hostToContainerPath(hostPath: string): string {
-  if (hostPath.startsWith(HOST_HOME)) {
+  if (hostPath.startsWith(HOST_PROJECTS_DIR)) {
+    return "/host-projects" + hostPath.slice(HOST_PROJECTS_DIR.length);
+  }
+  // Fallback for legacy HOST_HOME mount during transition
+  const HOST_HOME = process.env.HOST_HOME ?? homedir();
+  if (process.env.HOST_HOME && hostPath.startsWith(HOST_HOME)) {
     return "/host-home" + hostPath.slice(HOST_HOME.length);
   }
   return hostPath; // fallback: same path (manual/non-Docker runs)
@@ -163,42 +170,13 @@ async function handleOverview(_req: IncomingMessage, res: ServerResponse): Promi
 }
 
 async function handleSessions(_req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const rows = await sql`
-    SELECT id, name, project_path, source, status, connected_at, last_active
-    FROM sessions WHERE id != 0 ORDER BY last_active DESC
-  `;
-  sendJson(res, rows);
+  sendJson(res, await sessionService.list());
 }
 
 async function handleSessionDetail(res: ServerResponse, id: number): Promise<void> {
-  const [session] = await sql`
-    SELECT id, name, project, project_path, source, client_id, status, metadata, connected_at, last_active
-    FROM sessions WHERE id = ${id}
-  `;
-  if (!session) { sendError(res, "Session not found", 404); return; }
-  const [{ count }, tokenStats, recentTools] = await Promise.all([
-    sql`SELECT count(*)::int FROM messages WHERE session_id = ${id}`.then((r) => r[0]),
-    sql`
-      SELECT
-        coalesce(sum(input_tokens), 0)::int AS input_tokens,
-        coalesce(sum(output_tokens), 0)::int AS output_tokens,
-        coalesce(sum(total_tokens), 0)::int AS total_tokens,
-        count(*)::int AS api_calls
-      FROM api_request_stats WHERE session_id = ${id}
-    `.then((r) => r[0]),
-    sql`
-      SELECT tool_name, response, created_at
-      FROM permission_requests
-      WHERE session_id = ${id} AND archived_at IS NULL
-      ORDER BY created_at DESC LIMIT 15
-    `,
-  ]);
-  sendJson(res, {
-    ...session,
-    message_count: count,
-    tokens: tokenStats,
-    recent_tools: recentTools,
-  });
+  const detail = await sessionService.getDetail(id);
+  if (!detail) { sendError(res, "Session not found", 404); return; }
+  sendJson(res, detail);
 }
 
 async function handleSessionMessages(res: ServerResponse, id: number, url: URL): Promise<void> {
@@ -213,17 +191,14 @@ async function handleSessionMessages(res: ServerResponse, id: number, url: URL):
 }
 
 async function handleDeleteSession(res: ServerResponse, id: number): Promise<void> {
-  await deleteSessionCascade(id);
+  await sessionService.delete(id);
   sendJson(res, { ok: true });
 }
 
 async function handleRenameSession(req: IncomingMessage, res: ServerResponse, id: number): Promise<void> {
   const { name } = await parseBody(req);
   if (!name) { sendError(res, "name required"); return; }
-  const [row] = await sql`
-    UPDATE sessions SET name = ${name} WHERE id = ${id}
-    RETURNING id, name, project_path, status, connected_at, last_active
-  `;
+  const row = await sessionService.rename(id, name);
   if (!row) { sendError(res, "Session not found", 404); return; }
   sendJson(res, row);
 }
@@ -327,14 +302,7 @@ async function handleDeleteMemory(res: ServerResponse, id: number): Promise<void
 }
 
 async function handleListProjects(_req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const rows = await sql`
-    SELECT p.id, p.name, p.path, p.tmux_session_name, p.created_at,
-           s.id as session_id, s.status as session_status
-    FROM projects p
-    LEFT JOIN sessions s ON s.project_id = p.id AND s.source = 'remote'
-    ORDER BY p.name
-  `;
-  sendJson(res, rows);
+  sendJson(res, await projectService.list());
 }
 
 async function handleCreateProject(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -342,66 +310,29 @@ async function handleCreateProject(req: IncomingMessage, res: ServerResponse): P
   if (!name || typeof name !== "string") { sendError(res, "name required"); return; }
   if (!path || typeof path !== "string") { sendError(res, "path required"); return; }
   if (!path.startsWith("/")) { sendError(res, "path must be absolute"); return; }
-
-  const tmuxName = name.toLowerCase().replace(/[^a-z0-9_-]/g, "_");
-
-  let project: any;
   try {
-    const rows = await sql`
-      INSERT INTO projects (name, path, tmux_session_name)
-      VALUES (${name}, ${path}, ${tmuxName})
-      ON CONFLICT (path) DO NOTHING
-      RETURNING id, name, path, tmux_session_name, created_at
-    `;
-    if (rows.length === 0) {
-      sendError(res, "Project with this path already exists", 409);
-      return;
-    }
-    project = rows[0];
+    const project = await projectService.create(name, path);
+    if (!project) { sendError(res, "Project with this path already exists", 409); return; }
+    sendJson(res, project, 201);
   } catch (err: any) {
     if (err.code === "23505") { sendError(res, "Project already exists", 409); return; }
     throw err;
   }
-
-  // Register remote session
-  await sql`
-    INSERT INTO sessions (project_id, name, project_path, source, status)
-    VALUES (${project.id}, ${project.name}, ${project.path}, 'remote', 'inactive')
-    ON CONFLICT DO NOTHING
-  `.catch((sessionErr: unknown) => {
-    console.error("[projects] failed to create remote session:", sessionErr);
-  });
-
-  sendJson(res, project, 201);
 }
 
-async function handleProjectAction(req: IncomingMessage, res: ServerResponse, id: number, action: "start" | "stop"): Promise<void> {
-  const rows = await sql`SELECT id, name, path, tmux_session_name FROM projects WHERE id = ${id}`;
-  if (rows.length === 0) {
-    res.writeHead(404, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Project not found" }));
-    return;
-  }
-  const project = rows[0];
-
-  const command = action === "start" ? "proj_start" : "proj_stop";
-  await sql`INSERT INTO admin_commands (command, payload) VALUES (${command}, ${JSON.stringify({ project_id: id, path: project.path, name: project.name, tmux_session_name: project.tmux_session_name })}::jsonb)`;
+async function handleProjectAction(_req: IncomingMessage, res: ServerResponse, id: number, action: "start" | "stop"): Promise<void> {
+  const result = action === "start" ? await projectService.start(id) : await projectService.stop(id);
+  if (!result.ok) { sendError(res, result.error ?? "Failed", 404); return; }
   sendJson(res, { ok: true });
 }
 
 async function handleDeleteProject(res: ServerResponse, id: number): Promise<void> {
-  const [project] = await sql`SELECT id FROM projects WHERE id = ${id}`;
-  if (!project) { sendError(res, "Project not found", 404); return; }
-
-  const activeSessions = await sql`
-    SELECT id FROM sessions WHERE project_id = ${id} AND status = 'active'
-  `;
-  if (activeSessions.length > 0) {
-    sendError(res, "Cannot delete project with active sessions", 409);
+  const result = await projectService.delete(id);
+  if (!result.ok) {
+    const status = result.error?.includes("active") ? 409 : 404;
+    sendError(res, result.error ?? "Failed", status);
     return;
   }
-
-  await sql`DELETE FROM projects WHERE id = ${id}`;
   sendJson(res, { ok: true });
 }
 
@@ -541,14 +472,18 @@ async function handleSessionTimeline(res: ServerResponse, sessionId: number, url
   const limit = Math.min(Number(url.searchParams.get("limit") ?? 100), 500);
   const offset = Number(url.searchParams.get("offset") ?? 0);
 
-  // Merge messages + tool calls chronologically
+  // Merge messages + tool calls + memories chronologically
   const rows = await sql`
-    SELECT 'message' AS kind, id, role AS actor, content, NULL AS response, created_at
+    SELECT 'message' AS kind, id::text, role AS actor, content, NULL::text AS response, created_at
     FROM messages
     WHERE session_id = ${sessionId} AND archived_at IS NULL
     UNION ALL
-    SELECT 'tool', id, tool_name, description, response, created_at
+    SELECT 'tool', id::text, tool_name, description, COALESCE(status, response), created_at
     FROM permission_requests
+    WHERE session_id = ${sessionId} AND archived_at IS NULL
+    UNION ALL
+    SELECT 'memory', id::text, type AS actor, left(content, 500), NULL::text AS response, created_at
+    FROM memories
     WHERE session_id = ${sessionId} AND archived_at IS NULL
     ORDER BY created_at ASC
     LIMIT ${limit} OFFSET ${offset}
@@ -557,7 +492,8 @@ async function handleSessionTimeline(res: ServerResponse, sessionId: number, url
   const total = await sql`
     SELECT (
       (SELECT count(*) FROM messages WHERE session_id = ${sessionId} AND archived_at IS NULL) +
-      (SELECT count(*) FROM permission_requests WHERE session_id = ${sessionId} AND archived_at IS NULL)
+      (SELECT count(*) FROM permission_requests WHERE session_id = ${sessionId} AND archived_at IS NULL) +
+      (SELECT count(*) FROM memories WHERE session_id = ${sessionId} AND archived_at IS NULL)
     )::int AS total
   `;
 
@@ -568,9 +504,9 @@ async function handleSessionTimeline(res: ServerResponse, sessionId: number, url
 
 async function handleGetPermissions(res: ServerResponse, sessionId: number): Promise<void> {
   const rows = await sql`
-    SELECT id, tool_name, description, created_at
+    SELECT id, tool_name, description, status, created_at
     FROM permission_requests
-    WHERE session_id = ${sessionId} AND response IS NULL
+    WHERE session_id = ${sessionId} AND status = 'pending'
     ORDER BY created_at ASC
   `;
   sendJson(res, rows);
@@ -616,7 +552,9 @@ async function handleRespondPermission(req: IncomingMessage, res: ServerResponse
   const { response } = await parseBody(req);
   if (!["allow", "deny"].includes(response)) { sendError(res, "response must be allow or deny"); return; }
   const rows = await sql`
-    UPDATE permission_requests SET response = ${response} WHERE id = ${id} AND response IS NULL RETURNING id, session_id
+    UPDATE permission_requests SET response = ${response}, status = ${response === "allow" ? "approved" : "rejected"}
+    WHERE id = ${id} AND status = 'pending'
+    RETURNING id, session_id
   `;
   if (rows.length === 0) { sendError(res, "Permission request not found or already answered", 404); return; }
   sendJson(res, { ok: true });
@@ -652,7 +590,7 @@ async function handleAlwaysAllowPermission(req: IncomingMessage, res: ServerResp
   }
 
   // Also mark as allowed
-  await sql`UPDATE permission_requests SET response = 'allow' WHERE id = ${id}`;
+  await sql`UPDATE permission_requests SET response = 'allow', status = 'approved' WHERE id = ${id}`;
   sendJson(res, { ok: true });
 }
 
@@ -661,27 +599,27 @@ async function handleAlwaysAllowPermission(req: IncomingMessage, res: ServerResp
 async function handleAuthWebApp(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const { initData } = await parseBody(req);
   if (!initData || typeof initData !== "string") {
-    console.log("[webapp-auth] missing initData");
+    logger.warn("webapp-auth: missing initData");
     sendError(res, "initData required"); return;
   }
 
   const params = new URLSearchParams(initData);
   const authDate = Number(params.get("auth_date"));
   const age = Math.round(Date.now() / 1000 - authDate);
-  console.log(`[webapp-auth] initData received, auth_date age=${age}s, hash=${params.get("hash")?.slice(0, 8)}...`);
+  logger.info({ age, hashPrefix: params.get("hash")?.slice(0, 8) }, "webapp-auth: initData received");
 
   const user = verifyWebAppInitData(initData);
   if (!user) {
-    console.log(`[webapp-auth] verification failed — age=${age}s (limit=3600), token=${CONFIG.TELEGRAM_BOT_TOKEN.slice(0, 10)}...`);
+    logger.warn({ age }, "webapp-auth: verification failed");
     sendError(res, "Invalid initData", 401); return;
   }
 
   const allowed = CONFIG.ALLOWED_USERS.map(Number);
-  console.log(`[webapp-auth] user=${user.id} (${user.username}), allowed=${allowed.join(",")}`);
+  logger.info({ userId: user.id, username: user.username }, "webapp-auth: user identified");
   if (!allowed.includes(user.id)) { sendError(res, "Forbidden", 403); return; }
 
   const token = await signJwt(user);
-  console.log(`[webapp-auth] success for user=${user.id}`);
+  logger.info({ userId: user.id }, "webapp-auth: success");
   sendJson(res, { ok: true, user, token });
 }
 
@@ -824,7 +762,7 @@ export async function handleDashboardRequest(
       return true;
     }
     if (pathname === "/api/sessions" && method === "GET") {
-      console.log(`[sessions] cookie=${req.headers.cookie?.slice(0, 40) ?? "none"}`);
+      logger.debug({ cookiePrefix: req.headers.cookie?.slice(0, 40) ?? "none" }, "sessions list request");
       await handleSessions(req, res);
       return true;
     }

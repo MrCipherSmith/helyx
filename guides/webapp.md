@@ -92,21 +92,21 @@ Live overview of all sessions.
 
 ## Session Timeline (🕐)
 
-Chronological view of all messages and tool calls interleaved in one list.
+Chronological view of all messages and memory events interleaved in one list.
 
 **Filter bar:**
-- **All** — messages and tool events together
+- **All** — messages and memory events together
 - **Messages** — only chat messages (user/assistant/system)
-- **Tools** — only tool call events
+- **Memories** — only memory save events
 
 **Message bubbles:**
 - User messages — right-aligned blue bubble
 - Assistant messages — left-aligned gray bubble
 - System messages — centered small gray text
 
-**Tool events:**
-- Compact row: `🔧 tool_name` + response dot (🟢 allow / 🔴 deny / 🟡 pending) + timestamp
-- Description shown below tool name (truncated)
+**Memory events:**
+- Compact purple block: `🧠 type` (fact/summary/decision/note/project) + content preview + timestamp
+- Tap to expand full content
 
 **Pagination:** "Load older" button at top — loads 100 earlier items, does not disrupt auto-refresh  
 **Auto-refresh:** every 5s, but only when viewing the latest page (pauses if you've navigated to older items)
