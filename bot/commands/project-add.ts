@@ -1,6 +1,6 @@
 import type { Context } from "grammy";
 import { join } from "path";
-import { existsSync } from "fs";
+import { existsSync, readFileSync, writeFileSync } from "fs";
 import { setPendingInput } from "../handlers.ts";
 import { projectService } from "../../services/project-service.ts";
 import { forumService } from "../../services/forum-service.ts";
@@ -123,9 +123,70 @@ async function addProject(ctx: Context, path: string): Promise<void> {
     );
   }
 
+  // Inject bot rules into CLAUDE.md
+  const claudeMdStatus = injectBotRules(containerPath);
+  if (claudeMdStatus === "created") {
+    await replyInThread(ctx, "📝 CLAUDE.md создан с правилами бота. Напиши `/init` в топике проекта чтобы Claude проанализировал кодовую базу.");
+  } else if (claudeMdStatus === "updated") {
+    await replyInThread(ctx, "📝 Правила бота добавлены в существующий CLAUDE.md.");
+  }
+
   // Trigger async project knowledge scan (non-blocking)
   const { scanProjectKnowledge } = await import("../../memory/project-scanner.ts");
   scanProjectKnowledge(project.path).catch((err) =>
     logger.error({ err, path: project.path }, "project-add: scan error")
   );
+}
+
+const BOT_RULES_MARKER = "<!-- claude-bot-rules -->";
+
+const BOT_RULES_SECTION = `
+${BOT_RULES_MARKER}
+## Bot Integration
+
+### Project Knowledge: Save and Load
+
+At the beginning of any session where you will do significant work on this codebase,
+call \`search_project_context(query="project architecture constraints conventions")\`
+to load facts saved in previous sessions. Read the results before exploring source files.
+
+### During work — save facts proactively
+Call \`remember(type="fact", tags=["project", "<category>"])\` when you discover anything
+a future Claude session should know:
+
+- Architecture decisions and why they were made
+- Non-obvious constraints (hardcoded ports, required env vars, ordering dependencies)
+- Important file roles that are not obvious from the name
+- Setup quirks (e.g. "downloads/ must be pre-created before Docker starts")
+- Naming or coding conventions specific to this project
+- Gotchas you encountered
+
+Write facts as self-contained sentences — assume the future reader has no context from
+this session.
+
+Good: \`"channel.ts pre-registers MCP sessions before Claude Code connects to avoid a race condition on startup"\`
+Bad: \`"fixed bug in channel.ts today"\`
+
+### What NOT to save
+- Transient task state ("I just edited X")
+- Things already documented in source comments or README
+- Per-session events
+`;
+
+function injectBotRules(containerPath: string): "created" | "updated" | "skipped" {
+  const claudeMdPath = `${containerPath}/CLAUDE.md`;
+
+  if (existsSync(claudeMdPath)) {
+    const existing = readFileSync(claudeMdPath, "utf-8");
+    if (existing.includes(BOT_RULES_MARKER)) {
+      return "skipped";
+    }
+    writeFileSync(claudeMdPath, existing.trimEnd() + "\n" + BOT_RULES_SECTION, "utf-8");
+    logger.info({ path: claudeMdPath }, "project-add: appended bot rules to CLAUDE.md");
+    return "updated";
+  }
+
+  writeFileSync(claudeMdPath, BOT_RULES_SECTION.trimStart(), "utf-8");
+  logger.info({ path: claudeMdPath }, "project-add: created CLAUDE.md with bot rules");
+  return "created";
 }
