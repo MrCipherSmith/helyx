@@ -49,30 +49,54 @@ async function addProject(ctx: Context, path: string): Promise<void> {
 
   const name = path.split("/").pop() ?? path;
 
-  const project = await projectService.create(name, path);
+  let project = await projectService.create(name, path);
+  let isNew = true;
   if (!project) {
-    await replyInThread(ctx, `Project already exists: ${path}`);
-    return;
+    project = await projectService.getByPath(path);
+    if (!project) {
+      await replyInThread(ctx, `❌ Failed to get project: ${path}`);
+      return;
+    }
+    isNew = false;
   }
 
-  await replyInThread(ctx, `Added: ${project.name}\n${project.path}\n\nUse /projects to start it.`);
-
-  // FR-2: create forum topic if forum is configured
+  // FR-2: create forum topic if forum is configured and project has none
   const forumChatId = await forumService.getForumChatId();
   if (forumChatId) {
-    try {
-      const allProjects = await import("../../memory/db.ts").then(({ sql }) =>
-        sql`SELECT id FROM projects WHERE forum_topic_id IS NOT NULL`
+    const { sql } = await import("../../memory/db.ts");
+    const topicRow = await sql`SELECT forum_topic_id FROM projects WHERE id = ${project.id}`;
+    const existingTopicId = topicRow[0]?.forum_topic_id as number | null | undefined;
+
+    if (!existingTopicId) {
+      try {
+        const allProjects = await sql`SELECT id FROM projects WHERE forum_topic_id IS NOT NULL`;
+        const colorIndex = allProjects.length;
+        const threadId = await forumService.createTopicForProject(ctx.api, forumChatId, project, colorIndex);
+        await ctx.api.sendMessage(Number(forumChatId), `📁 ${project.name}\n${project.path}`, {
+          message_thread_id: threadId,
+        } as any);
+        await replyInThread(ctx, isNew
+          ? `Added: ${project.name}\n${project.path}\n\nUse /projects to start it.`
+          : `✅ Forum topic created for existing project: ${project.name}`
+        );
+      } catch (err) {
+        logger.error({ err, project: project.name }, "project-add: failed to create forum topic");
+        await replyInThread(ctx, isNew
+          ? `Added: ${project.name}\n${project.path}\n\nUse /projects to start it.`
+          : `Project already exists: ${path} (forum topic creation failed)`
+        );
+      }
+    } else {
+      await replyInThread(ctx, isNew
+        ? `Added: ${project.name}\n${project.path}\n\nUse /projects to start it.`
+        : `Project already exists: ${path}`
       );
-      const colorIndex = allProjects.length; // continue round-robin after existing topics
-      const threadId = await forumService.createTopicForProject(ctx.api, forumChatId, project, colorIndex);
-      // Send welcome message in the new topic
-      await ctx.api.sendMessage(Number(forumChatId), `📁 ${project.name}\n${project.path}`, {
-        message_thread_id: threadId,
-      } as any);
-    } catch (err) {
-      logger.error({ err, project: project.name }, "project-add: failed to create forum topic");
     }
+  } else {
+    await replyInThread(ctx, isNew
+      ? `Added: ${project.name}\n${project.path}\n\nUse /projects to start it.`
+      : `Project already exists: ${path}`
+    );
   }
 
   // Trigger async project knowledge scan (non-blocking)
