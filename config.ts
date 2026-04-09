@@ -88,6 +88,13 @@ if (!result.success) {
 
 const env = result.data;
 
+// Security: fail-fast if no access control is configured
+if (!env.ALLOW_ALL_USERS && env.ALLOWED_USERS.length === 0 && process.env.NODE_ENV !== "test") {
+  console.error("[config] FATAL: Neither ALLOWED_USERS nor ALLOW_ALL_USERS=true is set.");
+  console.error("[config] Set ALLOWED_USERS=<telegram_user_id> or ALLOW_ALL_USERS=true (dev only).");
+  process.exit(1);
+}
+
 export const CONFIG = {
   // Telegram
   TELEGRAM_BOT_TOKEN: env.TELEGRAM_BOT_TOKEN,
