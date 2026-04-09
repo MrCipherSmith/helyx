@@ -60,6 +60,15 @@ async function addProject(ctx: Context, path: string): Promise<void> {
     isNew = false;
   }
 
+  // Link any orphan sessions that were created before this project record existed
+  {
+    const { sql } = await import("../../memory/db.ts");
+    await sql`
+      UPDATE sessions SET project_id = ${project.id}
+      WHERE project_path = ${path} AND project_id IS NULL
+    `;
+  }
+
   // FR-2: create forum topic if forum is configured; verify existing topic is alive
   const forumChatId = await forumService.getForumChatId();
   if (forumChatId) {
