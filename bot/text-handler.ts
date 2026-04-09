@@ -8,6 +8,8 @@ import { sql } from "../memory/db.ts";
 import { appendLog } from "../utils/stats.ts";
 import { pendingInput, clearPendingInput, pendingToolInput, clearPendingTool, getBotRef } from "./handlers.ts";
 import { getSwitchContext, clearSwitchContext } from "./switch-cache.ts";
+import { replyInThread } from "./format.ts";
+export { replyInThread } from "./format.ts";
 
 export async function enqueueToolCommand(
   chatId: string,
@@ -18,7 +20,7 @@ export async function enqueueToolCommand(
   const route = await routeMessage(chatId);
 
   if (route.mode !== "cli") {
-    if (ctx) await ctx.reply("⚠️ No active CLI session. Use /switch to connect one.");
+    if (ctx) await replyInThread(ctx, "⚠️ No active CLI session. Use /switch to connect one.");
     return;
   }
 
@@ -28,7 +30,7 @@ export async function enqueueToolCommand(
   `;
 
   appendLog(route.sessionId, chatId, "tools", `queued: ${command.slice(0, 80)}`);
-  if (ctx) await ctx.reply(`✅ Sent to session: <code>${command}</code>`, { parse_mode: "HTML" });
+  if (ctx) await replyInThread(ctx, `✅ Sent to session: <code>${command}</code>`, { parse_mode: "HTML" });
 }
 
 export async function handleText(ctx: Context): Promise<void> {
@@ -54,13 +56,16 @@ export async function handleText(ctx: Context): Promise<void> {
     return;
   }
 
-  const route = await routeMessage(chatId);
+  // Extract forum topic ID (undefined or 1 → fall through to DM routing)
+  const forumTopicId = ctx.message?.message_thread_id;
+  const route = await routeMessage(chatId, forumTopicId);
 
   appendLog(route.sessionId, chatId, "route", `mode=${route.mode}, session=#${route.sessionId}`);
 
   if (route.mode === "disconnected") {
     appendLog(route.sessionId, chatId, "route", `session "${route.sessionName}" not active`, "warn");
-    await ctx.reply(
+    await replyInThread(
+      ctx,
       `⚠️ Session <b>${route.sessionName ?? `#${route.sessionId}`}</b> is not active.\n\n/switch 0 — standalone mode\n/sessions — list all sessions`,
       { parse_mode: "HTML" },
     );
@@ -154,7 +159,7 @@ export async function handleText(ctx: Context): Promise<void> {
     });
   } catch (err: any) {
     appendLog(sessionId, chatId, "llm", `error: ${err?.message ?? err}`, "error");
-    await ctx.reply(`Error: ${err?.message ?? "unknown error"}`);
+    await replyInThread(ctx, `Error: ${err?.message ?? "unknown error"}`);
   }
 
   // Touch idle timer and check overflow

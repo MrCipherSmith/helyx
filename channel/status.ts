@@ -1,5 +1,10 @@
 /**
  * StatusManager — Telegram status messages + typing indicators + progress monitor.
+ *
+ * Forum mode: when forumChatId() and forumTopicId() are both set, all status
+ * messages are sent to that topic instead of the DM chat.
+ * The project name prefix is suppressed in forum mode (FR-10) because the
+ * topic itself already identifies the project.
  */
 
 import type postgres from "postgres";
@@ -15,10 +20,15 @@ export interface StatusContext {
   sessionName: () => string;
   projectName: string;
   token: () => string | undefined;
+  /** Forum supergroup chat ID. When set together with forumTopicId, status goes to the topic. */
+  forumChatId?: () => string | null;
+  /** Forum topic (thread) ID for this project session. */
+  forumTopicId?: () => number | null;
 }
 
 interface StatusState {
   chatId: string;
+  threadId?: number;
   messageId: number;
   startedAt: number;
   stage: string;
@@ -75,7 +85,32 @@ export class StatusManager {
 
   constructor(private ctx: StatusContext) {}
 
+  /**
+   * Resolve the effective Telegram destination for status messages.
+   *
+   * In forum mode (forumChatId + forumTopicId both set): returns the forum chat
+   * and adds message_thread_id to the extras.
+   * In DM mode: returns the passed chatId with no extras.
+   */
+  private getForumTarget(): { chatId: string; threadId: number; extra: Record<string, unknown> } | null {
+    const chatId = this.ctx.forumChatId?.();
+    const topicId = this.ctx.forumTopicId?.();
+    if (chatId && topicId) {
+      return { chatId, threadId: topicId, extra: { message_thread_id: topicId } };
+    }
+    return null;
+  }
+
+  /** Map key for the activeStatus / stats maps. */
+  private stateKey(chatId: string): string {
+    const forum = this.getForumTarget();
+    return forum ? `${forum.chatId}:${forum.threadId}` : chatId;
+  }
+
   private async getSessionPrefix(chatId: string): Promise<string> {
+    // In forum mode the topic already identifies the project — no prefix needed (FR-10)
+    if (this.getForumTarget()) return "";
+
     const sessionId = this.ctx.sessionId();
     if (!sessionId) return "";
     const activeCheck = await this.ctx.sql`
@@ -92,8 +127,12 @@ export class StatusManager {
       return "no TELEGRAM_BOT_TOKEN";
     }
 
+    const forum = this.getForumTarget();
+    const effectiveChatId = forum?.chatId ?? chatId;
+    const key = this.stateKey(chatId);
+
     const prefix = await this.getSessionPrefix(chatId);
-    const existing = this.activeStatus.get(chatId);
+    const existing = this.activeStatus.get(key);
 
     if (existing) {
       existing.stage = `${prefix}${stage}`;
@@ -103,22 +142,24 @@ export class StatusManager {
 
     try {
       const initialText = formatStatusText(`${prefix}${stage}`, "0s", "");
-      const result = await sendTelegramMessage(token, chatId, initialText, { parse_mode: "HTML" });
+      const extra: Record<string, unknown> = { parse_mode: "HTML", ...(forum?.extra ?? {}) };
+      const result = await sendTelegramMessage(token, effectiveChatId, initialText, extra);
       if (!result.ok) {
         channelLogger.warn({ error: result.errorBody }, "sendStatusMessage failed");
         return `Telegram API error`;
       }
 
       const state: StatusState = {
-        chatId,
+        chatId: effectiveChatId,
+        threadId: forum?.threadId,
         messageId: result.messageId!,
         startedAt: Date.now(),
         stage: `${prefix}${stage}`,
         timer: null,
       };
       state.timer = setInterval(() => this.editStatusMessage(state), 5000);
-      this.activeStatus.set(chatId, state);
-      channelLogger.info({ chatId, messageId: state.messageId }, "status message created");
+      this.activeStatus.set(key, state);
+      channelLogger.info({ chatId: effectiveChatId, messageId: state.messageId }, "status message created");
       return null;
     } catch (e) {
       channelLogger.error({ err: e }, "sendStatusMessage exception");
@@ -127,8 +168,9 @@ export class StatusManager {
   }
 
   async updateStatus(chatId: string, stage: string): Promise<void> {
-    this.accumulateStats(chatId, stage);
-    const state = this.activeStatus.get(chatId);
+    const key = this.stateKey(chatId);
+    this.accumulateStats(key, stage);
+    const state = this.activeStatus.get(key);
     if (!state) {
       await this.sendStatusMessage(chatId, stage);
       return;
@@ -137,11 +179,11 @@ export class StatusManager {
     await this.editStatusMessage(state);
   }
 
-  private accumulateStats(chatId: string, stage: string): void {
-    let stats = this.sessionStats.get(chatId);
+  private accumulateStats(key: string, stage: string): void {
+    let stats = this.sessionStats.get(key);
     if (!stats) {
       stats = { filesEdited: new Set(), linesAdded: 0, linesRemoved: 0 };
-      this.sessionStats.set(chatId, stats);
+      this.sessionStats.set(key, stats);
     }
     // Track file edits from status updates (e.g. "Editing: status.ts" or "● Edit: file.ts")
     const editMatch = stage.match(/(?:Editing|● (?:Edit|Write)):\s*([^\s\n]+)/);
@@ -161,27 +203,29 @@ export class StatusManager {
     const token = this.ctx.token();
     if (!token) return;
     const elapsed = formatElapsed(Date.now() - state.startedAt);
-    const tokens = this.lastTokenInfo.get(state.chatId);
+    const key = state.threadId ? `${state.chatId}:${state.threadId}` : state.chatId;
+    const tokens = this.lastTokenInfo.get(key);
     const tokenStr = tokens ? ` · ↓ ${tokens}` : "";
     const text = formatStatusText(state.stage, elapsed, tokenStr);
     await editTelegramMessage(token, state.chatId, state.messageId, text, { parse_mode: "HTML" });
   }
 
   async deleteStatusMessage(chatId: string): Promise<void> {
-    const state = this.activeStatus.get(chatId);
+    const key = this.stateKey(chatId);
+    const state = this.activeStatus.get(key);
     if (!state) return;
     if (state.timer) clearInterval(state.timer);
-    this.activeStatus.delete(chatId);
+    this.activeStatus.delete(key);
     this.stopTypingForChat(chatId);
 
     const token = this.ctx.token();
     if (!token) return;
 
     const elapsed = formatElapsed(Date.now() - state.startedAt);
-    const tokens = this.lastTokenInfo.get(chatId);
-    const stats = this.sessionStats.get(chatId);
-    this.lastTokenInfo.delete(chatId);
-    this.sessionStats.delete(chatId);
+    const tokens = this.lastTokenInfo.get(key);
+    const stats = this.sessionStats.get(key);
+    this.lastTokenInfo.delete(key);
+    this.sessionStats.delete(key);
 
     const parts: string[] = [`⏱ ${elapsed}`];
     if (stats?.filesEdited.size) {
@@ -196,9 +240,9 @@ export class StatusManager {
     if (tokens) parts.push(`↓ ${tokens}`);
 
     const summaryText = `✅ ${parts.join(" · ")}`;
-    const editRes = await editTelegramMessage(token, chatId, state.messageId, summaryText, { parse_mode: "HTML" });
+    const editRes = await editTelegramMessage(token, state.chatId, state.messageId, summaryText, { parse_mode: "HTML" });
     if (!editRes.ok) {
-      deleteTelegramMessage(token, chatId, state.messageId);
+      deleteTelegramMessage(token, state.chatId, state.messageId);
     }
 
     // Record Claude Code token usage to api_request_stats (best-effort, non-blocking)
@@ -208,33 +252,38 @@ export class StatusManager {
   }
 
   startTypingForChat(chatId: string): void {
-    if (this.activeTyping.has(chatId)) return;
+    const key = this.stateKey(chatId);
+    if (this.activeTyping.has(key)) return;
     const token = this.ctx.token();
     if (!token) return;
-    const handle = startTypingRaw(token, chatId);
-    this.activeTyping.set(chatId, handle);
+    const forum = this.getForumTarget();
+    const effectiveChatId = forum?.chatId ?? chatId;
+    const handle = startTypingRaw(token, effectiveChatId);
+    this.activeTyping.set(key, handle);
     setTimeout(() => this.stopTypingForChat(chatId), this.TYPING_TIMEOUT_MS);
   }
 
   stopTypingForChat(chatId: string): void {
-    const handle = this.activeTyping.get(chatId);
+    const key = this.stateKey(chatId);
+    const handle = this.activeTyping.get(key);
     if (handle) {
       handle.stop();
-      this.activeTyping.delete(chatId);
+      this.activeTyping.delete(key);
     }
   }
 
   async startProgressMonitorForChat(chatId: string): Promise<void> {
     this.stopProgressMonitorForChat(chatId);
+    const key = this.stateKey(chatId);
     const onStatus = (status: string) => {
       const tokenMatch = status.match(/↓\s*([\d.]+[kmKM]?\s*tokens)/i);
-      if (tokenMatch) this.lastTokenInfo.set(chatId, tokenMatch[1].trim());
+      if (tokenMatch) this.lastTokenInfo.set(key, tokenMatch[1].trim());
       this.updateStatus(chatId, status);
     };
 
     let monitor = await startTmuxMonitor(this.ctx.projectName, onStatus);
     if (monitor) {
-      this.activeMonitors.set(chatId, monitor);
+      this.activeMonitors.set(key, monitor);
       channelLogger.info({ project: this.ctx.projectName }, "tmux monitor started");
       return;
     }
@@ -243,7 +292,7 @@ export class StatusManager {
     const outputFile = getOutputFilePath(this.ctx.projectName);
     monitor = await startOutputMonitor(outputFile, onStatus);
     if (monitor) {
-      this.activeMonitors.set(chatId, monitor);
+      this.activeMonitors.set(key, monitor);
       channelLogger.info({ outputFile }, "output monitor started");
     } else {
       channelLogger.debug({ project: this.ctx.projectName, outputFile }, "no monitor available — status will only show elapsed time");
@@ -251,10 +300,11 @@ export class StatusManager {
   }
 
   stopProgressMonitorForChat(chatId: string): void {
-    const monitor = this.activeMonitors.get(chatId);
+    const key = this.stateKey(chatId);
+    const monitor = this.activeMonitors.get(key);
     if (monitor) {
       monitor.stop();
-      this.activeMonitors.delete(chatId);
+      this.activeMonitors.delete(key);
     }
   }
 

@@ -353,6 +353,26 @@ const migrations: Migration[] = [
       await tx`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ`;
     },
   },
+  {
+    version: 13,
+    name: "forum topics support",
+    up: async (tx) => {
+      // Per-project forum topic (thread) ID
+      await tx`ALTER TABLE projects ADD COLUMN IF NOT EXISTS forum_topic_id INTEGER`;
+      await tx`CREATE INDEX IF NOT EXISTS idx_projects_forum_topic ON projects(forum_topic_id) WHERE forum_topic_id IS NOT NULL`;
+
+      // Global bot config: stores forum_chat_id and other runtime settings
+      await tx`
+        CREATE TABLE IF NOT EXISTS bot_config (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL,
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+      `;
+      // Seed the forum_chat_id key (empty = not configured)
+      await tx`INSERT INTO bot_config (key, value) VALUES ('forum_chat_id', '') ON CONFLICT DO NOTHING`;
+    },
+  },
 ];
 
 // --- Public API ---

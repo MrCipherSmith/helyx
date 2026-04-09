@@ -73,6 +73,7 @@ import { handleProjects } from "./commands/projects.ts";
 import { handleProjectAdd } from "./commands/project-add.ts";
 import { handleProjectFacts, handleProjectScan } from "./commands/project-facts.ts";
 import { handleMemoryExport, handleMemoryImport } from "./commands/memory-export.ts";
+import { handleForumSetup, handleForumSync, handleTopicRename, handleTopicClose, handleTopicReopen } from "./commands/forum.ts";
 import { handleVoice, handlePhoto, handleDocument, handleVideo, handleVideoNote, handleSticker } from "./media.ts";
 import { handleCallbackQuery } from "./callbacks.ts";
 import { handleText } from "./text-handler.ts";
@@ -130,6 +131,13 @@ export function registerHandlers(b: Bot): void {
   b.command("project_add", handleProjectAdd);
   b.command("project_facts", handleProjectFacts);
   b.command("project_scan", handleProjectScan);
+
+  // Forum topic management
+  b.command("forum_setup", handleForumSetup);
+  b.command("forum_sync", handleForumSync);
+  b.command("topic_rename", handleTopicRename);
+  b.command("topic_close", handleTopicClose);
+  b.command("topic_reopen", handleTopicReopen);
 
   // Inline keyboard callbacks (permissions, session switch)
   b.on("callback_query:data", handleCallbackQuery);

@@ -50,6 +50,12 @@ export function createBot(): Bot {
     { command: "project_add", description: "Add project to config" },
     { command: "project_facts", description: "Show project knowledge facts" },
     { command: "project_scan", description: "Scan project for knowledge (rescan)" },
+    // Forum management
+    { command: "forum_setup", description: "Configure forum supergroup (run in group)" },
+    { command: "forum_sync", description: "Sync forum topics for all projects" },
+    { command: "topic_rename", description: "Rename current project topic" },
+    { command: "topic_close", description: "Close current project topic" },
+    { command: "topic_reopen", description: "Reopen current project topic" },
     // Maintenance
     { command: "clear", description: "Clear context" },
     { command: "summarize", description: "Summarize conversation" },

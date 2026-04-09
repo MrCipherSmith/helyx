@@ -1,3 +1,21 @@
+import type { Context } from "grammy";
+
+/**
+ * Reply helper that automatically injects message_thread_id when the
+ * incoming message is in a forum topic. Use everywhere instead of bare ctx.reply().
+ */
+export function replyInThread(
+  ctx: Context,
+  text: string,
+  extra: Record<string, unknown> = {},
+): Promise<any> {
+  const threadId = ctx.message?.message_thread_id;
+  if (threadId) {
+    return ctx.reply(text, { ...extra, message_thread_id: threadId } as any);
+  }
+  return ctx.reply(text, extra as any);
+}
+
 // Characters that must be escaped in MarkdownV2
 const ESCAPE_CHARS = /([_*\[\]()~`>#+\-=|{}.!\\])/g;
 

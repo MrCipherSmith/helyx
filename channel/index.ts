@@ -75,6 +75,10 @@ const channelSource: "remote" | "local" | null =
   ENV.CHANNEL_SOURCE === "local" ? "local" :
   null;
 
+// --- Forum config (mutable — loaded after session resolve) ---
+let forumChatId: string | null = null;
+let forumTopicId: number | null = null;
+
 // --- Session ---
 const sessionMgr = new SessionManager({
   sql,
@@ -92,6 +96,8 @@ const statusMgr = new StatusManager({
   sessionName: () => sessionMgr.sessionName,
   projectName,
   token: () => ENV.TELEGRAM_BOT_TOKEN,
+  forumChatId: () => forumChatId,
+  forumTopicId: () => forumTopicId,
 });
 
 // --- Permissions ---
@@ -103,6 +109,8 @@ const permHandler = new PermissionHandler(
     projectPath,
     token: () => ENV.TELEGRAM_BOT_TOKEN,
     homeDir: ENV.HOME,
+    forumChatId: () => forumChatId,
+    forumTopicId: () => forumTopicId,
   },
   statusMgr,
 );
@@ -146,6 +154,23 @@ const poller = new MessageQueuePoller(
 // --- Main ---
 async function main() {
   await sessionMgr.resolve();
+
+  // Load forum config: forum_chat_id from bot_config, forum_topic_id from projects table
+  try {
+    const configRows = await sql`SELECT value FROM bot_config WHERE key = 'forum_chat_id'`;
+    const rawChatId = configRows[0]?.value as string | undefined;
+    if (rawChatId && rawChatId.length > 0) {
+      forumChatId = rawChatId;
+      const projectRows = await sql`SELECT forum_topic_id FROM projects WHERE path = ${projectPath}`;
+      const rawTopicId = projectRows[0]?.forum_topic_id as number | null | undefined;
+      if (rawTopicId) {
+        forumTopicId = rawTopicId;
+        channelLogger.info({ forumChatId, forumTopicId }, "forum mode active");
+      }
+    }
+  } catch {
+    // bot_config table may not exist yet (pre-migration) — silently skip
+  }
 
   if (sessionMgr.sessionId !== null && channelSource === "remote") {
     try {

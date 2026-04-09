@@ -4,3 +4,4 @@ export { memoryService, MemoryService } from "./memory-service.ts";
 export { projectService, ProjectService } from "./project-service.ts";
 export { messageService, MessageService } from "./message-service.ts";
 export { summarizationService, SummarizationService } from "./summarization-service.ts";
+export { forumService, ForumService, FORUM_ICON_COLORS } from "./forum-service.ts";

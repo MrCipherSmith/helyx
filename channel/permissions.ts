@@ -1,6 +1,10 @@
 /**
  * PermissionHandler — handles MCP permission_request notifications.
  * Loads auto-approve rules, sends Telegram messages, polls for response.
+ *
+ * Forum mode: when forumChatId() + forumTopicId() are both set, all messages
+ * (permission requests, previews) are sent to the project topic instead of the
+ * DM chat resolved from chat_sessions.
  */
 
 import type postgres from "postgres";
@@ -16,6 +20,10 @@ export interface PermissionContext {
   projectPath: string;
   token: () => string | undefined;
   homeDir: string;
+  /** Forum supergroup chat ID — overrides chat_sessions lookup when set. */
+  forumChatId?: () => string | null;
+  /** Forum topic (thread) ID for this project session. */
+  forumTopicId?: () => number | null;
 }
 
 function escapeHtml(s: string): string {
@@ -29,6 +37,16 @@ export class PermissionHandler {
     private ctx: PermissionContext,
     private status: StatusManager,
   ) {}
+
+  /** Resolve forum target if configured. */
+  private getForumTarget(): { chatId: string; threadId: number; extra: Record<string, unknown> } | null {
+    const chatId = this.ctx.forumChatId?.();
+    const topicId = this.ctx.forumTopicId?.();
+    if (chatId && topicId) {
+      return { chatId, threadId: topicId, extra: { message_thread_id: topicId } };
+    }
+    return null;
+  }
 
   async loadAutoApproveRules(): Promise<void> {
     const encodedPath = this.ctx.projectPath.replace(/\//g, "-");
@@ -74,14 +92,25 @@ export class PermissionHandler {
     const token = this.ctx.token();
     if (!token) return;
 
-    const chatRows = await this.ctx.sql`
-      SELECT chat_id FROM chat_sessions WHERE active_session_id = ${sessionId}
-    `;
-    const chatId = chatRows.length > 0 ? chatRows[0].chat_id : null;
+    // Resolve where to send the permission request
+    const forum = this.getForumTarget();
+    let chatId: string | null;
+
+    if (forum) {
+      chatId = forum.chatId;
+    } else {
+      const chatRows = await this.ctx.sql`
+        SELECT chat_id FROM chat_sessions WHERE active_session_id = ${sessionId}
+      `;
+      chatId = chatRows.length > 0 ? chatRows[0].chat_id : null;
+    }
+
     if (!chatId) {
       channelLogger.warn({ sessionId }, "no chat for session, auto-denying");
       return;
     }
+
+    const forumExtra: Record<string, unknown> = forum?.extra ?? {};
 
     const { desc, descMain, descDiff } = this.buildDetail(tool_name, input, description);
     const previewContent = this.buildPreview(tool_name, input, params.input_preview ?? params.input ?? "");
@@ -100,7 +129,7 @@ export class PermissionHandler {
       const header = filePath ? `${filePath}:\n` : "";
       const result = await sendTelegramMessage(token, chatId,
         `${escapeHtml(header)}<pre><code class="language-${lang}">${escapeHtml(previewContent)}</code></pre>`,
-        { parse_mode: "HTML" },
+        { parse_mode: "HTML", ...forumExtra },
       );
       if (result.ok) previewMsgId = result.messageId;
     }
@@ -118,6 +147,7 @@ export class PermissionHandler {
           { text: "❌ No", callback_data: `perm:deny:${request_id}` },
         ]],
       },
+      ...forumExtra,
     });
 
     if (sendResult.ok && sendResult.messageId) {
