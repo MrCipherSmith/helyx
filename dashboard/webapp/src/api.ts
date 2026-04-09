@@ -97,6 +97,11 @@ export const api = {
         byProvider: { provider: string; model: string; requests: number; input_tokens: number; output_tokens: number; tokens: number; avg_ms: number; cost: number }[];
       }>;
     }>("/api/stats"),
+  claudeCodeUsage: (days = 30) =>
+    req<{
+      byModel: { model: string; requests: number; input_tokens: number; cache_creation_tokens: number; cache_read_tokens: number; output_tokens: number; cost_usd: number }[];
+      total_requests: number; total_input: number; total_cache_creation: number; total_cache_read: number; total_output: number; total_cost_usd: number; scanned_files: number;
+    }>(`/api/stats/claude-code?days=${days}`),
   switchSession: (id: number) => req<{ ok: boolean }>(`/api/sessions/${id}/switch`, { method: "POST", body: "{}" }),
   deleteSession: (id: number) => req<void>(`/api/sessions/${id}`, { method: "DELETE" }),
 

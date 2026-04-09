@@ -7,6 +7,7 @@ import { sessionManager } from "../sessions/manager.ts";
 import { CONFIG } from "../config.ts";
 import { signJwt, verifyJwt, verifyTelegramLogin, verifyWebAppInitData, type AuthPayload } from "../dashboard/auth.ts";
 import { getApiStats, getTranscriptionStats, getMessageStats, getRecentErrors } from "../utils/stats.ts";
+import { getClaudeCodeUsage } from "../utils/claude-usage.ts";
 import { isIndexing } from "../memory/long-term.ts";
 import { addSSEClient, removeSSEClient, getSSEClientCount } from "./notification-broadcaster.ts";
 import { sessionService } from "../services/session-service.ts";
@@ -829,6 +830,14 @@ export async function handleDashboardRequest(
       const limit = Math.min(Number(url.searchParams.get("limit") ?? 20), 100);
       const errors = await getRecentErrors(limit);
       sendJson(res, errors);
+      return true;
+    }
+    if (pathname === "/api/stats/claude-code" && method === "GET") {
+      const days = Math.min(Number(url.searchParams.get("days") ?? 30), 365);
+      const cutoffMs = days > 0 ? Date.now() - days * 86400_000 : 0;
+      const projectsDir = join(CONFIG.HOST_CLAUDE_CONFIG, "projects");
+      const usage = await getClaudeCodeUsage(projectsDir, cutoffMs);
+      sendJson(res, usage);
       return true;
     }
     if (pathname === "/api/logs" && method === "GET") {

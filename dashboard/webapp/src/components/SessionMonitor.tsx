@@ -5,6 +5,7 @@ interface Props { session: Session }
 
 type PermStats = Awaited<ReturnType<typeof api.permissions.stats>>;
 type GlobalStats = Awaited<ReturnType<typeof api.globalStats>>;
+type ClaudeUsage = Awaited<ReturnType<typeof api.claudeCodeUsage>>;
 
 function relativeTime(iso: string) {
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -24,20 +25,23 @@ export function SessionMonitor({ session }: Props) {
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [globalStats, setGlobalStats] = useState<GlobalStats | null>(null);
   const [permStats, setPermStats] = useState<PermStats | null>(null);
+  const [claudeUsage, setClaudeUsage] = useState<ClaudeUsage | null>(null);
   const [statsDays, setStatsDays] = useState(30);
   const [statsWindow, setStatsWindow] = useState<"24h" | "startup" | "total">("24h");
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     try {
-      const [det, gs, ps] = await Promise.all([
+      const [det, gs, ps, cu] = await Promise.all([
         api.session(session.id),
         api.globalStats(),
         api.permissions.stats(session.id, statsDays),
+        api.claudeCodeUsage(statsDays),
       ]);
       setDetail(det);
       setGlobalStats(gs);
       setPermStats(ps);
+      setClaudeUsage(cu);
     } catch {}
     setLoading(false);
   }, [session.id, statsDays]);
@@ -156,6 +160,35 @@ export function SessionMonitor({ session }: Props) {
                   {t.tool_name}
                 </code>
                 <span className="text-[var(--tg-hint)] shrink-0">{relativeTime(t.created_at)}</span>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {/* Claude Code Usage (from JSONL session files) */}
+      {claudeUsage && claudeUsage.total_requests > 0 && (
+        <Section title={
+          <div className="flex items-center justify-between w-full">
+            <span>Claude Code Usage</span>
+            <span className="text-[10px] font-normal text-[var(--tg-hint)] normal-case">{statsDays}d · {claudeUsage.scanned_files} files</span>
+          </div>
+        }>
+          <div className="grid grid-cols-3 gap-x-2 gap-y-2 mb-3">
+            <TokenStat label="Requests" value={String(claudeUsage.total_requests)} />
+            <TokenStat label="Output" value={fmtTokens(claudeUsage.total_output)} />
+            <TokenStat label="Est. cost" value={`$${claudeUsage.total_cost_usd.toFixed(2)}`} />
+            <TokenStat label="Input" value={fmtTokens(claudeUsage.total_input)} />
+            <TokenStat label="Cache write" value={fmtTokens(claudeUsage.total_cache_creation)} />
+            <TokenStat label="Cache read" value={fmtTokens(claudeUsage.total_cache_read)} />
+          </div>
+          <div className="flex flex-col gap-1">
+            {claudeUsage.byModel.map((m) => (
+              <div key={m.model} className="flex items-center gap-2 text-[10px]">
+                <span className="truncate flex-1 font-mono">{m.model}</span>
+                <span className="text-[var(--tg-hint)]">{m.requests}req</span>
+                <span className="text-[var(--tg-hint)]">{fmtTokens(m.output_tokens)}out</span>
+                <span className="text-[var(--tg-hint)]">${m.cost_usd.toFixed(2)}</span>
               </div>
             ))}
           </div>
