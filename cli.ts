@@ -210,8 +210,9 @@ async function setup() {
   await Bun.write(`${BOT_DIR}/.env`, envLines.join("\n") + "\n");
   done();
 
-  // Ensure logs dir exists
+  // Ensure required dirs exist with correct ownership (before Docker creates them as root)
   await run(["mkdir", "-p", `${BOT_DIR}/logs`], { silent: true });
+  await run(["mkdir", "-p", `${BOT_DIR}/downloads`], { silent: true });
 
   // Install dependencies
   step("Installing dependencies");
