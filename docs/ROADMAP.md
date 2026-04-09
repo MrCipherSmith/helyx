@@ -23,8 +23,9 @@
 - **Files changed:** `bot/media.ts`
 
 #### Session Timeline
-- `GET /api/sessions/:id/timeline` — merged, chronologically sorted messages + tool calls
-- Webapp: new 🕐 **Timeline** tab — message bubbles + tool event rows interleaved, filter by All/Messages/Tools, "Load older" pagination, auto-refresh 5s (skips reset when paginated)
+- `GET /api/sessions/:id/timeline` — merged, chronologically sorted messages + memories (tool calls included when manually approved via Telegram)
+- Webapp: new 🕐 **Timeline** tab — message bubbles + 🧠 memory events (purple blocks) interleaved, filter by All/Messages/Memories, "Load older" pagination, auto-refresh 5s (skips reset when paginated)
+- Replaced the 💬 Messages tab — Timeline supersedes it with richer context
 - `/session_export [id]` Telegram command — sends full session as a `.md` transcript file (capped at 5000 rows per type)
 - **Files changed:** `mcp/dashboard-api.ts`, `dashboard/webapp/src/api.ts`, `dashboard/webapp/src/components/SessionTimeline.tsx` (new), `dashboard/webapp/src/App.tsx`, `bot/commands/admin.ts`, `bot/handlers.ts`, `bot/bot.ts`
 

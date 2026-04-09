@@ -541,14 +541,18 @@ async function handleSessionTimeline(res: ServerResponse, sessionId: number, url
   const limit = Math.min(Number(url.searchParams.get("limit") ?? 100), 500);
   const offset = Number(url.searchParams.get("offset") ?? 0);
 
-  // Merge messages + tool calls chronologically
+  // Merge messages + tool calls + memories chronologically
   const rows = await sql`
-    SELECT 'message' AS kind, id, role AS actor, content, NULL AS response, created_at
+    SELECT 'message' AS kind, id::text, role AS actor, content, NULL::text AS response, created_at
     FROM messages
     WHERE session_id = ${sessionId} AND archived_at IS NULL
     UNION ALL
-    SELECT 'tool', id, tool_name, description, response, created_at
+    SELECT 'tool', id::text, tool_name, description, response, created_at
     FROM permission_requests
+    WHERE session_id = ${sessionId} AND archived_at IS NULL
+    UNION ALL
+    SELECT 'memory', id::text, type AS actor, left(content, 500), NULL::text AS response, created_at
+    FROM memories
     WHERE session_id = ${sessionId} AND archived_at IS NULL
     ORDER BY created_at ASC
     LIMIT ${limit} OFFSET ${offset}
@@ -557,7 +561,8 @@ async function handleSessionTimeline(res: ServerResponse, sessionId: number, url
   const total = await sql`
     SELECT (
       (SELECT count(*) FROM messages WHERE session_id = ${sessionId} AND archived_at IS NULL) +
-      (SELECT count(*) FROM permission_requests WHERE session_id = ${sessionId} AND archived_at IS NULL)
+      (SELECT count(*) FROM permission_requests WHERE session_id = ${sessionId} AND archived_at IS NULL) +
+      (SELECT count(*) FROM memories WHERE session_id = ${sessionId} AND archived_at IS NULL)
     )::int AS total
   `;
 
