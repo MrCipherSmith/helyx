@@ -4,6 +4,7 @@ import { api, type Session, type SessionDetail } from "../api";
 interface Props { session: Session }
 
 type PermStats = Awaited<ReturnType<typeof api.permissions.stats>>;
+type SessionStats = Awaited<ReturnType<typeof api.sessionStats>>;
 
 function relativeTime(iso: string) {
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -21,21 +22,24 @@ function fmtTokens(n: number): string {
 
 export function SessionMonitor({ session }: Props) {
   const [detail, setDetail] = useState<SessionDetail | null>(null);
+  const [sessStats, setSessStats] = useState<SessionStats | null>(null);
   const [permStats, setPermStats] = useState<PermStats | null>(null);
-  const [permDays, setPermDays] = useState(30);
+  const [statsDays, setStatsDays] = useState(30);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     try {
-      const [det, ps] = await Promise.all([
+      const [det, ss, ps] = await Promise.all([
         api.session(session.id),
-        api.permissions.stats(session.id, permDays),
+        api.sessionStats(session.id, statsDays),
+        api.permissions.stats(session.id, statsDays),
       ]);
       setDetail(det);
+      setSessStats(ss);
       setPermStats(ps);
     } catch {}
     setLoading(false);
-  }, [session.id, permDays]);
+  }, [session.id, statsDays]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
@@ -87,15 +91,48 @@ export function SessionMonitor({ session }: Props) {
         )}
       </Section>
 
-      {/* Token usage */}
-      {tokens && tokens.api_calls > 0 && (
-        <Section title="Token Usage">
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-            <TokenStat label="API calls" value={String(tokens.api_calls)} />
-            <TokenStat label="Total" value={fmtTokens(tokens.total_tokens)} />
-            <TokenStat label="Input" value={fmtTokens(tokens.input_tokens)} />
-            <TokenStat label="Output" value={fmtTokens(tokens.output_tokens)} />
+      {/* API Stats */}
+      {sessStats && sessStats.summary.total > 0 && (
+        <Section title={
+          <div className="flex items-center justify-between w-full">
+            <span>API Stats</span>
+            <select
+              className="text-[10px] text-[var(--tg-hint)] bg-transparent border border-black/10 rounded px-1"
+              value={statsDays}
+              onChange={(e) => setStatsDays(Number(e.target.value))}
+            >
+              <option value={7}>7d</option>
+              <option value={30}>30d</option>
+              <option value={90}>90d</option>
+            </select>
           </div>
+        }>
+          {/* Summary grid */}
+          <div className="grid grid-cols-3 gap-x-2 gap-y-2 mb-3">
+            <TokenStat label="Requests" value={String(sessStats.summary.total)} />
+            <TokenStat label="Errors" value={String(sessStats.summary.errors)} accent={sessStats.summary.errors > 0 ? "text-red-500" : undefined} />
+            <TokenStat label="Avg latency" value={`${sessStats.summary.avg_latency_ms}ms`} />
+            <TokenStat label="Total tokens" value={fmtTokens(sessStats.summary.total_tokens)} />
+            <TokenStat label="Input" value={fmtTokens(sessStats.summary.input_tokens)} />
+            <TokenStat label="Output" value={fmtTokens(sessStats.summary.output_tokens)} />
+          </div>
+          {/* By model */}
+          {sessStats.by_model.length > 0 && (
+            <div>
+              <div className="text-[10px] text-[var(--tg-hint)] mb-1">By model</div>
+              <div className="flex flex-col gap-1">
+                {sessStats.by_model.map((m) => (
+                  <div key={`${m.provider}/${m.model}`} className="flex items-center gap-2 text-[10px]">
+                    <span className="truncate flex-1 font-mono">{m.model}</span>
+                    <span className="text-[var(--tg-hint)]">{m.requests}req</span>
+                    <span className="text-[var(--tg-hint)]">{fmtTokens(m.total_tokens)}tok</span>
+                    {m.errors > 0 && <span className="text-red-500">{m.errors}err</span>}
+                    <span className="text-[var(--tg-hint)]">{m.avg_ms}ms</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </Section>
       )}
 
@@ -123,8 +160,8 @@ export function SessionMonitor({ session }: Props) {
             <span>Permission History</span>
             <select
               className="text-[10px] text-[var(--tg-hint)] bg-transparent border border-black/10 rounded px-1"
-              value={permDays}
-              onChange={(e) => setPermDays(Number(e.target.value))}
+              value={statsDays}
+              onChange={(e) => setStatsDays(Number(e.target.value))}
             >
               <option value={7}>7d</option>
               <option value={30}>30d</option>
@@ -188,11 +225,11 @@ function InfoRow({ label, value, mono }: { label: string; value: string; mono?: 
   );
 }
 
-function TokenStat({ label, value }: { label: string; value: string }) {
+function TokenStat({ label, value, accent }: { label: string; value: string; accent?: string }) {
   return (
     <div>
       <div className="text-[10px] text-[var(--tg-hint)]">{label}</div>
-      <div className="text-sm font-semibold">{value}</div>
+      <div className={`text-sm font-semibold ${accent ?? ""}`}>{value}</div>
     </div>
   );
 }

@@ -498,6 +498,43 @@ async function handleGitCommitDiff(res: ServerResponse, sessionId: number, hash:
   sendJson(res, { diff: out });
 }
 
+// --- Session Stats API ---
+
+async function handleSessionStats(res: ServerResponse, sessionId: number, url: URL): Promise<void> {
+  const days = Math.min(Number(url.searchParams.get("days") ?? 30), 365);
+  const dateFilter = sql`AND created_at >= now() - make_interval(days => ${days})`;
+
+  const [summary, byModel] = await Promise.all([
+    sql`
+      SELECT
+        count(*)::int AS total,
+        count(*) FILTER (WHERE status = 'success')::int AS success,
+        count(*) FILTER (WHERE status = 'error')::int AS errors,
+        coalesce(sum(input_tokens), 0)::int AS input_tokens,
+        coalesce(sum(output_tokens), 0)::int AS output_tokens,
+        coalesce(sum(total_tokens), 0)::int AS total_tokens,
+        coalesce(avg(duration_ms) FILTER (WHERE status = 'success'), 0)::int AS avg_latency_ms
+      FROM api_request_stats
+      WHERE session_id = ${sessionId} ${dateFilter}
+    `,
+    sql`
+      SELECT provider, model,
+        count(*)::int AS requests,
+        count(*) FILTER (WHERE status = 'error')::int AS errors,
+        coalesce(sum(input_tokens), 0)::int AS input_tokens,
+        coalesce(sum(output_tokens), 0)::int AS output_tokens,
+        coalesce(sum(total_tokens), 0)::int AS total_tokens,
+        coalesce(avg(duration_ms) FILTER (WHERE status = 'success'), 0)::int AS avg_ms
+      FROM api_request_stats
+      WHERE session_id = ${sessionId} ${dateFilter}
+      GROUP BY provider, model
+      ORDER BY requests DESC
+    `,
+  ]);
+
+  sendJson(res, { summary: summary[0], by_model: byModel, days });
+}
+
 // --- Permissions API ---
 
 async function handleGetPermissions(res: ServerResponse, sessionId: number): Promise<void> {
@@ -751,7 +788,7 @@ export async function handleDashboardRequest(
     }
 
     // Parse session ID from path
-    const sessionMatch = pathname.match(/^\/api\/sessions\/(\d+)(\/messages|\/switch)?$/);
+    const sessionMatch = pathname.match(/^\/api\/sessions\/(\d+)(\/messages|\/switch|\/stats)?$/);
 
     if (pathname === "/api/overview" && method === "GET") {
       await handleOverview(req, res);
@@ -782,6 +819,10 @@ export async function handleDashboardRequest(
       const sub = sessionMatch[2];
       if (sub === "/messages" && method === "GET") {
         await handleSessionMessages(res, id, url);
+        return true;
+      }
+      if (sub === "/stats" && method === "GET") {
+        await handleSessionStats(res, id, url);
         return true;
       }
       if (!sub && method === "GET") {
