@@ -31,6 +31,17 @@ interface SessionStats {
   linesRemoved: number;
 }
 
+/** Parse "2.5k tokens", "15234 tokens", "1.2M tokens" → integer token count */
+function parseTokenCount(s: string): number | null {
+  const m = s.match(/^([\d,.]+)([kmKM]?)\s*tokens?$/i);
+  if (!m) return null;
+  const n = parseFloat(m[1].replace(/,/g, ""));
+  const suffix = m[2].toLowerCase();
+  if (suffix === "k") return Math.round(n * 1_000);
+  if (suffix === "m") return Math.round(n * 1_000_000);
+  return Math.round(n);
+}
+
 function formatElapsed(ms: number): string {
   const sec = Math.round(ms / 1000);
   if (sec < 60) return `${sec}s`;
@@ -189,6 +200,11 @@ export class StatusManager {
     if (!editRes.ok) {
       deleteTelegramMessage(token, chatId, state.messageId);
     }
+
+    // Record Claude Code token usage to api_request_stats (best-effort, non-blocking)
+    if (tokens) {
+      this.recordCliUsage(chatId, tokens, Date.now() - state.startedAt).catch(() => {});
+    }
   }
 
   startTypingForChat(chatId: string): void {
@@ -239,6 +255,32 @@ export class StatusManager {
     if (monitor) {
       monitor.stop();
       this.activeMonitors.delete(chatId);
+    }
+  }
+
+  /** Record CLI session token usage to api_request_stats after each completed response. */
+  private async recordCliUsage(chatId: string, tokenStr: string, durationMs: number): Promise<void> {
+    const totalTokens = parseTokenCount(tokenStr);
+    if (!totalTokens || totalTokens <= 0) return;
+
+    const sessionId = this.ctx.sessionId();
+    if (!sessionId || sessionId < 0) return;
+
+    try {
+      // Look up the model from session's cli_config; fall back to sonnet default
+      const rows = await this.ctx.sql`SELECT cli_config FROM sessions WHERE id = ${sessionId}`;
+      const cliConfig = rows[0]?.cli_config ?? {};
+      const model: string = cliConfig.model ?? "claude-sonnet-4-20250514";
+
+      await this.ctx.sql`
+        INSERT INTO api_request_stats
+          (session_id, chat_id, provider, model, operation, duration_ms, status, total_tokens)
+        VALUES
+          (${sessionId}, ${chatId}, 'anthropic', ${model}, 'cli', ${durationMs}, 'success', ${totalTokens})
+      `;
+      channelLogger.debug({ sessionId, model, totalTokens, durationMs }, "cli usage recorded");
+    } catch (err) {
+      channelLogger.warn({ err }, "failed to record cli usage stats");
     }
   }
 }

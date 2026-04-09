@@ -86,8 +86,11 @@ const MODEL_PRICES: Record<string, [number, number]> = {
   "qwen/qwen3-235b-a22b:free": [0, 0],
   "qwen/qwen3.6-plus:free": [0, 0],
   // Anthropic
+  "claude-opus-4-6": [15.0, 75.0],
+  "claude-sonnet-4-6": [3.0, 15.0],
   "claude-sonnet-4-20250514": [3.0, 15.0],
   "claude-haiku-4-5-20251001": [0.80, 4.0],
+  "claude-haiku-4-5": [0.80, 4.0],
 };
 
 function estimateCost(model: string, inputTokens: number, outputTokens: number): number {
