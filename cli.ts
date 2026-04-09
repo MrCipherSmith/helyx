@@ -644,16 +644,29 @@ function windowName(p: Project): string {
   return p.name;
 }
 
+async function startWindow(p: Project, first: boolean, usePanes: boolean, paneCount: number): Promise<void> {
+  const wname = windowName(p);
+  const cmd = `${BOT_DIR}/scripts/run-cli.sh ${p.path}`;
+
+  if (first) {
+    await run(["tmux", "new-session", "-d", "-s", TMUX_SESSION, "-n", wname, "-c", p.path]);
+    // Use window index 0 to avoid race with shell renaming the window title
+    await run(["tmux", "send-keys", "-t", `${TMUX_SESSION}:0`, cmd, "Enter"]);
+  } else if (usePanes) {
+    const direction = paneCount % 2 === 0 ? "-v" : "-h";
+    await run(["tmux", "split-window", direction, "-t", TMUX_SESSION, "-c", p.path]);
+    await run(["tmux", "send-keys", "-t", TMUX_SESSION, cmd, "Enter"]);
+    await run(["tmux", "select-layout", "-t", TMUX_SESSION, "tiled"]);
+  } else {
+    await run(["tmux", "new-window", "-t", TMUX_SESSION, "-n", wname, "-c", p.path]);
+    await run(["tmux", "send-keys", "-t", `${TMUX_SESSION}:${wname}`, cmd, "Enter"]);
+  }
+}
+
 async function tmuxStart() {
   const exists = await run(["tmux", "has-session", "-t", TMUX_SESSION], { silent: true });
-  if (exists.ok) {
-    console.log(`\n  ${c.yellow(`Session '${TMUX_SESSION}' already running.`)}`);
-    console.log(`  Attach: ${c.cyan(`tmux attach -t ${TMUX_SESSION}`)}`);
-    return;
-  }
 
   let projects = await loadProjects();
-
   if (projects.length === 0) {
     console.log(`\n  ${c.yellow("No projects configured.")}`);
     console.log(`  Add projects first:\n`);
@@ -664,6 +677,31 @@ async function tmuxStart() {
   }
 
   const usePanes = process.argv.includes("--split") || process.argv.includes("-s");
+
+  if (exists.ok) {
+    // Session already running — start any missing windows
+    console.log(`\n  ${c.bold("Session")} ${c.cyan(TMUX_SESSION)} ${c.dim("already running — starting missing windows...")}\n`);
+    let started = 0;
+    for (const p of projects) {
+      if (!existsSync(p.path)) continue;
+      const wname = windowName(p);
+      const winExists = await run(["tmux", "has-session", "-t", `${TMUX_SESSION}:${wname}`], { silent: true });
+      if (winExists.ok) {
+        console.log(`  ${c.dim("·")} ${wname} — already running`);
+      } else {
+        await run(["tmux", "new-window", "-t", TMUX_SESSION, "-n", wname, "-c", p.path]);
+        const cmd = `${BOT_DIR}/scripts/run-cli.sh ${p.path}`;
+        await run(["tmux", "send-keys", "-t", `${TMUX_SESSION}:${wname}`, cmd, "Enter"]);
+        console.log(`  ${c.green("✓")} ${wname} — started`);
+        started++;
+      }
+    }
+    if (started === 0) {
+      console.log(`\n  ${c.dim("All windows already running.")}`);
+    }
+    console.log(`\n  Attach: ${c.cyan(`tmux attach -t ${TMUX_SESSION}`)}`);
+    return;
+  }
 
   console.log(`\n  ${c.bold("Starting tmux session")} ${c.cyan(TMUX_SESSION)}${usePanes ? " (split panes)" : ""}\n`);
 
@@ -676,21 +714,8 @@ async function tmuxStart() {
     }
 
     const wname = windowName(p);
-    const cmd = `${BOT_DIR}/scripts/run-cli.sh ${p.path}`;
-
-    if (first) {
-      await run(["tmux", "new-session", "-d", "-s", TMUX_SESSION, "-n", wname, "-c", p.path]);
-      await run(["tmux", "send-keys", "-t", `${TMUX_SESSION}:${wname}`, cmd, "Enter"]);
-      first = false;
-    } else if (usePanes) {
-      const direction = paneCount % 2 === 0 ? "-v" : "-h";
-      await run(["tmux", "split-window", direction, "-t", TMUX_SESSION, "-c", p.path]);
-      await run(["tmux", "send-keys", "-t", TMUX_SESSION, cmd, "Enter"]);
-      await run(["tmux", "select-layout", "-t", TMUX_SESSION, "tiled"]);
-    } else {
-      await run(["tmux", "new-window", "-t", TMUX_SESSION, "-n", wname, "-c", p.path]);
-      await run(["tmux", "send-keys", "-t", `${TMUX_SESSION}:${wname}`, cmd, "Enter"]);
-    }
+    await startWindow(p, first, usePanes, paneCount);
+    first = false;
     paneCount++;
     console.log(`  ${c.green("✓")} ${wname} — ${p.path}`);
   }
