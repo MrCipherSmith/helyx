@@ -12,12 +12,15 @@ import { logger } from "../logger.ts";
 import { appendLog } from "../utils/stats.ts";
 import { getBotRef } from "./handlers.ts";
 
+const IMAGE_INLINE_MAX_BYTES = 5 * 1024 * 1024; // 5 MB — include base64 inline
+
 async function handleMedia(
   ctx: Context,
   fileId: string,
   description: string,
   caption?: string,
   filename?: string,
+  mimeType?: string,
 ): Promise<void> {
   const bot = getBotRef();
   const chatId = String(ctx.chat!.id);
@@ -42,6 +45,36 @@ async function handleMedia(
     : `${description}\n[file: ${hostPath}]`;
 
   if (route.mode === "cli") {
+    // Build attachment for forwarding to Claude
+    const isImage = (mimeType ?? "").startsWith("image/") || description.startsWith("Photo");
+    let attachment: Record<string, unknown>;
+
+    if (isImage) {
+      const fileData = await Bun.file(filePath).arrayBuffer();
+      if (fileData.byteLength <= IMAGE_INLINE_MAX_BYTES) {
+        // Small enough — include base64 so Claude can actually see the image
+        const base64 = Buffer.from(fileData).toString("base64");
+        attachment = {
+          type: "image",
+          base64,
+          mime: mimeType ?? "image/jpeg",
+          path: hostPath,
+          caption: caption ?? null,
+        };
+      } else {
+        // Too large — just pass the path, Claude can use Read tool
+        attachment = { type: "image", path: hostPath, mime: mimeType ?? "image/jpeg", caption: caption ?? null };
+      }
+    } else {
+      attachment = {
+        type: "file",
+        path: hostPath,
+        name: filename ?? null,
+        mime: mimeType ?? null,
+        caption: caption ?? null,
+      };
+    }
+
     await addMessage({
       sessionId: route.sessionId,
       projectPath: route.projectPath,
@@ -52,13 +85,14 @@ async function handleMedia(
     });
 
     await sql`
-      INSERT INTO message_queue (session_id, chat_id, from_user, content, message_id)
+      INSERT INTO message_queue (session_id, chat_id, from_user, content, message_id, attachments)
       VALUES (
         ${route.sessionId},
         ${chatId},
         ${ctx.from?.username ?? ctx.from?.first_name ?? "user"},
         ${text},
-        ${String(ctx.message?.message_id ?? "")}
+        ${String(ctx.message?.message_id ?? "")},
+        ${JSON.stringify([attachment])}
       )
     `;
     return;
@@ -115,7 +149,7 @@ export async function handlePhoto(ctx: Context): Promise<void> {
   if (!photos || photos.length === 0) return;
   // Get highest resolution
   const photo = photos[photos.length - 1];
-  await handleMedia(ctx, photo.file_id, "Photo", ctx.message?.caption);
+  await handleMedia(ctx, photo.file_id, "Photo", ctx.message?.caption, undefined, "image/jpeg");
 }
 
 export async function handleDocument(ctx: Context): Promise<void> {
@@ -127,6 +161,7 @@ export async function handleDocument(ctx: Context): Promise<void> {
     `Document (${doc.file_name ?? "file"}, ${doc.mime_type ?? "unknown"})`,
     ctx.message?.caption,
     doc.file_name ?? undefined,
+    doc.mime_type ?? undefined,
   );
 }
 

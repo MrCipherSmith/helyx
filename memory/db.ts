@@ -338,6 +338,13 @@ const migrations: Migration[] = [
       await tx`CREATE INDEX IF NOT EXISTS idx_permissions_status ON permission_requests(status)`;
     },
   },
+  {
+    version: 11,
+    name: "message_queue attachments column",
+    up: async (tx) => {
+      await tx`ALTER TABLE message_queue ADD COLUMN IF NOT EXISTS attachments JSONB`;
+    },
+  },
 ];
 
 // --- Public API ---

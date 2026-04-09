@@ -86,7 +86,7 @@ export class MessageQueuePoller {
             ORDER BY created_at
             LIMIT 10
           )
-          RETURNING id, chat_id, from_user, content, message_id, created_at
+          RETURNING id, chat_id, from_user, content, message_id, created_at, attachments
         `;
 
         for (const row of rows) {
@@ -104,6 +104,7 @@ export class MessageQueuePoller {
                 user: row.from_user,
                 message_id: row.message_id || undefined,
                 ts: new Date(row.created_at).toISOString(),
+                attachments: row.attachments ?? undefined,
               },
             },
           });
