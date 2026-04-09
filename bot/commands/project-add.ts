@@ -1,11 +1,22 @@
 import type { Context } from "grammy";
 import { join } from "path";
+import { existsSync } from "fs";
 import { setPendingInput } from "../handlers.ts";
 import { projectService } from "../../services/project-service.ts";
 import { forumService } from "../../services/forum-service.ts";
 import { CONFIG } from "../../config.ts";
 import { logger } from "../../logger.ts";
 import { replyInThread } from "../format.ts";
+
+const HOST_HOME = process.env.HOST_HOME ?? "";
+
+/** Convert a host-side absolute path to the container-visible path for existence checks. */
+function toContainerPath(hostPath: string): string {
+  if (HOST_HOME && hostPath.startsWith(HOST_HOME)) {
+    return "/host-home" + hostPath.slice(HOST_HOME.length);
+  }
+  return hostPath;
+}
 
 export async function handleProjectAdd(ctx: Context): Promise<void> {
   const text = ctx.message?.text ?? "";
@@ -27,6 +38,12 @@ export async function handleProjectAdd(ctx: Context): Promise<void> {
 async function addProject(ctx: Context, path: string): Promise<void> {
   if (!path.startsWith("/")) {
     await replyInThread(ctx, "Path must be absolute (start with /).");
+    return;
+  }
+
+  const containerPath = toContainerPath(path);
+  if (!existsSync(containerPath)) {
+    await replyInThread(ctx, `❌ Path not found: ${path}`);
     return;
   }
 
