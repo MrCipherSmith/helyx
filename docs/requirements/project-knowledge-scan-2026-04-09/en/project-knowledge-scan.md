@@ -54,10 +54,20 @@ Location: `memory/project-scanner.ts` (new file)
 
 **Skip if any of these exist as project memories:**
 ```sql
-SELECT COUNT(*) FROM memories 
-WHERE project_path = $path AND tags @> '["project"]'::jsonb AND type = 'fact'
+SELECT COUNT(*) FROM memories
+WHERE project_path = $1
+  AND tags @> ARRAY['project']
+  AND archived_at IS NULL
 ```
 If count > 0 → skip scan (already indexed).
+
+**Manual re-scan** first archives existing records:
+```sql
+UPDATE memories SET archived_at = now()
+WHERE project_path = $1
+  AND tags @> ARRAY['project']
+  AND archived_at IS NULL
+```
 
 **LLM synthesis step:**
 Send collected raw data to Claude Haiku with prompt:
@@ -84,17 +94,23 @@ rememberSmart(fact, "fact", ["project", category], chatId=0, projectPath)
 
 **Option A: In `mcp/tools.ts:set_session_name` handler**
 ```typescript
-// After session is adopted/registered:
-const hasKnowledge = await checkProjectKnowledge(projectPath);
-if (!hasKnowledge) {
-  scanProjectKnowledge(projectPath).catch(console.error); // non-blocking
+// After adoptOrRename() resolves:
+if (projectPath && session.id !== 0) {
+  void scanProjectKnowledge(projectPath).catch((e) =>
+    console.error("[project-scanner] scan failed:", e)
+  );
 }
 ```
 
 **Option B: In `/project_add` Telegram command**
-After creating the remote session, trigger scan in background.
+```typescript
+// After registerRemote():
+void scanProjectKnowledge(project.path).catch((e) =>
+  console.error("[project-scanner] scan failed:", e)
+);
+```
 
-Both should be implemented.
+Both are fire-and-forget (`void`, no `await`). Registration latency must not increase by more than 50ms.
 
 ### Files to change
 
@@ -134,7 +150,8 @@ Categories: `stack`, `architecture`, `setup`, `conventions`, `entry-points`
 
 ## Open Questions
 
-1. **Re-scan trigger**: How does a user force a re-scan after major project changes? Options: `/scan-project`, or drop all `["project"]` tagged facts and re-register.
-2. **Large READMEs**: Cap at 2000 chars of README to keep LLM context manageable?
-3. **Multiple package managers**: Projects with both `package.json` and `pyproject.toml` (monorepos)?
-4. **Privacy**: Project metadata is sent to Anthropic API (Claude Haiku). Acceptable for all users?
+1. **Re-scan trigger**: Manual re-scan via `/project_scan [path]` bot command + `scan_project_knowledge` MCP tool (archives existing records, runs fresh scan). Should both be implemented in the same PR?
+2. **TOML parsing**: `pyproject.toml` and `Cargo.toml` require a TOML parser not in the project. Options: (a) add `smol-toml`; (b) regex-extract name/version only; (c) skip TOML manifests in first pass.
+3. **Large READMEs**: Cap at 2000 chars, or extract only up to first `##` heading (more semantically precise)?
+4. **Multiple package managers**: Projects with both `package.json` and `pyproject.toml` — read both or stop at first found?
+5. **Standalone sessions**: Skip scan when `session.id === 0` (standalone). Confirmed: no project_path context exists.
