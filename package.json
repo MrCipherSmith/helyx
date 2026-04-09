@@ -6,7 +6,10 @@
     "start": "bun main.ts",
     "dev": "bun --watch main.ts",
     "migrate": "bun memory/db.ts",
-    "cli": "bun cli.ts"
+    "cli": "bun cli.ts",
+    "test": "cd tests && npx playwright test --config=playwright.config.ts",
+    "test:api": "cd tests && npx playwright test --config=playwright.config.ts --project=api",
+    "test:dashboard": "cd tests && npx playwright test --config=playwright.config.ts --project=dashboard"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
