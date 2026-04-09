@@ -82,6 +82,13 @@ export const api = {
     req<{ messages: { id: number; role: string; content: string; created_at: string }[]; total: number }>(
       `/api/sessions/${id}/messages?limit=${limit}&offset=${offset}`
     ),
+  globalStats: () =>
+    req<{
+      api: Record<string, {
+        summary: { total: number; success: number; errors: number; input_tokens: number; output_tokens: number; total_tokens: number; avg_latency_ms: number; estimated_cost: number };
+        byProvider: { provider: string; model: string; requests: number; input_tokens: number; output_tokens: number; tokens: number; avg_ms: number; cost: number }[];
+      }>;
+    }>("/api/stats"),
   switchSession: (id: number) => req<{ ok: boolean }>(`/api/sessions/${id}/switch`, { method: "POST", body: "{}" }),
   deleteSession: (id: number) => req<void>(`/api/sessions/${id}`, { method: "DELETE" }),
 
@@ -103,6 +110,13 @@ export const api = {
   },
 
   permissions: {
+    stats: (sessionId?: number, days = 30) =>
+      req<{
+        summary: { total: number; allowed: number; denied: number; always_allowed: number; pending: number };
+        top_tools: { tool_name: string; total: number; allowed: number; denied: number; always_allowed: number }[];
+        days: number;
+        session_id: number | null;
+      }>(`/api/permissions/stats?days=${days}${sessionId ? `&session_id=${sessionId}` : ""}`),
     list: (sessionId: number) => req<PermissionRequest[]>(`/api/permissions/${sessionId}`),
     respond: (id: number, response: "allow" | "deny") =>
       req<{ ok: boolean }>(`/api/permissions/${id}/respond`, {

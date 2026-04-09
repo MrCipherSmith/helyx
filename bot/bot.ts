@@ -26,11 +26,14 @@ export function createBot(): Bot {
     { command: "session", description: "Current session" },
     { command: "standalone", description: "Standalone mode" },
     { command: "pending", description: "Pending CLI permissions" },
+    { command: "permission_stats", description: "Permission history analytics" },
     // Memory
     { command: "remember", description: "Save to memory" },
     { command: "recall", description: "Search memory" },
     { command: "memories", description: "List memories" },
     { command: "forget", description: "Delete memory" },
+    { command: "memory_export", description: "Export memories as JSON" },
+    { command: "memory_import", description: "Import memories from JSON file" },
     // Monitoring
     { command: "stats", description: "API stats, tokens, transcriptions" },
     { command: "logs", description: "Session logs" },

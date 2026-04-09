@@ -62,13 +62,14 @@ export function getBotRef(): Bot {
 
 import { handleSessions, handleSwitch, handleSwitchTo, handleSessionInfo, handleRename, handleRemove, handleCleanup, handleStart, handleHelp } from "./commands/session.ts";
 import { handleRemember, handleRecall, handleMemories, handleForget, handleSummarize, handleClear } from "./commands/memory.ts";
-import { handleStats, handleLogs, handleStatus, handlePending, handleTools, handleSkills, handleCommands, handleHooks, handleRules } from "./commands/admin.ts";
+import { handleStats, handleLogs, handleStatus, handlePending, handleTools, handleSkills, handleCommands, handleHooks, handleRules, handlePermissionStats } from "./commands/admin.ts";
 import { handleAdd } from "./commands/add.ts";
 import { handleModel } from "./commands/model.ts";
 import { handleRemoteControl } from "./commands/remote-control.ts";
 import { handleProjects } from "./commands/projects.ts";
 import { handleProjectAdd } from "./commands/project-add.ts";
 import { handleProjectFacts, handleProjectScan } from "./commands/project-facts.ts";
+import { handleMemoryExport, handleMemoryImport } from "./commands/memory-export.ts";
 import { handleVoice, handlePhoto, handleDocument, handleVideo, handleVideoNote, handleSticker } from "./media.ts";
 import { handleCallbackQuery } from "./callbacks.ts";
 import { handleText } from "./text-handler.ts";
@@ -90,6 +91,13 @@ export function registerHandlers(b: Bot): void {
   b.command("recall", handleRecall);
   b.command("memories", handleMemories);
   b.command("forget", handleForget);
+  b.command("memory_export", handleMemoryExport);
+  b.command("memory_import", handleMemoryImport);
+  // Import via document with /memory_import caption
+  b.on("message:document", async (ctx) => {
+    const caption = ctx.message.caption ?? "";
+    if (caption.startsWith("/memory_import")) await handleMemoryImport(ctx);
+  });
 
   // Utility commands
   b.command("clear", handleClear);
@@ -100,6 +108,7 @@ export function registerHandlers(b: Bot): void {
   b.command("stats", handleStats);
   b.command("logs", handleLogs);
   b.command("pending", handlePending);
+  b.command("permission_stats", handlePermissionStats);
   b.command("tools", handleTools);
   b.command("skills", handleSkills);
   b.command("commands", handleCommands);

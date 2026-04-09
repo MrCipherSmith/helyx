@@ -3,6 +3,9 @@ import { api, type Session, type SessionDetail } from "../api";
 
 interface Props { session: Session }
 
+type PermStats = Awaited<ReturnType<typeof api.permissions.stats>>;
+type GlobalStats = Awaited<ReturnType<typeof api.globalStats>>;
+
 function relativeTime(iso: string) {
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
   if (diff < 60) return `${Math.floor(diff)}s ago`;
@@ -19,15 +22,25 @@ function fmtTokens(n: number): string {
 
 export function SessionMonitor({ session }: Props) {
   const [detail, setDetail] = useState<SessionDetail | null>(null);
+  const [globalStats, setGlobalStats] = useState<GlobalStats | null>(null);
+  const [permStats, setPermStats] = useState<PermStats | null>(null);
+  const [statsDays, setStatsDays] = useState(30);
+  const [statsWindow, setStatsWindow] = useState<"24h" | "startup" | "total">("24h");
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     try {
-      const det = await api.session(session.id);
+      const [det, gs, ps] = await Promise.all([
+        api.session(session.id),
+        api.globalStats(),
+        api.permissions.stats(session.id, statsDays),
+      ]);
       setDetail(det);
+      setGlobalStats(gs);
+      setPermStats(ps);
     } catch {}
     setLoading(false);
-  }, [session.id]);
+  }, [session.id, statsDays]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
@@ -79,17 +92,58 @@ export function SessionMonitor({ session }: Props) {
         )}
       </Section>
 
-      {/* Token usage */}
-      {tokens && tokens.api_calls > 0 && (
-        <Section title="Token Usage">
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-            <TokenStat label="API calls" value={String(tokens.api_calls)} />
-            <TokenStat label="Total" value={fmtTokens(tokens.total_tokens)} />
-            <TokenStat label="Input" value={fmtTokens(tokens.input_tokens)} />
-            <TokenStat label="Output" value={fmtTokens(tokens.output_tokens)} />
-          </div>
-        </Section>
-      )}
+      {/* API Stats (global) */}
+      {globalStats && (() => {
+        const w = globalStats.api[statsWindow];
+        if (!w || w.summary.total === 0) return null;
+        const s = w.summary;
+        return (
+          <Section title={
+            <div className="flex items-center justify-between w-full">
+              <span>API Stats (global)</span>
+              <select
+                className="text-[10px] text-[var(--tg-hint)] bg-transparent border border-black/10 rounded px-1"
+                value={statsWindow}
+                onChange={(e) => setStatsWindow(e.target.value as any)}
+              >
+                <option value="24h">24h</option>
+                <option value="startup">Since restart</option>
+                <option value="total">All time</option>
+              </select>
+            </div>
+          }>
+            <div className="grid grid-cols-3 gap-x-2 gap-y-2 mb-3">
+              <TokenStat label="Requests" value={String(s.total)} />
+              <TokenStat label="Errors" value={String(s.errors)} accent={s.errors > 0 ? "text-red-500" : undefined} />
+              <TokenStat label="Avg latency" value={`${s.avg_latency_ms}ms`} />
+              <TokenStat label="Total tokens" value={fmtTokens(s.total_tokens)} />
+              <TokenStat label="Input" value={fmtTokens(s.input_tokens)} />
+              <TokenStat label="Output" value={fmtTokens(s.output_tokens)} />
+            </div>
+            {s.estimated_cost > 0 && (
+              <div className="text-[10px] text-[var(--tg-hint)] mb-2">
+                Est. cost: <span className="font-semibold text-[var(--tg-text)]">${s.estimated_cost.toFixed(4)}</span>
+              </div>
+            )}
+            {w.byProvider.length > 0 && (
+              <div>
+                <div className="text-[10px] text-[var(--tg-hint)] mb-1">By model</div>
+                <div className="flex flex-col gap-1">
+                  {w.byProvider.map((m) => (
+                    <div key={`${m.provider}/${m.model}`} className="flex items-center gap-2 text-[10px]">
+                      <span className="truncate flex-1 font-mono">{m.model}</span>
+                      <span className="text-[var(--tg-hint)]">{m.requests}req</span>
+                      <span className="text-[var(--tg-hint)]">{fmtTokens(m.tokens)}tok</span>
+                      {m.cost > 0 && <span className="text-[var(--tg-hint)]">${m.cost.toFixed(3)}</span>}
+                      <span className="text-[var(--tg-hint)]">{m.avg_ms}ms</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </Section>
+        );
+      })()}
 
       {/* Recent tool calls */}
       {recentTools.length > 0 && (
@@ -108,6 +162,53 @@ export function SessionMonitor({ session }: Props) {
         </Section>
       )}
 
+      {/* Permission Analytics */}
+      {permStats && permStats.summary.total > 0 && (
+        <Section title={
+          <div className="flex items-center justify-between w-full">
+            <span>Permission History</span>
+            <select
+              className="text-[10px] text-[var(--tg-hint)] bg-transparent border border-black/10 rounded px-1"
+              value={statsDays}
+              onChange={(e) => setStatsDays(Number(e.target.value))}
+            >
+              <option value={7}>7d</option>
+              <option value={30}>30d</option>
+              <option value={90}>90d</option>
+            </select>
+          </div>
+        }>
+          {/* Summary row */}
+          <div className="flex gap-3 mb-3">
+            <PermSumStat label="Total" value={permStats.summary.total} color="text-[var(--tg-text)]" />
+            <PermSumStat label="Allowed" value={permStats.summary.allowed} color="text-green-600" />
+            <PermSumStat label="Always" value={permStats.summary.always_allowed} color="text-blue-500" />
+            <PermSumStat label="Denied" value={permStats.summary.denied} color="text-red-500" />
+            {permStats.summary.pending > 0 && (
+              <PermSumStat label="Pending" value={permStats.summary.pending} color="text-yellow-500" />
+            )}
+          </div>
+          {/* Top tools */}
+          <div className="flex flex-col gap-1">
+            {permStats.top_tools.slice(0, 8).map((t) => {
+              const pct = Math.round(((t.allowed + t.always_allowed) / t.total) * 100);
+              return (
+                <div key={t.tool_name} className="flex items-center gap-2">
+                  <code className="text-[10px] truncate flex-1 max-w-[120px]">{t.tool_name}</code>
+                  <div className="flex-1 h-1.5 bg-black/5 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-green-500/60 rounded-full"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <span className="text-[10px] text-[var(--tg-hint)] w-6 text-right">{t.total}</span>
+                </div>
+              );
+            })}
+          </div>
+        </Section>
+      )}
+
       {recentTools.length === 0 && (!tokens || tokens.api_calls === 0) && (
         <div className="px-4 py-6 text-center text-[var(--tg-hint)] text-xs">No activity yet</div>
       )}
@@ -115,10 +216,10 @@ export function SessionMonitor({ session }: Props) {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children }: { title: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="px-4 py-3 border-b border-black/5">
-      <div className="text-xs font-semibold text-[var(--tg-hint)] uppercase mb-2">{title}</div>
+      <div className="text-xs font-semibold text-[var(--tg-hint)] uppercase mb-2 flex items-center">{title}</div>
       {children}
     </div>
   );
@@ -133,11 +234,11 @@ function InfoRow({ label, value, mono }: { label: string; value: string; mono?: 
   );
 }
 
-function TokenStat({ label, value }: { label: string; value: string }) {
+function TokenStat({ label, value, accent }: { label: string; value: string; accent?: string }) {
   return (
     <div>
       <div className="text-[10px] text-[var(--tg-hint)]">{label}</div>
-      <div className="text-sm font-semibold">{value}</div>
+      <div className={`text-sm font-semibold ${accent ?? ""}`}>{value}</div>
     </div>
   );
 }
@@ -146,4 +247,13 @@ function ResponseBadge({ response }: { response: string | null }) {
   if (response === "allow") return <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />;
   if (response === "deny") return <span className="w-1.5 h-1.5 rounded-full bg-red-400 shrink-0" />;
   return <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 shrink-0" />;
+}
+
+function PermSumStat({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <div className="flex-1 text-center">
+      <div className={`text-sm font-bold ${color}`}>{value}</div>
+      <div className="text-[9px] text-[var(--tg-hint)]">{label}</div>
+    </div>
+  );
 }
