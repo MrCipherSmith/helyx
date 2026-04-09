@@ -78,6 +78,10 @@ export const api = {
   sessions: () => req<Session[]>("/api/sessions"),
   activeSession: () => req<Session | null>("/api/sessions/active"),
   session: (id: number) => req<SessionDetail>(`/api/sessions/${id}`),
+  sessionMessages: (id: number, limit = 50, offset = 0) =>
+    req<{ messages: { id: number; role: string; content: string; created_at: string }[]; total: number }>(
+      `/api/sessions/${id}/messages?limit=${limit}&offset=${offset}`
+    ),
   switchSession: (id: number) => req<{ ok: boolean }>(`/api/sessions/${id}/switch`, { method: "POST", body: "{}" }),
   deleteSession: (id: number) => req<void>(`/api/sessions/${id}`, { method: "DELETE" }),
 
