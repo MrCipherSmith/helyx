@@ -172,7 +172,7 @@ async function handleSessions(_req: IncomingMessage, res: ServerResponse): Promi
 
 async function handleSessionDetail(res: ServerResponse, id: number): Promise<void> {
   const [session] = await sql`
-    SELECT id, name, project_path, client_id, status, metadata, connected_at, last_active
+    SELECT id, name, project, project_path, source, client_id, status, metadata, connected_at, last_active
     FROM sessions WHERE id = ${id}
   `;
   if (!session) { sendError(res, "Session not found", 404); return; }
