@@ -290,11 +290,10 @@ Get your ID from [@userinfobot](https://t.me/userinfobot): send `/start` → it 
 ```
 LLM Provider for standalone mode:
 ❯ 1. Anthropic (best quality, requires API key)
-  2. OpenRouter (many models, free & paid)
-  3. Ollama (local, free)
+  2. Google AI (Gemma 4 models, free tier available)
+  3. OpenRouter (many models, free & paid)
+  4. Ollama (local, free)
 ```
-
-> **Planned:** Google AI (Gemma 4) will be re-added to the interactive wizard. Currently available via manual `.env` configuration (`GOOGLE_AI_API_KEY`, `GOOGLE_AI_MODEL`).
 
 This is for **standalone mode** (when no CLI session is active). Choose **Google AI** for Gemma 4 models, **OpenRouter** for variety, or **Ollama** for fully local.
 
