@@ -504,6 +504,16 @@ function DiffView({ diff }: { diff: string }) {
 // --- Main component ---
 export function GitBrowser({ session }: Props) {
   const [gitTab, setGitTab] = useState<GitTab>("files");
+  const [branch, setBranch] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.git.branches(session.id)
+      .then((r) => {
+        const current = r.branches.find((b) => b.current);
+        setBranch(current?.name ?? null);
+      })
+      .catch(() => {});
+  }, [session.id]);
 
   const tabs: { id: GitTab; label: string; icon: string }[] = [
     { id: "files", label: "Files", icon: "📁" },
@@ -513,6 +523,15 @@ export function GitBrowser({ session }: Props) {
 
   return (
     <div className="flex flex-col h-full">
+      {branch && (
+        <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-black/10 shrink-0"
+          style={{ background: "var(--tg-secondary-bg)" }}>
+          <svg className="w-3 h-3 opacity-50 shrink-0" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25zM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM4.25 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5z"/>
+          </svg>
+          <span className="text-xs font-mono opacity-70 truncate">{branch}</span>
+        </div>
+      )}
       <div className="flex border-b border-black/10 shrink-0" style={{ background: "var(--tg-secondary-bg)" }}>
         {tabs.map((t) => (
           <button key={t.id} onClick={() => setGitTab(t.id)}

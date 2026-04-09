@@ -4,6 +4,7 @@ import { join, extname, resolve } from "path";
 import { homedir } from "os";
 import { sql } from "../memory/db.ts";
 import { deleteSessionCascade } from "../sessions/delete.ts";
+import { sessionManager } from "../sessions/manager.ts";
 import { CONFIG } from "../config.ts";
 import { signJwt, verifyJwt, verifyTelegramLogin, verifyWebAppInitData, type AuthPayload } from "../dashboard/auth.ts";
 import { getApiStats, getTranscriptionStats, getMessageStats, getRecentErrors } from "../utils/stats.ts";

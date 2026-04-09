@@ -710,10 +710,14 @@ Backups saved to `~/backups/claude-bot/` (gzipped, last 7 retained).
 A mobile-first WebApp embedded in the bot, accessible via the **Dev Hub** menu button in Telegram.
 
 **Git Browser (📁):**
-- File tree (`git ls-tree`) with fuzzy search and file viewer
-- Commit log (`git log`) with one-click diff viewer
-- Working tree status (`git status`) with per-file diffs
-- Color-coded unified diff view (green/red/blue)
+- Hierarchical file tree with collapsible folders (sorted: dirs first, then files alphabetically)
+- File icons by extension (VSCode Material style — TS/JS/JSON/MD/PY/GO/RS + emoji for special files)
+- Current branch displayed in header (⎇ branch-name)
+- Live search/filter — matches anywhere in path, auto-expands matching folders
+- File viewer with syntax highlighting via `highlight.js` (12 languages), line numbers, dark theme
+- Commit log (`git log`) with author, relative date, short hash, one-click diff viewer
+- Working tree status (`git status`) with status badges (M/A/D/R) and per-file diffs
+- Color-coded unified diff view (green add / red remove / blue hunk headers)
 
 **Permission Manager (🔑):**
 - Real-time list of pending Claude permission requests (auto-polls every 3s)
@@ -725,15 +729,19 @@ A mobile-first WebApp embedded in the bot, accessible via the **Dev Hub** menu b
 - Session detail: project, source, path, connected time
 - Pending permission count at a glance
 
-**Auth:** Telegram `initData` HMAC-SHA256 verification (separate from desktop Login Widget), same JWT cookie mechanism.
+**Session Sidebar:**
+- All sessions listed with source badge (remote/local) and status dot
+- **Switch** button — changes the bot's active session for this user (calls `POST /api/sessions/:id/switch`)
+- **Delete** button — visible only for `source=local` non-active sessions
+
+**Auth:** Telegram `initData` HMAC-SHA256 verification. JWT returned in response body and sent as `Authorization: Bearer` header on all requests (Telegram WebView does not reliably persist cookies).
 
 **Infrastructure:**
 - Separate Vite app (`dashboard/webapp/`) built to `dashboard/webapp/dist/`, served at `/webapp/`
-- `${HOME}:/host-home:ro` Docker volume for git access to host project paths
-- `webapp-build` Dockerfile stage (parallel to dashboard build)
-- Bot menu button auto-configured via `setChatMenuButton` when `TELEGRAM_WEBHOOK_URL` is set
-
-See full spec: [docs/requirements/telegram-webapp-2026-04-06/en/telegram-webapp.md](docs/requirements/telegram-webapp-2026-04-06/en/telegram-webapp.md)
+- `/telegram/webapp/*` redirects to `/webapp/*` for BotFather URL compatibility
+- `${HOME}:/host-home:ro` Docker volume for git access to host project paths; all git commands use `-c safe.directory=*`
+- `webapp-build` Dockerfile stage (parallel to dashboard build); `git` installed in production image
+- Full specification: [`dashboard/webapp/SPEC.md`](dashboard/webapp/SPEC.md)
 
 ## Recent Changes (v1.12.0)
 

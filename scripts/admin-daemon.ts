@@ -65,8 +65,10 @@ async function runShell(cmd: string): Promise<{ ok: boolean; output: string }> {
   return { ok: proc.exitCode === 0, output: (stdout + stderr).trim() };
 }
 
-async function processCommand(row: { id: bigint; command: string; payload: Record<string, string> }): Promise<void> {
-  console.log(`[admin-daemon] executing: ${row.command} ${JSON.stringify(row.payload)}`);
+async function processCommand(row: { id: bigint; command: string; payload: any }): Promise<void> {
+  // postgres.js may return JSONB as string — normalize
+  const payload: Record<string, any> = typeof row.payload === "string" ? JSON.parse(row.payload) : row.payload;
+  console.log(`[admin-daemon] executing: ${row.command} ${JSON.stringify(payload)}`);
   let result: { ok: boolean; output: string };
 
   try {
@@ -82,7 +84,7 @@ async function processCommand(row: { id: bigint; command: string; payload: Recor
         break;
 
       case "proj_start": {
-        const { path } = row.payload;
+        const { path } = payload;
         if (!path) { result = { ok: false, output: "missing path" }; break; }
         const name = path.split("/").pop() ?? path;
         // Add window to existing tmux session or start a new session
@@ -100,7 +102,7 @@ async function processCommand(row: { id: bigint; command: string; payload: Recor
       }
 
       case "proj_stop": {
-        let { name, project_id } = row.payload;
+        let { name, project_id } = payload;
         if (!name && project_id) {
           const prows = await sql`SELECT name FROM projects WHERE id = ${project_id}`;
           if (prows.length > 0) name = prows[0].name;
