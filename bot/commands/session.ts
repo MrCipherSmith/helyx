@@ -6,6 +6,7 @@ import { sql } from "../../memory/db.ts";
 import { setPendingInput } from "../handlers.ts";
 import { setSwitchContext, clearSwitchContext } from "../switch-cache.ts";
 import { logger } from "../../logger.ts";
+import { sessionService } from "../../services/session-service.ts";
 
 export async function handleStart(ctx: Context): Promise<void> {
   await ctx.reply(
@@ -218,7 +219,7 @@ export async function handleRename(ctx: Context): Promise<void> {
     return;
   }
 
-  await sql`UPDATE sessions SET name = ${newName} WHERE id = ${sessionId}`;
+  await sessionService.rename(sessionId, newName);
   await ctx.reply(`Session #${sessionId} renamed to "${newName}"`);
 }
 
