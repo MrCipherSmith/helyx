@@ -177,7 +177,6 @@ export function SessionMonitor({ session }: Props) {
           <div className="grid grid-cols-3 gap-x-2 gap-y-2 mb-3">
             <TokenStat label="Requests" value={String(claudeUsage.total_requests)} />
             <TokenStat label="Output" value={fmtTokens(claudeUsage.total_output)} />
-            <TokenStat label="Est. cost" value={`$${claudeUsage.total_cost_usd.toFixed(2)}`} />
             <TokenStat label="Input" value={fmtTokens(claudeUsage.total_input)} />
             <TokenStat label="Cache write" value={fmtTokens(claudeUsage.total_cache_creation)} />
             <TokenStat label="Cache read" value={fmtTokens(claudeUsage.total_cache_read)} />
@@ -188,7 +187,6 @@ export function SessionMonitor({ session }: Props) {
                 <span className="truncate flex-1 font-mono">{m.model}</span>
                 <span className="text-[var(--tg-hint)]">{m.requests}req</span>
                 <span className="text-[var(--tg-hint)]">{fmtTokens(m.output_tokens)}out</span>
-                <span className="text-[var(--tg-hint)]">${m.cost_usd.toFixed(2)}</span>
               </div>
             ))}
           </div>
