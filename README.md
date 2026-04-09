@@ -82,8 +82,8 @@ This bot is a full **[Model Context Protocol](https://modelcontextprotocol.io) s
 - **Permission Forwarding** — CLI permission requests as inline buttons (Allow / Always / Deny), with input preview (file path + syntax-highlighted diff), synced with terminal
 - **Auto-Approve Permissions** — configure allowed tools in `settings.local.json` (`permissions.allow` patterns like `"Edit(*)"`, `"Bash(*)"`) to skip Telegram approval for trusted operations
 - **Statistics & Logging** — `/stats` for API usage and tokens, `/logs` for per-session request logs
-- **Web Dashboard** — real-time stats (by provider, project, operation, session), token charts, cost estimation, error drill-down with slide panel, log viewer with full message detail; **Projects page** for creating, starting, and stopping projects from the browser
-- **Telegram Mini App** — mobile WebApp (Dev Hub button) with git browser (files/log/status/diffs), permission manager (Allow/Deny/Always), and session monitor; auto-themed to Telegram's light/dark mode
+- **Web Dashboard** — real-time stats (by provider, project, operation, session), token charts, cost estimation including Anthropic CLI sessions, error drill-down with slide panel, log viewer with full message detail; **Projects page** for creating, starting, and stopping projects from the browser
+- **Telegram Mini App** — mobile WebApp (Dev Hub button) with git browser (files/log/status/diffs), permission manager (Allow/Deny/Always), and session monitor with API stats (by model, including Anthropic CLI usage); auto-themed to Telegram's light/dark mode
 
 ### Operations
 - **Health Endpoint** — `GET /health` with DB status, uptime, active sessions
@@ -659,6 +659,10 @@ Files and photos received without a caption now trigger a prompt: `📎 filename
 
 Bot exits immediately at startup if `ALLOWED_USERS` is empty and `ALLOW_ALL_USERS=true` is not set. No silent open-access deployments.
 
+### Anthropic CLI Usage Tracking
+
+Claude Code (Anthropic) model usage is now visible in the dashboard Stats page and the Telegram Mini App session monitor. When a CLI session response completes, the token count captured from the tmux/output monitor is recorded in `api_request_stats` with `provider=anthropic` and model from the session's `cli_config`. The "By model" table in both UIs now shows Sonnet/Opus/Haiku usage alongside standalone providers (Google AI, OpenRouter, Ollama).
+
 ### Media Forwarding
 
 Photos, documents, and videos forwarded to Claude via MCP channel with structured `attachments` field (`base64` for images ≤5 MB, `path` for larger files). Migration v11 adds `attachments JSONB` to `message_queue`.
@@ -703,7 +707,10 @@ Added `react` (set emoji reaction) and `edit_message` (edit a bot message) to th
 
 ### Telegram Mini App — Claude Dev Hub
 
-A mobile-first WebApp accessible via the **Dev Hub** button in Telegram. Features a git browser (file tree, commit log, diffs), permission manager (Allow/Deny/Always Allow from mobile), and session monitor.
+A mobile-first WebApp accessible via the **Dev Hub** button in Telegram. Features:
+- **Git browser** — file tree, commit log, status, diff viewer
+- **Permission manager** — Allow / Deny / Always Allow from mobile
+- **Session monitor** — live session status (working/idle/inactive), API stats by model (including Anthropic Claude usage from CLI sessions), token totals with cost estimate, permission history with tool breakdown, recent tool calls
 
 See [Mini App Guide](guides/webapp.md) for full feature description and auth details. Full technical spec: [`dashboard/webapp/SPEC.md`](dashboard/webapp/SPEC.md)
 
