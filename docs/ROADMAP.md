@@ -52,7 +52,19 @@
 - `/project_facts` and `/project_scan` Telegram commands
 - **Files changed:** `memory/project-scanner.ts` (new), `memory/summarizer.ts`, `mcp/tools.ts`, `bot/commands/`, `bot/handlers.ts`, `bot/bot.ts`
 
-### v1.14.0
+### v1.14.0 (previously v1.14.0)
+
+#### README Fixes — Ollama Optional, Missing Env Vars
+- Ollama marked as "Optional (semantic memory search only)" in prerequisites table
+- Added `CLAUDE_MODEL` and `MAX_TOKENS` to env vars table with defaults
+- Fixed `OLLAMA_URL` from required → optional
+- **PRD:** `docs/requirements/readme-env-vars-fix-2026-04-09/en/readme-env-vars-fix.md`
+
+#### E2E Test Suite + CI Workflow
+- Playwright test suite: 20 tests across API (sessions, git, auth) and dashboard (static serving, cache)
+- `globalSetup` generates JWT from bot token — no browser required for auth
+- `bun test` / `bun test:api` in root `package.json`
+- `.github/workflows/e2e.yml` ready — waiting for GitHub secrets to activate
 
 #### Google AI Provider in Setup Wizard
 - Re-added Google AI (Gemma 4) as interactive option in `claude-bot setup`
@@ -190,18 +202,6 @@ These items have PRDs written and are ready to implement.
   - `ALLOWED_USERS` — `446593035`
   - `TEST_BASE_URL` — `https://claude-bot.mrciphersmith.com`
 - **After:** E2E tests run automatically on every push to main and PRs
-
-### README Environment Variables and Prerequisites Fixes
-- **PRD:** `docs/requirements/readme-env-vars-fix-2026-04-09/en/readme-env-vars-fix.md`
-- **Issues:**
-  1. Ollama marked as "Required" when it's optional (only affects semantic memory search)
-  2. Missing `CLAUDE_MODEL` and `MAX_TOKENS` env vars in table
-  3. `OLLAMA_URL` marked as required when it's optional
-- **Solution:**
-  - Change Ollama prerequisite to "Optional (semantic memory search only)"
-  - Add `CLAUDE_MODEL` and `MAX_TOKENS` rows with correct defaults
-  - Change `OLLAMA_URL` from required to optional with default `http://localhost:11434`
-- **Key files:** `README.md`
 
 ---
 
