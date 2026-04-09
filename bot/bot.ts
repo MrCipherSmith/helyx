@@ -26,6 +26,7 @@ export function createBot(): Bot {
     { command: "session", description: "Current session" },
     { command: "standalone", description: "Standalone mode" },
     { command: "pending", description: "Pending CLI permissions" },
+    { command: "permission_stats", description: "Permission history analytics" },
     // Memory
     { command: "remember", description: "Save to memory" },
     { command: "recall", description: "Search memory" },

@@ -510,6 +510,42 @@ async function handleGetPermissions(res: ServerResponse, sessionId: number): Pro
   sendJson(res, rows);
 }
 
+async function handlePermissionStats(res: ServerResponse, url: URL): Promise<void> {
+  const sessionId = url.searchParams.get("session_id") ? Number(url.searchParams.get("session_id")) : null;
+  const days = Math.min(Number(url.searchParams.get("days") ?? 30), 365);
+
+  const sessionFilter = sessionId ? sql`AND session_id = ${sessionId}` : sql``;
+  const dateFilter = sql`AND created_at >= now() - make_interval(days => ${days})`;
+
+  const [summary, topTools] = await Promise.all([
+    sql`
+      SELECT
+        count(*)::int AS total,
+        count(*) FILTER (WHERE response = 'allow')::int AS allowed,
+        count(*) FILTER (WHERE response = 'deny')::int AS denied,
+        count(*) FILTER (WHERE response = 'always')::int AS always_allowed,
+        count(*) FILTER (WHERE response IS NULL)::int AS pending
+      FROM permission_requests
+      WHERE true ${sessionFilter} ${dateFilter}
+    `,
+    sql`
+      SELECT
+        tool_name,
+        count(*)::int AS total,
+        count(*) FILTER (WHERE response = 'allow')::int AS allowed,
+        count(*) FILTER (WHERE response = 'deny')::int AS denied,
+        count(*) FILTER (WHERE response = 'always')::int AS always_allowed
+      FROM permission_requests
+      WHERE true ${sessionFilter} ${dateFilter}
+      GROUP BY tool_name
+      ORDER BY total DESC
+      LIMIT 15
+    `,
+  ]);
+
+  sendJson(res, { summary: summary[0], top_tools: topTools, days, session_id: sessionId });
+}
+
 async function handleRespondPermission(req: IncomingMessage, res: ServerResponse, id: number): Promise<void> {
   const { response } = await parseBody(req);
   if (!["allow", "deny"].includes(response)) { sendError(res, "response must be allow or deny"); return; }
@@ -843,6 +879,10 @@ export async function handleDashboardRequest(
     }
 
     // Permissions API
+    if (pathname === "/api/permissions/stats" && method === "GET") {
+      await handlePermissionStats(res, url);
+      return true;
+    }
     const permMatch = pathname.match(/^\/api\/permissions\/(\d+)$/);
     if (permMatch) {
       const id = Number(permMatch[1]);

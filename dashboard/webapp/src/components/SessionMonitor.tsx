@@ -3,6 +3,8 @@ import { api, type Session, type SessionDetail } from "../api";
 
 interface Props { session: Session }
 
+type PermStats = Awaited<ReturnType<typeof api.permissions.stats>>;
+
 function relativeTime(iso: string) {
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
   if (diff < 60) return `${Math.floor(diff)}s ago`;
@@ -19,15 +21,21 @@ function fmtTokens(n: number): string {
 
 export function SessionMonitor({ session }: Props) {
   const [detail, setDetail] = useState<SessionDetail | null>(null);
+  const [permStats, setPermStats] = useState<PermStats | null>(null);
+  const [permDays, setPermDays] = useState(30);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     try {
-      const det = await api.session(session.id);
+      const [det, ps] = await Promise.all([
+        api.session(session.id),
+        api.permissions.stats(session.id, permDays),
+      ]);
       setDetail(det);
+      setPermStats(ps);
     } catch {}
     setLoading(false);
-  }, [session.id]);
+  }, [session.id, permDays]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
@@ -108,6 +116,53 @@ export function SessionMonitor({ session }: Props) {
         </Section>
       )}
 
+      {/* Permission Analytics */}
+      {permStats && permStats.summary.total > 0 && (
+        <Section title={
+          <div className="flex items-center justify-between w-full">
+            <span>Permission History</span>
+            <select
+              className="text-[10px] text-[var(--tg-hint)] bg-transparent border border-black/10 rounded px-1"
+              value={permDays}
+              onChange={(e) => setPermDays(Number(e.target.value))}
+            >
+              <option value={7}>7d</option>
+              <option value={30}>30d</option>
+              <option value={90}>90d</option>
+            </select>
+          </div>
+        }>
+          {/* Summary row */}
+          <div className="flex gap-3 mb-3">
+            <PermSumStat label="Total" value={permStats.summary.total} color="text-[var(--tg-text)]" />
+            <PermSumStat label="Allowed" value={permStats.summary.allowed} color="text-green-600" />
+            <PermSumStat label="Always" value={permStats.summary.always_allowed} color="text-blue-500" />
+            <PermSumStat label="Denied" value={permStats.summary.denied} color="text-red-500" />
+            {permStats.summary.pending > 0 && (
+              <PermSumStat label="Pending" value={permStats.summary.pending} color="text-yellow-500" />
+            )}
+          </div>
+          {/* Top tools */}
+          <div className="flex flex-col gap-1">
+            {permStats.top_tools.slice(0, 8).map((t) => {
+              const pct = Math.round(((t.allowed + t.always_allowed) / t.total) * 100);
+              return (
+                <div key={t.tool_name} className="flex items-center gap-2">
+                  <code className="text-[10px] truncate flex-1 max-w-[120px]">{t.tool_name}</code>
+                  <div className="flex-1 h-1.5 bg-black/5 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-green-500/60 rounded-full"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <span className="text-[10px] text-[var(--tg-hint)] w-6 text-right">{t.total}</span>
+                </div>
+              );
+            })}
+          </div>
+        </Section>
+      )}
+
       {recentTools.length === 0 && (!tokens || tokens.api_calls === 0) && (
         <div className="px-4 py-6 text-center text-[var(--tg-hint)] text-xs">No activity yet</div>
       )}
@@ -115,10 +170,10 @@ export function SessionMonitor({ session }: Props) {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children }: { title: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="px-4 py-3 border-b border-black/5">
-      <div className="text-xs font-semibold text-[var(--tg-hint)] uppercase mb-2">{title}</div>
+      <div className="text-xs font-semibold text-[var(--tg-hint)] uppercase mb-2 flex items-center">{title}</div>
       {children}
     </div>
   );
@@ -146,4 +201,13 @@ function ResponseBadge({ response }: { response: string | null }) {
   if (response === "allow") return <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />;
   if (response === "deny") return <span className="w-1.5 h-1.5 rounded-full bg-red-400 shrink-0" />;
   return <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 shrink-0" />;
+}
+
+function PermSumStat({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <div className="flex-1 text-center">
+      <div className={`text-sm font-bold ${color}`}>{value}</div>
+      <div className="text-[9px] text-[var(--tg-hint)]">{label}</div>
+    </div>
+  );
 }

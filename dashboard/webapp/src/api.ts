@@ -103,6 +103,13 @@ export const api = {
   },
 
   permissions: {
+    stats: (sessionId?: number, days = 30) =>
+      req<{
+        summary: { total: number; allowed: number; denied: number; always_allowed: number; pending: number };
+        top_tools: { tool_name: string; total: number; allowed: number; denied: number; always_allowed: number }[];
+        days: number;
+        session_id: number | null;
+      }>(`/api/permissions/stats?days=${days}${sessionId ? `&session_id=${sessionId}` : ""}`),
     list: (sessionId: number) => req<PermissionRequest[]>(`/api/permissions/${sessionId}`),
     respond: (id: number, response: "allow" | "deny") =>
       req<{ ok: boolean }>(`/api/permissions/${id}/respond`, {

@@ -187,6 +187,64 @@ export async function handlePending(ctx: Context): Promise<void> {
   await ctx.reply(`Pending permissions (${rows.length}):\n\n` + lines.join("\n\n"));
 }
 
+export async function handlePermissionStats(ctx: Context): Promise<void> {
+  const text = ctx.message?.text ?? "";
+  const arg = text.replace(/^\/permission_stats\s*/, "").trim();
+  const days = Math.min(Number(arg) || 30, 365);
+
+  const [summary, topTools] = await Promise.all([
+    sql`
+      SELECT
+        count(*)::int AS total,
+        count(*) FILTER (WHERE response = 'allow')::int AS allowed,
+        count(*) FILTER (WHERE response = 'deny')::int AS denied,
+        count(*) FILTER (WHERE response = 'always')::int AS always_allowed,
+        count(*) FILTER (WHERE response IS NULL)::int AS pending
+      FROM permission_requests
+      WHERE created_at >= now() - make_interval(days => ${days})
+    `,
+    sql`
+      SELECT
+        tool_name,
+        count(*)::int AS total,
+        count(*) FILTER (WHERE response = 'allow')::int AS allowed,
+        count(*) FILTER (WHERE response = 'deny')::int AS denied,
+        count(*) FILTER (WHERE response = 'always')::int AS always_allowed
+      FROM permission_requests
+      WHERE created_at >= now() - make_interval(days => ${days})
+      GROUP BY tool_name
+      ORDER BY total DESC
+      LIMIT 10
+    `,
+  ]);
+
+  const s = summary[0];
+  if (!s || s.total === 0) {
+    await ctx.reply(`No permission requests in the last ${days} days.`);
+    return;
+  }
+
+  const pct = (n: number) => s.total > 0 ? `${Math.round((n / s.total) * 100)}%` : "0%";
+
+  const lines: string[] = [
+    `Permission Stats (${days}d)\n`,
+    `Total: ${s.total}`,
+    `✅ Allowed: ${s.allowed} (${pct(s.allowed)})`,
+    `🔵 Always: ${s.always_allowed} (${pct(s.always_allowed)})`,
+    `❌ Denied: ${s.denied} (${pct(s.denied)})`,
+    ...(s.pending > 0 ? [`⏳ Pending: ${s.pending}`] : []),
+    "",
+    "Top tools:",
+  ];
+
+  for (const t of topTools) {
+    const bar = "█".repeat(Math.round((t.total / (topTools[0]?.total || 1)) * 8)).padEnd(8, "░");
+    lines.push(`${bar} ${t.tool_name} (${t.total})`);
+  }
+
+  await ctx.reply(lines.join("\n"), { parse_mode: undefined });
+}
+
 export async function handleTools(ctx: Context): Promise<void> {
   const chatId = String(ctx.chat!.id);
   const activeId = await sessionManager.getActiveSession(chatId);
