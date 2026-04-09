@@ -60,14 +60,29 @@ async function addProject(ctx: Context, path: string): Promise<void> {
     isNew = false;
   }
 
-  // FR-2: create forum topic if forum is configured and project has none
+  // FR-2: create forum topic if forum is configured; verify existing topic is alive
   const forumChatId = await forumService.getForumChatId();
   if (forumChatId) {
     const { sql } = await import("../../memory/db.ts");
     const topicRow = await sql`SELECT forum_topic_id FROM projects WHERE id = ${project.id}`;
     const existingTopicId = topicRow[0]?.forum_topic_id as number | null | undefined;
 
-    if (!existingTopicId) {
+    // Verify existing topic is still alive in Telegram
+    let topicAlive = false;
+    if (existingTopicId) {
+      try {
+        await ctx.api.sendMessage(Number(forumChatId), `📌 ${project.name}`, {
+          message_thread_id: existingTopicId,
+        } as any);
+        topicAlive = true;
+      } catch {
+        // Topic was deleted — clear stale ID and recreate below
+        await sql`UPDATE projects SET forum_topic_id = NULL WHERE id = ${project.id}`;
+        logger.info({ project: project.name, topicId: existingTopicId }, "project-add: stale forum_topic_id cleared");
+      }
+    }
+
+    if (!topicAlive) {
       try {
         const allProjects = await sql`SELECT id FROM projects WHERE forum_topic_id IS NOT NULL`;
         const colorIndex = allProjects.length;
@@ -77,7 +92,7 @@ async function addProject(ctx: Context, path: string): Promise<void> {
         } as any);
         await replyInThread(ctx, isNew
           ? `Added: ${project.name}\n${project.path}\n\nUse /projects to start it.`
-          : `✅ Forum topic created for existing project: ${project.name}`
+          : `✅ Forum topic recreated for: ${project.name}`
         );
       } catch (err) {
         logger.error({ err, project: project.name }, "project-add: failed to create forum topic");
@@ -89,7 +104,7 @@ async function addProject(ctx: Context, path: string): Promise<void> {
     } else {
       await replyInThread(ctx, isNew
         ? `Added: ${project.name}\n${project.path}\n\nUse /projects to start it.`
-        : `Project already exists: ${path}`
+        : `Project already exists: ${path} (forum topic already active)`
       );
     }
   } else {
