@@ -1,19 +1,17 @@
 import type { Bot } from "grammy";
 import { join } from "path";
 import { mkdir } from "fs/promises";
+import { CONFIG } from "../config.ts";
 
-const INBOX_DIR = process.env.DOWNLOADS_DIR ?? join(
-  process.env.HOME ?? "/tmp",
-  ".claude/channels/telegram/inbox",
-);
+const INBOX_DIR = CONFIG.DOWNLOADS_DIR ?? join("/tmp", ".claude/channels/telegram/inbox");
 
 // Map container path to host path for CLI sessions
-const HOST_DOWNLOADS_DIR = process.env.HOST_DOWNLOADS_DIR;
+const HOST_DOWNLOADS_DIR = CONFIG.HOST_DOWNLOADS_DIR;
 
 /** Return the path as seen from the host (for CLI sessions) */
 export function toHostPath(containerPath: string): string {
-  if (!HOST_DOWNLOADS_DIR || !process.env.DOWNLOADS_DIR) return containerPath;
-  return containerPath.replace(process.env.DOWNLOADS_DIR, HOST_DOWNLOADS_DIR);
+  if (!HOST_DOWNLOADS_DIR || !CONFIG.DOWNLOADS_DIR) return containerPath;
+  return containerPath.replace(CONFIG.DOWNLOADS_DIR, HOST_DOWNLOADS_DIR);
 }
 
 export async function downloadFile(
