@@ -50,4 +50,10 @@ async function addProject(ctx: Context, path: string): Promise<void> {
   const project = rows[0];
   await sessionManager.registerRemote(project.id as number, project.path as string, project.name as string);
   await ctx.reply(`Added: ${project.name}\n${project.path}\n\nUse /projects to start it.`);
+
+  // Trigger async project knowledge scan (non-blocking)
+  const { scanProjectKnowledge } = await import("../../memory/project-scanner.ts");
+  scanProjectKnowledge(project.path as string).catch((err) =>
+    console.error("[project-add] scan error:", err)
+  );
 }

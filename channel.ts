@@ -535,7 +535,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "remember",
-      description: "Save information to long-term memory",
+      description: "Save project knowledge or a decision to long-term memory. Use type='fact' for architectural discoveries, non-obvious constraints, important file roles, setup quirks, and conventions that future sessions should know. Write content as a self-contained sentence.",
       inputSchema: {
         type: "object",
         properties: {

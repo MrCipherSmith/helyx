@@ -43,6 +43,8 @@ export function createBot(): Bot {
     { command: "remote_control", description: "tmux bots status (Kill/Start)" },
     { command: "projects", description: "List projects (Start/Stop)" },
     { command: "project_add", description: "Add project to config" },
+    { command: "project_facts", description: "Show project knowledge facts" },
+    { command: "project_scan", description: "Scan project for knowledge (rescan)" },
     // Maintenance
     { command: "clear", description: "Clear context" },
     { command: "summarize", description: "Summarize conversation" },

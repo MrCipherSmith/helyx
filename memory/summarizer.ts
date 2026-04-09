@@ -4,6 +4,73 @@ import { getCachedMessages, clearCache, type Message } from "./short-term.ts";
 import { summarizeConversation, generateResponse } from "../claude/client.ts";
 import { CONFIG } from "../config.ts";
 
+/**
+ * Extract durable project knowledge from session messages and work summary.
+ * Saves facts that are true about the project in general, not session-specific events.
+ */
+export async function extractProjectKnowledge(
+  sessionId: number,
+  projectPath: string | null,
+  workSummary: string,
+  messages: { role: string; content: string }[],
+): Promise<void> {
+  if (!projectPath || messages.length < 4) return;
+
+  const msgSample = messages
+    .slice(-30)
+    .map((m) => `${m.role}: ${m.content.slice(0, 300)}`)
+    .join("\n");
+
+  const prompt = `Given this Claude Code session, extract durable project knowledge facts.
+
+Rules:
+- Facts must be TRUE about the project in general, not this specific session
+- Each fact under 150 characters, one per line, no bullets
+- 0-6 facts maximum; return empty if nothing durable to extract
+- Skip anything already in the work summary as session-specific
+
+Good facts:
+- "Auth uses Bearer token from DASHBOARD_AUTH_TOKEN env var (dashboard/auth.ts)"
+- "Port 3847 serves both MCP and dashboard via the same HTTP server"
+- "migrations must be append-only — never modify existing SQL"
+
+Bad facts (session-specific — skip these):
+- "Fixed voice download bug today"
+- "Added react tool to channel.ts in this session"
+
+## Work summary (what happened this session)
+${workSummary.slice(0, 1000)}
+
+## Session messages (sample)
+${msgSample}`;
+
+  try {
+    const response = await generateResponse(
+      [{ role: "user", content: prompt }],
+      "You extract durable project knowledge. Output only fact lines, one per line. Empty output is valid.",
+    );
+
+    const lines = response.split("\n").filter((l) => l.trim().length > 10 && l.trim().length <= 200);
+    if (lines.length === 0) return;
+
+    for (const line of lines.slice(0, 6)) {
+      await rememberSmart({
+        source: "api",
+        sessionId: null,
+        chatId: "",
+        type: "fact",
+        content: line.trim(),
+        tags: ["project", "learned"],
+        projectPath,
+      }).catch((err) => console.error("[summarizer] extractProjectKnowledge fact save failed:", err));
+    }
+
+    console.log(`[summarizer] extracted ${lines.length} project knowledge facts for ${projectPath}`);
+  } catch (err) {
+    console.error("[summarizer] extractProjectKnowledge failed:", err);
+  }
+}
+
 // Idle timers: "sessionId:chatId" -> timeout handle
 const idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -301,6 +368,14 @@ export async function summarizeWork(sessionId: number): Promise<boolean> {
   } catch (memErr) {
     console.error(`[summarizer] session #${sessionId}: failed to save memory:`, memErr);
   }
+
+  // 5b. Extract durable project knowledge (non-blocking, best-effort)
+  extractProjectKnowledge(
+    sessionId,
+    projectPath,
+    summary,
+    messages.map((r) => ({ role: r.role as string, content: r.content as string })),
+  ).catch((err) => console.error(`[summarizer] session #${sessionId}: extractProjectKnowledge error:`, err));
 
   // 6-8. Archive messages/tool calls and mark session terminated atomically
   try {

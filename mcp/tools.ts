@@ -5,21 +5,22 @@ import { sql } from "../memory/db.ts";
 import { embedSafe } from "../memory/embeddings.ts";
 import { chunkText } from "../utils/chunk.ts";
 import { tryAutoLink } from "./pending-expects.ts";
+import { scanProjectKnowledge } from "../memory/project-scanner.ts";
 
 // Tool definitions for MCP registration
 export const TOOL_DEFINITIONS = [
   // Memory tools
   {
     name: "remember",
-    description: "Save information to long-term memory with semantic embedding for future retrieval",
+    description: "Save project knowledge or a decision to long-term memory. Use type='fact' for architectural discoveries, non-obvious constraints, important file roles, setup quirks, and conventions that future sessions should know. Use type='decision' for explicit architectural choices. Write content as a self-contained sentence (assume no session context).",
     inputSchema: {
       type: "object" as const,
       properties: {
-        content: { type: "string", description: "The information to remember" },
+        content: { type: "string", description: "Self-contained fact or decision. Example: 'Port 3847 serves both MCP server and dashboard via the same HTTP server'" },
         type: {
           type: "string",
           enum: ["fact", "summary", "decision", "note"],
-          description: "Type of memory",
+          description: "fact=project knowledge for future sessions | decision=architectural choice | summary=session recap | note=temporary observation",
           default: "note",
         },
         tags: {
@@ -155,6 +156,17 @@ export const TOOL_DEFINITIONS = [
         project_path: { type: "string", description: "Working directory path" },
       },
       required: ["name"],
+    },
+  },
+  {
+    name: "scan_project_knowledge",
+    description: "Scan a project directory and save structural knowledge (tech stack, architecture, entry points, setup) to long-term memory. Run this to force a rescan after major changes.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        project_path: { type: "string", description: "Project directory to scan. Defaults to current session project_path." },
+        force_rescan: { type: "boolean", description: "Archive existing project knowledge and rescan from scratch (default: false)" },
+      },
     },
   },
   {
@@ -347,7 +359,31 @@ export async function executeTool(
       if (!clientId) return text("No session context");
       const session = await sessionManager.adoptOrRename(clientId, sessionName, projectPath);
       const label = session.id === -1 ? "standalone" : `#${session.id}`;
+
+      // Trigger auto-scan on first registration (non-blocking)
+      if (projectPath && session.id !== -1 && session.id !== 0) {
+        scanProjectKnowledge(projectPath).catch((err) =>
+          console.error("[tools] project scan error:", err)
+        );
+      }
+
       return text(`Session ${label} named "${sessionName}"`);
+    }
+
+    case "scan_project_knowledge": {
+      // Resolve project path from session if not provided
+      let scanPath = args.project_path as string | undefined;
+      if (!scanPath && clientId) {
+        const sid = sessionManager.getSessionIdByClient(clientId);
+        if (sid !== undefined) {
+          const sess = await sessionManager.get(sid);
+          scanPath = sess?.projectPath ?? undefined;
+        }
+      }
+      if (!scanPath) return text("No project_path available — pass it explicitly or switch to a project session");
+      const forceRescan = Boolean(args.force_rescan);
+      const count = await scanProjectKnowledge(scanPath, forceRescan);
+      return text(`Scanned ${scanPath}: ${count} knowledge facts saved`);
     }
 
     case "search_project_context": {

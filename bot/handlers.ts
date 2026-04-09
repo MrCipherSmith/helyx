@@ -68,6 +68,7 @@ import { handleModel } from "./commands/model.ts";
 import { handleRemoteControl } from "./commands/remote-control.ts";
 import { handleProjects } from "./commands/projects.ts";
 import { handleProjectAdd } from "./commands/project-add.ts";
+import { handleProjectFacts, handleProjectScan } from "./commands/project-facts.ts";
 import { handleVoice, handlePhoto, handleDocument, handleVideo, handleVideoNote, handleSticker } from "./media.ts";
 import { handleCallbackQuery } from "./callbacks.ts";
 import { handleText } from "./text-handler.ts";
@@ -113,6 +114,8 @@ export function registerHandlers(b: Bot): void {
   b.command("remote_control", handleRemoteControl);
   b.command("projects", handleProjects);
   b.command("project_add", handleProjectAdd);
+  b.command("project_facts", handleProjectFacts);
+  b.command("project_scan", handleProjectScan);
 
   // Inline keyboard callbacks (permissions, session switch)
   b.on("callback_query:data", handleCallbackQuery);
