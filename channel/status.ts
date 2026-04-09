@@ -176,12 +176,15 @@ export class StatusManager {
       channelLogger.info({ project: this.ctx.projectName }, "tmux monitor started");
       return;
     }
+    channelLogger.debug({ project: this.ctx.projectName }, "tmux monitor not found, trying output file");
 
     const outputFile = getOutputFilePath(this.ctx.projectName);
     monitor = await startOutputMonitor(outputFile, onStatus);
     if (monitor) {
       this.activeMonitors.set(chatId, monitor);
       channelLogger.info({ outputFile }, "output monitor started");
+    } else {
+      channelLogger.debug({ project: this.ctx.projectName, outputFile }, "no monitor available — status will only show elapsed time");
     }
   }
 

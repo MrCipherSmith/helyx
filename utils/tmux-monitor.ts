@@ -12,24 +12,46 @@ export interface TmuxMonitorHandle {
 
 type StatusCallback = (status: string) => void;
 
-/** Check if tmux is available and session exists */
-async function tmuxSessionExists(sessionName: string): Promise<boolean> {
+/** Resolve actual tmux target for a project name.
+ *  Tries:
+ *  1. Exact session: <name>
+ *  2. Window in "bots" session: bots:<name> (prefix match — tmux accepts partial window names)
+ *  Returns the resolved target string or null if not found.
+ */
+async function resolveTmuxTarget(projectName: string): Promise<string | null> {
+  // 1. Try exact session name
   try {
-    const proc = Bun.spawn(["tmux", "has-session", "-t", sessionName], {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    return (await proc.exited) === 0;
-  } catch {
-    return false;
-  }
+    const proc = Bun.spawn(["tmux", "has-session", "-t", projectName], { stdout: "pipe", stderr: "pipe" });
+    if ((await proc.exited) === 0) return projectName;
+  } catch {}
+
+  // 2. Try as window in "bots" session (claude-bot up uses bots:<window>)
+  const botsTarget = `bots:${projectName}`;
+  try {
+    const proc = Bun.spawn(["tmux", "has-session", "-t", botsTarget], { stdout: "pipe", stderr: "pipe" });
+    if ((await proc.exited) === 0) return botsTarget;
+  } catch {}
+
+  // 3. List all windows in "bots" and find one that starts with projectName
+  try {
+    const proc = Bun.spawn(
+      ["tmux", "list-windows", "-t", "bots", "-F", "#W"],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    const out = await new Response(proc.stdout).text();
+    await proc.exited;
+    const window = out.split("\n").map((l) => l.trim()).find((w) => w && w.startsWith(projectName));
+    if (window) return `bots:${window}`;
+  } catch {}
+
+  return null;
 }
 
 /** Capture last N lines from tmux pane */
-async function captureTmux(sessionName: string, lines = 40): Promise<string> {
+async function captureTmux(target: string, lines = 40): Promise<string> {
   try {
     const proc = Bun.spawn(
-      ["tmux", "capture-pane", "-t", sessionName, "-p", "-S", `-${lines}`],
+      ["tmux", "capture-pane", "-t", target, "-p", "-S", `-${lines}`],
       { stdout: "pipe", stderr: "pipe" },
     );
     const output = await new Response(proc.stdout).text();
@@ -156,11 +178,11 @@ function parseStatus(output: string): string | null {
 
 /** Start monitoring a tmux session, calling onStatus with updates */
 export async function startTmuxMonitor(
-  sessionName: string,
+  projectName: string,
   onStatus: StatusCallback,
 ): Promise<TmuxMonitorHandle | null> {
-  const exists = await tmuxSessionExists(sessionName);
-  if (!exists) return null;
+  const target = await resolveTmuxTarget(projectName);
+  if (!target) return null;
 
   let running = true;
   let lastStatus = "";
@@ -168,7 +190,7 @@ export async function startTmuxMonitor(
   const poll = async () => {
     while (running) {
       try {
-        const output = await captureTmux(sessionName);
+        const output = await captureTmux(target);
         const status = parseStatus(output);
 
         if (status && status !== lastStatus) {
