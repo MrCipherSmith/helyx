@@ -205,7 +205,7 @@ claude-bot setup
 | **Docker** | Yes | [docs.docker.com/engine/install](https://docs.docker.com/engine/install/) |
 | **Git** | Yes | `apt install git` / `brew install git` |
 | **Claude Code** | For CLI sessions | `npm install -g @anthropic-ai/claude-code` |
-| **Ollama** | For embeddings | [ollama.com/download](https://ollama.com/download) |
+| **Ollama** | Optional (semantic memory search only) | [ollama.com/download](https://ollama.com/download) |
 
 <details>
 <summary><strong>Ubuntu / Debian</strong></summary>
@@ -290,10 +290,11 @@ Get your ID from [@userinfobot](https://t.me/userinfobot): send `/start` → it 
 ```
 LLM Provider for standalone mode:
 ❯ 1. Anthropic (best quality, requires API key)
-  2. Google AI (Gemma 4 models, free tier available)
-  3. OpenRouter (many models, free & paid)
-  4. Ollama (local, free)
+  2. OpenRouter (many models, free & paid)
+  3. Ollama (local, free)
 ```
+
+> **Planned:** Google AI (Gemma 4) will be re-added to the interactive wizard. Currently available via manual `.env` configuration (`GOOGLE_AI_API_KEY`, `GOOGLE_AI_MODEL`).
 
 This is for **standalone mode** (when no CLI session is active). Choose **Google AI** for Gemma 4 models, **OpenRouter** for variety, or **Ollama** for fully local.
 
@@ -563,8 +564,8 @@ Adapters are registered at startup (`adapters/index.ts`). The `sessions/router.t
 | `recall` | Semantic search through memories |
 | `forget` / `list_memories` | Manage memories |
 | `reply` | Send message to Telegram chat |
-| `react` | Set emoji reaction |
-| `edit_message` | Edit bot's message |
+| `react` | Set emoji reaction _(planned)_ |
+| `edit_message` | Edit bot's message _(planned)_ |
 | `list_sessions` / `session_info` | Session management |
 | `set_session_name` | Name the current session |
 | `search_project_context` | Semantic search over project work summaries and prior session context |
@@ -607,6 +608,8 @@ ollama pull nomic-embed-text
 | `TELEGRAM_BOT_TOKEN` | Yes | From [@BotFather](https://t.me/BotFather) |
 | `ALLOWED_USERS` | Yes | Comma-separated Telegram user IDs |
 | `ANTHROPIC_API_KEY` | No | Anthropic API (best quality standalone) |
+| `CLAUDE_MODEL` | No | Claude model for CLI sessions (default: `claude-sonnet-4-20250514`) |
+| `MAX_TOKENS` | No | Max tokens per response (default: `8192`) |
 | `GOOGLE_AI_API_KEY` | No | Google AI API ([aistudio.google.com](https://aistudio.google.com/apikey)) |
 | `GOOGLE_AI_MODEL` | No | Google AI model (default: `gemma-4-31b-it`) |
 | `OPENROUTER_API_KEY` | No | OpenRouter API (many models available) |
@@ -614,7 +617,7 @@ ollama pull nomic-embed-text
 | `GROQ_API_KEY` | No | Voice transcription ([free](https://console.groq.com)) |
 | `DATABASE_URL` | Yes | PostgreSQL connection string |
 | `POSTGRES_PASSWORD` | Yes | PostgreSQL password (required in docker-compose) |
-| `OLLAMA_URL` | Yes | Ollama API URL |
+| `OLLAMA_URL` | No | Ollama API URL (default: `http://localhost:11434`) |
 | `PORT` | No | Bot port (default: `3847`) |
 | `JWT_SECRET` | No | JWT signing secret (auto-derived from bot token if not set) |
 | `SECURE_COOKIES` | No | Force Secure flag on cookies (`true`/`false`, auto-detected) |
