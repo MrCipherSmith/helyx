@@ -5,7 +5,7 @@
 [![Bun](https://img.shields.io/badge/runtime-Bun-f9f1e1)](https://bun.sh)
 [![TypeScript](https://img.shields.io/badge/lang-TypeScript-3178c6)](https://www.typescriptlang.org)
 
-[Dashboard](examples/dashboard.md) | [Usage Patterns](examples/usage-patterns.md) | [Cloudflare Tunnel](guides/cloudflare-tunnel-setup.md) | [Remote Laptop Setup](guides/remote-laptop-setup.md) | [CLAUDE.md Guide](CLAUDE_MD_GUIDE.md)
+[Dashboard](examples/dashboard.md) | [Usage Patterns](examples/usage-patterns.md) | [Cloudflare Tunnel](guides/cloudflare-tunnel-setup.md) | [Remote Laptop Setup](guides/remote-laptop-setup.md) | [Usage Scenarios](guides/usage-scenarios.md) | [Memory](guides/memory.md) | [MCP Tools](guides/mcp-tools.md) | [Mini App](guides/webapp.md) | [CLAUDE.md Guide](CLAUDE_MD_GUIDE.md)
 
 > **Control Claude Code from Telegram.** Multi-session bot with persistent projects, dual-layer memory, voice transcription, image analysis, and real-time CLI progress monitoring.
 
@@ -319,94 +319,9 @@ Press Enter to accept defaults. The wizard then:
 
 ### Usage Scenarios
 
-#### Laptop (single project)
+Four ways to run claude-bot: **Laptop** (simple, single project), **Laptop+tmux** (with live Telegram monitoring), **Server** (multiple projects, always-on tmux), and **Remote** (laptop → server via SSH tunnel).
 
-The simplest setup — run everything locally, connect one project at a time:
-
-```bash
-# 1. Start the bot (if not already running)
-claude-bot docker-start
-
-# 2. Open your project and connect
-cd ~/my-project
-claude-bot connect .
-```
-
-That's it. Open Telegram, type `/sessions` — your project is there. Send messages, voice, photos — Claude CLI processes them in the terminal.
-
-You can stop the session with `Ctrl+C` and connect a different project at any time.
-
-> **Note:** Without `--tmux`, you won't see real-time status updates in Telegram, but everything else works — messages, permissions, replies.
-
-#### Laptop with tmux (single project, full monitoring)
-
-Same as above, but with live progress monitoring in Telegram:
-
-```bash
-claude-bot docker-start
-cd ~/my-project
-claude-bot connect . --tmux
-```
-
-Telegram will show what Claude is doing in real-time ("Reading files...", "Running tests...", etc.).
-
-#### Server (multiple projects, always-on)
-
-For headless servers where you want multiple projects running 24/7:
-
-```bash
-# Add your projects
-claude-bot add ~/project-a
-claude-bot add ~/project-b
-claude-bot add ~/project-c
-
-# Start all at once in tmux (separate windows)
-claude-bot up -a
-
-# Or all visible at once as split panes
-claude-bot up -a -s
-```
-
-Each project runs in its own tmux window (or pane with `-s`) with auto-restart. Connect via SSH anytime:
-
-```bash
-ssh user@server -t "tmux attach -t bots"
-```
-
-Manage projects:
-
-```bash
-claude-bot ps                     # List configured projects
-claude-bot up -a                  # Start all + attach (windows)
-claude-bot up -a -s               # Start all + attach (split panes)
-claude-bot down                   # Stop all + clean DB
-claude-bot remove project-b       # Remove from config
-```
-
-**Tmux navigation** (press `Ctrl+B`, release, then the key):
-
-| Mode | Key | Action |
-|---|---|---|
-| Windows | `N` / `P` | Next / previous window |
-| Windows | `W` | List all windows |
-| Windows | `0-9` | Jump to window by number |
-| Panes | `Arrow` | Move to adjacent pane |
-| Panes | `Z` | Zoom current pane (toggle fullscreen) |
-| Panes | `Q` + digit | Jump to pane by number |
-| Both | `D` | Detach from tmux |
-
-#### Remote (laptop → server)
-
-Run the bot on a server, connect from your laptop via SSH tunnel:
-
-```bash
-# On your laptop:
-claude-bot remote
-```
-
-The wizard will guide you through SSH tunnel setup and MCP registration.
-
-See [Remote Laptop Setup](guides/remote-laptop-setup.md) for a full walkthrough of both connection methods (SSH tunnel and HTTP-only), manual setup steps, and troubleshooting.
+See [Usage Scenarios](guides/usage-scenarios.md) for full setup instructions and tmux navigation reference.
 
 ### CLI Commands
 
@@ -556,30 +471,9 @@ Adapters are registered at startup (`adapters/index.ts`). The `sessions/router.t
 
 ## MCP Tools
 
-### HTTP Server (port 3847)
+Claude Bot exposes MCP tools via HTTP server (`port 3847`) and the stdio channel adapter. Key tools: `remember`, `recall`, `reply`, `update_status`, `list_sessions`, `search_project_context`.
 
-| Tool | Description |
-|------|-------------|
-| `remember` | Save to long-term memory with semantic embedding |
-| `recall` | Semantic search through memories |
-| `forget` / `list_memories` | Manage memories |
-| `reply` | Send message to Telegram chat |
-| `react` | Set emoji reaction _(planned)_ |
-| `edit_message` | Edit bot's message _(planned)_ |
-| `list_sessions` / `session_info` | Session management |
-| `set_session_name` | Name the current session |
-| `search_project_context` | Semantic search over project work summaries and prior session context |
-
-### Channel Adapter (stdio, per-session)
-
-| Tool | Description |
-|------|-------------|
-| `reply` | Send to Telegram with HTML rendering |
-| `update_status` | Update live status message |
-| `remember` / `recall` / `forget` / `list_memories` | Direct DB memory access |
-| `search_project_context` | Semantic search over long-term project context |
-
-### Health Endpoint
+See [MCP Tools Reference](guides/mcp-tools.md) for the full tool list with parameters and usage examples.
 
 ```
 GET http://localhost:3847/health
@@ -712,41 +606,9 @@ Backups saved to `~/backups/claude-bot/` (gzipped, last 7 retained).
 
 ### Telegram Mini App — Claude Dev Hub
 
-A mobile-first WebApp embedded in the bot, accessible via the **Dev Hub** menu button in Telegram.
+A mobile-first WebApp accessible via the **Dev Hub** button in Telegram. Features a git browser (file tree, commit log, diffs), permission manager (Allow/Deny/Always Allow from mobile), and session monitor.
 
-**Git Browser (📁):**
-- Hierarchical file tree with collapsible folders (sorted: dirs first, then files alphabetically)
-- File icons by extension (VSCode Material style — TS/JS/JSON/MD/PY/GO/RS + emoji for special files)
-- Current branch displayed in header (⎇ branch-name)
-- Live search/filter — matches anywhere in path, auto-expands matching folders
-- File viewer with syntax highlighting via `highlight.js` (12 languages), line numbers, dark theme
-- Commit log (`git log`) with author, relative date, short hash, one-click diff viewer
-- Working tree status (`git status`) with status badges (M/A/D/R) and per-file diffs
-- Color-coded unified diff view (green add / red remove / blue hunk headers)
-
-**Permission Manager (🔑):**
-- Real-time list of pending Claude permission requests (auto-polls every 3s)
-- ✅ Allow / ❌ Deny / ♾️ Always Allow per request
-- Always Allow writes pattern to `settings.local.json` directly from mobile
-
-**Session Monitor (📊):**
-- Live status: Working (pulsing) / Idle / Inactive based on `last_active`
-- Session detail: project, source, path, connected time
-- Pending permission count at a glance
-
-**Session Sidebar:**
-- All sessions listed with source badge (remote/local) and status dot
-- **Switch** button — changes the bot's active session for this user (calls `POST /api/sessions/:id/switch`)
-- **Delete** button — visible only for `source=local` non-active sessions
-
-**Auth:** Telegram `initData` HMAC-SHA256 verification. JWT returned in response body and sent as `Authorization: Bearer` header on all requests (Telegram WebView does not reliably persist cookies).
-
-**Infrastructure:**
-- Separate Vite app (`dashboard/webapp/`) built to `dashboard/webapp/dist/`, served at `/webapp/`
-- `/telegram/webapp/*` redirects to `/webapp/*` for BotFather URL compatibility
-- `${HOME}:/host-home:ro` Docker volume for git access to host project paths; all git commands use `-c safe.directory=*`
-- `webapp-build` Dockerfile stage (parallel to dashboard build); `git` installed in production image
-- Full specification: [`dashboard/webapp/SPEC.md`](dashboard/webapp/SPEC.md)
+See [Mini App Guide](guides/webapp.md) for full feature description and auth details. Full technical spec: [`dashboard/webapp/SPEC.md`](dashboard/webapp/SPEC.md)
 
 ## Recent Changes (v1.12.0)
 
