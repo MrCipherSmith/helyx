@@ -19,6 +19,10 @@ export interface ToolContext {
   token: () => string | undefined;
   ollamaUrl: string;
   embeddingModel: string;
+  /** Forum supergroup chat ID — when set, replies include message_thread_id */
+  forumChatId?: () => string | null;
+  /** Forum topic ID for this project */
+  forumTopicId?: () => number | null;
 }
 
 async function embed(text: string, ollamaUrl: string, embeddingModel: string): Promise<number[]> {
@@ -178,14 +182,29 @@ export function registerTools(
           return text("TELEGRAM_BOT_TOKEN not set");
         }
 
-        const activeCheck = await ctx.sql`
-          SELECT active_session_id FROM chat_sessions WHERE chat_id = ${chatId}
-        `;
-        const isActive = activeCheck.length === 0 || activeCheck[0].active_session_id === sessionId;
+        // In forum mode: inject message_thread_id so reply lands in the project topic
+        const forumChatId = ctx.forumChatId?.();
+        const forumTopicId = ctx.forumTopicId?.();
+        const isForumReply = forumChatId && forumTopicId && chatId === forumChatId;
+        const forumExtra = isForumReply ? { message_thread_id: forumTopicId } : {};
+
+        // In DM mode: check if this session is the active one (background session badge)
+        const isBackground = !isForumReply && (() => {
+          // async check done inline via flag below
+          return false;
+        })();
+
+        let activeSessionId: number | null = null;
+        if (!isForumReply) {
+          const activeCheck = await ctx.sql`
+            SELECT active_session_id FROM chat_sessions WHERE chat_id = ${chatId}
+          `;
+          activeSessionId = activeCheck[0]?.active_session_id ?? null;
+        }
+        const isActiveDm = isForumReply || activeSessionId === null || activeSessionId === sessionId;
 
         let replyText = String(args!.text);
-        const isBackground = !isActive && sessionId;
-        if (isBackground) {
+        if (!isActiveDm && sessionId) {
           const bgName = ctx.sessionName() || `#${sessionId}`;
           replyText = `📌 **${bgName}**\n\n${replyText}\n\n_/switch ${sessionId} — switch_`;
           channelLogger.info({ sessionId, name: bgName }, "reply from background session");
@@ -194,12 +213,13 @@ export function registerTools(
         channelLogger.info({ chatId, preview: replyText.slice(0, 50) }, "sending reply");
         const htmlText = markdownToTelegramHtml(replyText);
 
-        const replyMarkup = isBackground
+        const replyMarkup = (!isActiveDm && sessionId)
           ? { inline_keyboard: [[{ text: "↩️ Switch and reply", callback_data: `switch:${sessionId}` }]] }
           : undefined;
 
         let res = await sendTelegramMessage(token, chatId, htmlText, {
           parse_mode: "HTML",
+          ...forumExtra,
           ...(replyMarkup && { reply_markup: replyMarkup }),
         });
 
@@ -300,10 +320,15 @@ export function registerTools(
         if (args!.diff) {
           const token = ctx.token();
           if (token) {
+            const fChatId = ctx.forumChatId?.();
+            const fTopicId = ctx.forumTopicId?.();
+            const diffExtra = (fChatId && fTopicId && chatId === fChatId)
+              ? { message_thread_id: fTopicId }
+              : {};
             const htmlDiff = markdownToTelegramHtml(String(args!.diff));
-            let res = await sendTelegramMessage(token, chatId, htmlDiff, { parse_mode: "HTML" });
+            let res = await sendTelegramMessage(token, chatId, htmlDiff, { parse_mode: "HTML", ...diffExtra });
             if (!res.ok && res.errorBody?.includes("can't parse entities")) {
-              await sendTelegramMessage(token, chatId, String(args!.diff));
+              await sendTelegramMessage(token, chatId, String(args!.diff), diffExtra);
             }
           }
         }

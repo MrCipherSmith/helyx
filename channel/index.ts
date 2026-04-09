@@ -133,6 +133,8 @@ registerTools(
     token: () => ENV.TELEGRAM_BOT_TOKEN,
     ollamaUrl: ENV.OLLAMA_URL,
     embeddingModel: ENV.EMBEDDING_MODEL,
+    forumChatId: () => forumChatId,
+    forumTopicId: () => forumTopicId,
   },
   statusMgr,
   () => sessionMgr.touchIdleTimer(triggerSummarize),
