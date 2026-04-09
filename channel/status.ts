@@ -7,6 +7,7 @@ import { startTypingRaw, type TypingHandle } from "../utils/typing.ts";
 import { startTmuxMonitor, type TmuxMonitorHandle } from "../utils/tmux-monitor.ts";
 import { startOutputMonitor, getOutputFilePath, type OutputMonitorHandle } from "../utils/output-monitor.ts";
 import { editTelegramMessage, deleteTelegramMessage, sendTelegramMessage } from "./telegram.ts";
+import { channelLogger } from "../logger.ts";
 
 export interface StatusContext {
   sql: postgres.Sql;
@@ -52,7 +53,7 @@ export class StatusManager {
   async sendStatusMessage(chatId: string, stage: string): Promise<string | null> {
     const token = this.ctx.token();
     if (!token) {
-      process.stderr.write(`[status] no TELEGRAM_BOT_TOKEN\n`);
+      channelLogger.warn("sendStatusMessage: no TELEGRAM_BOT_TOKEN");
       return "no TELEGRAM_BOT_TOKEN";
     }
 
@@ -81,7 +82,7 @@ export class StatusManager {
     try {
       const result = await sendTelegramMessage(token, chatId, `⏳ ${prefix}${stage}`);
       if (!result.ok) {
-        process.stderr.write(`[status] sendMessage error: ${result.errorBody}\n`);
+        channelLogger.warn({ error: result.errorBody }, "sendStatusMessage failed");
         return `Telegram API error`;
       }
 
@@ -95,10 +96,10 @@ export class StatusManager {
       };
       state.timer = setInterval(() => this.editStatusMessage(state), 5000);
       this.activeStatus.set(chatId, state);
-      process.stderr.write(`[status] created for chat ${chatId}, msg ${state.messageId}\n`);
+      channelLogger.info({ chatId, messageId: state.messageId }, "status message created");
       return null;
     } catch (e) {
-      process.stderr.write(`[status] sendMessage exception: ${e}\n`);
+      channelLogger.error({ err: e }, "sendStatusMessage exception");
       return `Exception: ${e}`;
     }
   }
@@ -172,7 +173,7 @@ export class StatusManager {
     let monitor = await startTmuxMonitor(this.ctx.projectName, onStatus);
     if (monitor) {
       this.activeMonitors.set(chatId, monitor);
-      process.stderr.write(`[channel] tmux monitor started for ${this.ctx.projectName}\n`);
+      channelLogger.info({ project: this.ctx.projectName }, "tmux monitor started");
       return;
     }
 
@@ -180,7 +181,7 @@ export class StatusManager {
     monitor = await startOutputMonitor(outputFile, onStatus);
     if (monitor) {
       this.activeMonitors.set(chatId, monitor);
-      process.stderr.write(`[channel] output monitor started: ${outputFile}\n`);
+      channelLogger.info({ outputFile }, "output monitor started");
     }
   }
 

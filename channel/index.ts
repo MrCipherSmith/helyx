@@ -17,6 +17,7 @@ import { StatusManager } from "./status.ts";
 import { PermissionHandler } from "./permissions.ts";
 import { MessageQueuePoller } from "./poller.ts";
 import { registerTools } from "./tools.ts";
+import { channelLogger } from "../logger.ts";
 
 // --- Env ---
 const ChannelEnvSchema = z.object({
@@ -33,7 +34,7 @@ const ChannelEnvSchema = z.object({
 const channelEnvResult = ChannelEnvSchema.safeParse(process.env);
 if (!channelEnvResult.success) {
   for (const issue of channelEnvResult.error.issues) {
-    process.stderr.write(`[channel] config error — ${issue.path.join(".")}: ${issue.message}\n`);
+    channelLogger.fatal({ field: issue.path.join("."), message: issue.message }, "config error");
   }
   process.exit(1);
 }
@@ -154,12 +155,12 @@ async function main() {
         body: JSON.stringify({ session_id: sessionMgr.sessionId }),
       });
       if (res.ok) {
-        process.stderr.write(`[channel] registered expect for session #${sessionMgr.sessionId}\n`);
+        channelLogger.info({ sessionId: sessionMgr.sessionId }, "registered expect for session");
       } else {
-        process.stderr.write(`[channel] expect registration failed: ${res.status}\n`);
+        channelLogger.warn({ sessionId: sessionMgr.sessionId, status: res.status }, "expect registration failed");
       }
     } catch (err: any) {
-      process.stderr.write(`[channel] expect registration error: ${err?.message}\n`);
+      channelLogger.error({ err }, "expect registration error");
     }
   }
 
@@ -167,7 +168,7 @@ async function main() {
 
   const transport = new StdioServerTransport();
   await mcp.connect(transport);
-  process.stderr.write(`[channel] connected to Claude Code via stdio\n`);
+  channelLogger.info({ sessionId: sessionMgr.sessionId }, "connected to Claude Code via stdio");
 
   poller.start();
 
@@ -196,7 +197,7 @@ async function main() {
 }
 
 main().catch(async (err) => {
-  process.stderr.write(`[channel] fatal: ${err}\n`);
+  channelLogger.fatal({ err }, "channel fatal error");
   await sessionMgr.markDisconnected(() => poller.releasePollingLock());
   await sql.end();
   process.exit(1);

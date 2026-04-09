@@ -8,6 +8,7 @@ import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprot
 import { markdownToTelegramHtml } from "../bot/format.ts";
 import type { StatusManager } from "./status.ts";
 import { sendTelegramMessage } from "./telegram.ts";
+import { channelLogger } from "../logger.ts";
 
 export interface ToolContext {
   sql: postgres.Sql;
@@ -173,7 +174,7 @@ export function registerTools(
 
         const token = ctx.token();
         if (!token) {
-          process.stderr.write(`[channel] reply failed: no TELEGRAM_BOT_TOKEN\n`);
+          channelLogger.warn("reply: no TELEGRAM_BOT_TOKEN");
           return text("TELEGRAM_BOT_TOKEN not set");
         }
 
@@ -187,10 +188,10 @@ export function registerTools(
         if (isBackground) {
           const bgName = ctx.sessionName() || `#${sessionId}`;
           replyText = `📌 **${bgName}**\n\n${replyText}\n\n_/switch ${sessionId} — switch_`;
-          process.stderr.write(`[channel] reply from background session ${bgName}\n`);
+          channelLogger.info({ sessionId, name: bgName }, "reply from background session");
         }
 
-        process.stderr.write(`[channel] sending reply to ${chatId}: ${replyText.slice(0, 50)}...\n`);
+        channelLogger.info({ chatId, preview: replyText.slice(0, 50) }, "sending reply");
         const htmlText = markdownToTelegramHtml(replyText);
 
         const replyMarkup = isBackground
@@ -206,16 +207,16 @@ export function registerTools(
           if (res.errorBody?.includes("can't parse entities")) {
             res = await sendTelegramMessage(token, chatId, replyText, replyMarkup ? { reply_markup: replyMarkup } : undefined);
             if (!res.ok) {
-              process.stderr.write(`[channel] Telegram API error: ${res.errorBody}\n`);
+              channelLogger.warn({ error: res.errorBody }, "reply: Telegram API error (fallback)");
               return text(`Telegram API error`);
             }
           } else {
-            process.stderr.write(`[channel] Telegram API error: ${res.errorBody}\n`);
+            channelLogger.warn({ error: res.errorBody }, "reply: Telegram API error");
             return text(`Telegram API error`);
           }
         }
 
-        process.stderr.write(`[channel] reply sent OK\n`);
+        channelLogger.info({ chatId }, "reply sent OK");
         if (sessionId) {
           await ctx.sql`
             INSERT INTO messages (session_id, project_path, chat_id, role, content)
@@ -240,7 +241,7 @@ export function registerTools(
         });
         if (!res.ok) {
           const err = await res.text();
-          process.stderr.write(`[channel] react error: ${res.status} ${err}\n`);
+          channelLogger.warn({ status: res.status, error: err }, "react: Telegram API error");
           return text(`Telegram API error: ${res.status}`);
         }
         return text(`Reaction ${args!.emoji} set on message ${args!.message_id}`);
@@ -274,7 +275,7 @@ export function registerTools(
             });
             if (!res.ok) return text(`Telegram API error: ${res.status}`);
           } else {
-            process.stderr.write(`[channel] edit_message error: ${res.status} ${errBody}\n`);
+            channelLogger.warn({ status: res.status, error: errBody }, "edit_message: Telegram API error");
             return text(`Telegram API error: ${res.status}`);
           }
         }
@@ -363,7 +364,7 @@ export function registerTools(
           ORDER BY embedding <=> ${embStr}::vector
           LIMIT ${limit}
         `;
-        process.stderr.write(`[search] project_context query="${query.slice(0, 50)}" project=${searchPath} → ${rows.length} results\n`);
+        channelLogger.info({ queryPrefix: query.slice(0, 50), project: searchPath, resultCount: rows.length }, "search_project_context");
         if (rows.length === 0) return text("No project context found.");
         return text(JSON.stringify({
           results: rows.map((r: any) => ({

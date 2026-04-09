@@ -11,6 +11,7 @@ import { isIndexing } from "../memory/long-term.ts";
 import { addSSEClient, removeSSEClient, getSSEClientCount } from "./notification-broadcaster.ts";
 import { sessionService } from "../services/session-service.ts";
 import { projectService } from "../services/project-service.ts";
+import { logger } from "../logger.ts";
 
 const DIST_DIR = join(import.meta.dirname, "../dashboard/dist");
 const WEBAPP_DIST_DIR = join(import.meta.dirname, "../dashboard/webapp/dist");
@@ -598,27 +599,27 @@ async function handleAlwaysAllowPermission(req: IncomingMessage, res: ServerResp
 async function handleAuthWebApp(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const { initData } = await parseBody(req);
   if (!initData || typeof initData !== "string") {
-    console.log("[webapp-auth] missing initData");
+    logger.warn("webapp-auth: missing initData");
     sendError(res, "initData required"); return;
   }
 
   const params = new URLSearchParams(initData);
   const authDate = Number(params.get("auth_date"));
   const age = Math.round(Date.now() / 1000 - authDate);
-  console.log(`[webapp-auth] initData received, auth_date age=${age}s, hash=${params.get("hash")?.slice(0, 8)}...`);
+  logger.info({ age, hashPrefix: params.get("hash")?.slice(0, 8) }, "webapp-auth: initData received");
 
   const user = verifyWebAppInitData(initData);
   if (!user) {
-    console.log(`[webapp-auth] verification failed — age=${age}s (limit=3600), token=${CONFIG.TELEGRAM_BOT_TOKEN.slice(0, 10)}...`);
+    logger.warn({ age }, "webapp-auth: verification failed");
     sendError(res, "Invalid initData", 401); return;
   }
 
   const allowed = CONFIG.ALLOWED_USERS.map(Number);
-  console.log(`[webapp-auth] user=${user.id} (${user.username}), allowed=${allowed.join(",")}`);
+  logger.info({ userId: user.id, username: user.username }, "webapp-auth: user identified");
   if (!allowed.includes(user.id)) { sendError(res, "Forbidden", 403); return; }
 
   const token = await signJwt(user);
-  console.log(`[webapp-auth] success for user=${user.id}`);
+  logger.info({ userId: user.id }, "webapp-auth: success");
   sendJson(res, { ok: true, user, token });
 }
 
@@ -761,7 +762,7 @@ export async function handleDashboardRequest(
       return true;
     }
     if (pathname === "/api/sessions" && method === "GET") {
-      console.log(`[sessions] cookie=${req.headers.cookie?.slice(0, 40) ?? "none"}`);
+      logger.debug({ cookiePrefix: req.headers.cookie?.slice(0, 40) ?? "none" }, "sessions list request");
       await handleSessions(req, res);
       return true;
     }

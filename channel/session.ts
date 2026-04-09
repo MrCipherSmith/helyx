@@ -3,6 +3,7 @@
  */
 
 import type postgres from "postgres";
+import { channelLogger } from "../logger.ts";
 
 export interface SessionContext {
   sql: postgres.Sql;
@@ -27,7 +28,7 @@ export class SessionManager {
     const { sql, projectName, projectPath, channelSource } = this.ctx;
 
     if (channelSource === null) {
-      process.stderr.write(`[channel] standalone mode — no DB registration\n`);
+      channelLogger.info("standalone mode — no DB registration");
       return -1;
     }
 
@@ -43,7 +44,7 @@ export class SessionManager {
       this.sessionId = row.id;
       this.hasPollingLock = true;
       await sql`SELECT pg_advisory_lock(${this.sessionId!})`;
-      process.stderr.write(`[channel] created local session #${this.sessionId} (${this.sessionName})\n`);
+      channelLogger.info({ sessionId: this.sessionId, name: this.sessionName }, "created local session");
       return this.sessionId!;
     }
 
@@ -62,15 +63,15 @@ export class SessionManager {
           this.hasPollingLock = true;
           const [proj] = await sql`SELECT id FROM projects WHERE path = ${projectPath}`;
           await sql`UPDATE sessions SET status = 'active', last_active = now(), project_id = ${proj?.id ?? null} WHERE id = ${this.sessionId!}`;
-          process.stderr.write(`[channel] attached to remote session #${this.sessionId} (${this.sessionName})\n`);
+          channelLogger.info({ sessionId: this.sessionId, name: this.sessionName }, "attached to remote session");
           return this.sessionId!;
         }
         if (attempt < 4) {
-          process.stderr.write(`[channel] session "${this.sessionName}" locked, retrying (${attempt + 1}/5)...\n`);
+          channelLogger.warn({ name: this.sessionName, attempt: attempt + 1 }, "session locked, retrying");
           await new Promise((r) => setTimeout(r, 1000));
         }
       }
-      process.stderr.write(`[channel] remote session for project already active, exiting\n`);
+      channelLogger.warn("remote session for project already active, exiting");
       process.exit(0);
     }
 
@@ -85,7 +86,7 @@ export class SessionManager {
     this.sessionId = row.id;
     this.hasPollingLock = true;
     await sql`SELECT pg_advisory_lock(${this.sessionId})`;
-    process.stderr.write(`[channel] created remote session #${this.sessionId} (${this.sessionName})\n`);
+    channelLogger.info({ sessionId: this.sessionId, name: this.sessionName }, "created remote session");
 
     // Transfer chat routing from old sessions
     await sql`
@@ -125,14 +126,14 @@ export class SessionManager {
     const { botApiUrl, projectPath, channelSource } = this.ctx;
     try {
       if (channelSource === "local") {
-        process.stderr.write(`[channel] triggering work summary for local session #${this.sessionId}\n`);
+        channelLogger.info({ sessionId: this.sessionId }, "triggering work summary for local session");
         await fetch(`${botApiUrl}/api/sessions/${this.sessionId}/summarize-work`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ session_id: this.sessionId }),
         });
       } else {
-        process.stderr.write(`[channel] triggering summarization for session #${this.sessionId}\n`);
+        channelLogger.info({ sessionId: this.sessionId }, "triggering summarization");
         await fetch(`${botApiUrl}/api/summarize`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -140,7 +141,7 @@ export class SessionManager {
         });
       }
     } catch (err) {
-      process.stderr.write(`[channel] summarize request failed: ${err}\n`);
+      channelLogger.error({ err }, "summarize request failed");
     }
   }
 
@@ -153,13 +154,13 @@ export class SessionManager {
         UPDATE sessions SET status = ${newStatus}, last_active = now()
         WHERE id = ${this.sessionId}
       `;
-      process.stderr.write(`[channel] session #${this.sessionId} marked ${newStatus}\n`);
+      channelLogger.info({ sessionId: this.sessionId, status: newStatus }, "session marked disconnected");
       if (this.hasPollingLock) {
         await releasePollingLock();
-        process.stderr.write(`[channel] released polling lock\n`);
+        channelLogger.info({ sessionId: this.sessionId }, "released polling lock");
       }
     } catch (err) {
-      process.stderr.write(`[channel] failed to mark disconnected: ${err}\n`);
+      channelLogger.error({ err }, "failed to mark disconnected");
     }
   }
 }

@@ -2,6 +2,7 @@ import { sql } from "../memory/db.ts";
 import { normalizeCLIConfig } from "../utils/cli-config.ts";
 import { basename } from "path";
 import { broadcast } from "../mcp/notification-broadcaster.ts";
+import { logger } from "../logger.ts";
 
 export interface Session {
   id: number;
@@ -41,7 +42,7 @@ export class SessionManager {
   async linkClientToSession(clientId: string, sessionId: number): Promise<void> {
     await sql`UPDATE sessions SET client_id = ${clientId}, status = 'active', last_active = now() WHERE id = ${sessionId}`;
     this.activeClients.set(clientId, sessionId);
-    console.log(`[session] auto-linked transport ${clientId.slice(0, 12)} to session #${sessionId}`);
+    logger.info({ clientId: clientId.slice(0, 12), sessionId }, "auto-linked transport to session");
     try { broadcast("session-state", { id: sessionId, status: "active" }); } catch {}
   }
 
@@ -86,7 +87,7 @@ export class SessionManager {
 
     const session = this.rowToSession(row);
     this.activeClients.set(clientId, session.id);
-    console.log(`[session] registered: ${session.id} (${session.name ?? clientId})`);
+    logger.info({ sessionId: session.id, name: session.name ?? clientId }, "session registered");
     try { broadcast("session-state", { id: session.id, status: session.status, project: session.project }); } catch {}
     return session;
   }
@@ -117,7 +118,7 @@ export class SessionManager {
       RETURNING id, name, project, source, project_path, project_id, client_id, status, metadata, connected_at, last_active, cli_type, cli_config
     `;
     const session = this.rowToSession(row);
-    console.log(`[session] remote registered: #${session.id} (${name})`);
+    logger.info({ sessionId: session.id, name }, "remote session registered");
     try { broadcast("session-state", { id: session.id, status: session.status, project: session.project }); } catch {}
     return session;
   }
@@ -172,13 +173,13 @@ export class SessionManager {
       const session = this.rowToSession(row);
       this.activeClients.delete(oldClientId);
       this.activeClients.set(currentClientId, session.id);
-      console.log(`[session] linked Claude Code to channel session #${session.id} (${sessionDisplayName(session)})`);
+      logger.info({ sessionId: session.id, name: sessionDisplayName(session) }, "linked Claude Code to channel session");
       return session;
     }
 
     // No channel.ts session found — standalone Claude launch (not via claude-bot CLI).
     // Don't create any DB record. Return an in-memory stub so the tool works but bot stays unaware.
-    console.log(`[session] standalone launch, no DB record created (${name})`);
+    logger.info({ name }, "standalone launch, no DB record created");
     const session: Session = {
       id: -1,
       name,
@@ -208,12 +209,12 @@ export class SessionManager {
     if (isEphemeral) {
       await sql`DELETE FROM sessions WHERE client_id = ${clientId}`;
       await this.resetSequence();
-      console.log(`[session] removed ephemeral session: ${clientId}`);
+      logger.info({ clientId }, "removed ephemeral session");
     } else {
       // Named/channel session — set status based on source
       const newStatus = source === 'remote' ? 'inactive' : 'terminated';
       await sql`UPDATE sessions SET status = ${newStatus}, last_active = now() WHERE id = ${id}`;
-      console.log(`[session] disconnected: #${id} (${name ?? source}) -> ${newStatus}`);
+      logger.info({ sessionId: id, name: name ?? source, status: newStatus }, "session disconnected");
       try { broadcast("session-state", { id, status: newStatus, project }); } catch {}
     }
     this.activeClients.delete(clientId);
@@ -247,7 +248,7 @@ export class SessionManager {
       if (!this.liveTransports.has(row.client_id) && !this.activeClients.has(row.client_id)) {
         const newStatus = row.source === 'remote' ? 'inactive' : 'terminated';
         await sql`UPDATE sessions SET status = ${newStatus} WHERE id = ${row.id}`;
-        console.log(`[session] marked stale: #${row.id} (${row.client_id.slice(0, 8)}) -> ${newStatus}`);
+        logger.info({ sessionId: row.id, clientId: row.client_id.slice(0, 8), status: newStatus }, "session marked stale");
         try { broadcast("session-state", { id: row.id, status: newStatus }); } catch {}
         count++;
       }

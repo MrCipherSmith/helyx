@@ -5,6 +5,7 @@
 import type postgres from "postgres";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { StatusManager } from "./status.ts";
+import { channelLogger } from "../logger.ts";
 
 export interface PollerContext {
   sql: postgres.Sql;
@@ -46,9 +47,9 @@ export class MessageQueuePoller {
       await listenSql.listen(`message_queue_${sessionId}`, () => {
         if (this.wakeResolve) { this.wakeResolve(); this.wakeResolve = null; }
       });
-      process.stderr.write(`[channel] LISTEN/NOTIFY active for session #${sessionId}\n`);
+      channelLogger.info({ sessionId }, "LISTEN/NOTIFY active");
     } catch (err) {
-      process.stderr.write(`[channel] LISTEN/NOTIFY setup failed, falling back to polling: ${err}\n`);
+      channelLogger.warn({ err }, "LISTEN/NOTIFY setup failed, falling back to polling");
     }
   }
 
@@ -89,7 +90,7 @@ export class MessageQueuePoller {
         `;
 
         for (const row of rows) {
-          process.stderr.write(`[channel] polling found msg #${row.id} for session ${sid}: ${row.content.slice(0, 50)}\n`);
+          channelLogger.info({ msgId: row.id, sessionId: sid, preview: row.content.slice(0, 50) }, "message dequeued");
           this.status.startTypingForChat(row.chat_id);
           await this.status.sendStatusMessage(row.chat_id, "Thinking...");
           await this.status.startProgressMonitorForChat(row.chat_id);
@@ -106,11 +107,11 @@ export class MessageQueuePoller {
               },
             },
           });
-          process.stderr.write(`[channel] delivered message from ${row.from_user}: ${row.content.slice(0, 50)}\n`);
+          channelLogger.info({ user: row.from_user, preview: row.content.slice(0, 50) }, "message delivered to Claude");
           this.touchIdleTimer();
         }
       } catch (err) {
-        process.stderr.write(`[channel] poll error: ${err}\n`);
+        channelLogger.error({ err }, "poll error");
       }
 
       await this.waitForWakeOrTimeout();

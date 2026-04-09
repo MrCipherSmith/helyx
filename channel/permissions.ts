@@ -6,7 +6,8 @@
 import type postgres from "postgres";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { StatusManager } from "./status.ts";
-import { sendTelegramMessage, deleteTelegramMessage } from "./telegram.ts";
+import { sendTelegramMessage, deleteTelegramMessage, editTelegramMessage } from "./telegram.ts";
+import { channelLogger } from "../logger.ts";
 
 export interface PermissionContext {
   sql: postgres.Sql;
@@ -44,7 +45,7 @@ export class PermissionHandler {
       } catch {}
     }
     if (this.autoApprovePatterns.size > 0) {
-      process.stderr.write(`[channel] auto-approve patterns: ${[...this.autoApprovePatterns].join(", ")}\n`);
+      channelLogger.info({ patterns: [...this.autoApprovePatterns] }, "auto-approve patterns loaded");
     }
   }
 
@@ -59,7 +60,7 @@ export class PermissionHandler {
     const input = this.parseInput(params);
 
     if (this.isAutoApproved(tool_name)) {
-      process.stderr.write(`[channel] auto-approved: ${tool_name}\n`);
+      channelLogger.info({ tool: tool_name }, "auto-approved");
       await this.ctx.mcp.notification({
         method: "notifications/claude/channel/permission",
         params: { request_id, behavior: "allow" },
@@ -78,7 +79,7 @@ export class PermissionHandler {
     `;
     const chatId = chatRows.length > 0 ? chatRows[0].chat_id : null;
     if (!chatId) {
-      process.stderr.write(`[channel] no chat for session ${sessionId}, auto-denying\n`);
+      channelLogger.warn({ sessionId }, "no chat for session, auto-denying");
       return;
     }
 
@@ -228,7 +229,7 @@ export class PermissionHandler {
           method: "notifications/claude/channel/permission",
           params: { request_id, behavior },
         });
-        process.stderr.write(`[channel] permission ${request_id}: ${behavior} (telegram)\n`);
+        channelLogger.info({ requestId: request_id, behavior }, "permission resolved via telegram");
         if (previewMsgId) deleteTelegramMessage(token, chatId, previewMsgId);
         await this.status.updateStatus(chatId, "Processing...");
         this.loadAutoApproveRules().catch(() => {});
@@ -238,7 +239,7 @@ export class PermissionHandler {
 
       const exists = await this.ctx.sql`SELECT 1 FROM permission_requests WHERE id = ${request_id}`;
       if (exists.length === 0) {
-        process.stderr.write(`[channel] permission ${request_id}: resolved externally\n`);
+        channelLogger.info({ requestId: request_id }, "permission resolved externally");
         if (previewMsgId) deleteTelegramMessage(token, chatId, previewMsgId);
         if (telegramMsgId) {
           await editTelegramMessage(token, chatId, telegramMsgId, `⚡ Resolved in terminal\n\n${desc}`);
@@ -252,7 +253,7 @@ export class PermissionHandler {
     }
 
     if (!resolved) {
-      process.stderr.write(`[channel] permission ${request_id}: timeout, denying\n`);
+      channelLogger.warn({ requestId: request_id }, "permission timeout, denying");
       await this.ctx.sql`UPDATE permission_requests SET status = 'expired' WHERE id = ${request_id} AND status = 'pending'`;
       await this.ctx.mcp.notification({
         method: "notifications/claude/channel/permission",

@@ -3,6 +3,7 @@ import { remember, rememberSmart } from "./long-term.ts";
 import { getCachedMessages, clearCache, type Message } from "./short-term.ts";
 import { summarizeConversation, generateResponse } from "../claude/client.ts";
 import { CONFIG } from "../config.ts";
+import { logger } from "../logger.ts";
 
 /**
  * Extract durable project knowledge from session messages and work summary.
@@ -62,12 +63,12 @@ ${msgSample}`;
         content: line.trim(),
         tags: ["project", "learned"],
         projectPath,
-      }).catch((err) => console.error("[summarizer] extractProjectKnowledge fact save failed:", err));
+      }).catch((err) => logger.error({ err }, "extractProjectKnowledge fact save failed"));
     }
 
-    console.log(`[summarizer] extracted ${lines.length} project knowledge facts for ${projectPath}`);
+    logger.info({ count: lines.length, projectPath }, "extracted project knowledge facts");
   } catch (err) {
-    console.error("[summarizer] extractProjectKnowledge failed:", err);
+    logger.error({ err }, "extractProjectKnowledge failed");
   }
 }
 
@@ -95,7 +96,7 @@ export function touchIdleTimer(sessionId: number, chatId: string, projectPath?: 
     try {
       await trySummarize(sessionId, chatId, "idle", projectPath);
     } catch (err) {
-      console.error("[summarizer] idle timer error:", err);
+      logger.error({ err, sessionId, chatId }, "idle timer error");
     }
   }, CONFIG.IDLE_TIMEOUT_MS);
 
@@ -172,7 +173,7 @@ async function trySummarize(
   }
 
   try {
-    console.log(`[summarizer] summarizing ${messages.length} messages, trigger=${trigger}, project=${projectPath ?? "none"}`);
+    logger.info({ sessionId, chatId, messageCount: messages.length, trigger, projectPath: projectPath ?? null }, "summarizing");
 
     const { summary, facts } = await summarizeConversation(messages);
 
@@ -199,7 +200,7 @@ async function trySummarize(
       });
     }
 
-    console.log(`[summarizer] saved summary + ${facts.length} facts`);
+    logger.info({ sessionId, chatId, factCount: facts.length }, "saved summary and facts");
 
     // Archive old messages, keep last SHORT_TERM_WINDOW for continuity
     await sql`
@@ -217,7 +218,7 @@ async function trySummarize(
 
     return summary;
   } catch (err) {
-    console.error("[summarizer] failed:", err);
+    logger.error({ err, sessionId, chatId }, "summarize failed");
     return null;
   }
 }
@@ -315,7 +316,7 @@ export async function summarizeWork(sessionId: number): Promise<boolean> {
   `;
 
   if (messages.length < 4) {
-    console.log(`[summarizer] session #${sessionId}: skipped (too few messages: ${messages.length})`);
+    logger.info({ sessionId, messageCount: messages.length }, "summarizeWork skipped: too few messages");
     return false;
   }
 
@@ -345,7 +346,7 @@ export async function summarizeWork(sessionId: number): Promise<boolean> {
     summary = result;
   } catch (err) {
     // Fallback: concatenate raw messages
-    console.log(`[summarizer] session #${sessionId}: api error/timeout, using fallback summary`);
+    logger.warn({ sessionId }, "summarizeWork: api error/timeout, using fallback summary");
     summary = messages
       .map((r) => `${r.role}: ${String(r.content).slice(0, 200)}`)
       .join("\n");
@@ -364,9 +365,9 @@ export async function summarizeWork(sessionId: number): Promise<boolean> {
       projectPath,
     });
     memId = mem.id;
-    console.log(`[summarizer] session #${sessionId}: project_context ${mem.action} #${mem.id}`);
+    logger.info({ sessionId, action: mem.action, memoryId: mem.id }, "project_context saved");
   } catch (memErr) {
-    console.error(`[summarizer] session #${sessionId}: failed to save memory:`, memErr);
+    logger.error({ err: memErr, sessionId }, "failed to save memory");
   }
 
   // 5b. Extract durable project knowledge (non-blocking, best-effort)
@@ -375,7 +376,7 @@ export async function summarizeWork(sessionId: number): Promise<boolean> {
     projectPath,
     summary,
     messages.map((r) => ({ role: r.role as string, content: r.content as string })),
-  ).catch((err) => console.error(`[summarizer] session #${sessionId}: extractProjectKnowledge error:`, err));
+  ).catch((err) => logger.error({ err, sessionId }, "extractProjectKnowledge error"));
 
   // 6-8. Archive messages/tool calls and mark session terminated atomically
   try {
@@ -393,11 +394,11 @@ export async function summarizeWork(sessionId: number): Promise<boolean> {
       // 7. Set session status = 'terminated'
       await tx`UPDATE sessions SET status = 'terminated', last_active = now() WHERE id = ${sessionId}`;
 
-      console.log(`[summarizer] session #${sessionId}: messages archived, status=terminated, memory=#${memId}`);
+      logger.info({ sessionId, memoryId: memId }, "messages archived, session terminated");
     });
   } catch (txErr) {
     // Transaction failed — at minimum, mark session terminated
-    console.error(`[summarizer] session #${sessionId}: transaction failed, forcing termination:`, txErr);
+    logger.error({ err: txErr, sessionId }, "transaction failed, forcing termination");
     await sql`UPDATE sessions SET status = 'terminated', last_active = now() WHERE id = ${sessionId}`.catch(() => {});
     await sql`UPDATE messages SET archived_at = now() WHERE session_id = ${sessionId} AND archived_at IS NULL`.catch(() => {});
     await sql`UPDATE permission_requests SET archived_at = now() WHERE session_id = ${sessionId} AND archived_at IS NULL`.catch(() => {});
