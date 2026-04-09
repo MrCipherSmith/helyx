@@ -213,6 +213,10 @@ async function setup() {
     `PORT=${port}`,
     `SHORT_TERM_WINDOW=20`,
     `IDLE_TIMEOUT_MS=900000`,
+    "",
+    "# Host paths (used inside Docker to verify project existence)",
+    `HOST_HOME=${process.env.HOME ?? "/root"}`,
+    `HOST_PROJECTS_DIR=${process.env.HOME ?? "/root"}`,
   ];
 
   await Bun.write(`${BOT_DIR}/.env`, envLines.join("\n") + "\n");
@@ -284,12 +288,6 @@ async function setup() {
   if (!existsSync(claudeMdPath)) {
     const template = `# Global CLAUDE.md
 
-## MCP Integration
-
-When starting a session, call \`set_session_name\` with:
-- name: basename of the current working directory
-- project_path: absolute path to the current working directory
-
 ## Telegram Status Updates
 
 When responding to Telegram channel messages (messages from \`notifications/claude/channel\`), call \`update_status\` before each major step to keep the user informed. Use the \`chat_id\` from the channel message metadata.
@@ -298,6 +296,7 @@ Examples:
 - Before reading files: \`update_status(chat_id, "Reading files...")\`
 - Before running commands: \`update_status(chat_id, "Running git status...")\`
 - Before editing: \`update_status(chat_id, "Editing code...")\`
+- Before analysis: \`update_status(chat_id, "Analyzing...")\`
 
 Keep status messages short (under 50 chars). The status is automatically deleted when you call \`reply\`.
 `;
@@ -338,14 +337,21 @@ Keep status messages short (under 50 chars). The status is automatically deleted
 
   // Summary
   console.log(`\n  ${c.green(c.bold("Setup complete!"))}\n`);
-  console.log(`  Start a Claude Code session:`);
-  console.log(`    ${c.cyan("cd your-project")}`);
-  console.log(`    ${c.cyan("claude --dangerously-load-development-channels server:claude-bot-channel")}\n`);
+  console.log(`  ${c.bold("Next steps:")}\n`);
+  console.log(`  1. Start all project sessions:`);
+  console.log(`    ${c.cyan("claude-bot up")}\n`);
+  console.log(`  2. (Optional) Set up Telegram Forum for per-project topics:`);
+  console.log(`    • Create a Telegram supergroup and enable Topics`);
+  console.log(`    • Add the bot as admin with ${c.bold("Manage Topics")} permission`);
+  console.log(`    • Send ${c.cyan("/forum_setup")} in the group\n`);
+  console.log(`  3. Add projects:`);
+  console.log(`    ${c.cyan("/project_add /path/to/project")} — in Telegram`);
+  console.log(`    ${c.cyan("claude-bot add /path/to/project")} — from CLI\n`);
   console.log(`  Manage the bot:`);
-  console.log(`    ${c.cyan("bun cli.ts status")}    — health & stats`);
-  console.log(`    ${c.cyan("bun cli.ts sessions")}  — list sessions`);
-  console.log(`    ${c.cyan("bun cli.ts logs")}      — view logs`);
-  console.log(`    ${c.cyan("bun cli.ts connect .")} — connect current project\n`);
+  console.log(`    ${c.cyan("claude-bot up")}       — start all sessions`);
+  console.log(`    ${c.cyan("claude-bot bounce")}   — restart all sessions`);
+  console.log(`    ${c.cyan("claude-bot ps")}       — list session status`);
+  console.log(`    ${c.cyan("claude-bot down")}     — stop all sessions\n`);
 }
 
 // --- Management commands ---
