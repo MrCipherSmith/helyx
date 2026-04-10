@@ -86,6 +86,15 @@ export class PermissionHandler {
       return;
     }
 
+    // Dedup: if this request is already being handled (Claude Code may retry), skip sending new messages.
+    const dupCheck = await this.ctx.sql`
+      SELECT id FROM permission_requests WHERE id = ${request_id} AND archived_at IS NULL
+    `.catch(() => [] as any[]);
+    if (dupCheck.length > 0) {
+      channelLogger.info({ requestId: request_id }, "duplicate permission notification — ignoring");
+      return;
+    }
+
     const sessionId = this.ctx.sessionId();
     if (!sessionId) return;
 
@@ -158,7 +167,7 @@ export class PermissionHandler {
       `;
     }
 
-    await this.pollForResponse(request_id, chatId, token, previewMsgId, sendResult.messageId, desc, 600_000, forumExtra);
+    await this.pollForResponse(request_id, chatId, token, previewMsgId, sendResult.messageId, msgText, desc, 600_000, forumExtra);
   }
 
   private parseInput(params: any): Record<string, any> {
@@ -243,15 +252,17 @@ export class PermissionHandler {
     token: string,
     previewMsgId: number | null,
     telegramMsgId: number | null,
+    originalMsgText: string,
     desc: string,
     timeoutMs = 600_000,
     forumExtra: Record<string, unknown> = {},
   ): Promise<void> {
     const startTime = Date.now();
     let resolved = false;
-    let lastReminderAt = startTime;
-    let reminderMsgId: number | null = null;
-    const REMINDER_INTERVAL_MS = 60_000;
+    let lastEditAt = startTime;
+    // Edit the original keyboard message every 2 min to show elapsed time.
+    // No new messages are sent — the one request message with buttons stays.
+    const REMINDER_INTERVAL_MS = 120_000;
 
     while (Date.now() - startTime < timeoutMs) {
       const rows = await this.ctx.sql`
@@ -265,7 +276,6 @@ export class PermissionHandler {
         });
         channelLogger.info({ requestId: request_id, behavior }, "permission resolved via telegram");
         if (previewMsgId) deleteTelegramMessage(token, chatId, previewMsgId);
-        if (reminderMsgId) deleteTelegramMessage(token, chatId, reminderMsgId);
         await this.status.updateStatus(chatId, "Processing...");
         this.loadAutoApproveRules().catch(() => {});
         resolved = true;
@@ -276,30 +286,25 @@ export class PermissionHandler {
       if (exists.length === 0) {
         channelLogger.info({ requestId: request_id }, "permission resolved externally");
         if (previewMsgId) deleteTelegramMessage(token, chatId, previewMsgId);
-        if (reminderMsgId) deleteTelegramMessage(token, chatId, reminderMsgId);
         if (telegramMsgId) {
-          await editTelegramMessage(token, chatId, telegramMsgId, `⚡ Resolved in terminal\n\n${desc}`);
+          await editTelegramMessage(token, chatId, telegramMsgId, `⚡ Resolved in terminal\n\n${escapeHtml(desc)}`, { parse_mode: "HTML" });
         }
         await this.status.updateStatus(chatId, "Processing...");
         resolved = true;
         break;
       }
 
-      // Send reminder every 60s
-      if (Date.now() - lastReminderAt >= REMINDER_INTERVAL_MS) {
-        const elapsedSec = Math.round((Date.now() - startTime) / 1000);
-        const remainingSec = Math.round((timeoutMs - (Date.now() - startTime)) / 1000);
-        const reminderText = `🔔 Pending permission (${elapsedSec}s elapsed, ${remainingSec}s left):\n<code>${escapeHtml(desc.slice(0, 200))}</code>`;
-        if (reminderMsgId) deleteTelegramMessage(token, chatId, reminderMsgId);
-        const result = await sendTelegramMessage(token, chatId, reminderText, { parse_mode: "HTML", ...forumExtra });
-        if (result.ok && result.messageId) reminderMsgId = result.messageId;
-        lastReminderAt = Date.now();
+      // Every 2 min: edit the original request message to show elapsed time.
+      // Keyboard is preserved (not passed in editMessageText → Telegram keeps it).
+      if (telegramMsgId && Date.now() - lastEditAt >= REMINDER_INTERVAL_MS) {
+        const elapsedMin = Math.round((Date.now() - startTime) / 60_000);
+        const updatedText = `${originalMsgText}\n\n<i>⏳ Waiting ${elapsedMin}m…</i>`;
+        await editTelegramMessage(token, chatId, telegramMsgId, updatedText, { parse_mode: "HTML" });
+        lastEditAt = Date.now();
       }
 
       await new Promise((r) => setTimeout(r, 500));
     }
-
-    if (reminderMsgId) deleteTelegramMessage(token, chatId, reminderMsgId);
 
     if (!resolved) {
       channelLogger.warn({ requestId: request_id }, "permission timeout, denying");
@@ -310,7 +315,7 @@ export class PermissionHandler {
       });
       if (previewMsgId) deleteTelegramMessage(token, chatId, previewMsgId);
       if (telegramMsgId) {
-        await editTelegramMessage(token, chatId, telegramMsgId, `⏰ Timeout\n\n${desc}`);
+        await editTelegramMessage(token, chatId, telegramMsgId, `⏰ Timeout\n\n${escapeHtml(desc)}`, { parse_mode: "HTML" });
       }
     }
 
