@@ -14,7 +14,34 @@
 
 ## ✅ Implemented
 
-### v1.20.0 (Latest)
+### v1.21.0 (Latest)
+
+#### Security Hardening (P0)
+- **Path traversal fix** (`utils/files.ts`): `doc.file_name` now sanitized via `basename()` + regex before use as disk path
+- **Webhook secret enforced** (`mcp/server.ts`): bot refuses to start in webhook mode without `TELEGRAM_WEBHOOK_SECRET`
+- **`isLocalRequest` narrowed** (`mcp/server.ts`): trusted range reduced from all RFC 1918 to loopback + 172.17.x (Docker bridge only)
+- **`transcript_path` validated** (`mcp/server.ts`): `/api/hooks/stop` now checks path is under `/home`, `/root`, or `/tmp`
+- **Port bound to localhost** (`docker-compose.yml`): port 3847 now `127.0.0.1:3847:3847` — external access only via Cloudflare Tunnel
+- **`ref` parameter sanitized** (`mcp/dashboard-api.ts`): git ref validated by regex before passing to git
+- **PRD:** `docs/requirements/security-hardening-2026-04-10/en/security-hardening.md`
+- **Commit:** `e343bc4`
+
+#### Per-Topic Parallel Processing
+- New `bot/topic-queue.ts`: messages from different forum topics processed in parallel; same topic — sequential
+- Webhook changed to fire-and-forget: bot returns 200 to Telegram immediately, preventing retries and double voice downloads
+- Voice message processing moved into per-topic queue; status message shown before queue entry
+- **Commit:** `0c30f7a`
+
+#### Memory: Stop Hook + Proactive Recall
+- Claude Code Stop hook auto-extracts project facts from session transcripts via `/api/hooks/stop`
+- `scripts/save-session-facts.sh` installed by setup wizard into `~/.claude/settings.json`
+- `extractFactsFromTranscript()` in `memory/summarizer.ts` parses `.jsonl` transcripts
+- `project_add` now injects recall instructions into project `CLAUDE.md`
+- **Commit:** `fbed5e3`
+
+### v1.20.0
+
+#### Forum Topics — One Topic Per Project
 
 #### Forum Topics — One Topic Per Project
 - Telegram Forum Supergroup: each project = one dedicated topic/thread
@@ -301,13 +328,30 @@ Core features established in foundational releases:
 
 ## 🚧 In Progress
 
-None currently. Latest merged work completed in v1.20.0.
+None currently. Latest merged work completed in v1.21.0.
 
 ---
 
 ## 📋 Planned
 
 These items have PRDs written and are ready to implement.
+
+### UX Improvements — Phase 1 (P1)
+- Voice message to disconnected topic: early exit with clear error before transcription (saves cost)
+- Text message to disconnected session: project path shown + actionable recovery steps
+- Typing indicator refreshed every 4s during long LLM responses
+- Per-topic queue depth feedback: "⏳ В очереди (#1)..." shown when backlog exists
+- **PRD:** `docs/requirements/ux-improvements-2026-04-10/en/ux-improvements.md`
+
+### UX Improvements — Phase 2 (P1)
+- `/quickstart` command: step-by-step guided forum setup
+- Session crash notification pushed to forum topic automatically
+- **PRD:** same as Phase 1
+
+### Project Rename: claude-bot → Iryx (temporary name, pending final decision)
+- Full rename: CLI, MCP servers, Docker, DB, Telegram bot, domain, GitHub repo
+- **PRD:** `docs/requirements/rename-to-iryx-2026-04-10/en/rename-to-iryx.md`
+- **Blocked on:** final name decision
 
 ### GitHub Actions E2E CI — Activate Secrets
 - Workflow `.github/workflows/e2e.yml` is committed and ready
