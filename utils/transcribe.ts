@@ -26,7 +26,6 @@ async function transcribeGroq(
     fileName,
   );
   form.append("model", "whisper-large-v3");
-  form.append("language", "ru");
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
