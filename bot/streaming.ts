@@ -6,7 +6,7 @@ import { startTyping } from "../utils/typing.ts";
 import { logger } from "../logger.ts";
 
 const EDIT_INTERVAL_MS = 1500;
-const TYPING_INDICATOR = "...";
+const TYPING_INDICATOR = "⏳";
 
 export async function streamToTelegram(
   bot: Bot,
@@ -14,10 +14,19 @@ export async function streamToTelegram(
   system: string,
   messages: MessageParam[],
   ctx?: StreamContext,
-  threadId?: number,
+  threadId?: number | null,
 ): Promise<string> {
-  // Send initial "thinking" message
-  const sent = await bot.api.sendMessage(Number(chatId), TYPING_INDICATOR);
+  // Send initial "thinking" message — include thread_id for forum topics
+  const sendOpts = threadId ? { message_thread_id: threadId } : undefined;
+  let sent = await bot.api.sendMessage(Number(chatId), TYPING_INDICATOR, sendOpts);
+
+  // Safety check: if we expected a thread but the message landed elsewhere, fix it
+  if (threadId && sent.message_thread_id !== threadId) {
+    logger.warn({ expected: threadId, got: sent.message_thread_id }, "streaming: message landed in wrong thread, resending");
+    bot.api.deleteMessage(Number(chatId), sent.message_id).catch(() => {});
+    sent = await bot.api.sendMessage(Number(chatId), TYPING_INDICATOR, { message_thread_id: threadId });
+  }
+
   const messageId = sent.message_id;
 
   let accumulated = "";
@@ -79,7 +88,6 @@ export async function streamToTelegram(
   };
 
   // Keep typing indicator alive during long responses (Telegram clears it after ~5s).
-  // Pass message_thread_id for forum topics so the indicator appears in the correct thread.
   const typing = startTyping(() =>
     bot.api.sendChatAction(Number(chatId), "typing", threadId ? { message_thread_id: threadId } : undefined),
   );
