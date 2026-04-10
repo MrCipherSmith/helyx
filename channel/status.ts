@@ -33,6 +33,7 @@ interface StatusState {
   startedAt: number;
   stage: string;
   timer: ReturnType<typeof setInterval> | null;
+  dbHeartbeatTimer: ReturnType<typeof setInterval> | null;
 }
 
 interface SessionStats {
@@ -81,9 +82,54 @@ export class StatusManager {
   private sessionStats = new Map<string, SessionStats>();
   private activeTyping = new Map<string, TypingHandle>();
   private activeMonitors = new Map<string, TmuxMonitorHandle | OutputMonitorHandle>();
+  private responseGuards = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly TYPING_TIMEOUT_MS = 30_000;
+  private readonly RESPONSE_GUARD_MS = 5 * 60_000; // 5 min
 
   constructor(private ctx: StatusContext) {}
+
+  /**
+   * Arm a response guard for a chat. If Claude doesn't call `reply` within
+   * RESPONSE_GUARD_MS, sends a fallback "no response" message to the user.
+   * Automatically disarmed when deleteStatusMessage is called.
+   */
+  armResponseGuard(chatId: string): void {
+    const key = this.stateKey(chatId);
+    const existing = this.responseGuards.get(key);
+    if (existing) clearTimeout(existing);
+
+    const timer = setTimeout(async () => {
+      this.responseGuards.delete(key);
+      const state = this.activeStatus.get(key);
+      if (!state) return; // already responded
+
+      channelLogger.warn({ chatId }, "response guard: no reply from Claude, sending fallback");
+      await this.deleteStatusMessage(chatId);
+
+      const token = this.ctx.token();
+      if (!token) return;
+      const forum = this.getForumTarget();
+      const effectiveChatId = forum?.chatId ?? chatId;
+      const extra = forum?.extra ?? {};
+      await sendTelegramMessage(
+        token,
+        effectiveChatId,
+        "⚠️ Claude не ответил — сессия могла упасть или зависнуть.\n/session — статус сессии",
+        extra,
+      );
+    }, this.RESPONSE_GUARD_MS);
+
+    this.responseGuards.set(key, timer);
+  }
+
+  private disarmResponseGuard(chatId: string): void {
+    const key = this.stateKey(chatId);
+    const timer = this.responseGuards.get(key);
+    if (timer) {
+      clearTimeout(timer);
+      this.responseGuards.delete(key);
+    }
+  }
 
   /**
    * Resolve the effective Telegram destination for status messages.
@@ -156,9 +202,12 @@ export class StatusManager {
         startedAt: Date.now(),
         stage: `${prefix}${stage}`,
         timer: null,
+        dbHeartbeatTimer: null,
       };
       state.timer = setInterval(() => this.editStatusMessage(state), 5000);
+      state.dbHeartbeatTimer = setInterval(() => this.heartbeatStatusMessage(key), 30_000);
       this.activeStatus.set(key, state);
+      this.persistStatusMessage(key, state).catch(() => {});
       channelLogger.info({ chatId: effectiveChatId, messageId: state.messageId }, "status message created");
       return null;
     } catch (e) {
@@ -211,11 +260,14 @@ export class StatusManager {
   }
 
   async deleteStatusMessage(chatId: string): Promise<void> {
+    this.disarmResponseGuard(chatId); // reply received — cancel fallback
     const key = this.stateKey(chatId);
     const state = this.activeStatus.get(key);
     if (!state) return;
     if (state.timer) clearInterval(state.timer);
+    if (state.dbHeartbeatTimer) clearInterval(state.dbHeartbeatTimer);
     this.activeStatus.delete(key);
+    this.ctx.sql`DELETE FROM active_status_messages WHERE key = ${key}`.catch(() => {});
     this.stopTypingForChat(chatId);
 
     const token = this.ctx.token();
@@ -248,6 +300,36 @@ export class StatusManager {
     // Record Claude Code token usage to api_request_stats (best-effort, non-blocking)
     if (tokens) {
       this.recordCliUsage(chatId, tokens, Date.now() - state.startedAt).catch(() => {});
+    }
+  }
+
+  /** INSERT or UPDATE the DB record for an active status message. */
+  private async persistStatusMessage(key: string, state: StatusState): Promise<void> {
+    const sessionId = this.ctx.sessionId();
+    try {
+      await this.ctx.sql`
+        INSERT INTO active_status_messages
+          (key, chat_id, thread_id, message_id, started_at, updated_at, project_name, session_id)
+        VALUES
+          (${key}, ${state.chatId}, ${state.threadId ?? null}, ${state.messageId},
+           NOW(), NOW(), ${this.ctx.projectName}, ${sessionId})
+        ON CONFLICT (key) DO UPDATE SET
+          message_id = EXCLUDED.message_id,
+          updated_at = NOW()
+      `;
+    } catch (err) {
+      channelLogger.warn({ err }, "persistStatusMessage: DB error");
+    }
+  }
+
+  /** Touch updated_at so the recovery watchdog knows this channel is alive. */
+  private async heartbeatStatusMessage(key: string): Promise<void> {
+    try {
+      await this.ctx.sql`
+        UPDATE active_status_messages SET updated_at = NOW() WHERE key = ${key}
+      `;
+    } catch (err) {
+      channelLogger.warn({ err }, "heartbeatStatusMessage: DB error");
     }
   }
 

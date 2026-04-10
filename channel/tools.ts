@@ -209,6 +209,19 @@ export function registerTools(
         }
         const isActiveDm = isForumReply || activeSessionId === null || activeSessionId === sessionId;
 
+        // Buffer reply to DB before sending — lets the bot retry if Telegram is temporarily down
+        let pendingReplyId: number | null = null;
+        try {
+          const [pendingRow] = await ctx.sql`
+            INSERT INTO pending_replies (session_id, chat_id, thread_id, text)
+            VALUES (${sessionId}, ${chatId}, ${forumTopicId ?? null}, ${String(args!.text)})
+            RETURNING id
+          `;
+          pendingReplyId = pendingRow?.id ?? null;
+        } catch {
+          // Non-fatal: continue even if DB write fails
+        }
+
         let replyText = String(args!.text);
         if (!isActiveDm && sessionId) {
           const bgName = ctx.sessionName() || `#${sessionId}`;
@@ -243,6 +256,10 @@ export function registerTools(
         }
 
         channelLogger.info({ chatId }, "reply sent OK");
+        // Mark pending reply as delivered
+        if (pendingReplyId) {
+          ctx.sql`UPDATE pending_replies SET delivered_at = NOW() WHERE id = ${pendingReplyId}`.catch(() => {});
+        }
         if (sessionId) {
           await ctx.sql`
             INSERT INTO messages (session_id, project_path, chat_id, role, content)

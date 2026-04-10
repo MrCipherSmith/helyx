@@ -373,6 +373,40 @@ const migrations: Migration[] = [
       await tx`INSERT INTO bot_config (key, value) VALUES ('forum_chat_id', '') ON CONFLICT DO NOTHING`;
     },
   },
+  {
+    version: 14,
+    name: "active_status_messages and pending_replies",
+    up: async (tx) => {
+      // Tracks live Telegram status messages so the bot can recover them after restart
+      await tx`
+        CREATE TABLE IF NOT EXISTS active_status_messages (
+          key TEXT PRIMARY KEY,
+          chat_id TEXT NOT NULL,
+          thread_id INTEGER,
+          message_id INTEGER NOT NULL,
+          started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          project_name TEXT NOT NULL,
+          session_id INTEGER
+        )
+      `;
+      await tx`CREATE INDEX IF NOT EXISTS idx_active_status_updated ON active_status_messages(updated_at)`;
+
+      // Buffers outgoing replies so they survive temporary bot/Telegram downtime
+      await tx`
+        CREATE TABLE IF NOT EXISTS pending_replies (
+          id SERIAL PRIMARY KEY,
+          session_id INTEGER,
+          chat_id TEXT NOT NULL,
+          thread_id INTEGER,
+          text TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          delivered_at TIMESTAMPTZ
+        )
+      `;
+      await tx`CREATE INDEX IF NOT EXISTS idx_pending_replies_undelivered ON pending_replies(created_at) WHERE delivered_at IS NULL`;
+    },
+  },
 ];
 
 // --- Public API ---
