@@ -705,6 +705,19 @@ Backups saved to `~/backups/claude-bot/` (gzipped, last 7 retained).
 | DB Client | [postgres](https://github.com/porsager/postgres) |
 | Dashboard | [React](https://react.dev) + [Tailwind CSS](https://tailwindcss.com) + [Vite](https://vite.dev) |
 
+## Recent Changes (v1.22.0)
+
+### UX Improvements
+
+- **Voice to disconnected topic** — early exit before Whisper transcription; user sees a clear error with `/standalone` hint instead of a silent failure
+- **Better "session not active" message** — shows project path, explains auto-reconnect, links to `/standalone` and `/sessions`
+- **Typing indicator refresh** — typing action re-sent every 4s during long responses; correctly targets forum topic via `message_thread_id`
+- **Queue depth feedback** — "⏳ В очереди (#N)..." message when a request is waiting behind another in the per-topic queue
+- **`/quickstart` command** — 5-step onboarding guide: forum group → project add → Claude Code launch
+- **Session crash notifications** — forum topic receives a message when a session terminates unexpectedly
+- **`escapeHtml()` utility** — shared in `bot/format.ts`; all user-supplied strings in HTML messages are now properly escaped
+- **N+1 SQL eliminated** in `sessions/manager.ts` — `project_path` merged into existing SELECTs in `disconnect()` and `markStale()`
+
 ## Recent Changes (v1.20.0)
 
 ### Forum Topics — One Topic Per Project

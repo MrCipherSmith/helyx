@@ -14,7 +14,19 @@
 
 ## ✅ Implemented
 
-### v1.21.0 (Latest)
+### v1.22.0 (Latest)
+
+#### UX Improvements — Phase 1 & 2 (P1)
+- **Voice to disconnected topic** (`bot/media.ts`): early exit before Whisper transcription with user-facing error + `/standalone` hint
+- **Improved "session not active" message** (`bot/text-handler.ts`): shows project path, explains auto-reconnect, actionable `/standalone` and `/sessions` links; HTML-safe via `escapeHtml()`
+- **Typing indicator refresh** (`bot/streaming.ts`): `startTyping()` every 4s with correct `message_thread_id` for forum topics; replaces raw `setInterval`
+- **Queue depth feedback** (`bot/topic-queue.ts` + `bot/text-handler.ts`): "⏳ В очереди (#N)..." shown when a message is queued behind another; `onQueued` callback with `.catch()`
+- **`/quickstart` command** (`bot/commands/quickstart.ts`): 5-step onboarding guide for new users (forum setup → project add → launch Claude Code)
+- **Session crash notifications** (`sessions/manager.ts` + `mcp/server.ts`): forum topic receives a message when a session terminates unexpectedly via `setTerminationCallback()`
+- **`escapeHtml()` shared utility** (`bot/format.ts`): prevents HTML injection in all Telegram `parse_mode: "HTML"` messages
+- **N+1 SQL eliminated** (`sessions/manager.ts`): `project_path` merged into existing SELECTs in `disconnect()` and `markStale()`
+
+### v1.21.0
 
 #### Security Hardening (P0)
 - **Path traversal fix** (`utils/files.ts`): `doc.file_name` now sanitized via `basename()` + regex before use as disk path
@@ -328,25 +340,13 @@ Core features established in foundational releases:
 
 ## 🚧 In Progress
 
-None currently. Latest merged work completed in v1.21.0.
+None currently. Latest merged work completed in v1.22.0.
 
 ---
 
 ## 📋 Planned
 
 These items have PRDs written and are ready to implement.
-
-### UX Improvements — Phase 1 (P1)
-- Voice message to disconnected topic: early exit with clear error before transcription (saves cost)
-- Text message to disconnected session: project path shown + actionable recovery steps
-- Typing indicator refreshed every 4s during long LLM responses
-- Per-topic queue depth feedback: "⏳ В очереди (#1)..." shown when backlog exists
-- **PRD:** `docs/requirements/ux-improvements-2026-04-10/en/ux-improvements.md`
-
-### UX Improvements — Phase 2 (P1)
-- `/quickstart` command: step-by-step guided forum setup
-- Session crash notification pushed to forum topic automatically
-- **PRD:** same as Phase 1
 
 ### Project Rename: claude-bot → Iryx (temporary name, pending final decision)
 - Full rename: CLI, MCP servers, Docker, DB, Telegram bot, domain, GitHub repo
