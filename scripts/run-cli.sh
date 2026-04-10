@@ -35,10 +35,28 @@ while true; do
     script -qfc "CHANNEL_SOURCE=remote claude --dangerously-load-development-channels server:claude-bot-channel" "$OUTPUT_FILE"
     EXIT_CODE=$?
   else
-    # Inside tmux: auto-confirm channel permission prompt, then run interactively
-    (sleep 5 && tmux send-keys -t "$TMUX_PANE" "" Enter) &
+    # Inside tmux: watch for the channel permission prompt and auto-confirm it.
+    # Polls every second for up to 30s; stops as soon as prompt is confirmed or disappears.
+    PANE="${TMUX_PANE}"
+    (
+      for i in $(seq 1 30); do
+        sleep 1
+        out=$(tmux capture-pane -t "$PANE" -p 2>/dev/null)
+        if echo "$out" | grep -q "Enter to confirm"; then
+          tmux send-keys -t "$PANE" "" Enter
+          break
+        fi
+        # Already past the prompt (running or exited) — stop watching
+        if echo "$out" | grep -q "Listening for channel\|❯\|run-cli\] Exited"; then
+          break
+        fi
+      done
+    ) &
+    CONFIRM_PID=$!
     CHANNEL_SOURCE=remote claude --dangerously-load-development-channels server:claude-bot-channel
     EXIT_CODE=$?
+    # Clean up the confirm watcher if Claude exited before it finished
+    kill "$CONFIRM_PID" 2>/dev/null
   fi
 
   echo "[run-cli] Exited with code $EXIT_CODE at $(date '+%Y-%m-%d %H:%M:%S')" | tee -a "$LOG_FILE"

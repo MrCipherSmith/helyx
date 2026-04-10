@@ -78,9 +78,11 @@ function formatStatusText(stage: string, elapsed: string, tokens: string): strin
     const visible = lines.slice(0, STATUS_VISIBLE_LINES);
     const hidden = lines.slice(STATUS_VISIBLE_LINES);
 
-    let body = `<pre>${escapeHtml(visible.join("\n"))}</pre>`;
+    // Use <blockquote> for visible lines (valid block element in Telegram HTML)
+    // and <tg-spoiler> wrapped in <blockquote> for hidden lines.
+    let body = `<blockquote>${escapeHtml(visible.join("\n"))}</blockquote>`;
     if (hidden.length > 0) {
-      body += `<tg-spoiler>${escapeHtml(hidden.join("\n"))}</tg-spoiler>`;
+      body += `<blockquote><tg-spoiler>${escapeHtml(hidden.join("\n"))}</tg-spoiler></blockquote>`;
     }
     return `${header}\n${body}`;
   }

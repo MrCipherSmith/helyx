@@ -136,6 +136,18 @@ const translations = {
     'projects.addBtn': 'Add',
     'projects.adding': 'Adding...',
 
+    // Permissions
+    'nav.permissions': 'Permissions',
+    'permissions.title': 'Pending Permissions',
+    'permissions.empty': 'No pending permissions',
+    'permissions.tool': 'Tool',
+    'permissions.description': 'Description',
+    'permissions.session': 'Session',
+    'permissions.age': 'Age',
+    'permissions.allow': 'Allow',
+    'permissions.always': 'Always',
+    'permissions.deny': 'Deny',
+
     // Common
     'common.loading': 'Loading...',
     'common.error': 'Error',
@@ -279,6 +291,18 @@ const translations = {
     'projects.pathPlaceholder': '/абсолютный/путь/к/проекту',
     'projects.addBtn': 'Добавить',
     'projects.adding': 'Добавление...',
+
+    // Permissions
+    'nav.permissions': 'Разрешения',
+    'permissions.title': 'Ожидающие разрешения',
+    'permissions.empty': 'Нет ожидающих запросов',
+    'permissions.tool': 'Инструмент',
+    'permissions.description': 'Описание',
+    'permissions.session': 'Сессия',
+    'permissions.age': 'Время',
+    'permissions.allow': 'Разрешить',
+    'permissions.always': 'Всегда',
+    'permissions.deny': 'Отклонить',
 
     // Common
     'common.loading': 'Загрузка...',

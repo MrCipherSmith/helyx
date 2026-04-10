@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import {
   LayoutDashboard, Monitor, BarChart3, ScrollText, BookOpen, FolderOpen,
-  PanelLeftClose, PanelLeft, LogOut, Languages, ChevronDown, Bot,
+  PanelLeftClose, PanelLeft, LogOut, Languages, ChevronDown, Bot, ShieldAlert,
 } from 'lucide-react'
 import { api } from '../api/client'
 import { useI18n } from '../i18n'
@@ -21,10 +21,18 @@ export function Layout() {
   const pathname = router.location.pathname
   const { t, locale, setLocale } = useI18n()
 
+  const { data: pendingPerms } = useQuery({
+    queryKey: ['permissions-pending'],
+    queryFn: () => api.pendingPermissions(),
+    refetchInterval: 5_000,
+  })
+  const pendingCount = pendingPerms?.length ?? 0
+
   const NAV_ITEMS = [
     { to: '/', label: t('nav.overview'), icon: LayoutDashboard },
     { to: '/sessions', label: t('nav.sessions'), icon: Monitor },
     { to: '/projects', label: t('nav.projects'), icon: FolderOpen },
+    { to: '/permissions', label: t('nav.permissions'), icon: ShieldAlert, badge: pendingCount },
     { to: '/stats', label: t('nav.stats'), icon: BarChart3 },
     { to: '/logs', label: t('nav.logs'), icon: ScrollText },
     { to: '/memories', label: t('nav.memory'), icon: BookOpen },
@@ -81,6 +89,7 @@ export function Layout() {
             {NAV_ITEMS.map((item) => {
               const isActive = item.to === '/' ? pathname === '/' : pathname.startsWith(item.to)
               const Icon = item.icon
+              const badge = 'badge' in item ? (item as any).badge : 0
               const link = (
                 <Link
                   key={item.to}
@@ -94,8 +103,20 @@ export function Layout() {
                       : "text-gray-400 hover:text-white hover:bg-white/5 border-l-2 border-transparent"
                   )}
                 >
-                  <Icon className={cn("w-[18px] h-[18px] shrink-0", isActive ? "text-indigo-400" : "text-gray-500")} />
-                  {!collapsed && item.label}
+                  <span className="relative shrink-0">
+                    <Icon className={cn("w-[18px] h-[18px]", isActive ? "text-indigo-400" : "text-gray-500")} />
+                    {badge > 0 && (
+                      <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 rounded-full bg-amber-500 flex items-center justify-center text-[9px] font-bold text-white leading-none">
+                        {badge > 9 ? '9+' : badge}
+                      </span>
+                    )}
+                  </span>
+                  {!collapsed && <span className="flex-1">{item.label}</span>}
+                  {!collapsed && badge > 0 && (
+                    <span className="ml-auto px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 text-xs font-semibold">
+                      {badge}
+                    </span>
+                  )}
                 </Link>
               )
 

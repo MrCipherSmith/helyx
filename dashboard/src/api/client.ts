@@ -67,6 +67,13 @@ export const api = {
   memoryTags: () => request<MemoryTag[]>('/memories/tags'),
   deleteMemoriesByTag: (tag: string) => request<{ deleted: number }>(`/memories/tag/${encodeURIComponent(tag)}`, { method: 'DELETE' }),
 
+  // Permissions
+  pendingPermissions: () => request<PendingPermission[]>('/permissions/pending'),
+  respondPermission: (id: number, response: 'allow' | 'deny') =>
+    request<{ ok: boolean }>(`/permissions/${id}/respond`, { method: 'POST', body: JSON.stringify({ response }) }),
+  alwaysAllowPermission: (id: number) =>
+    request<{ ok: boolean }>(`/permissions/${id}/always`, { method: 'POST', body: '{}' }),
+
   // Projects
   projects: () => request<Project[]>('/projects'),
   createProject: (data: { name: string; path: string }) =>
@@ -229,6 +236,17 @@ export interface Project {
   created_at: string;
   session_id: number | null;
   session_status: string | null;
+}
+
+export interface PendingPermission {
+  id: number;
+  tool_name: string;
+  description: string;
+  status: string;
+  created_at: string;
+  session_id: number;
+  session_name: string | null;
+  project_path: string | null;
 }
 
 export interface ApiError {

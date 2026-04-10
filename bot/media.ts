@@ -284,6 +284,19 @@ export async function handleVoice(ctx: Context): Promise<void> {
         const content = `🎤 ${text}`;
 
         if (route.mode === "cli") {
+          // Dedup: Telegram may retry the webhook if transcription takes too long.
+          // Skip if this message_id is already in the queue.
+          const tgMsgId = String(ctx.message?.message_id ?? "");
+          if (tgMsgId) {
+            const dup = await sql`
+              SELECT id FROM message_queue WHERE session_id = ${route.sessionId} AND message_id = ${tgMsgId} LIMIT 1
+            `;
+            if (dup.length > 0) {
+              appendLog(route.sessionId, chatId, "voice", `duplicate message_id=${tgMsgId}, skipping`);
+              await updateStatus(`🎤 Transcribed (already queued): ${text}`);
+              return;
+            }
+          }
           await addMessage({
             sessionId: route.sessionId,
             projectPath: route.projectPath,
@@ -297,7 +310,7 @@ export async function handleVoice(ctx: Context): Promise<void> {
             VALUES (
               ${route.sessionId}, ${chatId},
               ${ctx.from?.username ?? ctx.from?.first_name ?? "user"},
-              ${content}, ${String(ctx.message?.message_id ?? "")}
+              ${content}, ${tgMsgId}
             )
           `;
           appendLog(route.sessionId, chatId, "queue", "voice message queued for CLI");

@@ -16,6 +16,7 @@ import { StatsPage } from './pages/Stats'
 import { LogsPage } from './pages/Logs'
 import { MemoriesPage } from './pages/Memories'
 import { ProjectsPage } from './pages/Projects'
+import { PermissionsPage } from './pages/Permissions'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -93,6 +94,12 @@ const projectsRoute = createRoute({
   component: ProjectsPage,
 })
 
+const permissionsRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: '/permissions',
+  component: PermissionsPage,
+})
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   layoutRoute.addChildren([
@@ -103,6 +110,7 @@ const routeTree = rootRoute.addChildren([
     logsRoute,
     memoriesRoute,
     projectsRoute,
+    permissionsRoute,
   ]),
 ])
 

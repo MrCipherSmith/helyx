@@ -129,6 +129,8 @@ async function addProject(ctx: Context, path: string): Promise<void> {
     await replyInThread(ctx, "📝 CLAUDE.md создан с правилами бота. Напиши `/init` в топике проекта чтобы Claude проанализировал кодовую базу.");
   } else if (claudeMdStatus === "updated") {
     await replyInThread(ctx, "📝 Правила бота добавлены в существующий CLAUDE.md.");
+  } else if (claudeMdStatus === "readonly") {
+    await replyInThread(ctx, "⚠️ Не удалось записать CLAUDE.md — файловая система read-only. Добавь правила бота вручную.");
   }
 
   // Trigger async project knowledge scan (non-blocking)
@@ -180,20 +182,25 @@ Bad: \`"fixed bug in channel.ts today"\`
 - Per-session events
 `;
 
-function injectBotRules(containerPath: string): "created" | "updated" | "skipped" {
+function injectBotRules(containerPath: string): "created" | "updated" | "skipped" | "readonly" {
   const claudeMdPath = `${containerPath}/CLAUDE.md`;
 
-  if (existsSync(claudeMdPath)) {
-    const existing = readFileSync(claudeMdPath, "utf-8");
-    if (existing.includes(BOT_RULES_MARKER)) {
-      return "skipped";
+  try {
+    if (existsSync(claudeMdPath)) {
+      const existing = readFileSync(claudeMdPath, "utf-8");
+      if (existing.includes(BOT_RULES_MARKER)) {
+        return "skipped";
+      }
+      writeFileSync(claudeMdPath, existing.trimEnd() + "\n" + BOT_RULES_SECTION, "utf-8");
+      logger.info({ path: claudeMdPath }, "project-add: appended bot rules to CLAUDE.md");
+      return "updated";
     }
-    writeFileSync(claudeMdPath, existing.trimEnd() + "\n" + BOT_RULES_SECTION, "utf-8");
-    logger.info({ path: claudeMdPath }, "project-add: appended bot rules to CLAUDE.md");
-    return "updated";
-  }
 
-  writeFileSync(claudeMdPath, BOT_RULES_SECTION.trimStart(), "utf-8");
-  logger.info({ path: claudeMdPath }, "project-add: created CLAUDE.md with bot rules");
-  return "created";
+    writeFileSync(claudeMdPath, BOT_RULES_SECTION.trimStart(), "utf-8");
+    logger.info({ path: claudeMdPath }, "project-add: created CLAUDE.md with bot rules");
+    return "created";
+  } catch (err: any) {
+    logger.warn({ path: claudeMdPath, err: err?.message }, "project-add: cannot write CLAUDE.md (read-only fs?)");
+    return "readonly";
+  }
 }

@@ -856,7 +856,7 @@ async function tmuxStop() {
   await run([
     "docker", "compose", "exec", "-T", "postgres",
     "psql", "-U", "claude_bot", "-d", "claude_bot", "-c",
-    "DELETE FROM sessions WHERE name LIKE 'cli-%'; UPDATE sessions SET status = 'disconnected' WHERE id != 0 AND status = 'active';",
+    "DELETE FROM sessions WHERE name LIKE 'cli-%'; UPDATE sessions SET status = 'inactive', lease_owner = NULL, lease_expires_at = NULL WHERE source = 'remote' AND id != 0;",
   ], { silent: true });
   done();
 
