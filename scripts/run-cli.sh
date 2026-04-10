@@ -19,6 +19,19 @@ cd "$PROJECT_DIR" || { echo "[run-cli] Cannot cd to $PROJECT_DIR"; exit 1; }
 echo "[run-cli] Project: $PROJECT_DIR"
 echo "[run-cli] Log: $LOG_FILE"
 
+# Load .env from project root so API keys (GROQ_API_KEY, OPENAI_API_KEY, etc.)
+# are available to the channel subprocess. Skip already-set vars to avoid
+# overriding Docker-injected values like DATABASE_URL.
+if [ -f ".env" ]; then
+  while IFS= read -r line || [ -n "$line" ]; do
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue  # skip comments
+    [[ -z "${line// }" ]] && continue             # skip blank lines
+    key="${line%%=*}"
+    [[ -z "${!key}" ]] && export "$line" 2>/dev/null  # only if not already set
+  done < .env
+  echo "[run-cli] Loaded .env"
+fi
+
 # Detect if we're inside tmux
 IN_TMUX="${TMUX:-}"
 

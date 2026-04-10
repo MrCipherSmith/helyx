@@ -145,6 +145,18 @@ export class StatusManager {
   }
 
   /**
+   * Reset the response guard if it is currently armed.
+   * Called on each status update — if Claude is producing tmux activity or
+   * explicitly calling update_status, it is alive and the guard should not fire.
+   * Guard only fires when there has been no observable activity for RESPONSE_GUARD_MS.
+   */
+  private resetResponseGuard(chatId: string): void {
+    const key = this.stateKey(chatId);
+    if (!this.responseGuards.has(key)) return; // not armed — nothing to reset
+    this.armResponseGuard(chatId); // rearm with a fresh timeout
+  }
+
+  /**
    * Resolve the effective Telegram destination for status messages.
    *
    * In forum mode (forumChatId + forumTopicId both set): returns the forum chat
@@ -241,6 +253,9 @@ export class StatusManager {
       // Do NOT create a new orphan message here.
       return;
     }
+    // Activity observed — Claude is alive, reset the response guard so it does not
+    // fire prematurely during legitimate long-running tasks.
+    this.resetResponseGuard(chatId);
     state.stage = stage;
     await this.editStatusMessage(state);
   }
