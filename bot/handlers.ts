@@ -75,6 +75,7 @@ import { handleProjectFacts, handleProjectScan } from "./commands/project-facts.
 import { handleMemoryExport, handleMemoryImport } from "./commands/memory-export.ts";
 import { handleForumSetup, handleForumSync, handleTopicRename, handleTopicClose, handleTopicReopen, handleForumHub } from "./commands/forum.ts";
 import { handleQuickstart } from "./commands/quickstart.ts";
+import { handleResume } from "./commands/resume.ts";
 import { handleVoice, handlePhoto, handleDocument, handleVideo, handleVideoNote, handleSticker } from "./media.ts";
 import { handleCallbackQuery } from "./callbacks.ts";
 import { handleText } from "./text-handler.ts";
@@ -111,6 +112,7 @@ export function registerHandlers(b: Bot): void {
   b.command("remove", handleRemove);
   b.command("cleanup", handleCleanup);
   b.command("summarize", handleSummarize);
+  b.command("resume", handleResume);
   b.command("status", handleStatus);
   b.command("stats", handleStats);
   b.command("logs", handleLogs);
