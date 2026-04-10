@@ -13,7 +13,8 @@ import fs from "fs";
 function tryOpenLogFile(path: string): pino.DestinationStream | null {
   try {
     fs.mkdirSync(path.replace(/\/[^/]+$/, ""), { recursive: true });
-    return pino.destination({ dest: path, sync: false });
+    const dest = pino.destination({ dest: path, sync: true });
+    return dest;
   } catch {
     return null;
   }
