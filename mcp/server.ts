@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { type Bot } from "grammy";
 import { randomUUID } from "crypto";
-import { basename } from "path";
+import { basename, resolve as resolvePath } from "path";
 import { z } from "zod";
 import { executeTool } from "./tools.ts";
 import { registerMcpSession, unregisterMcpSession } from "./bridge.ts";
@@ -36,10 +36,13 @@ function isLocalRequest(req: IncomingMessage): boolean {
   const parts = addr.split(".").map(Number);
   if (parts.length !== 4 || parts.some((p) => isNaN(p))) return false;
   const [a, b] = parts;
-  // RFC 1918: 10.0.0.0/8, 172.16.0.0/12 (includes Docker bridge 172.17-31), 192.168.0.0/16
-  return a === 10 ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168);
+  // Only Docker default bridge (172.17.x.x) — remove broad RFC 1918 trust
+  return a === 172 && b === 17;
+}
+
+function isAllowedTranscriptPath(p: string): boolean {
+  const resolved = resolvePath(String(p));
+  return resolved.startsWith("/home") || resolved.startsWith("/root") || resolved.startsWith("/tmp");
 }
 
 // Track active transports by session
@@ -196,6 +199,11 @@ function readBody(req: IncomingMessage): Promise<string> {
 }
 
 export function startMcpHttpServer(bot: Bot | null): ReturnType<typeof createServer> {
+  if (CONFIG.TELEGRAM_TRANSPORT === "webhook" && !CONFIG.TELEGRAM_WEBHOOK_SECRET) {
+    console.error("[security] FATAL: TELEGRAM_WEBHOOK_SECRET must be set in webhook mode. Generate with: openssl rand -hex 32");
+    process.exit(1);
+  }
+
 
   const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", `http://localhost:${CONFIG.PORT}`);
@@ -362,6 +370,11 @@ export function startMcpHttpServer(bot: Bot | null): ReturnType<typeof createSer
         if (!transcript_path || !project_path) {
           res.writeHead(400, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "transcript_path and project_path required" }));
+          return;
+        }
+        if (!isAllowedTranscriptPath(transcript_path)) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Invalid transcript_path" }));
           return;
         }
         // Non-blocking — respond immediately, extract in background

@@ -368,7 +368,8 @@ async function handleGitFile(res: ServerResponse, sessionId: number, url: URL): 
   if (!file) { sendError(res, "path required"); return; }
   // Prevent path traversal
   if (file.includes("..")) { sendError(res, "Invalid path", 400); return; }
-  const ref = url.searchParams.get("ref") ?? "HEAD";
+  const rawRef = url.searchParams.get("ref") ?? "HEAD";
+  const ref = /^[a-zA-Z0-9._\-\/~^:]{1,200}$/.test(rawRef) ? rawRef : "HEAD";
   const { ok, out } = await gitExec(path, ["show", `${ref}:${file}`]);
   if (!ok) { sendError(res, out || "File not found", 404); return; }
   sendJson(res, { content: out });
@@ -377,7 +378,8 @@ async function handleGitFile(res: ServerResponse, sessionId: number, url: URL): 
 async function handleGitDiff(res: ServerResponse, sessionId: number, url: URL): Promise<void> {
   const path = await getSessionPath(sessionId);
   if (!path) { sendError(res, "Session not found", 404); return; }
-  const ref = url.searchParams.get("ref") ?? "HEAD~1";
+  const rawRef = url.searchParams.get("ref") ?? "HEAD~1";
+  const ref = /^[a-zA-Z0-9._\-\/~^:]{1,200}$/.test(rawRef) ? rawRef : "HEAD~1";
   const file = url.searchParams.get("path");
   const args = file ? ["diff", ref, "--", file] : ["diff", ref];
   const { ok, out } = await gitExec(path, args);

@@ -1,5 +1,5 @@
 import type { Bot } from "grammy";
-import { join } from "path";
+import { join, basename } from "path";
 import { mkdir } from "fs/promises";
 import { CONFIG } from "../config.ts";
 
@@ -24,7 +24,9 @@ export async function downloadFile(
   const file = await bot.api.getFile(fileId);
   const filePath = file.file_path!;
   const ext = filePath.split(".").pop() ?? "bin";
-  const safeName = filename ?? `${fileId}.${ext}`;
+  const safeName = filename
+    ? basename(filename).replace(/[^a-zA-Z0-9._\-]/g, "_") || `${fileId}.${ext}`
+    : `${fileId}.${ext}`;
   const destPath = join(INBOX_DIR, safeName);
 
   const url = `https://api.telegram.org/file/bot${bot.token}/${filePath}`;
