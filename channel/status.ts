@@ -80,7 +80,7 @@ function formatStatusText(stage: string, elapsed: string, tokens: string): strin
 
     let body = `<pre>${escapeHtml(visible.join("\n"))}</pre>`;
     if (hidden.length > 0) {
-      body += `<tg-spoiler><pre>${escapeHtml(hidden.join("\n"))}</pre></tg-spoiler>`;
+      body += `<tg-spoiler>${escapeHtml(hidden.join("\n"))}</tg-spoiler>`;
     }
     return `${header}\n${body}`;
   }
@@ -232,7 +232,9 @@ export class StatusManager {
     this.accumulateStats(key, stage);
     const state = this.activeStatus.get(key);
     if (!state) {
-      await this.sendStatusMessage(chatId, stage);
+      // No active status — poller always creates one before sending the notification,
+      // so this can only happen in a race (in-flight callback after deleteStatusMessage).
+      // Do NOT create a new orphan message here.
       return;
     }
     state.stage = stage;
@@ -267,7 +269,10 @@ export class StatusManager {
     const tokens = this.lastTokenInfo.get(key);
     const tokenStr = tokens ? ` · ↓ ${tokens}` : "";
     const text = formatStatusText(state.stage, elapsed, tokenStr);
-    await editTelegramMessage(token, state.chatId, state.messageId, text, { parse_mode: "HTML" });
+    const res = await editTelegramMessage(token, state.chatId, state.messageId, text, { parse_mode: "HTML" });
+    if (!res.ok && !res.errorBody?.includes("message is not modified")) {
+      channelLogger.warn({ error: res.errorBody, messageId: state.messageId }, "editStatusMessage failed");
+    }
   }
 
   async deleteStatusMessage(chatId: string): Promise<void> {
