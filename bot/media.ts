@@ -206,7 +206,7 @@ export async function handleVoice(ctx: Context): Promise<void> {
     await ctx.reply(
       `⚠️ Нет активной CLI-сессии для этого проекта.\n` +
       `Голосовое сообщение не обработано.\n\n` +
-      `/sessions — список сессий | /switch 0 — standalone режим`,
+      `/sessions — список сессий | /standalone — standalone режим`,
     );
     return;
   }

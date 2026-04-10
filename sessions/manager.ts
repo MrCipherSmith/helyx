@@ -5,7 +5,7 @@ import { broadcast } from "../mcp/notification-broadcaster.ts";
 import { logger } from "../logger.ts";
 import { transitionSession, type SessionStatus } from "./state-machine.ts";
 
-export type TerminationCallback = (sessionId: number, projectPath: string | null, sessionName: string | null) => void;
+export type TerminationCallback = (sessionId: number, projectPath: string | null, sessionName: string | null) => void | Promise<void>;
 let terminationCallback: TerminationCallback | null = null;
 
 /** Register a callback to be called when a non-ephemeral session terminates unexpectedly. */
@@ -208,10 +208,10 @@ export class SessionManager {
   }
 
   async disconnect(clientId: string): Promise<void> {
-    const rows = await sql`SELECT id, name, source, project FROM sessions WHERE client_id = ${clientId}`;
+    const rows = await sql`SELECT id, name, source, project, project_path FROM sessions WHERE client_id = ${clientId}`;
     if (rows.length === 0) { this.activeClients.delete(clientId); return; }
 
-    const { id, name, source, project } = rows[0];
+    const { id, name, source, project, project_path } = rows[0];
     // Ephemeral: unnamed cli sessions OR sessions without a project (HTTP MCP temp registrations)
     const isEphemeral = name?.startsWith("cli-") || !project;
 
@@ -224,8 +224,7 @@ export class SessionManager {
       const newStatus: SessionStatus = source === 'remote' ? 'inactive' : 'terminated';
       await transitionSession(sql, id, newStatus, { name: name ?? source });
       if (newStatus === 'terminated' && terminationCallback) {
-        const full = await sql`SELECT project_path FROM sessions WHERE id = ${id}`;
-        terminationCallback(id, full[0]?.project_path ?? null, name ?? null);
+        terminationCallback(id, project_path ?? null, name ?? null);
       }
     }
     this.activeClients.delete(clientId);
@@ -249,7 +248,7 @@ export class SessionManager {
   async markStale(maxAgeSeconds: number = 600): Promise<number> {
     // Get all DB-active sessions
     const rows = await sql`
-      SELECT id, client_id, source FROM sessions
+      SELECT id, client_id, source, project_path, name FROM sessions
       WHERE status = 'active' AND id != 0
         AND last_active < now() - make_interval(secs => ${maxAgeSeconds})
     `;
@@ -262,8 +261,7 @@ export class SessionManager {
         if (applied) {
           count++;
           if (newStatus === 'terminated' && terminationCallback) {
-            const full = await sql`SELECT project_path, name FROM sessions WHERE id = ${row.id}`;
-            terminationCallback(row.id, full[0]?.project_path ?? null, full[0]?.name ?? null);
+            terminationCallback(row.id, row.project_path ?? null, row.name ?? null);
           }
         }
       }

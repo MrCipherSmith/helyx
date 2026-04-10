@@ -2,6 +2,7 @@ import type { Bot } from "grammy";
 import { streamResponse, type MessageParam, type StreamContext } from "../claude/client.ts";
 import { chunkText } from "../utils/chunk.ts";
 import { markdownToTelegramHtml } from "./format.ts";
+import { startTyping } from "../utils/typing.ts";
 import { logger } from "../logger.ts";
 
 const EDIT_INTERVAL_MS = 1500;
@@ -13,6 +14,7 @@ export async function streamToTelegram(
   system: string,
   messages: MessageParam[],
   ctx?: StreamContext,
+  threadId?: number,
 ): Promise<string> {
   // Send initial "thinking" message
   const sent = await bot.api.sendMessage(Number(chatId), TYPING_INDICATOR);
@@ -76,10 +78,11 @@ export async function streamToTelegram(
     }
   };
 
-  // Keep typing indicator alive during long responses (Telegram clears it after ~5s)
-  const typingInterval = setInterval(() => {
-    bot.api.sendChatAction(Number(chatId), "typing").catch(() => {});
-  }, 4000);
+  // Keep typing indicator alive during long responses (Telegram clears it after ~5s).
+  // Pass message_thread_id for forum topics so the indicator appears in the correct thread.
+  const typing = startTyping(() =>
+    bot.api.sendChatAction(Number(chatId), "typing", threadId ? { message_thread_id: threadId } : undefined),
+  );
 
   try {
     for await (const delta of streamResponse(messages, system, ctx)) {
@@ -106,7 +109,7 @@ export async function streamToTelegram(
       await bot.api.editMessageText(Number(chatId), messageId, "(empty response)");
     }
   } finally {
-    clearInterval(typingInterval);
+    typing.stop();
   }
 
   return accumulated;

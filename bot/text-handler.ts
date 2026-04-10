@@ -8,7 +8,7 @@ import { sql } from "../memory/db.ts";
 import { appendLog } from "../utils/stats.ts";
 import { pendingInput, clearPendingInput, pendingToolInput, clearPendingTool, getBotRef } from "./handlers.ts";
 import { getSwitchContext, clearSwitchContext } from "./switch-cache.ts";
-import { replyInThread } from "./format.ts";
+import { replyInThread, escapeHtml } from "./format.ts";
 import { getForumChatId } from "./forum-cache.ts";
 import { enqueueForTopic, topicQueueKey } from "./topic-queue.ts";
 export { replyInThread } from "./format.ts";
@@ -76,14 +76,14 @@ export async function handleText(ctx: Context): Promise<void> {
 
   if (route.mode === "disconnected") {
     appendLog(route.sessionId, chatId, "route", `session "${route.sessionName}" not active`, "warn");
-    const sessionLabel = route.sessionName ?? `#${route.sessionId}`;
-    const projectHint = route.projectPath ? `\n📁 Проект: <code>${route.projectPath}</code>` : "";
+    const sessionLabel = escapeHtml(route.sessionName ?? `#${route.sessionId}`);
+    const projectHint = route.projectPath ? `\n📁 Проект: <code>${escapeHtml(route.projectPath)}</code>` : "";
     await replyInThread(
       ctx,
       `⚠️ Сессия <b>${sessionLabel}</b> не активна.${projectHint}\n\n` +
       `Если Claude Code запущен — сессия подключится автоматически при следующем запуске.\n` +
       `Или:\n` +
-      `/switch 0 — перейти в standalone (без Claude Code)\n` +
+      `/standalone — перейти в standalone (без Claude Code)\n` +
       `/sessions — все сессии`,
       { parse_mode: "HTML" },
     );
@@ -165,7 +165,7 @@ export async function handleText(ctx: Context): Promise<void> {
 
       try {
         appendLog(sessionId, chatId, "llm", "streaming response...");
-        const response = await streamToTelegram(bot, ctx.chat!.id, system, messages, { sessionId, chatId, operation: "chat" });
+        const response = await streamToTelegram(bot, ctx.chat!.id, system, messages, { sessionId, chatId, operation: "chat" }, forumTopicId);
         appendLog(sessionId, chatId, "reply", `sent ${response.length} chars`);
         await addMessage({ sessionId, projectPath, chatId, role: "assistant", content: response });
       } catch (err: any) {
@@ -176,8 +176,9 @@ export async function handleText(ctx: Context): Promise<void> {
       touchIdleTimer(sessionId, chatId, projectPath);
       await checkOverflow(sessionId, chatId, projectPath);
     },
-    async (position) => {
-      await replyInThread(ctx, `⏳ В очереди (#${position}). Предыдущий запрос обрабатывается...`);
+    (position) => {
+      replyInThread(ctx, `⏳ В очереди (#${position}). Предыдущий запрос обрабатывается...`)
+        .catch(() => {});
     },
   );
 }

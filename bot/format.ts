@@ -16,6 +16,11 @@ export function replyInThread(
   return ctx.reply(text, extra as any);
 }
 
+/** Escape characters that have special meaning in Telegram HTML parse_mode. */
+export function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 // Characters that must be escaped in MarkdownV2
 const ESCAPE_CHARS = /([_*\[\]()~`>#+\-=|{}.!\\])/g;
 
