@@ -1,7 +1,7 @@
 import type { Bot } from "grammy";
 import { InputFile } from "grammy";
 import { CONFIG } from "../config.ts";
-import { logger } from "../logger.ts";
+import { channelLogger } from "../logger.ts";
 
 const GROQ_API_KEY = CONFIG.GROQ_API_KEY;
 // OpenAI TTS key — read directly since config merges it into OPENROUTER_API_KEY
@@ -48,7 +48,7 @@ function stripMarkdown(text: string): string {
     .trim();
 }
 
-/** Synthesize via Groq playai-tts (multilingual, auto language detect). */
+/** Synthesize via Groq orpheus (English only). */
 async function synthesizeGroq(text: string): Promise<Buffer | null> {
   if (!GROQ_API_KEY) return null;
 
@@ -59,16 +59,16 @@ async function synthesizeGroq(text: string): Promise<Buffer | null> {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "playai-tts",
+      model: "canopylabs/orpheus-v1-english",
       input: text.slice(0, 4000),
-      voice: "Fritz-PlayAI",
+      voice: "tara",
       response_format: "mp3",
     }),
   });
 
   if (!res.ok) {
     const err = await res.text();
-    logger.error({ status: res.status, err }, "tts: Groq error");
+    channelLogger.error({ status: res.status, err }, "tts: Groq error");
     return null;
   }
 
@@ -95,7 +95,7 @@ async function synthesizeOpenAI(text: string): Promise<Buffer | null> {
 
   if (!res.ok) {
     const err = await res.text();
-    logger.error({ status: res.status, err }, "tts: OpenAI error");
+    channelLogger.error({ status: res.status, err }, "tts: OpenAI error");
     return null;
   }
 
@@ -116,7 +116,7 @@ export async function synthesize(text: string): Promise<Buffer | null> {
       const buf = await synthesizeOpenAI(clean);
       if (buf) return buf;
     } catch (err) {
-      logger.warn({ err }, "tts: OpenAI failed, trying Groq");
+      channelLogger.warn({ err }, "tts: OpenAI failed, trying Groq");
     }
   }
 
@@ -124,7 +124,7 @@ export async function synthesize(text: string): Promise<Buffer | null> {
   try {
     return await synthesizeGroq(clean);
   } catch (err) {
-    logger.error({ err }, "tts: all providers failed");
+    channelLogger.error({ err }, "tts: all providers failed");
     return null;
   }
 }
@@ -148,7 +148,7 @@ export function maybeAttachVoice(
       if (!buf) return;
       return bot.api.sendVoice(Number(chatId), new InputFile(buf, "voice.mp3"), opts);
     })
-    .catch((err) => logger.error({ err }, "tts: failed to send voice"));
+    .catch((err) => channelLogger.error({ err }, "tts: failed to send voice"));
 }
 
 /**
@@ -175,5 +175,5 @@ export function maybeAttachVoiceRaw(
         body: form,
       });
     })
-    .catch((err) => logger.error({ err }, "tts: failed to send voice (raw)"));
+    .catch((err) => channelLogger.error({ err }, "tts: failed to send voice (raw)"));
 }
