@@ -34,6 +34,9 @@ Browse the git repository of the selected session:
 - **Log** — commit history with diff viewer
 - **Status** — modified/staged/untracked files with per-file diffs
 
+![Files](../assets/webapp-files.jpg)
+![Files viewer](../assets/webapp-files-viewer.jpg)
+
 ### Perms Tab
 Approve or deny pending tool permission requests from Claude:
 - **Allow** — one-time approval
