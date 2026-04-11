@@ -1,4 +1,4 @@
-# Claude Bot — Roadmap
+# Helyx — Roadmap
 
 ## How to Use This Document
 
@@ -37,8 +37,8 @@
 
 #### run-cli.sh: Shared .env Loading
 
-- **Bug fixed** (`scripts/run-cli.sh`): API keys set in `claude-bot/.env` (e.g. `GROQ_API_KEY`, `YANDEX_API_KEY`) were not available in non-claude-bot project channels because only the project's own `.env` was loaded.
-- **Fix**: `load_env()` function now loads `claude-bot/.env` first, then overlays the project-specific `.env`. Already-set vars (e.g. Docker-injected `DATABASE_URL`) are never overridden.
+- **Bug fixed** (`scripts/run-cli.sh`): API keys set in `helyx/.env` (e.g. `GROQ_API_KEY`, `YANDEX_API_KEY`) were not available in non-helyx project channels because only the project's own `.env` was loaded.
+- **Fix**: `load_env()` function now loads `helyx/.env` first, then overlays the project-specific `.env`. Already-set vars (e.g. Docker-injected `DATABASE_URL`) are never overridden.
 - **Files changed:** `scripts/run-cli.sh`
 
 #### Findings: TTS Provider Comparison
@@ -256,7 +256,7 @@
 - `.github/workflows/e2e.yml` ready — waiting for GitHub secrets to activate
 
 #### Google AI Provider in Setup Wizard
-- Re-added Google AI (Gemma 4) as interactive option in `claude-bot setup`
+- Re-added Google AI (Gemma 4) as interactive option in `helyx setup`
 - Wizard now presents all four supported providers: Anthropic / Google AI / OpenRouter / Ollama
 - Collects `GOOGLE_AI_API_KEY` and optionally `GOOGLE_AI_MODEL` (default: `gemma-4-31b-it`)
 - **Files changed:** `cli.ts` (~lines 111–130, provider selection block)
@@ -290,8 +290,8 @@
 - **Commits:** 3feb0f5, e88efb3
 
 #### CLI Changes
-- `claude-bot start` — spawns `claude` directly with `CHANNEL_SOURCE=local` (no `run-cli.sh`)
-- `claude-bot restart` — syncs `TELEGRAM_BOT_TOKEN` from `.env` into `~/.claude.json` MCP server config
+- `helyx start` — spawns `claude` directly with `CHANNEL_SOURCE=local` (no `run-cli.sh`)
+- `helyx restart` — syncs `TELEGRAM_BOT_TOKEN` from `.env` into `~/.claude.json` MCP server config
 - `run()` helper — new `stream: true` option pipes stdout/stderr directly to terminal (real-time build output)
 
 ### v1.11.0
@@ -384,7 +384,7 @@ None currently. Latest merged work completed in v1.22.0.
 
 These items have PRDs written and are ready to implement.
 
-### Project Rename: claude-bot → Helyx (temporary name, pending final decision)
+### Project Rename: helyx → Helyx (temporary name, pending final decision)
 - Full rename: CLI, MCP servers, Docker, DB, Telegram bot, domain, GitHub repo
 - **PRD:** `docs/requirements/rename-to-helyx-2026-04-10/en/rename-to-helyx.md`
 - **Blocked on:** final name decision
@@ -394,7 +394,7 @@ These items have PRDs written and are ready to implement.
 - **Blocked on:** adding 3 secrets in GitHub repo Settings → Secrets and variables → Actions:
   - `CLAUDE_BOT_TOKEN` — Telegram bot token
   - `ALLOWED_USERS` — `446593035`
-  - `TEST_BASE_URL` — `https://claude-bot.mrciphersmith.com`
+  - `TEST_BASE_URL` — `https://helyx.mrciphersmith.com`
 - **After:** E2E tests run automatically on every push to main and PRs
 
 ---
@@ -436,7 +436,7 @@ Features identified as valuable but without PRDs yet.
 
 ### Remote Access via SSH Tunnel (Automated)
 - Auto-setup Cloudflare Tunnel or frp tunnel for remote laptop deployment
-- `claude-bot setup-tunnel` command
+- `helyx setup-tunnel` command
 - **Why:** Extended guide exists (`guides/remote-laptop-setup.md`); could be fully automated.
 - **Effort:** High — tunnel management, DNS setup, certificate rotation
 

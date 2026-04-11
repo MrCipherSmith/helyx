@@ -19,7 +19,7 @@ cd "$PROJECT_DIR" || { echo "[run-cli] Cannot cd to $PROJECT_DIR"; exit 1; }
 echo "[run-cli] Project: $PROJECT_DIR"
 echo "[run-cli] Log: $LOG_FILE"
 
-# Load shared API keys from claude-bot .env (GROQ_API_KEY, OPENAI_API_KEY, etc.)
+# Load shared API keys from helyx .env (GROQ_API_KEY, OPENAI_API_KEY, etc.)
 # then overlay project-specific .env on top. Skip already-set vars to avoid
 # overriding Docker-injected values like DATABASE_URL.
 load_env() {
@@ -33,9 +33,9 @@ load_env() {
   done < "$envfile"
 }
 
-CLAUDE_BOT_DIR="$(dirname "$(dirname "$(realpath "$0")")")"
-load_env "$CLAUDE_BOT_DIR/.env" && echo "[run-cli] Loaded claude-bot .env"
-if [ "$PROJECT_DIR" != "$CLAUDE_BOT_DIR" ] && [ -f ".env" ]; then
+HELYX_DIR="$(dirname "$(dirname "$(realpath "$0")")")"
+load_env "$HELYX_DIR/.env" && echo "[run-cli] Loaded helyx .env"
+if [ "$PROJECT_DIR" != "$HELYX_DIR" ] && [ -f ".env" ]; then
   load_env ".env" && echo "[run-cli] Loaded project .env"
 fi
 
@@ -55,7 +55,7 @@ while true; do
   if [ -z "$IN_TMUX" ]; then
     # Outside tmux: capture terminal output via script for monitoring
     > "$OUTPUT_FILE"  # truncate
-    script -qfc "CHANNEL_SOURCE=remote claude --dangerously-load-development-channels server:claude-bot-channel" "$OUTPUT_FILE"
+    script -qfc "CHANNEL_SOURCE=remote claude --dangerously-load-development-channels server:helyx-channel" "$OUTPUT_FILE"
     EXIT_CODE=$?
   else
     # Inside tmux: watch for the channel permission prompt and auto-confirm it.
@@ -76,7 +76,7 @@ while true; do
       done
     ) &
     CONFIRM_PID=$!
-    CHANNEL_SOURCE=remote claude --dangerously-load-development-channels server:claude-bot-channel
+    CHANNEL_SOURCE=remote claude --dangerously-load-development-channels server:helyx-channel
     EXIT_CODE=$?
     # Clean up the confirm watcher if Claude exited before it finished
     kill "$CONFIRM_PID" 2>/dev/null

@@ -53,7 +53,7 @@ const PermissionRequestSchema = NotificationSchema.extend({
 });
 
 const mcp = new Server(
-  { name: "claude-bot-channel", version: "0.1.0" },
+  { name: "helyx-channel", version: "0.1.0" },
   {
     capabilities: {
       tools: {},
