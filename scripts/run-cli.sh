@@ -70,7 +70,7 @@ while true; do
           break
         fi
         # Already past the prompt (running or exited) — stop watching
-        if echo "$out" | grep -q "Listening for channel\|❯\|run-cli\] Exited"; then
+        if echo "$out" | grep -q "Listening for channel\|run-cli\] Exited"; then
           break
         fi
       done
