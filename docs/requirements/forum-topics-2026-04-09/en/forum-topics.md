@@ -16,7 +16,7 @@ Replace the single-thread DM interaction model with a Telegram Forum Supergroup 
 
 Today all projects share one private DM chat. The user must:
 1. `/switch keryx` — to talk to keryx
-2. `/switch claude-bot` — to talk to claude-bot
+2. `/switch helyx` — to talk to helyx
 3. etc.
 
 All status updates, permission requests, and replies from multiple projects appear in the same thread. Context is confusing and the `/switch` ceremony is friction.
@@ -266,18 +266,18 @@ Remove the `📌 ${sessionName} · ` prefix from status messages when running in
 2. Enables Topics in group Settings → Group type → Topics
 3. Adds bot, promotes to admin, enables "Manage Topics"
 4. In General topic: `/forum_setup`
-5. Bot creates topics: "keryx", "claude-bot", "cralson-bot", "vantage-frontend"
+5. Bot creates topics: "keryx", "helyx", "cralson-bot", "vantage-frontend"
 6. Done — topics appear in the left sidebar
 
 ### Daily Use
 1. User taps "keryx" topic in sidebar
 2. Types: "добавь тест для auth middleware"
 3. Bot replies in the same topic — status updates appear here
-4. Switches to "claude-bot" topic — separate thread, different session
+4. Switches to "helyx" topic — separate thread, different session
 5. No `/switch` ever needed
 
 ### Permission Requests
-- "claude-bot" session requests permission → button appears in "claude-bot" topic
+- "helyx" session requests permission → button appears in "helyx" topic
 - "keryx" session requests permission → button appears in "keryx" topic
 - No more all-sessions permissions mixed in one DM
 

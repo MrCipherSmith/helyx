@@ -22,12 +22,12 @@ Analyzed the last 20 git commits and identified a documentation gap between impl
 | 9a94620 | fix | Normalize cli_config JSONB storage |
 | cb65946 | feat | Provider-aware tmux projects |
 | 34b907d | fix | Run OpenCode serve in tmux session |
-| a625154 | feat | `--provider` flag on `claude-bot add`, `/api/sessions/register` endpoint |
+| a625154 | feat | `--provider` flag on `helyx add`, `/api/sessions/register` endpoint |
 | 0959fae | feat | `/add`, `/model`, `/connections` commands and provider badges |
 | 7149300 | fix | Buttons-only layout for /skills and /commands |
 | b221450 | fix | Better skills/commands UI |
 | afa61aa | feat | `/skills`, `/commands`, `/hooks` with inline buttons and tool invocation |
-| b945c04 | feat | `--name` flag on `claude-bot add` |
+| b945c04 | feat | `--name` flag on `helyx add` |
 | 57e32f8 | fix | Stop/down commands preserve standalone session |
 | 3d81555 | feat | `/remove` command to manually delete sessions |
 | 4253715 | feat | `prune` command for interactive session cleanup |
@@ -52,7 +52,7 @@ Analyzed the last 20 git commits and identified a documentation gap between impl
 | Feature | Status Before | Status After |
 |---------|--------------|--------------|
 | `--provider` flag on `add` | Not documented | Documented with examples (opencode/local/remote) |
-| `claude-bot attach <url>` | Not documented | Documented |
+| `helyx attach <url>` | Not documented | Documented |
 | Provider-specific tmux windows | Not documented | Documented |
 
 ### 3.3 Missing Sections

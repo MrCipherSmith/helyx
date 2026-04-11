@@ -124,7 +124,7 @@ React + Tailwind SPA, доступна через порт 3847:
 - **Logs**: per-session логи с поиском
 - **Memory**: hot context (топ-10 последних), tag cloud с удалением по тегу, индикатор Indexing...
 
-### FR-11: CLI-утилита (`claude-bot`)
+### FR-11: CLI-утилита (`helyx`)
 Установка, setup wizard, управление tmux-сессиями, backup, мониторинг. Команды: `setup`, `connect`, `up`, `down`, `ps`, `add`, `remove`, `backup`, `logs`, `status`.
 
 ---
@@ -265,7 +265,7 @@ Feature: Удалённое управление Claude Code через Telegram
 ## 12. Верификация
 
 ### Ручное тестирование
-- `claude-bot connect . --tmux` → сессия появляется в `/sessions`
+- `helyx connect . --tmux` → сессия появляется в `/sessions`
 - Отправить сообщение → Claude Code получает, отвечает через `reply`
 - Голосовое сообщение → транскрипция → ответ CLI
 - `/remember "факт"` → повторный `/remember "тот же факт"` → ответ "Already known"
@@ -278,7 +278,7 @@ Feature: Удалённое управление Claude Code через Telegram
 - Docker: `docker compose ps` → все контейнеры running
 
 ### Наблюдаемость
-- Логи бота: `docker logs claude-bot-bot-1 -f`
+- Логи бота: `docker logs helyx-bot-1 -f`
 - Dashboard: `http://localhost:3847`
 - `/status` в Telegram → DB, Ollama, сессии
 - `/stats` → токены, стоимость по провайдеру

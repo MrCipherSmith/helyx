@@ -101,7 +101,7 @@ function isLocalRequest(req: IncomingMessage): boolean {
 }
 ```
 
-> **Note:** If the bot runs on a non-default Docker network (e.g., `172.18.x.x`), adjust the bridge range accordingly. Check with `docker network inspect claude-bot`.
+> **Note:** If the bot runs on a non-default Docker network (e.g., `172.18.x.x`), adjust the bridge range accordingly. Check with `docker network inspect helyx`.
 
 ---
 
@@ -205,7 +205,7 @@ Order matters: fix all 6 issues in one commit.
 ### Phase 2 — Deploy (requires downtime ~2 min)
 
 ```bash
-cd ~/bots/claude-bot
+cd ~/bots/helyx
 
 # 1. Verify TELEGRAM_WEBHOOK_SECRET is set in .env
 grep TELEGRAM_WEBHOOK_SECRET .env

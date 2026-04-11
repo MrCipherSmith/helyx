@@ -78,8 +78,8 @@ Users reading the README had no way to discover these features existed.
 - `OPENCODE_PORT` — OpenCode serve port (default: `8000`)
 
 **FR-6: CLI Commands Reference**
-- `claude-bot add [dir] [--name] [--provider]` — with provider types
-- `claude-bot attach <url>` — connect to running OpenCode
+- `helyx add [dir] [--name] [--provider]` — with provider types
+- `helyx attach <url>` — connect to running OpenCode
 - Providers subsection showing example for each type
 
 **FR-7: Roadmap**
@@ -133,7 +133,7 @@ Feature: README accurately documents all v1.8.0 features
     Given a user reads the README
     When they look for LLM provider information
     Then they find a "LLM Providers" section explaining /add, /model, /connections
-    And they find a CLI example: claude-bot add ~/project --provider opencode
+    And they find a CLI example: helyx add ~/project --provider opencode
 
   Scenario: Contributor checks environment variables
     Given a developer sets up the bot

@@ -128,11 +128,11 @@ Feature: Telegram Mini App — Claude Dev Hub
     And есть 2 активные сессии в БД
     Then WebApp открывается с боковым меню
     And меню показывает 2 проекта с именами и статусами
-    When пользователь выбирает проект "claude-bot"
+    When пользователь выбирает проект "helyx"
     Then контекст переключается на этот проект
 
   Scenario: Просмотр файлов проекта
-    Given выбран проект с project_path="/home/altsay/bots/claude-bot"
+    Given выбран проект с project_path="/home/altsay/bots/helyx"
     When пользователь открывает вкладку "Files"
     Then отображается дерево файлов из `git ls-tree`
     When пользователь кликает на "channel.ts"

@@ -165,7 +165,7 @@ Feature: Telegram Mini App — Claude Dev Hub
     And first session is auto-selected
 
   Scenario: Browse files
-    Given session with project_path="/home/altsay/bots/claude-bot" selected
+    Given session with project_path="/home/altsay/bots/helyx" selected
     When user opens Files tab
     Then GET /api/webapp/git/:id/tree called
     And file tree rendered

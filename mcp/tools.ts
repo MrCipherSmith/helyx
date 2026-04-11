@@ -298,13 +298,29 @@ export async function executeTool(
       if (!bot) return text("Telegram bot not available");
       const chatId = Number(args.chat_id);
       const replyText = args.text as string;
+
+      // Look up forum_topic_id for this session's project so the reply goes to the right thread
+      let forumTopicId: number | null = null;
+      if (clientId) {
+        const sid = sessionManager.getSessionIdByClient(clientId);
+        if (sid !== undefined) {
+          const sess = await sessionManager.get(sid);
+          if (sess?.projectPath) {
+            const { sql } = await import("../memory/db.ts");
+            const rows = await sql`SELECT forum_topic_id FROM projects WHERE path = ${sess.projectPath}`;
+            forumTopicId = rows[0]?.forum_topic_id ?? null;
+          }
+        }
+      }
+
+      const extra: Record<string, unknown> = { parse_mode: args.parse_mode as any };
+      if (forumTopicId) extra.message_thread_id = forumTopicId;
+
       const chunks = chunkText(replyText);
       for (const chunk of chunks) {
-        await bot.api.sendMessage(chatId, chunk, {
-          parse_mode: args.parse_mode as any,
-        });
+        await bot.api.sendMessage(chatId, chunk, extra as any);
       }
-      maybeAttachVoice(bot, chatId, replyText);
+      maybeAttachVoice(bot, chatId, replyText, forumTopicId);
       return text(`Sent ${chunks.length} message(s) to chat ${args.chat_id}`);
     }
 

@@ -66,7 +66,7 @@ Two message origins:
 
 ### Session Registration
 
-**FR-1:** CLI `claude-bot add --provider opencode [dir]` calls `/api/sessions/register` with `{ cliType: "opencode", cliConfig: { port, autostart, tmuxSession } }`
+**FR-1:** CLI `helyx add --provider opencode [dir]` calls `/api/sessions/register` with `{ cliType: "opencode", cliConfig: { port, autostart, tmuxSession } }`
 
 **FR-2:** `/api/sessions/register` validates `cliType ∈ { "claude", "opencode" }` and sanitizes `cliConfig` (port range 1024–65535, tmuxSession alphanum pattern)
 
@@ -76,7 +76,7 @@ Two message origins:
 
 ### OpenCode Serve Launch
 
-**FR-5:** CLI wizard (`claude-bot add --provider opencode`) auto-starts `opencode serve` in a persistent tmux session named after the project
+**FR-5:** CLI wizard (`helyx add --provider opencode`) auto-starts `opencode serve` in a persistent tmux session named after the project
 
 **FR-6:** `scripts/run-opencode.sh` encapsulates the serve launch: creates tmux session if absent, starts `opencode serve --hostname 0.0.0.0 --port <port>`
 
@@ -188,7 +188,7 @@ Feature: OpenCode TUI Integration
 
   Scenario: Register OpenCode project via CLI
     Given opencode is installed on host
-    When user runs: claude-bot add ~/my-project --provider opencode
+    When user runs: helyx add ~/my-project --provider opencode
     Then CLI starts opencode serve in tmux session "my-project-opencode"
     And CLI calls POST /api/sessions/register with cliType=opencode
     And bot starts opencodeMonitor for the new session

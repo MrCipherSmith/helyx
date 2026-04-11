@@ -39,7 +39,7 @@ The recommended way to use Helyx is with a **Telegram Forum Supergroup** where e
 ### Step 2 — Add the bot as admin
 
 1. Open group **⋮ → Manage Group → Administrators → Add Admin**
-2. Search your bot (e.g. `@HelyxBot`)
+2. Search your bot (e.g. `@helyx_grace_bot`)
 3. Enable **Manage Topics** permission
 4. Save
 
@@ -287,7 +287,7 @@ This will check prerequisites, clone the repo to `~/bots/helyx`, install depende
 
 Custom install directory:
 ```bash
-CLAUDE_BOT_DIR=~/my-bot curl -fsSL https://raw.githubusercontent.com/MrCipherSmith/helyx/main/install.sh | bash
+HELYX_DIR=~/my-bot curl -fsSL https://raw.githubusercontent.com/MrCipherSmith/helyx/main/install.sh | bash
 ```
 
 ### Manual Install

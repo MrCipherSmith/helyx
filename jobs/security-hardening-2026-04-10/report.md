@@ -38,7 +38,7 @@ All 3 agents were denied Edit/Bash tools in their sandboxed context. Fixes were 
 
 ```
 bun test tests/unit/  →  77 pass, 0 fail
-docker compose build bot  →  Image claude-bot-bot Built
+docker compose build bot  →  Image helyx-bot Built
 curl http://localhost:3847/health  →  {"status":"ok","db":"connected","uptime":9}
 ```
 

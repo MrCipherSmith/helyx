@@ -109,9 +109,6 @@ export async function handleForumSetup(ctx: Context): Promise<void> {
     : "";
 
   await replyInThread(ctx, `✅ Forum configured. ${result.topicsCreated} topic(s) created.${errorPart}`);
-
-  // Pin Dev Hub button in General topic
-  await sendDevHubPin(ctx, chatId);
 }
 
 // --- /forum_sync ---

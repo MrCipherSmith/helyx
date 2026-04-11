@@ -89,7 +89,7 @@ type='note' for temporary observations. Tag with ['project', '<category>'] for p
 Show all fact memories tagged `["project"]` for the current or specified project:
 
 ```
-📚 Project Knowledge — claude-bot
+📚 Project Knowledge — helyx
 
 [architecture]  Port 3847 serves both MCP server and dashboard — same HTTP server
 [setup]         downloads/ must be pre-created by user — Docker creates it as root:root

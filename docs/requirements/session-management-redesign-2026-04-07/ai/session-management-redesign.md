@@ -352,8 +352,8 @@ Bot unreachable when channel.ts calls summarize-work:
 Feature: FR-1 Projects Table
   Scenario: create project
     Given projects table exists (migration v6 applied)
-    When POST /api/projects {name:"claude-bot", path:"/home/user/bots/claude-bot"}
-    Then SELECT * FROM projects WHERE name='claude-bot' RETURNS 1 row
+    When POST /api/projects {name:"helyx", path:"/home/user/bots/helyx"}
+    Then SELECT * FROM projects WHERE name='helyx' RETURNS 1 row
     And row.tmux_session_name IS NOT NULL
 
 Feature: FR-2 Remote Session Uniqueness

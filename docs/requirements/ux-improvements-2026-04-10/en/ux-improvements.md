@@ -236,7 +236,7 @@ These are pure code changes; deploy by rebuilding the Docker image.
 
 ```bash
 # After code changes:
-cd ~/bots/claude-bot
+cd ~/bots/helyx
 
 # 1. Run tests
 bun test tests/unit/

@@ -1063,6 +1063,25 @@ async function mcpRegister() {
   await run(["claude", "mcp", "add-json", "-s", "user", "helyx-channel", config]);
   done();
 
+  step("Adding MCP permissions to Claude settings");
+  const claudeSettingsPath = `${process.env.HOME}/.claude/settings.json`;
+  try {
+    const raw = existsSync(claudeSettingsPath) ? await Bun.file(claudeSettingsPath).text() : "{}";
+    const settings = JSON.parse(raw);
+    if (!settings.permissions) settings.permissions = {};
+    if (!settings.permissions.allow) settings.permissions.allow = [];
+    const toAdd = ["mcp__helyx__*", "mcp__helyx-channel__*"];
+    for (const perm of toAdd) {
+      if (!settings.permissions.allow.includes(perm)) {
+        settings.permissions.allow.push(perm);
+      }
+    }
+    await Bun.write(claudeSettingsPath, JSON.stringify(settings, null, 2));
+  } catch (err: any) {
+    console.warn(`  ${c.yellow("warn:")} could not update Claude settings: ${err?.message}`);
+  }
+  done();
+
   console.log(`\n  ${c.green("MCP servers registered.")}`);
 }
 

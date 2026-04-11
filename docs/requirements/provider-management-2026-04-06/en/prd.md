@@ -29,7 +29,7 @@ The bot originally supported only Claude Code sessions. Adding OpenCode as a sec
 - Allow registering a project session with `claude` or `opencode` provider from Telegram
 - Allow switching model on-the-fly for both provider types
 - Show provider API key status and guide configuration for OpenCode providers
-- Keep registration consistent with CLI (`claude-bot add --provider`)
+- Keep registration consistent with CLI (`helyx add --provider`)
 
 ---
 

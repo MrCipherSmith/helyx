@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "claude-bot": {
+    "helyx": {
       "type": "http",
       "url": "http://localhost:3847/mcp"
     }

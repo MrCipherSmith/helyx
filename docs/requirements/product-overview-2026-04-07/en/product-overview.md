@@ -124,7 +124,7 @@ React + Tailwind SPA, served on port 3847:
 - **Logs**: per-session logs with search
 - **Memory**: hot context (top-10 recent), tag cloud with per-tag delete, Indexing... indicator
 
-### FR-11: CLI Tool (`claude-bot`)
+### FR-11: CLI Tool (`helyx`)
 Installation, setup wizard, tmux session management, backup, monitoring. Commands: `setup`, `connect`, `up`, `down`, `ps`, `add`, `remove`, `backup`, `logs`, `status`.
 
 ---
@@ -264,7 +264,7 @@ Feature: Remote Claude Code control via Telegram
 ## 12. Verification
 
 ### Manual Testing
-- `claude-bot connect . --tmux` → session appears in `/sessions`
+- `helyx connect . --tmux` → session appears in `/sessions`
 - Send message → Claude Code receives it, replies via `reply`
 - Voice message → transcription → CLI response
 - `/remember "fact"` → repeat `/remember "same fact"` → reply "Already known"
@@ -277,7 +277,7 @@ Feature: Remote Claude Code control via Telegram
 - Docker: `docker compose ps` → all containers running
 
 ### Observability
-- Bot logs: `docker logs claude-bot-bot-1 -f`
+- Bot logs: `docker logs helyx-bot-1 -f`
 - Dashboard: `http://localhost:3847`
 - `/status` in Telegram → DB, Ollama, sessions
 - `/stats` → tokens, cost by provider

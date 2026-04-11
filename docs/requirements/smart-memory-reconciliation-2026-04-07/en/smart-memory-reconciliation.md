@@ -6,7 +6,7 @@ Instead of always inserting a new memory record, the system first searches for s
 
 ## 2. Context
 
-- **Product:** claude-bot — Telegram bot managing Claude Code sessions
+- **Product:** helyx — Telegram bot managing Claude Code sessions
 - **Module:** memory (long-term.ts), bot/commands/memory.ts, mcp/tools.ts, memory/summarizer.ts
 - **Tech Stack:** Bun, TypeScript, PostgreSQL + pgvector, Ollama (nomic-embed-text), Claude API
 - **Current DB schema version:** v8
@@ -190,7 +190,7 @@ Feature: Smart Memory Reconciliation
     And log contains "[memory] reconcile failed: ..., falling back to remember()"
 
   Scenario: summarizeWork does not duplicate project_context
-    Given project_context id=10 for project 'claude-bot' exists in memories
+    Given project_context id=10 for project 'helyx' exists in memories
     When session exits and new project_context is generated
     Then rememberSmart updates record #10 in place
     And no duplicate project_context record is created

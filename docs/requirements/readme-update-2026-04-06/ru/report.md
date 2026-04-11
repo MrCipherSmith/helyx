@@ -21,11 +21,11 @@
 | f8fbd3c | feat | Общая OpenCode-сессия между TUI и ботом |
 | 9a94620 | fix | Нормализация JSONB-хранения cli_config |
 | cb65946 | feat | Tmux-проекты с поддержкой провайдеров |
-| a625154 | feat | Флаг `--provider` в `claude-bot add`, эндпоинт `/api/sessions/register` |
+| a625154 | feat | Флаг `--provider` в `helyx add`, эндпоинт `/api/sessions/register` |
 | 0959fae | feat | Команды `/add`, `/model`, `/connections`, бейджи провайдеров |
 | 7149300 | fix | Кнопочный UI для /skills и /commands |
 | afa61aa | feat | `/skills`, `/commands`, `/hooks` с inline-кнопками и вызовом инструментов |
-| b945c04 | feat | Флаг `--name` в `claude-bot add` |
+| b945c04 | feat | Флаг `--name` в `helyx add` |
 | 3d81555 | feat | Команда `/remove` для удаления сессий |
 | 4253715 | feat | Команда `prune` для очистки старых сессий |
 
@@ -49,7 +49,7 @@
 | Функция | До | После |
 |---------|----|-------|
 | Флаг `--provider` в `add` | Не задокументирован | Задокументирован с примерами |
-| `claude-bot attach <url>` | Не задокументирован | Задокументирован |
+| `helyx attach <url>` | Не задокументирован | Задокументирован |
 | Tmux-окна с именами провайдеров | Не задокументировано | Задокументировано |
 
 ### 3.3 Отсутствующие разделы
