@@ -38,8 +38,8 @@ function isLocalRequest(req: IncomingMessage): boolean {
   const parts = addr.split(".").map(Number);
   if (parts.length !== 4 || parts.some((p) => isNaN(p))) return false;
   const [a, b] = parts;
-  // Only Docker default bridge (172.17.x.x) — remove broad RFC 1918 trust
-  return a === 172 && b === 17;
+  // Allow all Docker bridge networks (RFC 1918: 172.16–31.x.x)
+  return a === 172 && b >= 16 && b <= 31;
 }
 
 function isAllowedTranscriptPath(p: string): boolean {

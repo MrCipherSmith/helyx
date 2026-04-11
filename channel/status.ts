@@ -199,6 +199,10 @@ export class StatusManager {
     }
 
     const forum = this.getForumTarget();
+    // If forum is configured but topic ID is unknown, skip status — avoid leaking to General
+    if (this.ctx.forumChatId?.() && !forum) {
+      return null;
+    }
     const effectiveChatId = forum?.chatId ?? chatId;
     const key = this.stateKey(chatId);
 

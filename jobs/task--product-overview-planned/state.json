@@ -5,7 +5,7 @@
   "create_pr": true,
   "context": {
     "source": "PRD docs/requirements/product-overview-2026-04-07",
-    "project_dir": "/home/altsay/bots/claude-bot",
+    "project_dir": "/home/altsay/bots/helyx",
     "base_branch": "main"
   },
   "branch": {
@@ -35,6 +35,6 @@
     "all_files": []
   },
   "documentation": {
-    "job_path": "/home/altsay/bots/claude-bot/jobs/task--product-overview-planned"
+    "job_path": "/home/altsay/bots/helyx/jobs/task--product-overview-planned"
   }
 }

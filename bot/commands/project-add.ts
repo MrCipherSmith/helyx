@@ -9,9 +9,14 @@ import { logger } from "../../logger.ts";
 import { replyInThread } from "../format.ts";
 
 const HOST_HOME = process.env.HOST_HOME ?? "";
+const HOST_PROJECTS_DIR = process.env.HOST_PROJECTS_DIR ?? "";
 
 /** Convert a host-side absolute path to the container-visible path for existence checks. */
 function toContainerPath(hostPath: string): string {
+  // Check /host-projects first — it's writable and more specific
+  if (HOST_PROJECTS_DIR && hostPath.startsWith(HOST_PROJECTS_DIR)) {
+    return "/host-projects" + hostPath.slice(HOST_PROJECTS_DIR.length);
+  }
   if (HOST_HOME && hostPath.startsWith(HOST_HOME)) {
     return "/host-home" + hostPath.slice(HOST_HOME.length);
   }

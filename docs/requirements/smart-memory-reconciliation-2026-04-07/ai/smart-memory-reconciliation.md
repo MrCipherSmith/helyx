@@ -195,9 +195,9 @@ const mem = await rememberSmart({
 Feature: Smart Memory Reconciliation
 
   Scenario: NOOP on duplicate
-    Given memories contains: id=5, type="note", content="user works on Linux", project_path="/bots/claude-bot"
+    Given memories contains: id=5, type="note", content="user works on Linux", project_path="/bots/helyx"
     And distance(embed("I'm working on Linux"), embed("user works on Linux")) < 0.35
-    When rememberSmart({ content: "I'm working on Linux", type: "note", projectPath: "/bots/claude-bot" })
+    When rememberSmart({ content: "I'm working on Linux", type: "note", projectPath: "/bots/helyx" })
     Then Claude API called with existing=[id=5 "user works on Linux"] and new="I'm working on Linux"
     And Claude returns "NOOP"
     And no INSERT or UPDATE executed
@@ -242,11 +242,11 @@ Feature: Smart Memory Reconciliation
     And log matches "[memory] reconcile failed: .+, falling back to remember()"
 
   Scenario: summarizeWork deduplication
-    Given memories contains: id=10, type="project_context", project_path="/bots/claude-bot", content="[DECISIONS]..."
-    When summarizeWork(sessionId, projectPath="/bots/claude-bot") generates new project_context text
+    Given memories contains: id=10, type="project_context", project_path="/bots/helyx", content="[DECISIONS]..."
+    When summarizeWork(sessionId, projectPath="/bots/helyx") generates new project_context text
     And distance(new_embed, embed(existing)) < 0.35
     And Claude returns "UPDATE id=10 content=\"[merged content]\""
-    Then memories count for type=project_context AND project_path="/bots/claude-bot" stays = 1
+    Then memories count for type=project_context AND project_path="/bots/helyx" stays = 1
     And memories.id=10 has updated content and embedding
 ```
 

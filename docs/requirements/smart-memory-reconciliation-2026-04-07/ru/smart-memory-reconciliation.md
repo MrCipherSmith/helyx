@@ -6,7 +6,7 @@
 
 ## 2. Контекст
 
-- **Продукт:** claude-bot — Telegram-бот, управляющий Claude Code сессиями
+- **Продукт:** helyx — Telegram-бот, управляющий Claude Code сессиями
 - **Модуль:** memory (long-term.ts), bot/commands/memory.ts, mcp/tools.ts, memory/summarizer.ts
 - **Стек:** Bun, TypeScript, PostgreSQL + pgvector, Ollama (nomic-embed-text), Claude API
 - **Текущая версия схемы БД:** v8
@@ -188,7 +188,7 @@ Feature: Smart Memory Reconciliation
     And в лог пишется "[memory] reconcile failed: ..., falling back to remember()"
 
   Scenario: summarizeWork не дублирует project_context
-    Given в memories есть project_context id=10 для проекта 'claude-bot'
+    Given в memories есть project_context id=10 для проекта 'helyx'
     When сессия завершается и генерируется новый project_context
     Then rememberSmart обновляет запись #10
     And дубль не создаётся

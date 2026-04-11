@@ -164,14 +164,14 @@ WHERE cli_type = 'opencode';
 
 ```
 Tmux:
-  claude-bot add [dir] [--name]     Register project (always Claude Code)
-  claude-bot run [dir]              Launch project in terminal
-  claude-bot attach [dir]           Add window to running tmux session (bots)
-  claude-bot up [-a] [-s]           Start all projects in tmux
+  helyx add [dir] [--name]     Register project (always Claude Code)
+  helyx run [dir]              Launch project in terminal
+  helyx attach [dir]           Add window to running tmux session (bots)
+  helyx up [-a] [-s]           Start all projects in tmux
 
 Connect:
-  claude-bot start [dir]            Register + launch in current terminal
-  claude-bot connect [dir] [-t]     Start single CLI session
+  helyx start [dir]            Register + launch in current terminal
+  helyx connect [dir] [-t]     Start single CLI session
 ```
 
 Removed: `--provider opencode`, `--opencode` flag, `ensureOpencodeServe`
@@ -191,8 +191,8 @@ Removed: `--provider opencode`, `--opencode` flag, `ensureOpencodeServe`
 | `/skills`, `/commands`, `/hooks` | Yes | High-value, unrelated to opencode |
 | `cli_type`, `cli_config` columns | Yes | Model storage, forward compat |
 | `tmux session name "bots"` | Yes | Better name than "claude" |
-| `claude-bot run`, `attach` commands | Yes | Useful CLI additions |
-| `claude-bot docker-start` separation | Yes | Cleaner command semantics |
+| `helyx run`, `attach` commands | Yes | Useful CLI additions |
+| `helyx docker-start` separation | Yes | Cleaner command semantics |
 
 ---
 
@@ -244,7 +244,7 @@ Feature: Bot works as Claude-only after OpenCode removal
 
   Scenario: Start project via CLI
     Given project registered in tmux-projects.json
-    When user runs claude-bot start ~/my-project
+    When user runs helyx start ~/my-project
     Then Claude Code launches (no provider prompt)
 
   Scenario: Model selection

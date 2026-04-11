@@ -6,7 +6,7 @@ Redesign of the session system: persistent projects, two session types (remote/l
 
 ## 2. Context
 
-- **Product:** claude-bot — Telegram bot managing Claude Code sessions
+- **Product:** helyx — Telegram bot managing Claude Code sessions
 - **Module:** sessions, memory, mcp/tools, bot/commands
 - **Tech Stack:** Bun, grammY, PostgreSQL, pgvector, Ollama (nomic-embed-text), MCP stdio
 - **Current DB schema version:** v5
@@ -40,7 +40,7 @@ Sessions are semi-ephemeral with no clear remote/local distinction. No projects 
 Create table `projects`: `id`, `name`, `path` (unique), `tmux_session_name`, `config` (jsonb, extensible), `created_at`. `/project_add` command saves to this table.
 
 ### FR-2: Remote Session
-One per project (`source='remote'`, `status='active'|'inactive'`). Created on first project start. Never deleted — status only. Started from Telegram (`/projects` → Start) or terminal (`claude-bot start --project <name>`). Connection = attach to `bots` tmux session.
+One per project (`source='remote'`, `status='active'|'inactive'`). Created on first project start. Never deleted — status only. Started from Telegram (`/projects` → Start) or terminal (`helyx start --project <name>`). Connection = attach to `bots` tmux session.
 
 ### FR-3: Local Session
 Multiple per project (`source='local'`). Created when Claude Code starts in terminal. Lives while Claude process is alive. On exit: `status='terminated'`. Record kept N days for audit, then deleted by TTL cleanup.
@@ -140,7 +140,7 @@ Edge case: if `messages` are already archived (TTL expired), summary is still av
 Feature: Persistent Projects
   Scenario: Add new project
     Given bot is running and DB is accessible
-    When user calls /project_add claude-bot /home/user/bots/claude-bot
+    When user calls /project_add helyx /home/user/bots/helyx
     Then projects table has record with correct name and path
     And tmux_session_name is auto-generated
 
@@ -172,7 +172,7 @@ Feature: Session Summary on Exit
 
 Feature: Session Switch Briefing
   Scenario: Switch with existing summary
-    Given memories has project_context for project 'claude-bot'
+    Given memories has project_context for project 'helyx'
     When user switches to that project's session
     Then bot sends summary as briefing message in chat
     And SwitchContext cache populated for chatId

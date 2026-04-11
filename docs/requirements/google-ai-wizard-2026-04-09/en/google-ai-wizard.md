@@ -2,7 +2,7 @@
 
 ## Overview
 
-Re-add Google AI (Gemma 4) as an interactive option in the `claude-bot setup` wizard (`cli.ts`), so the wizard's provider list matches the README and all four supported LLM providers are accessible without manual `.env` editing.
+Re-add Google AI (Gemma 4) as an interactive option in the `helyx setup` wizard (`cli.ts`), so the wizard's provider list matches the README and all four supported LLM providers are accessible without manual `.env` editing.
 
 ## Problem Statement
 
@@ -43,7 +43,7 @@ Only `cli.ts` requires changes (~lines 111–130, provider selection block). `cl
 
 ```gherkin
 Scenario: Wizard displays four provider options
-  Given I run "claude-bot setup"
+  Given I run "helyx setup"
   When I reach the "LLM Provider" prompt
   Then I see exactly four options including "Google AI (Gemma 4 models, free tier available)"
 

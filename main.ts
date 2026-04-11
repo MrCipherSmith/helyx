@@ -53,12 +53,16 @@ async function main() {
 
   // 6. Start Telegram transport
   if (CONFIG.TELEGRAM_TRANSPORT === "webhook") {
-    await bot.api.setWebhook(CONFIG.TELEGRAM_WEBHOOK_URL, {
-      secret_token: CONFIG.TELEGRAM_WEBHOOK_SECRET || undefined,
-      allowed_updates: ["message", "callback_query"],
-    });
+    try {
+      await bot.api.setWebhook(CONFIG.TELEGRAM_WEBHOOK_URL, {
+        secret_token: CONFIG.TELEGRAM_WEBHOOK_SECRET || undefined,
+        allowed_updates: ["message", "callback_query"],
+      });
+      console.log(`[main] webhook registered at ${CONFIG.TELEGRAM_WEBHOOK_URL}`);
+    } catch (err: any) {
+      console.warn(`[main] setWebhook failed (${err?.message}) — continuing anyway, will retry on next restart`);
+    }
     await bot.init();
-    console.log(`[main] webhook registered at ${CONFIG.TELEGRAM_WEBHOOK_URL}`);
     console.log(`[main] bot @${bot.botInfo.username} is running (webhook)`);
   } else {
     console.log("[main] starting Telegram polling...");

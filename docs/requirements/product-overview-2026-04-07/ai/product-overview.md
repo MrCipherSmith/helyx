@@ -7,7 +7,7 @@
 ## IDENTITY
 
 ```yaml
-product: claude-bot
+product: helyx
 repo: MrCipherSmith/multiclaude-tg-bot
 version: "1.10.0"
 db_schema_version: 8

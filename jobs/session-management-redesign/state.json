@@ -2,9 +2,9 @@
   "phase": "EXECUTION",
   "intent": "implement",
   "job_name": "session-management-redesign",
-  "jobs_root": "/home/altsay/bots/claude-bot/jobs",
+  "jobs_root": "/home/altsay/bots/helyx/jobs",
   "context": {
-    "project_dir": "/home/altsay/bots/claude-bot",
+    "project_dir": "/home/altsay/bots/helyx",
     "base_branch": "main",
     "prd_path": "docs/requirements/session-management-redesign-2026-04-07/ai/session-management-redesign.md"
   },

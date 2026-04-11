@@ -16,7 +16,7 @@
 ## Step 1 — Apply DB migration
 
 ```bash
-cd /home/altsay/bots/claude-bot
+cd /home/altsay/bots/helyx
 bun migrate
 # Expected: [db] migration 13: forum topics support
 ```
@@ -51,7 +51,7 @@ Open the **General** topic of the group and send:
 Bot will:
 - Verify the group has Topics enabled
 - Save the group chat ID to `bot_config`
-- Create one topic per project (e.g. `keryx`, `claude-bot`, `vantage-frontend`)
+- Create one topic per project (e.g. `keryx`, `helyx`, `vantage-frontend`)
 - Reply: `✅ Forum configured. N topics created.`
 
 Topics appear in the left sidebar immediately.
@@ -73,7 +73,7 @@ Open any project topic (e.g. `keryx`) and send a message. The bot should:
 | Action | How |
 |--------|-----|
 | Talk to keryx | Open **keryx** topic, type normally |
-| Talk to claude-bot | Open **claude-bot** topic, type normally |
+| Talk to helyx | Open **helyx** topic, type normally |
 | Check all projects | `/projects` in General topic |
 | See sessions | `/sessions` in General topic or DM |
 | Add new project | `/project_add /path/to/project` — bot auto-creates topic |

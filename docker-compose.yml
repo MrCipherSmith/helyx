@@ -23,7 +23,7 @@ services:
       - ${HOME}/.claude:/host-claude-config
       - ${KNOWLEDGE_BASE_PATH:-./.empty}:/app/knowledge-base:ro
       - ./tmux-projects.json:/app/tmux-projects.json
-      - ${HOST_PROJECTS_DIR:-${HOME}/bots}:/host-projects:ro
+      - ${HOST_PROJECTS_DIR:-${HOME}/bots}:/host-projects
       - ${HOME}:/host-home:ro
       - ./logs:/app/logs
     healthcheck:
