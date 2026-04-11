@@ -248,7 +248,7 @@ export function registerTools(
 
         if (!res.ok) {
           if (res.errorBody?.includes("can't parse entities")) {
-            res = await sendTelegramMessage(token, chatId, replyText, replyMarkup ? { reply_markup: replyMarkup } : undefined);
+            res = await sendTelegramMessage(token, chatId, replyText, { ...forumExtra, ...(replyMarkup && { reply_markup: replyMarkup }) });
             if (!res.ok) {
               channelLogger.warn({ error: res.errorBody }, "reply: Telegram API error (fallback)");
               return text(`Telegram API error`);

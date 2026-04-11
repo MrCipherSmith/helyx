@@ -33,6 +33,28 @@ Categories: `architecture`, `stack`, `setup`, `conventions`, `entry-points`, `go
 
 ---
 
+## Autonomous Loop Behavior
+
+When woken by the autonomous loop (`<<autonomous-loop>>`), **do NOT send greetings** like "На связи. Что нужно?" or "I'm here, what do you need?". Instead, run a silent health check and only notify if something requires attention.
+
+### Health check procedure (on each autonomous wakeup)
+
+1. Call `list_sessions` — check that active sessions are present and not stale.
+2. Call `docker_container_list` — verify helyx container is running.
+3. If **everything is healthy** → do nothing, send no message.
+4. If **something is wrong** → call `reply` with a concise alert:
+
+```
+⚠️ Helyx health check:
+- Sessions: <status>
+- Docker: <status>
+- Action needed: <what to do>
+```
+
+**Never send a message just to say you woke up.** Only send if there is an actionable problem.
+
+---
+
 ## Deployment Rules
 
 **NEVER restart Docker containers or run any of these without explicit user confirmation:**
