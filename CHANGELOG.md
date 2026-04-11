@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.23.0
+
+### Admin Daemon Auto-Start
+
+- **`helyx up` now starts admin-daemon** — `ensureAdminDaemon()` is called after tmux windows are launched; checks `pgrep` and spawns `admin-daemon.ts` in background if not running. Applies to both fresh start and "already running" branches.
+- **`helyx setup` installs systemd service** — copies `scripts/helyx.service` to `/etc/systemd/system/helyx@USER.service` and enables it so `helyx up` + admin-daemon auto-start on boot. Gracefully skips with manual instructions if sudo is unavailable.
+- **`/projects` ▶️ Start button now works out of the box** — previously required admin-daemon to be started manually; now guaranteed to be running after any `helyx up`.
+
 ## v1.22.0
 
 ### UX Improvements

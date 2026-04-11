@@ -451,7 +451,7 @@ Data:
   helyx cleanup [--dry-run]   Clean old queue, logs, stats (--dry-run to preview)
 
 Tmux:
-  helyx up [-a] [-s]       Start all projects in tmux (-s split panes)
+  helyx up [-a] [-s]       Start all projects in tmux (-s split panes) + admin-daemon
   helyx down               Stop all tmux sessions + clean DB
   helyx ps                 List configured projects
   helyx add [dir] [--name] [--provider]  Register project in config + bot DB (no launch)
@@ -479,8 +479,8 @@ Connect:
 | `/remove <id>` | Delete session and all its data |
 | `/cleanup` | Remove terminated and orphaned sessions |
 | **Projects** | |
-| `/projects` | List projects with status and Start/Stop buttons |
-| `/project_add` | Add project to persistent registry (creates remote session) |
+| `/projects` | List projects with status and Start/Stop buttons (launches tmux window via admin-daemon) |
+| `/project_add` | Add project to persistent registry, auto-creates forum topic |
 | `/remote_control` | tmux bots status with Kill/Start/Refresh controls |
 | **Memory** | |
 | `/remember [text]` | Save to long-term memory (bound to session) |
