@@ -66,7 +66,7 @@ Topics appear in the left sidebar immediately.
 Open any project topic and type normally:
 
 ```
-keryx topic:  "добавь тест для auth middleware"
+keryx topic:  "add a test for the auth middleware"
               → Claude replies here, status shows here, permissions appear here
 ```
 
@@ -125,9 +125,9 @@ This bot is a full **[Model Context Protocol](https://modelcontextprotocol.io) s
 
 ### AI & Media
 - **Standalone Mode** — bot responds directly via LLM API (Anthropic / Google AI / OpenRouter / Ollama) with automatic retry on 429/5xx
-- **Codex Code Review** — OpenAI Codex CLI integration for AI-powered code review; authenticate headlessly via `/codex_setup` (device flow, no terminal needed); trigger via `/codex_review` or natural language ("сделай ревью"); falls back to Claude's native review on quota/auth errors; model configurable via `CODEX_MODEL` env var
+- **Codex Code Review** — OpenAI Codex CLI integration for AI-powered code review; authenticate headlessly via `/codex_setup` (device flow, no terminal needed); trigger via `/codex_review` or natural language ("review my code"); falls back to Claude's native review on quota/auth errors; model configurable via `CODEX_MODEL` env var
 - **Voice Messages** — transcription via Groq whisper-large-v3 (free, ~200ms) with local Whisper fallback; voice replies via Yandex SpeechKit (primary) or Groq Orpheus (English fallback)
-- **Interactive Polls** — Claude can ask clarifying questions as native Telegram polls (`send_poll` MCP tool); you tap answers, press **Готово ✅**, and results flow back automatically as a user message; supports forum topic routing, 24h expiry, and vote retraction
+- **Interactive Polls** — Claude can ask clarifying questions as native Telegram polls (`send_poll` MCP tool); you tap answers, press **Submit ✅**, and results flow back automatically as a user message; supports forum topic routing, 24h expiry, and vote retraction
 - **Image Analysis** — photos analyzed by Claude in CLI sessions; standalone mode with Anthropic API
 - **File Forwarding** — photos, documents, and videos forwarded to Claude via MCP with base64 (≤5 MB images) or file path; if sent without caption, bot asks what to do before forwarding
 - **Auto-Summarization** — idle conversations are summarized to long-term memory after 15 min
@@ -730,7 +730,7 @@ Backups saved to `~/backups/helyx/` (gzipped, last 7 retained).
 - **Voice to disconnected topic** — early exit before Whisper transcription; user sees a clear error with `/standalone` hint instead of a silent failure
 - **Better "session not active" message** — shows project path, explains auto-reconnect, links to `/standalone` and `/sessions`
 - **Typing indicator refresh** — typing action re-sent every 4s during long responses; correctly targets forum topic via `message_thread_id`
-- **Queue depth feedback** — "⏳ В очереди (#N)..." message when a request is waiting behind another in the per-topic queue
+- **Queue depth feedback** — "⏳ In queue (#N)..." message when a request is waiting behind another in the per-topic queue
 - **`/quickstart` command** — 5-step onboarding guide: forum group → project add → Claude Code launch
 - **Session crash notifications** — forum topic receives a message when a session terminates unexpectedly
 - **`escapeHtml()` utility** — shared in `bot/format.ts`; all user-supplied strings in HTML messages are now properly escaped
@@ -755,32 +755,26 @@ The primary UX model is now a **Telegram Forum Supergroup** where each project h
 
 ## Recent Changes (v1.19.0)
 
-### Lease-Based Session Ownership (П.1)
-
+### Lease-Based Session Ownership
 Replaced `pg_advisory_lock` with a `lease_owner` + `lease_expires_at` column in the `sessions` table (migration v12). The lease is renewed every 60 seconds; if the channel process crashes, the lease auto-expires after 3 minutes and another process can take over. Eliminates orphaned locks and connection-scope issues from PostgreSQL pool reconnects.
 
-### Session State Machine (П.5)
-
+### Session State Machine
 `sessions/state-machine.ts` defines valid status transitions and enforces them atomically. Invalid transitions (e.g., `terminated → active`) are blocked with a warning log. All disconnects in `sessions/manager.ts` and `channel/session.ts` now route through `transitionSession()`.
 
 ### File Intent Prompt
 
-Files and photos received without a caption now trigger a prompt: `📎 filename сохранён. Что с ним сделать?`. The bot waits up to 5 minutes for the user's reply, then forwards the file to Claude with that text as the caption. Files with a caption still forward immediately.
+Files and photos received without a caption now trigger a prompt: `📎 filename saved. What should I do with it?`. The bot waits up to 5 minutes for the user's reply, then forwards the file to Claude with that text as the caption. Files with a caption still forward immediately.
 
-### MessageService & SummarizationService (П.2)
-
+### MessageService & SummarizationService
 `services/message-service.ts` and `services/summarization-service.ts` wrap short-term memory and summarizer functions with a clean typed API, including `queue()` with attachments support and `pendingCount()`.
 
-### Centralized Telegram API Client (П.6)
-
+### Centralized Telegram API Client
 `channel/telegram.ts` now exposes a unified `telegramRequest()` with automatic retry on 429 (respects `retry_after`) and 5xx errors (3 retries with backoff). All tool calls and status updates route through it.
 
-### Cleanup Jobs with Dry-Run (П.3)
-
+### Cleanup Jobs with Dry-Run
 `cleanup/jobs.ts` exposes `runAllCleanupJobs(dryRun)` with per-job row counts. `handleCleanup` in the bot and `helyx cleanup --dry-run` in the CLI use it to preview or apply cleanup.
 
-### Security Fail-Fast (П.4)
-
+### Security Fail-Fast
 Bot exits immediately at startup if `ALLOWED_USERS` is empty and `ALLOW_ALL_USERS=true` is not set. No silent open-access deployments.
 
 ### Anthropic CLI Usage Tracking

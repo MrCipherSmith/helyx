@@ -1,21 +1,21 @@
-# Настройка CLAUDE.md для работы с Telegram-ботом
+# Configuring CLAUDE.md for Helyx
 
-`CLAUDE.md` — файл инструкций, который Claude Code читает при запуске сессии. Через него можно настроить автоматическое подключение к Telegram-боту, статус-обновления и правила работы.
+`CLAUDE.md` is the instruction file Claude Code reads at session start. Use it to configure automatic bot connection, status updates, and working rules.
 
-## Где размещать
+## Where to place it
 
-| Расположение | Область действия |
+| Location | Scope |
 |---|---|
-| `~/.claude/CLAUDE.md` | Глобально — для всех проектов |
-| `<project>/CLAUDE.md` | Только для конкретного проекта |
+| `~/.claude/CLAUDE.md` | Global — all projects |
+| `<project>/CLAUDE.md` | This project only |
 
-Глобальный и проектный файлы объединяются. Используй глобальный для общих настроек (MCP, Telegram), проектный — для специфики проекта (команды сборки, архитектура).
+Both files are merged. Use the global one for shared settings (MCP, Telegram) and the project one for project-specific context (build commands, architecture).
 
 ---
 
-## Минимальная настройка (обязательно)
+## Minimum setup (required)
 
-Добавь в `CLAUDE.md` проекта или в `~/.claude/CLAUDE.md`:
+Add to your project or global `CLAUDE.md`:
 
 ```markdown
 ## MCP Integration
@@ -25,13 +25,13 @@ When starting a session, call `set_session_name` with:
 - project_path: absolute path to the current working directory
 ```
 
-Это позволяет боту определить имя сессии и показать его в `/sessions`.
+This lets the bot identify the session and display it in `/sessions`.
 
 ---
 
-## Статус-обновления в Telegram (рекомендуется)
+## Telegram status updates (recommended)
 
-Добавь этот блок, чтобы пользователь видел в Telegram что именно делает CLI:
+Add this block so users can see what the CLI is doing in real time:
 
 ```markdown
 ## Telegram Status Updates
@@ -39,17 +39,17 @@ When starting a session, call `set_session_name` with:
 When responding to Telegram channel messages (messages from `notifications/claude/channel`), call `update_status` before each major step to keep the user informed. Use the `chat_id` from the channel message metadata.
 
 Examples:
-- Before reading files: `update_status(chat_id, "Читаю файлы...")`
-- Before running commands: `update_status(chat_id, "Выполняю git status...")`
-- Before editing: `update_status(chat_id, "Редактирую код...")`
-- Before analysis: `update_status(chat_id, "Анализирую...")`
+- Before reading files: `update_status(chat_id, "Reading files...")`
+- Before running commands: `update_status(chat_id, "Running git status...")`
+- Before editing: `update_status(chat_id, "Editing code...")`
+- Before analysis: `update_status(chat_id, "Analyzing...")`
 
 Keep status messages short (under 50 chars). The status is automatically deleted when you call `reply`.
 ```
 
 ---
 
-## Правила для коммитов (опционально)
+## Commit rules (optional)
 
 ```markdown
 ## Git Commits
@@ -59,7 +59,7 @@ NEVER add "Co-Authored-By" or any co-authorship attribution in commit messages. 
 
 ---
 
-## Полный пример глобального `~/.claude/CLAUDE.md`
+## Full example — global `~/.claude/CLAUDE.md`
 
 ```markdown
 # Global CLAUDE.md
@@ -75,10 +75,10 @@ When starting a session, call `set_session_name` with:
 When responding to Telegram channel messages (messages from `notifications/claude/channel`), call `update_status` before each major step to keep the user informed. Use the `chat_id` from the channel message metadata.
 
 Examples:
-- Before reading files: `update_status(chat_id, "Читаю файлы...")`
-- Before running commands: `update_status(chat_id, "Выполняю git status...")`
-- Before editing: `update_status(chat_id, "Редактирую код...")`
-- Before analysis: `update_status(chat_id, "Анализирую...")`
+- Before reading files: `update_status(chat_id, "Reading files...")`
+- Before running commands: `update_status(chat_id, "Running git status...")`
+- Before editing: `update_status(chat_id, "Editing code...")`
+- Before analysis: `update_status(chat_id, "Analyzing...")`
 
 Keep status messages short (under 50 chars). The status is automatically deleted when you call `reply`.
 
@@ -89,24 +89,24 @@ NEVER add "Co-Authored-By" or any co-authorship attribution in commit messages.
 
 ---
 
-## Полный пример проектного `<project>/CLAUDE.md`
+## Full example — project `<project>/CLAUDE.md`
 
 ```markdown
 # CLAUDE.md
 
 ## Project Overview
 
-Краткое описание проекта, стек, основные директории.
+Brief description of the project, stack, and main directories.
 
 ## Common Commands
 
-- `bun install` — установить зависимости
-- `bun dev` — запуск в режиме разработки
-- `bun test` — запуск тестов
+- `bun install` — install dependencies
+- `bun dev` — start development server
+- `bun test` — run tests
 
 ## Architecture
 
-Описание архитектуры: какие модули, как они связаны, ключевые файлы.
+Architecture overview: modules, how they connect, key files.
 
 ## Code Style
 
@@ -117,39 +117,39 @@ NEVER add "Co-Authored-By" or any co-authorship attribution in commit messages.
 
 ---
 
-## Доступные MCP-инструменты
+## Available MCP tools
 
-CLI-сессии подключаются к боту через два MCP-сервера:
+CLI sessions connect to the bot via two MCP servers:
 
-### `helyx` (HTTP, общий)
-| Инструмент | Описание |
+### `helyx` (HTTP, shared)
+| Tool | Description |
 |---|---|
-| `set_session_name` | Задать имя сессии (вызывается автоматически) |
-| `reply` | Ответить в Telegram-чат |
-| `react` | Поставить реакцию на сообщение |
-| `edit_message` | Отредактировать сообщение бота |
-| `remember` | Сохранить в долгосрочную память |
-| `recall` | Семантический поиск по памяти |
-| `forget` | Удалить воспоминание |
-| `list_memories` | Список воспоминаний |
-| `list_sessions` | Список сессий |
-| `session_info` | Информация о сессии |
+| `set_session_name` | Set session name (called automatically at startup) |
+| `reply` | Send a message to Telegram |
+| `react` | Set an emoji reaction on a message |
+| `edit_message` | Edit a bot message |
+| `remember` | Save to long-term memory |
+| `recall` | Semantic search in memory |
+| `forget` | Delete a memory entry |
+| `list_memories` | List memory entries |
+| `list_sessions` | List sessions |
+| `session_info` | Current session info |
 
 ### `helyx-channel` (stdio, per-session)
-| Инструмент | Описание |
+| Tool | Description |
 |---|---|
-| `reply` | Ответить в Telegram (прямой доступ к Bot API) |
-| `update_status` | Обновить статус-сообщение в Telegram |
-| `remember` | Сохранить в память |
-| `recall` | Поиск по памяти |
-| `forget` | Удалить воспоминание |
-| `list_memories` | Список воспоминаний |
+| `reply` | Send to Telegram (direct Bot API access) |
+| `update_status` | Update status message in Telegram |
+| `remember` | Save to memory |
+| `recall` | Search memory |
+| `forget` | Delete a memory entry |
+| `list_memories` | List memory entries |
 
 ---
 
-## Авто-одобрение MCP-инструментов
+## Auto-approving MCP tools
 
-Чтобы CLI не спрашивал разрешение на каждый MCP-вызов, добавь в `<project>/.claude/settings.local.json`:
+To avoid Claude asking permission for every MCP call, add to `<project>/.claude/settings.local.json`:
 
 ```json
 {
@@ -162,13 +162,13 @@ CLI-сессии подключаются к боту через два MCP-се
 }
 ```
 
-Или в глобальный `~/.claude/settings.local.json` для всех проектов.
+Or add to the global `~/.claude/settings.local.json` to apply to all projects.
 
 ---
 
-## Советы
+## Tips
 
-- **Не перегружай CLAUDE.md** — Claude читает его при каждом запуске. Держи файл кратким и по делу.
-- **Используй императивные инструкции** — "Call X", "Never do Y", "Always check Z".
-- **Проектный CLAUDE.md коммитится в git** — вся команда получает одинаковые инструкции.
-- **`settings.local.json` НЕ коммитится** — это личные настройки (permissions, tokens).
+- **Keep CLAUDE.md concise** — Claude reads it on every session start. Keep it short and relevant.
+- **Use imperative instructions** — "Call X", "Never do Y", "Always check Z".
+- **Commit the project CLAUDE.md** — the whole team gets consistent instructions.
+- **Do not commit `settings.local.json`** — it contains personal settings (permissions, tokens).

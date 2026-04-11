@@ -43,7 +43,7 @@ Before synthesizing, Claude runs a fast LLM pass (~250ms via Groq llama-3.1-8b-i
 - `lease_expires_at` → "lease expires at"
 - `acquireLease()` → "acquire lease"
 - Git hashes → omitted or "the commit"
-- URLs → omitted or "по ссылке"
+- URLs → omitted or "at the link"
 - Same language as input (Russian stays Russian)
 
 ---
@@ -92,10 +92,10 @@ Both keys are optional — the bot degrades gracefully:
 ## Example flow
 
 ```
-You:    🎤 "Объясни что делает функция resolveSession"
+You:    🎤 "Explain what the resolveSession function does"
                     ↓ Groq Whisper (~200ms)
 Claude: [thinking... reading files...]
-Claude: 📝 "resolveSession отвечает за..." (long explanation)
+Claude: 📝 "resolveSession is responsible for..." (long explanation)
 Claude: 🎤 [voice message, synthesized via Yandex SpeechKit]
 ```
 

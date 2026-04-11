@@ -7,7 +7,7 @@ Helyx integrates **OpenAI Codex CLI** as a dedicated code review agent. When you
 ## How it works
 
 ```
-You:    "сделай ревью"  (or /codex_review)
+You:    "review my code"  (or /codex_review)
                 ↓
 Helyx:  checks Codex auth
                 ↓
@@ -53,7 +53,7 @@ Codex Login
 
 Or just ask naturally in your project topic:
 ```
-"сделай ревью"
+"review my code"
 "check my changes"
 "review PR"
 ```
