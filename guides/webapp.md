@@ -10,6 +10,8 @@ The Claude Dev Hub is a mobile-first WebApp embedded in the bot, accessible via 
 2. Tap the **Dev Hub** button in the menu bar (bottom of chat)
 3. The app opens as a Telegram WebApp — auto-themed to your Telegram light/dark mode
 
+![Sessions](../assets/webapp-sessions.jpg)
+
 ---
 
 ## Git Browser (📁)
@@ -39,6 +41,9 @@ Browse your project's git repository directly from mobile.
 - Color-coded unified diff: green additions / red removals / blue hunk headers
 
 > **Note:** The git browser reads committed and working tree state directly from the host filesystem via a Docker volume mount (`${HOME}:/host-home:ro`). It does not connect to GitHub.
+
+![Files](../assets/webapp-files.jpg)
+![Files viewer](../assets/webapp-files-viewer.jpg)
 
 ---
 
@@ -87,6 +92,8 @@ Live overview of all sessions.
 - All sessions listed with source badge and status dot
 - **Switch** button — switches the bot's active session for your Telegram chat
 - **Delete** button — visible only for `source=local` non-active sessions; deletes all session data
+
+![Monitor](../assets/webapp-monitor.jpg)
 
 ---
 
