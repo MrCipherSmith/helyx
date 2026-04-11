@@ -384,9 +384,9 @@ None currently. Latest merged work completed in v1.22.0.
 
 These items have PRDs written and are ready to implement.
 
-### Project Rename: claude-bot → Iryx (temporary name, pending final decision)
+### Project Rename: claude-bot → Helyx (temporary name, pending final decision)
 - Full rename: CLI, MCP servers, Docker, DB, Telegram bot, domain, GitHub repo
-- **PRD:** `docs/requirements/rename-to-iryx-2026-04-10/en/rename-to-iryx.md`
+- **PRD:** `docs/requirements/rename-to-helyx-2026-04-10/en/rename-to-helyx.md`
 - **Blocked on:** final name decision
 
 ### GitHub Actions E2E CI — Activate Secrets
