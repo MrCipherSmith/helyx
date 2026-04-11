@@ -1,0 +1,216 @@
+# Changelog
+
+## v1.22.0
+
+### UX Improvements
+
+- **Voice to disconnected topic** — early exit before Whisper transcription; user sees a clear error with `/standalone` hint instead of a silent failure
+- **Better "session not active" message** — shows project path, explains auto-reconnect, links to `/standalone` and `/sessions`
+- **Typing indicator refresh** — typing action re-sent every 4s during long responses; correctly targets forum topic via `message_thread_id`
+- **Queue depth feedback** — "⏳ In queue (#N)..." message when a request is waiting behind another in the per-topic queue
+- **`/quickstart` command** — 5-step onboarding guide: forum group → project add → Claude Code launch
+- **Session crash notifications** — forum topic receives a message when a session terminates unexpectedly
+- **`escapeHtml()` utility** — shared in `bot/format.ts`; all user-supplied strings in HTML messages are now properly escaped
+- **N+1 SQL eliminated** in `sessions/manager.ts` — `project_path` merged into existing SELECTs in `disconnect()` and `markStale()`
+
+## v1.21.0
+
+### Interactive Polls
+
+Claude can ask clarifying questions as native Telegram polls (`send_poll` MCP tool). You tap answers, press **Submit ✅**, and results flow back automatically as a user message. Supports forum topic routing, 24h expiry, and vote retraction. See [Interactive Polls guide](guides/polls.md).
+
+### Read Receipts
+
+👀 reaction when the bot receives your message, ⚡ when Claude Code picks it up and starts working.
+
+### Codex Code Review
+
+OpenAI Codex CLI integration for AI-powered code review. Authenticate headlessly via `/codex_setup` (device flow, no terminal needed). Trigger via `/codex_review` or natural language. Falls back silently to Claude's native review on quota or auth errors. See [Codex Review guide](guides/codex.md).
+
+### `/forum_clean` command
+
+Scans all projects with a `forum_topic_id`, validates each against the Telegram API, and nulls out IDs that correspond to deleted topics. Run `/forum_sync` afterward to recreate missing topics.
+
+## v1.20.0
+
+### Forum Topics — One Topic Per Project
+
+The primary UX model is now a **Telegram Forum Supergroup** where each project has a dedicated topic:
+
+- `/forum_setup` — run once in the General topic; bot creates one topic per registered project and stores the group ID in `bot_config`
+- `/project_add` — automatically creates a forum topic for the new project when forum is configured
+- **Message routing** — `sessions/router.ts` resolves `message_thread_id` → project → active session; General topic (thread ID = 1) is control-only
+- **Status messages** — `StatusManager` in `channel/status.ts` sends all status updates to the project topic; project name prefix suppressed (the topic already identifies the project)
+- **Permission requests** — `PermissionHandler` in `channel/permissions.ts` sends Allow/Always/Deny buttons to the correct project topic
+- **`reply` and `update_status` MCP tools** — automatically include `message_thread_id` when called from a forum session
+- **Forum cache** — `bot/forum-cache.ts` lazy-loads `forum_chat_id` from DB with invalidation on setup/sync
+- **DB migration v13** — `forum_topic_id INTEGER` column on `projects`, `bot_config` table for runtime settings
+- **34 new unit tests** — `tests/unit/forum-topics.test.ts` covers routing logic, icon color rotation, `replyInThread`, StatusManager forum target, PermissionHandler forum target, migration schema shape
+- **Backward compatible** — if `/forum_setup` was never run, the bot operates in DM mode unchanged
+
+## v1.19.0
+
+### Lease-Based Session Ownership
+Replaced `pg_advisory_lock` with a `lease_owner` + `lease_expires_at` column in the `sessions` table (migration v12). The lease is renewed every 60 seconds; if the channel process crashes, the lease auto-expires after 3 minutes and another process can take over. Eliminates orphaned locks and connection-scope issues from PostgreSQL pool reconnects.
+
+### Session State Machine
+`sessions/state-machine.ts` defines valid status transitions and enforces them atomically. Invalid transitions (e.g., `terminated → active`) are blocked with a warning log. All disconnects in `sessions/manager.ts` and `channel/session.ts` now route through `transitionSession()`.
+
+### File Intent Prompt
+
+Files and photos received without a caption now trigger a prompt: `📎 filename saved. What should I do with it?`. The bot waits up to 5 minutes for the user's reply, then forwards the file to Claude with that text as the caption. Files with a caption still forward immediately.
+
+### MessageService & SummarizationService
+`services/message-service.ts` and `services/summarization-service.ts` wrap short-term memory and summarizer functions with a clean typed API, including `queue()` with attachments support and `pendingCount()`.
+
+### Centralized Telegram API Client
+`channel/telegram.ts` now exposes a unified `telegramRequest()` with automatic retry on 429 (respects `retry_after`) and 5xx errors (3 retries with backoff). All tool calls and status updates route through it.
+
+### Cleanup Jobs with Dry-Run
+`cleanup/jobs.ts` exposes `runAllCleanupJobs(dryRun)` with per-job row counts. `handleCleanup` in the bot and `helyx cleanup --dry-run` in the CLI use it to preview or apply cleanup.
+
+### Security Fail-Fast
+Bot exits immediately at startup if `ALLOWED_USERS` is empty and `ALLOW_ALL_USERS=true` is not set. No silent open-access deployments.
+
+### Anthropic CLI Usage Tracking
+
+Claude Code (Anthropic) model usage is now visible in the dashboard Stats page and the Telegram Mini App session monitor. When a CLI session response completes, the token count captured from the tmux/output monitor is recorded in `api_request_stats` with `provider=anthropic` and model from the session's `cli_config`. The "By model" table in both UIs now shows Sonnet/Opus/Haiku usage alongside standalone providers (Google AI, OpenRouter, Ollama).
+
+### Media Forwarding
+
+Photos, documents, and videos forwarded to Claude via MCP channel with structured `attachments` field (`base64` for images ≤5 MB, `path` for larger files). Migration v11 adds `attachments JSONB` to `message_queue`.
+
+## v1.18.0
+
+### Service Layer
+
+`services/` directory introduces typed, testable wrappers over raw SQL for all domain operations. `ProjectService.create()` atomically handles INSERT + remote session registration. `PermissionService.transition()` enforces the state machine — `pending → approved | rejected | expired` — and rejects re-transitions into terminal states.
+
+### Structured Logging (Pino)
+
+All `console.log/error/warn` replaced with Pino structured logging. `logger.ts` exports two loggers: `logger` (stdout) and `channelLogger` (stderr fd 2, safe for MCP stdio). Every log entry carries structured fields (`sessionId`, `chatId`, `messageCount`) — searchable with any JSON log aggregator. Set `LOG_LEVEL=debug` in `.env` for verbose output.
+
+### Channel Adapter — 7 Modules
+
+The `channel.ts` monolith is now `channel/` with focused modules: `session.ts`, `permissions.ts`, `tools.ts`, `status.ts`, `poller.ts`, `telegram.ts`, `index.ts`. Each module owns one concern; the entrypoint wires them together.
+
+### Environment Validation (Zod)
+
+`config.ts` validates all env vars with Zod at startup. Missing required variables produce a clear error and immediate exit instead of a runtime crash on first use. `ALLOWED_USERS` is now required — `ALLOW_ALL_USERS=true` must be set explicitly for open access.
+
+### Unit Test Suite
+
+43 pure unit tests with no DB, no network, no Telegram: `tests/unit/session-lifecycle.test.ts`, `tests/unit/permission-flow.test.ts`, `tests/unit/memory-reconciliation.test.ts`. Run with `bun test tests/unit/` — completes in ~24ms.
+
+## v1.17.0
+
+See [ROADMAP](docs/ROADMAP.md) for earlier version history.
+
+## v1.14.0
+
+### Google AI Provider in Setup Wizard
+
+Re-added Google AI (Gemma 4) as an interactive option in `helyx setup`. The wizard now presents all four supported providers: Anthropic / Google AI / OpenRouter / Ollama. Selecting Google AI prompts for `GOOGLE_AI_API_KEY` and `GOOGLE_AI_MODEL` (default: `gemma-4-31b-it`).
+
+### MCP Tools: react and edit_message in Channel Adapter
+
+Added `react` (set emoji reaction) and `edit_message` (edit a bot message) to the `channel.ts` stdio MCP adapter. Both tools were already available in the HTTP MCP server — now they work in all connection modes.
+
+## v1.13.0
+
+### Telegram Mini App — Claude Dev Hub
+
+A mobile-first WebApp accessible via the **Dev Hub** button in Telegram. Features:
+- **Git browser** — file tree, commit log, status, diff viewer
+- **Permission manager** — Allow / Deny / Always Allow from mobile
+- **Session monitor** — live session status (working/idle/inactive), API stats by model (including Anthropic Claude usage from CLI sessions), token totals with cost estimate, permission history with tool breakdown, recent tool calls
+
+See [Mini App Guide](guides/webapp.md) for full feature description and auth details. Full technical spec: [`dashboard/webapp/SPEC.md`](dashboard/webapp/SPEC.md)
+
+## v1.12.0
+
+### Local Session Management
+
+- **Delete local sessions from Telegram** — `/sessions` now shows `🗑 Delete` inline buttons for local sessions that are not active; clicking deletes all session data and refreshes the list
+- **Delete local sessions from dashboard** — Sessions table gains a `Delete` action column; button is visible only for `source=local` + non-active rows; uses `useMutation` with query invalidation
+- **`source` field in sessions API** — `GET /api/sessions` and `GET /api/overview` now return `source` (`remote` | `local` | `standalone`); added to `Session` TypeScript interface
+
+### Session Source Refactoring
+
+Three distinct modes now instead of two:
+
+| `CHANNEL_SOURCE` env | Mode | DB behavior |
+|---|---|---|
+| `remote` | `helyx up` / tmux | One persistent session per project; reattaches on reconnect |
+| `local` | `helyx start` | New temporary session each run; work summary on exit |
+| _(not set)_ | Plain `claude` | No DB registration (`sessionId = null`), no polling |
+
+Previously, unset `CHANNEL_SOURCE` defaulted to `local`. Now it is a distinct standalone mode that skips DB entirely — preventing phantom sessions when running `claude` without the bot.
+
+### CLI Changes
+
+- **`helyx start`** — no longer invokes `run-cli.sh`; spawns `claude` directly with `CHANNEL_SOURCE=local` (simpler path, no auto-restart loop for local sessions)
+- **`helyx restart`** — after rebuild, syncs `TELEGRAM_BOT_TOKEN` from `.env` into `~/.claude.json` MCP server config (`syncChannelToken`), so channel auth stays in sync without manual edits
+- **`run()` helper** — new `stream: true` option pipes stdout/stderr directly to terminal (used in restart for real-time build output)
+
+## v1.11.0
+
+### Dashboard Project Management
+- **Projects page** — create, start, and stop projects directly from the web dashboard (previously Telegram-only)
+- **SSE notifications** — `GET /api/events` streams `session-state` events to dashboard via Server-Sent Events
+- **Browser notifications** — dashboard requests Notification permission and shows push notifications on session state changes
+- **Projects API** — `GET/POST /api/projects`, `POST /api/projects/:id/start|stop`, `DELETE /api/projects/:id`
+
+### Memory TTL per Type
+- **Per-type retention** — each memory type has its own TTL: `fact` 90d, `summary` 60d, `decision` 180d, `note` 30d, `project_context` 180d
+- **Hourly cleanup** — expired memories deleted automatically based on `created_at`
+- **Configurable** — override via `MEMORY_TTL_FACT_DAYS`, `MEMORY_TTL_SUMMARY_DAYS`, etc.
+- **DB migration v9** — `archived_at` column + partial index on `memories` table
+
+## v1.10.0
+
+### Smart Memory Reconciliation
+- **LLM deduplication** — `/remember` and work summaries no longer blindly insert; similar memories are found via vector search, then `claude-haiku` decides ADD / UPDATE / DELETE / NOOP
+- **Updated replies** — `/remember` now shows `Saved (#N)` / `Updated #N` / `Already known (#N)` based on what actually happened
+- **project_context deduplication** — session exit summaries update existing project context instead of accumulating duplicates
+- **Graceful fallback** — Ollama or Claude API unavailable → falls back to plain insert, no data loss
+- **New config** — `MEMORY_SIMILARITY_THRESHOLD` (default `0.35`) and `MEMORY_RECONCILE_TOP_K` (default `5`)
+
+## v1.9.0
+
+### Session Management Redesign
+- **Persistent Projects** — `projects` DB table, `/project_add` saves to DB (not JSON file)
+- **Remote/Local Sessions** — one remote session per project (persistent), multiple local (temporary per process)
+- **Work Summary on Exit** — local session exit triggers AI summary of work done ([DECISIONS][FILES][PROBLEMS][PENDING][CONTEXT]), vectorized to long-term memory
+- **Session Switch Briefing** — switching sessions shows last project context summary, injected as system context
+- **Semantic Search** — `search_project_context` MCP tool + `search_context` command
+- **Archival TTL** — messages and permission_requests archived on summarize, deleted after `ARCHIVE_TTL_DAYS` (default 30)
+- **Status vocab** — `active | inactive | terminated` (was `active | disconnected`)
+- **DB migrations v6-v8** — projects table, archived_at columns, project_id FK, unique remote-per-project
+
+## v1.8.0
+
+### Skills & Commands Integration
+- **`/skills`** — Interactive skill browser with inline buttons (reads from `~/.claude/skills/`)
+- **`/commands`** — Custom command launcher (reads from `~/.claude/commands/`)
+- **`/hooks`** — View configured Hookify rules
+- **Deferred input** — Tools requiring args prompt user then enqueue
+- **Icon support** — 38+ emojis for quick visual identification
+
+### Session Management Commands
+- **`/add`** — Register project as Claude Code session (prompts for path, auto-switches)
+- **`/model`** — Select Claude model via inline buttons (stored in `cli_config.model`)
+- **Adapter pattern** — `adapters/ClaudeAdapter` (message_queue), extensible registry
+- **Session router** — `sessions/router.ts` typed routing: standalone / cli / disconnected
+
+### CLI Refactoring
+- **`start [dir]`** — Register + launch project in current terminal (replaces old start = docker-only)
+- **`docker-start`** — New command for `docker compose up -d` (old `start` behavior)
+- **`add [dir]`** — Now registration-only (saves to config + bot DB, no launch)
+- **`run [dir]`** — New command to launch registered project in terminal
+- **`attach [dir]`** — New command to add window to running tmux `bots` session
+- **tmux session renamed** — `claude` → `bots` (hosts both claude and opencode windows)
+
+### Database Improvements
+- **JSONB normalization** — Safe PostgreSQL storage with explicit casting
+- **Read-merge-write** — Concurrent-safe provider config updates
