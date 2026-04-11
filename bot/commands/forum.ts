@@ -200,6 +200,48 @@ export async function handleTopicReopen(ctx: Context): Promise<void> {
   }
 }
 
+// --- /forum_clean ---
+
+export async function handleForumClean(ctx: Context): Promise<void> {
+  const forumChatId = await forumService.getForumChatId();
+  if (!forumChatId) {
+    await replyInThread(ctx, "⚠️ Forum not configured. Run /forum_setup first.");
+    return;
+  }
+
+  await replyInThread(ctx, "🔍 Scanning forum topics…");
+
+  let result: { valid: number; cleaned: number; errors: string[]; projects: string[] };
+  try {
+    result = await forumService.cleanOrphans(ctx.api);
+  } catch (err: any) {
+    logger.error({ err }, "forum_clean failed");
+    await replyInThread(ctx, `❌ Clean failed: ${err?.message ?? String(err)}`);
+    return;
+  }
+
+  invalidateForumCache();
+
+  const parts: string[] = [];
+
+  if (result.cleaned === 0 && result.valid > 0) {
+    parts.push(`✅ All ${result.valid} topic(s) are valid — nothing to clean.`);
+  } else {
+    parts.push(`✅ Done. Valid: ${result.valid} | Cleaned: ${result.cleaned}`);
+  }
+
+  if (result.projects.length > 0) {
+    parts.push(`\nRemoved stale topic IDs for:\n${result.projects.map((n) => `• ${n}`).join("\n")}`);
+    parts.push("\nRun /forum_sync to recreate the missing topics.");
+  }
+
+  if (result.errors.length > 0) {
+    parts.push(`\n⚠️ Errors:\n${result.errors.map((e) => `• ${e}`).join("\n")}`);
+  }
+
+  await replyInThread(ctx, parts.join(""));
+}
+
 // --- /forum_hub ---
 
 export async function handleForumHub(ctx: Context): Promise<void> {

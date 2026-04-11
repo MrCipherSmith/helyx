@@ -7,15 +7,19 @@
 import { channelLogger } from "../logger.ts";
 
 const TELEGRAM_API = "https://api.telegram.org";
-const MAX_RETRIES = 3;
+const MAX_ERROR_RETRIES = 3; // for network errors and 5xx only
 
-/** Low-level request with retry on 429 (rate limit) and 5xx errors. */
+/** Low-level request with retry on 429 (rate limit) and 5xx errors.
+ * 429 retries are unlimited — always waits the retry_after period.
+ * Network/5xx errors retry up to MAX_ERROR_RETRIES times.
+ */
 async function telegramRequest(
   token: string,
   method: string,
   body: Record<string, unknown>,
 ): Promise<{ ok: boolean; result?: unknown; errorBody?: string; status?: number }> {
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+  let errorAttempt = 0;
+  while (true) {
     let res: Response;
     try {
       res = await fetch(`${TELEGRAM_API}/bot${token}/${method}`, {
@@ -24,8 +28,9 @@ async function telegramRequest(
         body: JSON.stringify(body),
       });
     } catch (err) {
-      if (attempt === MAX_RETRIES) return { ok: false, errorBody: String(err) };
-      await Bun.sleep(1000 * (attempt + 1));
+      if (errorAttempt >= MAX_ERROR_RETRIES) return { ok: false, errorBody: String(err) };
+      await Bun.sleep(1000 * (errorAttempt + 1));
+      errorAttempt++;
       continue;
     }
 
@@ -34,7 +39,7 @@ async function telegramRequest(
       return { ok: true, result: data.result };
     }
 
-    // Rate limit — wait retry_after seconds
+    // Rate limit — wait retry_after seconds, then retry unconditionally
     if (res.status === 429) {
       const data = (await res.json().catch(() => ({}))) as { parameters?: { retry_after?: number } };
       const wait = (data.parameters?.retry_after ?? 5) * 1000;
@@ -43,17 +48,16 @@ async function telegramRequest(
       continue;
     }
 
-    // Server error — retry with backoff
-    if (res.status >= 500 && attempt < MAX_RETRIES) {
-      await Bun.sleep(1000 * (attempt + 1));
+    // Server error — retry with backoff up to MAX_ERROR_RETRIES
+    if (res.status >= 500 && errorAttempt < MAX_ERROR_RETRIES) {
+      await Bun.sleep(1000 * (errorAttempt + 1));
+      errorAttempt++;
       continue;
     }
 
     const errorBody = await res.text().catch(() => String(res.status));
     return { ok: false, errorBody, status: res.status };
   }
-
-  return { ok: false, errorBody: "max retries exceeded" };
 }
 
 // --- Public helpers ---
@@ -94,6 +98,25 @@ export function deleteTelegramMessage(token: string, chatId: string, messageId: 
     chat_id: Number(chatId),
     message_id: messageId,
   }).catch(() => {});
+}
+
+export async function sendTelegramPoll(
+  token: string,
+  chatId: string,
+  question: string,
+  options: string[],
+  extra?: Record<string, unknown>,
+): Promise<{ ok: boolean; pollId?: string; messageId?: number; errorBody?: string }> {
+  const res = await telegramRequest(token, "sendPoll", {
+    chat_id: Number(chatId),
+    question,
+    options: options.map((text) => ({ text })),
+    is_anonymous: false,
+    ...extra,
+  });
+  if (!res.ok) return { ok: false, errorBody: res.errorBody };
+  const result = res.result as { message_id?: number; poll?: { id?: string } } | undefined;
+  return { ok: true, messageId: result?.message_id ?? null, pollId: result?.poll?.id ?? null };
 }
 
 export async function setTelegramReaction(

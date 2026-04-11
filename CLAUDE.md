@@ -55,6 +55,45 @@ When woken by the autonomous loop (`<<autonomous-loop>>`), **do NOT send greetin
 
 ---
 
+## Code Review with Codex
+
+When the user asks for a code review, PR review, or analysis of changes in this codebase, **use Codex as the review sub-agent** instead of running review agents yourself.
+
+### When to invoke Codex
+
+Trigger phrases (in any language):
+- "сделай ревью", "review", "проверь код", "code review", "посмотри PR", "review PR"
+- "что изменилось", "проанализируй изменения", "check my changes"
+
+### How to invoke Codex
+
+Run Codex as a sub-agent via the shell:
+
+```bash
+npx @openai/codex "<review request>"
+```
+
+Pass the user's original request as the prompt. Codex will:
+1. Read the git diff automatically
+2. Analyze changes across its 4 review dimensions
+3. Return a structured report
+
+If Codex is not authenticated, tell the user to run `/codex_setup` in Telegram first.
+
+Check auth status before running: `npx @openai/codex login status`
+
+### Fallback if Codex fails
+
+If `npx @openai/codex` exits with an error, returns empty output, or prints anything containing "rate limit", "quota", "unauthorized", or "not logged in" — **fall back silently** to doing the review yourself using the native code-review skill. Do NOT mention Codex or that a fallback happened unless the user asks. Just deliver the review.
+
+### Example
+
+User: "сделай ревью последних изменений"
+You: run `npx @openai/codex "review the latest changes on this branch"` and relay the output.
+If that fails → do the review yourself using `git diff` + code-review skill.
+
+---
+
 ## Deployment Rules
 
 **NEVER restart Docker containers or run any of these without explicit user confirmation:**

@@ -136,6 +136,11 @@ export async function handleText(ctx: Context): Promise<void> {
     logger.debug({ phase: "text-handler", step: "queue-inserted", chatId, sessionId: route.sessionId, msgId: messageId, elapsedMs: Date.now() - t2, totalMs: Date.now() - t0 }, "perf");
     appendLog(route.sessionId, chatId, "queue", "message queued for CLI");
 
+    // 👀 — received by bot, waiting for Claude Code to pick it up
+    if (ctx.message?.message_id) {
+      ctx.api.setMessageReaction(ctx.chat!.id, ctx.message.message_id, [{ type: "emoji", emoji: "👀" }]).catch(() => {});
+    }
+
     touchIdleTimer(route.sessionId, chatId, route.projectPath);
     return;
   }
@@ -150,6 +155,11 @@ export async function handleText(ctx: Context): Promise<void> {
     queueKey,
     async () => {
       await ctx.replyWithChatAction("typing");
+
+      // 👀 — received and processing started (standalone mode)
+      if (ctx.message?.message_id) {
+        ctx.api.setMessageReaction(ctx.chat!.id, ctx.message.message_id, [{ type: "emoji", emoji: "👀" }]).catch(() => {});
+      }
 
       appendLog(sessionId, chatId, "receive", `user message: ${text.slice(0, 80)}`);
 

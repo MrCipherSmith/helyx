@@ -7,6 +7,7 @@ import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { StatusManager } from "./status.ts";
 import type { SkillEvaluator } from "./skill-evaluator.ts";
 import { channelLogger } from "../logger.ts";
+import { setTelegramReaction } from "./telegram.ts";
 
 export interface PollerContext {
   sql: postgres.Sql;
@@ -16,6 +17,8 @@ export interface PollerContext {
   databaseUrl: string;
   /** Called after each dequeue to tell tools whether to force a voice reply */
   setForceVoice?: (v: boolean) => void;
+  /** Telegram bot token — used to set ⚡ reaction when message is taken into work */
+  token?: () => string | undefined;
 }
 
 export class MessageQueuePoller {
@@ -110,6 +113,13 @@ export class MessageQueuePoller {
             },
           }).catch((err) => channelLogger.warn({ err }, "mcp.notification failed"));
           channelLogger.info({ phase: "poller", step: "notification-sent", msgId: row.id, chatId: row.chat_id, elapsedMs: Date.now() - tDequeue, totalFromQueueMs: Date.now() - new Date(row.created_at).getTime() }, "perf");
+
+          // ⚡ — message taken into work by Claude Code (upgrades 👀 to ⚡)
+          const token = this.ctx.token?.();
+          const telegramMsgId = row.message_id ? Number(row.message_id) : null;
+          if (token && telegramMsgId && !isNaN(telegramMsgId)) {
+            setTelegramReaction(token, row.chat_id, telegramMsgId, "⚡").catch(() => {});
+          }
           this.touchIdleTimer();
 
           // 2. Create status message (awaited) — monitor MUST start after this so

@@ -32,6 +32,9 @@ export async function handleStart(ctx: Context): Promise<void> {
       "/remote_control — tmux status & control\n" +
       "/projects — manage projects\n" +
       "/project_add — add a project\n" +
+      "/codex_setup — authenticate Codex (AI code review)\n" +
+      "/codex_review [prompt] — run Codex AI review\n" +
+      "/codex_status — check Codex login status\n" +
       "/help — help",
   );
 }

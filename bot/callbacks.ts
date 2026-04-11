@@ -24,6 +24,11 @@ export async function handleCallbackQuery(ctx: Context): Promise<void> {
     const { handleRemoteControlCallback } = await import("./commands/remote-control.ts");
     return handleRemoteControlCallback(ctx);
   }
+  if (data.startsWith("poll_submit:")) {
+    const { handlePollSubmit } = await import("./poll-handler.ts");
+    const pollSessionId = Number(data.slice("poll_submit:".length));
+    return handlePollSubmit(ctx, pollSessionId);
+  }
   if (data.startsWith("proj:")) {
     const { handleProjectCallback } = await import("./commands/projects.ts");
     return handleProjectCallback(ctx);

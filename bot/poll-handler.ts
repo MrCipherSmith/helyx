@@ -19,7 +19,7 @@ export async function handlePollAnswer(ctx: Context): Promise<void> {
     const rows = await sql`
       SELECT id, answers, questions, telegram_poll_ids, status
       FROM poll_sessions
-      WHERE telegram_poll_ids @> ${JSON.stringify([pollId])}::jsonb
+      WHERE telegram_poll_ids @> ${sql.json([pollId])}
         AND status = 'pending'
         AND created_at > NOW() - INTERVAL '24 hours'
       LIMIT 1

@@ -53,6 +53,7 @@ export function createBot(): Bot {
     // Forum management
     { command: "forum_setup", description: "Configure forum supergroup (run in group)" },
     { command: "forum_sync", description: "Sync forum topics for all projects" },
+    { command: "forum_clean", description: "Remove stale/deleted forum topic IDs from DB" },
     { command: "forum_hub", description: "Pin Dev Hub WebApp button in General topic" },
     { command: "topic_rename", description: "Rename current project topic" },
     { command: "topic_close", description: "Close current project topic" },

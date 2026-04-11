@@ -407,6 +407,27 @@ const migrations: Migration[] = [
       await tx`CREATE INDEX IF NOT EXISTS idx_pending_replies_undelivered ON pending_replies(created_at) WHERE delivered_at IS NULL`;
     },
   },
+  {
+    version: 15,
+    name: "poll_sessions table",
+    up: async (tx) => {
+      await tx`
+        CREATE TABLE IF NOT EXISTS poll_sessions (
+          id SERIAL PRIMARY KEY,
+          session_id INT NOT NULL REFERENCES sessions(id),
+          chat_id TEXT NOT NULL,
+          title TEXT,
+          questions JSONB NOT NULL,
+          telegram_poll_ids JSONB NOT NULL DEFAULT '[]',
+          answers JSONB NOT NULL DEFAULT '{}',
+          submit_message_id INT,
+          status TEXT NOT NULL DEFAULT 'pending',
+          created_at TIMESTAMPTZ DEFAULT now()
+        )
+      `;
+      await tx`CREATE INDEX IF NOT EXISTS idx_poll_sessions_chat ON poll_sessions(chat_id, status)`;
+    },
+  },
 ];
 
 // --- Public API ---

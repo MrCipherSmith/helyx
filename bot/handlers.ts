@@ -73,12 +73,14 @@ import { handleProjects } from "./commands/projects.ts";
 import { handleProjectAdd } from "./commands/project-add.ts";
 import { handleProjectFacts, handleProjectScan } from "./commands/project-facts.ts";
 import { handleMemoryExport, handleMemoryImport } from "./commands/memory-export.ts";
-import { handleForumSetup, handleForumSync, handleTopicRename, handleTopicClose, handleTopicReopen, handleForumHub } from "./commands/forum.ts";
+import { handleForumSetup, handleForumSync, handleForumClean, handleTopicRename, handleTopicClose, handleTopicReopen, handleForumHub } from "./commands/forum.ts";
 import { handleQuickstart } from "./commands/quickstart.ts";
 import { handleResume } from "./commands/resume.ts";
+import { handleCodexSetup, handleCodexStatus, handleCodexReview } from "./commands/codex.ts";
 import { handleVoice, handlePhoto, handleDocument, handleVideo, handleVideoNote, handleSticker } from "./media.ts";
 import { handleCallbackQuery } from "./callbacks.ts";
 import { handleText } from "./text-handler.ts";
+import { handlePollAnswer } from "./poll-handler.ts";
 
 // === Register all handlers ===
 
@@ -129,6 +131,11 @@ export function registerHandlers(b: Bot): void {
   b.command("add", handleAdd);
   b.command("model", handleModel);
 
+  // Codex
+  b.command("codex_setup", handleCodexSetup);
+  b.command("codex_status", handleCodexStatus);
+  b.command("codex_review", handleCodexReview);
+
   // Remote control & project management
   b.command("remote_control", handleRemoteControl);
   b.command("projects", handleProjects);
@@ -139,6 +146,7 @@ export function registerHandlers(b: Bot): void {
   // Forum topic management
   b.command("forum_setup", handleForumSetup);
   b.command("forum_sync", handleForumSync);
+  b.command("forum_clean", handleForumClean);
   b.command("forum_hub", handleForumHub);
   b.command("topic_rename", handleTopicRename);
   b.command("topic_close", handleTopicClose);
@@ -154,6 +162,9 @@ export function registerHandlers(b: Bot): void {
   b.on("message:video", handleVideo);
   b.on("message:video_note", handleVideoNote);
   b.on("message:sticker", handleSticker);
+
+  // Poll answers (non-anonymous polls)
+  b.on("poll_answer", handlePollAnswer);
 
   // Text messages → Claude (must be last)
   b.on("message:text", handleText);

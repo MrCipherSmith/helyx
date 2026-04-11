@@ -6,7 +6,8 @@ export async function accessMiddleware(
   ctx: Context,
   next: NextFunction,
 ): Promise<void> {
-  const userId = ctx.from?.id;
+  // poll_answer updates don't populate ctx.from — use pollAnswer.user as fallback
+  const userId = ctx.from?.id ?? ctx.pollAnswer?.user?.id;
 
   if (!userId) return;
 

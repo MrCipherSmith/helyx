@@ -6,7 +6,7 @@
 [![Bun](https://img.shields.io/badge/runtime-Bun-f9f1e1)](https://bun.sh)
 [![TypeScript](https://img.shields.io/badge/lang-TypeScript-3178c6)](https://www.typescriptlang.org)
 
-[Dashboard](examples/dashboard.md) | [Usage Patterns](examples/usage-patterns.md) | [Architecture](guides/architecture.md) | [Cloudflare Tunnel](guides/cloudflare-tunnel-setup.md) | [Remote Laptop Setup](guides/remote-laptop-setup.md) | [Usage Scenarios](guides/usage-scenarios.md) | [Memory](guides/memory.md) | [MCP Tools](guides/mcp-tools.md) | [Mini App](guides/webapp.md) | [Voice Conversations](guides/voice.md) | [CLAUDE.md Guide](CLAUDE_MD_GUIDE.md)
+[Dashboard](examples/dashboard.md) | [Usage Patterns](examples/usage-patterns.md) | [Architecture](guides/architecture.md) | [Cloudflare Tunnel](guides/cloudflare-tunnel-setup.md) | [Remote Laptop Setup](guides/remote-laptop-setup.md) | [Usage Scenarios](guides/usage-scenarios.md) | [Memory](guides/memory.md) | [MCP Tools](guides/mcp-tools.md) | [Mini App](guides/webapp.md) | [Voice Conversations](guides/voice.md) | [Interactive Polls](guides/polls.md) | [Codex Review](guides/codex.md) | [CLAUDE.md Guide](CLAUDE_MD_GUIDE.md)
 
 > **Control Claude Code from Telegram.** Each project gets its own topic in a Telegram Forum group — no `/switch` needed. Persistent sessions, dual-layer memory, voice transcription, image analysis, and real-time CLI progress monitoring.
 
@@ -125,7 +125,9 @@ This bot is a full **[Model Context Protocol](https://modelcontextprotocol.io) s
 
 ### AI & Media
 - **Standalone Mode** — bot responds directly via LLM API (Anthropic / Google AI / OpenRouter / Ollama) with automatic retry on 429/5xx
+- **Codex Code Review** — OpenAI Codex CLI integration for AI-powered code review; authenticate headlessly via `/codex_setup` (device flow, no terminal needed); trigger via `/codex_review` or natural language ("сделай ревью"); falls back to Claude's native review on quota/auth errors; model configurable via `CODEX_MODEL` env var
 - **Voice Messages** — transcription via Groq whisper-large-v3 (free, ~200ms) with local Whisper fallback; voice replies via Yandex SpeechKit (primary) or Groq Orpheus (English fallback)
+- **Interactive Polls** — Claude can ask clarifying questions as native Telegram polls (`send_poll` MCP tool); you tap answers, press **Готово ✅**, and results flow back automatically as a user message; supports forum topic routing, 24h expiry, and vote retraction
 - **Image Analysis** — photos analyzed by Claude in CLI sessions; standalone mode with Anthropic API
 - **File Forwarding** — photos, documents, and videos forwarded to Claude via MCP with base64 (≤5 MB images) or file path; if sent without caption, bot asks what to do before forwarding
 - **Auto-Summarization** — idle conversations are summarized to long-term memory after 15 min

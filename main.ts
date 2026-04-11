@@ -56,7 +56,7 @@ async function main() {
     try {
       await bot.api.setWebhook(CONFIG.TELEGRAM_WEBHOOK_URL, {
         secret_token: CONFIG.TELEGRAM_WEBHOOK_SECRET || undefined,
-        allowed_updates: ["message", "callback_query"],
+        allowed_updates: ["message", "callback_query", "poll_answer"],
       });
       console.log(`[main] webhook registered at ${CONFIG.TELEGRAM_WEBHOOK_URL}`);
     } catch (err: any) {

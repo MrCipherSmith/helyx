@@ -159,6 +159,7 @@ const poller = new MessageQueuePoller(
     pollIntervalMs: 500,
     databaseUrl: ENV.DATABASE_URL,
     setForceVoice: (v) => { forceVoice = v; },
+    token: () => ENV.TELEGRAM_BOT_TOKEN,
   },
   statusMgr,
   () => sessionMgr.touchIdleTimer(triggerSummarize),

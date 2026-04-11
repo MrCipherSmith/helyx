@@ -106,6 +106,82 @@ export class ForumService {
   }
 
   /**
+   * Check whether a forum topic still exists in Telegram.
+   * Sends a no-op chat action in the thread; if the topic was deleted,
+   * Telegram returns "Bad Request: message thread not found".
+   */
+  async validateTopicExists(
+    api: Api,
+    forumChatId: string | number,
+    topicId: number,
+  ): Promise<boolean> {
+    try {
+      await api.sendChatAction(Number(forumChatId), "typing", {
+        message_thread_id: topicId,
+      } as any);
+      return true;
+    } catch (err: any) {
+      const msg: string = err?.message ?? String(err);
+      // Deleted / never-existed topic → treat as invalid
+      if (
+        msg.includes("thread not found") ||
+        msg.includes("TOPIC_DELETED") ||
+        msg.includes("message thread not found") ||
+        msg.includes("invalid message thread id")
+      ) {
+        return false;
+      }
+      // Any other error (rate limit, network) → assume still valid to avoid data loss
+      logger.warn({ err, topicId }, "forum: unexpected error validating topic — assuming valid");
+      return true;
+    }
+  }
+
+  /**
+   * `/forum_clean` — scan all projects with a forum_topic_id, validate each against
+   * the Telegram API, and null out IDs that correspond to deleted topics.
+   * Returns counts of valid / invalid topics found.
+   */
+  async cleanOrphans(
+    api: Api,
+  ): Promise<{ valid: number; cleaned: number; errors: string[]; projects: string[] }> {
+    const forumChatId = await this.getForumChatId();
+    if (!forumChatId) {
+      throw new Error("Forum not configured — run /forum_setup first.");
+    }
+
+    const projects = await sql`
+      SELECT id, name, forum_topic_id FROM projects
+      WHERE forum_topic_id IS NOT NULL
+      ORDER BY name
+    ` as unknown as ForumProject[];
+
+    let valid = 0;
+    let cleaned = 0;
+    const errors: string[] = [];
+    const cleanedProjects: string[] = [];
+
+    for (const project of projects) {
+      const topicId = project.forum_topic_id!;
+      try {
+        const exists = await this.validateTopicExists(api, forumChatId, topicId);
+        if (exists) {
+          valid++;
+        } else {
+          await sql`UPDATE projects SET forum_topic_id = NULL WHERE id = ${project.id}`;
+          cleaned++;
+          cleanedProjects.push(project.name);
+          logger.info({ project: project.name, topicId }, "forum: orphan topic cleared");
+        }
+      } catch (err: any) {
+        errors.push(`${project.name}: ${err?.message ?? String(err)}`);
+      }
+    }
+
+    return { valid, cleaned, errors, projects: cleanedProjects };
+  }
+
+  /**
    * `/forum_sync` — create missing topics, close topics for deleted projects.
    */
   async sync(
