@@ -2,6 +2,11 @@
 # Helyx — one-line installer
 # Usage: curl -fsSL https://raw.githubusercontent.com/MrCipherSmith/helyx/main/install.sh | bash
 #
+# Install a specific version:
+#   HELYX_VERSION=v1.0.0 curl -fsSL ... | bash
+# Install to custom directory:
+#   HELYX_DIR=~/my-bot curl -fsSL ... | bash
+#
 # What it does:
 # 1. Checks prerequisites (git, bun, docker, claude)
 # 2. Clones the repo (or updates if exists)
@@ -22,6 +27,7 @@ NC='\033[0m'
 REPO="https://github.com/MrCipherSmith/helyx.git"
 INSTALL_DIR="${HELYX_DIR:-$HOME/bots/helyx}"
 BIN_DIR="${HOME}/.local/bin"
+VERSION="${HELYX_VERSION:-v1.0.0}"
 
 echo -e "\n${BOLD}Helyx Installer${NC}\n"
 
@@ -71,9 +77,9 @@ if [ -d "$INSTALL_DIR/.git" ]; then
     echo -e "  ${DIM}Pull failed (local changes?), skipping update${NC}"
   }
 else
-  echo -e "  ${CYAN}Cloning${NC} to $INSTALL_DIR"
+  echo -e "  ${CYAN}Cloning${NC} $VERSION to $INSTALL_DIR"
   mkdir -p "$(dirname "$INSTALL_DIR")"
-  git clone "$REPO" "$INSTALL_DIR"
+  git clone --branch "$VERSION" --depth 1 "$REPO" "$INSTALL_DIR"
 fi
 
 # --- Install dependencies ---
