@@ -32,7 +32,10 @@ interface StatusState {
   messageId: number;
   startedAt: number;
   stage: string;
+  paneSnapshot: string | null;
+  paneSnapshotAt: number | null;
   timer: ReturnType<typeof setInterval> | null;
+  paneTimer: ReturnType<typeof setInterval> | null;
   dbHeartbeatTimer: ReturnType<typeof setInterval> | null;
 }
 
@@ -70,23 +73,31 @@ function normalizeStage(stage: string): string {
 const STATUS_VISIBLE_LINES = 10;
 const STATUS_MAX_LINES = 40;
 
-function formatStatusText(stage: string, elapsed: string, tokens: string): string {
+function formatStatusText(stage: string, elapsed: string, tokens: string, paneSnapshot?: string | null): string {
   const normalized = normalizeStage(stage);
   const header = `⏳ <i>${elapsed}${tokens}</i>`;
+
+  let stageBody: string;
   if (normalized.includes("\n")) {
     const lines = normalized.split("\n").slice(0, STATUS_MAX_LINES);
     const visible = lines.slice(0, STATUS_VISIBLE_LINES);
     const hidden = lines.slice(STATUS_VISIBLE_LINES);
-
-    // Use <blockquote> for visible lines (valid block element in Telegram HTML)
-    // and <tg-spoiler> wrapped in <blockquote> for hidden lines.
-    let body = `<blockquote>${escapeHtml(visible.join("\n"))}</blockquote>`;
+    stageBody = `<blockquote>${escapeHtml(visible.join("\n"))}</blockquote>`;
     if (hidden.length > 0) {
-      body += `<blockquote><tg-spoiler>${escapeHtml(hidden.join("\n"))}</tg-spoiler></blockquote>`;
+      stageBody += `<blockquote><tg-spoiler>${escapeHtml(hidden.join("\n"))}</tg-spoiler></blockquote>`;
     }
-    return `${header}\n${body}`;
+  } else {
+    stageBody = `  ${escapeHtml(normalized)}`;
   }
-  return `${header}  ${escapeHtml(normalized)}`;
+
+  // Append live pane snapshot as a spoiler section if available
+  if (paneSnapshot && paneSnapshot.trim()) {
+    const paneLines = paneSnapshot.trim().split("\n").slice(-6);
+    const paneText = escapeHtml(paneLines.join("\n"));
+    return `${header}\n${stageBody}\n<blockquote><tg-spoiler>🖥 ${paneText}</tg-spoiler></blockquote>`;
+  }
+
+  return normalized.includes("\n") ? `${header}\n${stageBody}` : `${header}${stageBody}`;
 }
 
 export class StatusManager {
@@ -232,10 +243,14 @@ export class StatusManager {
         messageId: result.messageId!,
         startedAt: Date.now(),
         stage: `${prefix}${stage}`,
+        paneSnapshot: null,
+        paneSnapshotAt: null,
         timer: null,
+        paneTimer: null,
         dbHeartbeatTimer: null,
       };
       state.timer = setInterval(() => this.editStatusMessage(state), 5000);
+      state.paneTimer = setInterval(() => this.refreshPaneSnapshot(state).catch(() => {}), 10_000);
       state.dbHeartbeatTimer = setInterval(() => this.heartbeatStatusMessage(key), 30_000);
       this.activeStatus.set(key, state);
       this.persistStatusMessage(key, state).catch(() => {});
@@ -291,11 +306,25 @@ export class StatusManager {
     const key = state.threadId ? `${state.chatId}:${state.threadId}` : state.chatId;
     const tokens = this.lastTokenInfo.get(key);
     const tokenStr = tokens ? ` · ↓ ${tokens}` : "";
-    const text = formatStatusText(state.stage, elapsed, tokenStr);
+    const text = formatStatusText(state.stage, elapsed, tokenStr, state.paneSnapshot);
     const res = await editTelegramMessage(token, state.chatId, state.messageId, text, { parse_mode: "HTML" });
     if (!res.ok && !res.errorBody?.includes("message is not modified")) {
       channelLogger.warn({ error: res.errorBody, messageId: state.messageId }, "editStatusMessage failed");
     }
+  }
+
+  private async refreshPaneSnapshot(state: StatusState): Promise<void> {
+    const sessionId = this.ctx.sessionId();
+    if (!sessionId) return;
+    const rows = await this.ctx.sql`
+      SELECT pane_snapshot, pane_snapshot_at FROM sessions WHERE id = ${sessionId}
+    `.catch(() => []);
+    if (!rows[0]) return;
+    const { pane_snapshot, pane_snapshot_at } = rows[0] as { pane_snapshot: string | null; pane_snapshot_at: Date | null };
+    // Only show snapshot if it's fresh (< 30s old)
+    const fresh = pane_snapshot_at && (Date.now() - new Date(pane_snapshot_at).getTime()) < 30_000;
+    state.paneSnapshot = fresh ? pane_snapshot : null;
+    state.paneSnapshotAt = pane_snapshot_at ? new Date(pane_snapshot_at).getTime() : null;
   }
 
   async deleteStatusMessage(chatId: string): Promise<void> {
@@ -310,6 +339,7 @@ export class StatusManager {
     const statusLifeMs = tDelete - state.startedAt;
     channelLogger.info({ phase: "status", step: "deleting", chatId, statusLifeMs, messageId: state.messageId }, "perf");
     if (state.timer) clearInterval(state.timer);
+    if (state.paneTimer) clearInterval(state.paneTimer);
     if (state.dbHeartbeatTimer) clearInterval(state.dbHeartbeatTimer);
     this.activeStatus.delete(key);
     this.ctx.sql`DELETE FROM active_status_messages WHERE key = ${key}`.catch(() => {});

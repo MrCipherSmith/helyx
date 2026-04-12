@@ -452,6 +452,15 @@ const migrations: Migration[] = [
       `;
     },
   },
+  {
+    version: 18,
+    name: "pane snapshot for live status",
+    up: async (tx) => {
+      // Written by tmux-watchdog every 5 s; read by StatusManager to show live pane activity.
+      await tx`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS pane_snapshot TEXT`;
+      await tx`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS pane_snapshot_at TIMESTAMPTZ`;
+    },
+  },
 ];
 
 // --- Public API ---

@@ -450,6 +450,23 @@ async function fetchActiveSessions(sql: postgres.Sql): Promise<ActiveSession[]> 
   }));
 }
 
+// Chars to filter from pane snapshot (spinner frames, box-drawing, etc.)
+const NOISE_RE = /^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏○◐◑◒◓●▸▹►▻◆◇■□▪▫─│╭╮╰╯┌┐└┘├┤┬┴┼\s]*$/;
+
+/** Write last N meaningful lines of the pane to sessions.pane_snapshot. */
+async function writePaneSnapshot(sql: postgres.Sql, sessionId: number, lines: string[]): Promise<void> {
+  const meaningful = lines
+    .map(l => l.trim())
+    .filter(l => l.length > 0 && !NOISE_RE.test(l))
+    .slice(-6);
+  if (meaningful.length === 0) return;
+  const snapshot = meaningful.join("\n");
+  await sql`
+    UPDATE sessions SET pane_snapshot = ${snapshot}, pane_snapshot_at = NOW()
+    WHERE id = ${sessionId}
+  `.catch(() => {});
+}
+
 async function pollWindows(
   sql: postgres.Sql,
   token: string,
@@ -486,6 +503,9 @@ async function pollWindows(
 
     const lines = await capturePane(winIndex);
     const chat  = resolveChat(session);
+
+    // Write last meaningful lines as pane_snapshot for live status display in Telegram
+    await writePaneSnapshot(sql, session.sessionId, lines);
 
     // 1. Permission prompt (highest priority — needs immediate interaction)
     const perm = detectPermissionPrompt(lines);
