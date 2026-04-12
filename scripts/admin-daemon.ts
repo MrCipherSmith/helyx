@@ -11,6 +11,7 @@
  */
 
 import { resolve } from "path";
+import { startTmuxPermissionWatcher } from "./tmux-permission-watcher.ts";
 
 const BOT_DIR = resolve(import.meta.dir, "..");
 const CLI = resolve(BOT_DIR, "cli.ts");
@@ -33,9 +34,17 @@ if (!process.env.DATABASE_URL) {
 }
 
 const postgres = (await import("postgres")).default;
-const sql = postgres(process.env.DATABASE_URL, { max: 2 });
+const sql = postgres(process.env.DATABASE_URL, { max: 3 });
 
 console.log("[admin-daemon] started, polling for commands...");
+
+// Start tmux permission watcher if bot token is available
+const botToken = process.env.TELEGRAM_BOT_TOKEN;
+if (botToken) {
+  startTmuxPermissionWatcher(sql, botToken);
+} else {
+  console.warn("[admin-daemon] TELEGRAM_BOT_TOKEN not set — tmux permission watcher disabled");
+}
 
 async function runCommand(cmd: string, args: string[] = []): Promise<{ ok: boolean; output: string }> {
   const proc = Bun.spawn(["bun", CLI, cmd, ...args], {

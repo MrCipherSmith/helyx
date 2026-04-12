@@ -428,6 +428,14 @@ const migrations: Migration[] = [
       await tx`CREATE INDEX IF NOT EXISTS idx_poll_sessions_chat ON poll_sessions(chat_id, status)`;
     },
   },
+  {
+    version: 16,
+    name: "permission_requests tmux_target column",
+    up: async (tx) => {
+      // Nullable: only set for tmux-intercepted permissions (external MCP tools in terminal)
+      await tx`ALTER TABLE permission_requests ADD COLUMN IF NOT EXISTS tmux_target TEXT`;
+    },
+  },
 ];
 
 // --- Public API ---
