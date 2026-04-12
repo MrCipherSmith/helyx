@@ -88,7 +88,7 @@ export function ProcessHealth() {
   }
 
   return (
-    <div className="flex flex-col gap-3 p-3 overflow-y-auto">
+    <div className="h-full flex flex-col gap-3 p-3 overflow-y-auto">
       {/* Refresh */}
       <div className="flex justify-end">
         <button onClick={load} className="text-xs text-[var(--tg-link)]">↻ Refresh</button>
