@@ -51,6 +51,7 @@ const CRASH_COOLDOWN_MS      =  3 * 60_000;
 interface ActiveSession {
   sessionId:   number;
   project:     string;       // tmux window name
+  projectPath: string | null; // absolute path — used for pane matching in split-pane mode
   lastActive:  Date;
   chatId:      string | null;
   forumChatId: string | null;
@@ -114,6 +115,26 @@ async function listBotWindows(): Promise<Array<{ name: string; index: string }>>
     .map((l) => {
       const sp = l.indexOf(" ");
       return { index: l.slice(0, sp), name: l.slice(sp + 1).trim() };
+    });
+}
+
+/**
+ * List all panes across all windows in the bots session.
+ * Returns [{target, currentPath}] where target is "windowIndex.paneIndex"
+ * e.g. "0.1" for window 0, pane 1.
+ * Used for split-pane mode where projects are panes, not windows.
+ */
+async function listBotPanes(): Promise<Array<{ target: string; currentPath: string }>> {
+  const out = await runShell(
+    `tmux list-panes -t ${TMUX_SESSION} -a -F "#{window_index}.#{pane_index} #{pane_current_path}" 2>/dev/null || true`,
+  );
+  return out
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => {
+      const sp = l.indexOf(" ");
+      return { target: l.slice(0, sp), currentPath: l.slice(sp + 1).trim() };
     });
 }
 
@@ -425,12 +446,13 @@ async function pollPermissionResponse(
 async function fetchActiveSessions(sql: postgres.Sql): Promise<ActiveSession[]> {
   const rows = await sql`
     SELECT
-      s.id          AS session_id,
+      s.id           AS session_id,
       s.project,
+      s.project_path,
       s.last_active,
       cs.chat_id,
       p.forum_topic_id,
-      bc.value      AS forum_chat_id
+      bc.value       AS forum_chat_id
     FROM sessions s
     LEFT JOIN chat_sessions cs  ON cs.active_session_id = s.id
     LEFT JOIN projects p        ON p.name = s.project
@@ -441,10 +463,11 @@ async function fetchActiveSessions(sql: postgres.Sql): Promise<ActiveSession[]> 
   `.catch(() => [] as any[]);
 
   return rows.map((r: any) => ({
-    sessionId:    r.session_id as number,
-    project:      r.project    as string,
+    sessionId:    r.session_id   as number,
+    project:      r.project      as string,
+    projectPath:  r.project_path as string | null,
     lastActive:   new Date(r.last_active),
-    chatId:       r.chat_id    as string | null,
+    chatId:       r.chat_id      as string | null,
     forumChatId:  (r.forum_chat_id as string) || null,
     forumTopicId: r.forum_topic_id as number | null,
   }));
@@ -484,14 +507,26 @@ async function pollWindows(
     if (!sessionByProject.has(name)) states.delete(name);
   }
 
-  // List actual tmux windows to match by name
-  const windows = await listBotWindows();
+  // List actual tmux windows and panes to match sessions
+  const [windows, panes] = await Promise.all([listBotWindows(), listBotPanes()]);
   const windowByName = new Map(windows.map((w) => [w.name, w.index]));
 
   for (const session of activeSessions) {
     const winName = session.project;
-    const winIndex = windowByName.get(winName);
-    if (!winIndex) continue; // no tmux window for this project right now
+
+    // Primary: match by window name (dedicated-window mode)
+    let tmuxTarget = windowByName.get(winName);
+
+    // Fallback: match by project_path prefix among panes (split-pane mode)
+    if (!tmuxTarget && session.projectPath) {
+      const projPath = session.projectPath.replace(/\/$/, ""); // strip trailing slash
+      const matched = panes.find(
+        (p) => p.currentPath === projPath || p.currentPath.startsWith(projPath + "/"),
+      );
+      if (matched) tmuxTarget = matched.target;
+    }
+
+    if (!tmuxTarget) continue; // no tmux target for this project right now
 
     if (!states.has(winName)) {
       states.set(winName, { sessionId: session.sessionId, alerts: {} });
@@ -501,7 +536,7 @@ async function pollWindows(
     // Skip windows already handling a permission prompt
     if (state.pendingPermission && !state.pendingPermission.resolvedAt) continue;
 
-    const lines = await capturePane(winIndex);
+    const lines = await capturePane(tmuxTarget);
     const chat  = resolveChat(session);
 
     // Write last meaningful lines as pane_snapshot for live status display in Telegram
@@ -510,7 +545,7 @@ async function pollWindows(
     // 1. Permission prompt (highest priority — needs immediate interaction)
     const perm = detectPermissionPrompt(lines);
     if (perm) {
-      await handlePermissionPrompt(sql, token, winIndex, state, session, perm);
+      await handlePermissionPrompt(sql, token, tmuxTarget, state, session, perm);
       continue; // don't process other detectors in the same tick
     }
 

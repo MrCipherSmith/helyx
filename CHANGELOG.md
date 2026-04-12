@@ -1,5 +1,30 @@
 # Changelog
 
+## v1.27.0
+
+### Live pane snapshots for all sessions in split-pane mode
+
+Tmux watchdog now captures terminal output for every active session, including
+projects running as panes inside a shared tmux window (i.e. `helyx up -s`).
+
+Previously only sessions that had their own dedicated tmux window received
+`pane_snapshot` updates — in split-pane mode all projects share window 0
+("helyx"), so the watchdog couldn't find them by window name.
+
+**Fix:** watchdog now falls back to matching sessions by `project_path` against
+`pane_current_path` from `tmux list-panes -a`. If no window matches by name,
+the matching pane (e.g. `0.3`) is used as the tmux target for both pane capture
+and permission-prompt interactions.
+
+Also in this release:
+- **fix(permissions):** expire all pending permission requests on bot startup
+  (previously only requests older than 2 min were expired, leaving orphaned
+  pending rows when the bot restarted quickly)
+- **fix(callbacks):** `.catch(() => {})` on `answerCallbackQuery` /
+  `editMessageText` to silence "query is too old" errors after restart
+
+---
+
 ## v1.26.0
 
 ### DB as single source of truth for projects
