@@ -1,5 +1,41 @@
 # Changelog
 
+## v1.25.0
+
+### Process Monitor — Dashboard & WebApp
+
+Process health dashboard now available in both the web dashboard and the Telegram WebApp.
+
+#### Web dashboard (`/monitor` page)
+
+New sidebar page (Monitor → `Activity` icon) with three sections:
+- **admin-daemon** — PID, uptime, stale heartbeat warning (>90 s), `🔄 Restart daemon` button
+- **Docker containers** — per-container status from `docker ps`, `🔄 Restart bot` button for the bot container
+- **tmux sessions** — active session count from DB
+
+Auto-refreshes every 15 s; restart buttons optimistically queue `admin_commands` and re-poll after a brief delay.
+
+#### Telegram WebApp (`🖥 Procs` tab)
+
+New fifth tab in the WebApp bottom nav, styled with Telegram CSS variables. Shows the same three sections (admin-daemon, Docker, tmux sessions) with restart buttons. Available even when no session is selected (host-level view).
+
+#### API
+
+- `GET /api/process-health` — returns `process_health` rows + active session count
+- `POST /api/process-health/restart-daemon` — queues `restart_admin_daemon` admin command
+- `POST /api/process-health/restart-docker` — queues `docker_restart {container}` admin command
+
+#### Files
+
+- `dashboard/src/pages/Monitor.tsx` — new dashboard page
+- `dashboard/webapp/src/components/ProcessHealth.tsx` — new WebApp component
+- `mcp/dashboard-api.ts` — `handleGetProcessHealth`, `handleProcessAction` handlers
+- `dashboard/src/api/client.ts` — `ProcessHealthRow`, `ProcessHealthResponse` types + API methods
+- `dashboard/webapp/src/api.ts` — `processHealth`, `restartDaemon`, `restartDockerContainer` methods
+- `dashboard/src/i18n.ts` — `nav.monitor` translations (EN/RU)
+
+---
+
 ## v1.24.0
 
 ### tmux Watchdog — Session Health Monitoring & External MCP Permissions
