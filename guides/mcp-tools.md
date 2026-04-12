@@ -149,3 +149,11 @@ To use the channel adapter, launch Claude with:
 ```bash
 claude --dangerously-load-development-channels server:helyx-channel
 ```
+
+---
+
+## Shared MCP Services (playwright, context7)
+
+playwright and context7 run as shared systemd HTTP services — one process for all sessions instead of one per session. RAM savings: ~4 GB with 8 active sessions.
+
+→ [Full guide: Shared MCP Services](shared-mcp-services.md)

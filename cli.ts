@@ -17,7 +17,7 @@
  */
 
 import { existsSync, readFileSync, writeFileSync } from "fs";
-import { resolve, basename } from "path";
+import { resolve, basename, dirname } from "path";
 import { homedir } from "os";
 
 // --- ANSI colors ---
@@ -281,6 +281,8 @@ async function setup() {
   });
   await run(["claude", "mcp", "add-json", "-s", "user", "helyx-channel", channelConfig]);
   done();
+
+  await installMcpSharedServices();
 
   // Copy CLAUDE.md template
   step("Setting up global CLAUDE.md");
@@ -1058,6 +1060,88 @@ async function connect(dir?: string) {
   }
 }
 
+/**
+ * Install shared MCP HTTP services (playwright, context7) as systemd user units.
+ * These replace per-session stdio forks with a single shared HTTP process.
+ *
+ * playwright: port 3011, --isolated (separate browser context per session)
+ * context7:   port 3010, --transport http (stateless, fully shareable)
+ *
+ * Registered in ~/.claude.json via `claude mcp add --transport http`.
+ * Old stdio entries are removed to avoid duplicate loading.
+ */
+async function installMcpSharedServices(): Promise<void> {
+  const home = process.env.HOME ?? homedir();
+  const npx = await run(["which", "npx"], { silent: true });
+  const npxBin = npx.stdout?.trim() || "/usr/bin/npx";
+  const nodeBin = basename(dirname(npxBin));
+  const nodeDir = dirname(npxBin);
+
+  const systemdDir = `${home}/.config/systemd/user`;
+  await run(["mkdir", "-p", systemdDir], { silent: true });
+
+  const playwrightSvc = `[Unit]
+Description=Playwright MCP Server (shared HTTP, isolated contexts)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=${npxBin} @playwright/mcp@latest --port 3011 --isolated
+Restart=on-failure
+RestartSec=5
+Environment=HOME=${home}
+Environment=PATH=${nodeDir}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${home}/.local/bin
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
+`;
+
+  const context7Svc = `[Unit]
+Description=Context7 MCP Server (shared HTTP transport)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=${npxBin} @upstash/context7-mcp --transport http --port 3010
+Restart=on-failure
+RestartSec=5
+Environment=HOME=${home}
+Environment=PATH=${nodeDir}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${home}/.local/bin
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
+`;
+
+  step("Installing shared MCP systemd services (playwright :3011, context7 :3010)");
+  await Bun.write(`${systemdDir}/mcp-playwright.service`, playwrightSvc);
+  await Bun.write(`${systemdDir}/mcp-context7.service`, context7Svc);
+  await run(["systemctl", "--user", "daemon-reload"], { silent: true });
+  await run(["systemctl", "--user", "enable", "mcp-playwright", "mcp-context7"], { silent: true });
+  await run(["systemctl", "--user", "start", "mcp-playwright", "mcp-context7"], { silent: true });
+  done();
+
+  step("Registering shared MCP servers in Claude Code (HTTP)");
+  // Remove old stdio entries (from external_plugins or previous installs)
+  await run(["claude", "mcp", "remove", "playwright", "-s", "user"], { silent: true });
+  await run(["claude", "mcp", "remove", "context7", "-s", "user"], { silent: true });
+  // Remove external_plugins .mcp.json to prevent stdio duplication
+  const pluginsBase = `${home}/.claude/plugins/marketplaces/claude-plugins-official/external_plugins`;
+  for (const plugin of ["playwright", "context7"]) {
+    const mcpJson = `${pluginsBase}/${plugin}/.mcp.json`;
+    if (existsSync(mcpJson)) {
+      await run(["mv", mcpJson, `${mcpJson}.bak`], { silent: true });
+    }
+  }
+  // Register HTTP endpoints
+  await run(["claude", "mcp", "add", "--transport", "http", "-s", "user", "playwright", "http://localhost:3011/mcp"]);
+  await run(["claude", "mcp", "add", "--transport", "http", "-s", "user", "context7", "http://localhost:3010/mcp"]);
+  done();
+}
+
 async function mcpRegister() {
   const envPath = `${BOT_DIR}/.env`;
   if (!existsSync(envPath)) {
@@ -1097,6 +1181,8 @@ async function mcpRegister() {
   });
   await run(["claude", "mcp", "add-json", "-s", "user", "helyx-channel", config]);
   done();
+
+  await installMcpSharedServices();
 
   step("Adding MCP permissions to Claude settings");
   const claudeSettingsPath = `${process.env.HOME}/.claude/settings.json`;

@@ -141,6 +141,27 @@ Wraps `reconciler.ts` — the LLM-based deduplication layer. Calling `remember()
 
 ---
 
+## Shared MCP Services
+
+To avoid spawning duplicate per-session stdio processes, `playwright-mcp` and `context7-mcp` run as **shared systemd user services** and are registered as HTTP MCP servers in `~/.claude.json`. All sessions connect to the same instance over HTTP.
+
+```
+systemd: mcp-playwright (:3011, --isolated)   ← shared by all sessions
+systemd: mcp-context7   (:3010, --transport http)
+
+Session 1 → http://localhost:3011/mcp
+Session 2 → http://localhost:3011/mcp   ← same process
+...× N sessions
+```
+
+The `--isolated` flag on playwright gives each session its own browser context (separate cookies, tabs) within a single process. context7 is stateless and shares without isolation.
+
+RAM impact with 8 sessions: **~4.3 GB → ~370 MB**.
+
+Set up automatically by `helyx setup` and `helyx mcp-register`. → [Full guide](shared-mcp-services.md)
+
+---
+
 ## Channel Adapter
 
 Each Claude CLI process spawns `channel/index.ts` as an MCP stdio server. Multiple instances run simultaneously (one per project).
