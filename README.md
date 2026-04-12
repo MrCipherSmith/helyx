@@ -133,7 +133,7 @@ This bot is a full **[Model Context Protocol](https://modelcontextprotocol.io) s
 - **Auto-Summarization** — idle conversations are summarized to long-term memory after 15 min
 
 ### Session Lifecycle
-- **Persistent Projects** — `projects` table as permanent registry; added via `/project_add`, never deleted
+- **Persistent Projects** — `projects` table as single source of truth; added via `/project_add` (bot) or `helyx add` (CLI) — both write to the same DB; `helyx up` reads from DB directly
 - **Remote Sessions** — one persistent session per project (`source=remote`), started/stopped from bot or terminal; status: 🟢 active / ⚪ inactive
 - **Local Sessions** — temporary, multiple per project, live while Claude process runs; on exit: work summary generated and archived; deletable from Telegram bot (`/sessions`) or dashboard
 - **Work Summary on Exit** — AI-optimized structured summary ([DECISIONS][FILES][PROBLEMS][PENDING][CONTEXT]) vectorized and saved to long-term memory; raw messages archived with TTL
@@ -454,10 +454,10 @@ Tmux:
   helyx up [-a] [-s]       Start all projects in tmux (-s split panes) + admin-daemon
   helyx down               Stop all tmux sessions + clean DB
   helyx ps                 List configured projects
-  helyx add [dir] [--name] [--provider]  Register project in config + bot DB (no launch)
+  helyx add [dir] [--name] [--provider]  Register project in DB (synced with /project_add)
   helyx run [dir]              Launch project in current terminal
   helyx attach [dir]           Add window to running tmux session (bots)
-  helyx remove <name>          Remove project from config
+  helyx remove <name>          Remove project from DB
 
 Connect:
   helyx open [dir]             Launch Claude Code in current terminal

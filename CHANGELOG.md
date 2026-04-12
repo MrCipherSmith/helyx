@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.26.0
+
+### DB as single source of truth for projects
+
+`tmux-projects.json` is removed. The `projects` DB table is now the only registry.
+
+- `helyx add` — writes to `projects` table via `psql` (same as `/project_add` in bot)
+- `helyx up` / `helyx ps` / `helyx remove` — all read from DB
+- `/project_add` in bot — unchanged, already wrote to DB
+- Adding a project via bot now automatically shows up in `helyx up` without any manual JSON editing
+
+This eliminates the dual-registry problem where projects added via `/project_add` (bot) were invisible to `helyx up` (CLI).
+
+---
+
 ## v1.25.0
 
 ### Process Monitor — Dashboard & WebApp
