@@ -4,6 +4,7 @@ import { GitBrowser } from "./components/GitBrowser";
 import { PermissionList } from "./components/PermissionList";
 import { SessionMonitor } from "./components/SessionMonitor";
 import { SessionTimeline } from "./components/SessionTimeline";
+import { ProcessHealth } from "./components/ProcessHealth";
 
 declare global {
   interface Window {
@@ -21,7 +22,7 @@ declare global {
   }
 }
 
-type Tab = "git" | "permissions" | "monitor" | "timeline" | "sessions";
+type Tab = "git" | "permissions" | "monitor" | "timeline" | "sessions" | "processes";
 
 export function App() {
   const [authed, setAuthed] = useState(false);
@@ -150,6 +151,8 @@ export function App() {
               <button onClick={loadSessions} className="text-xs text-[var(--tg-link)]">↻ Refresh</button>
             </div>
           </div>
+        ) : tab === "processes" ? (
+          <ProcessHealth />
         ) : !selectedSession ? (
           <div className="flex flex-col items-center justify-center h-full gap-3 p-6 text-center">
             <div className="text-3xl">🤖</div>
@@ -178,6 +181,7 @@ export function App() {
           ["permissions", "🔑", "Perms"],
           ["monitor", "📊", "Monitor"],
           ["timeline", "🕐", "Timeline"],
+          ["processes", "🖥", "Procs"],
           ["sessions", "☰", "Sessions"],
         ] as [Tab, string, string][]).map(([t, icon, label]) => (
           <button

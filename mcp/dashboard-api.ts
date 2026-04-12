@@ -337,6 +337,33 @@ async function handleDeleteProject(res: ServerResponse, id: number): Promise<voi
   sendJson(res, { ok: true });
 }
 
+// --- Process Health API ---
+
+async function handleGetProcessHealth(res: ServerResponse): Promise<void> {
+  const [health, sessions] = await Promise.all([
+    sql`SELECT name, status, detail, updated_at FROM process_health ORDER BY name`,
+    sql`SELECT COUNT(*) AS cnt FROM sessions WHERE status = 'active' AND id != 0`,
+  ]);
+  const activeCount = Number((sessions[0] as any)?.cnt ?? 0);
+  sendJson(res, { health, activeSessionCount: activeCount });
+}
+
+async function handleProcessAction(req: IncomingMessage, res: ServerResponse, action: "restart-daemon" | "restart-docker"): Promise<void> {
+  if (action === "restart-daemon") {
+    await sql`INSERT INTO admin_commands (command, payload) VALUES ('restart_admin_daemon', '{}')`;
+    sendJson(res, { ok: true });
+    return;
+  }
+  if (action === "restart-docker") {
+    const { container } = await parseBody(req);
+    if (!container || typeof container !== "string") { sendError(res, "container required"); return; }
+    await sql`INSERT INTO admin_commands (command, payload) VALUES ('docker_restart', ${JSON.stringify({ container })}::jsonb)`;
+    sendJson(res, { ok: true });
+    return;
+  }
+  sendError(res, "Unknown action", 400);
+}
+
 // --- Git API ---
 
 async function gitExec(projectPath: string, args: string[]): Promise<{ ok: boolean; out: string }> {
@@ -1058,6 +1085,17 @@ export async function handleDashboardRequest(
     if (pathname.match(/^\/api\/projects\/(\d+)$/) && method === "DELETE") {
       const id = Number(pathname.split("/").pop());
       await handleDeleteProject(res, id);
+      return true;
+    }
+
+    // Process health
+    if (pathname === "/api/process-health" && method === "GET") {
+      await handleGetProcessHealth(res);
+      return true;
+    }
+    const processActionMatch = pathname.match(/^\/api\/process-health\/(restart-daemon|restart-docker)$/);
+    if (processActionMatch && method === "POST") {
+      await handleProcessAction(req, res, processActionMatch[1] as "restart-daemon" | "restart-docker");
       return true;
     }
 

@@ -186,6 +186,11 @@ export const api = {
       }>(`/api/git/${sessionId}/prs/${prNumber}`),
   },
 
+  processHealth: () => req<{ health: { name: string; status: string; detail: Record<string, unknown> | null; updated_at: string }[]; activeSessionCount: number }>("/api/process-health"),
+  restartDaemon: () => req<{ ok: boolean }>("/api/process-health/restart-daemon", { method: "POST", body: "{}" }),
+  restartDockerContainer: (container: string) =>
+    req<{ ok: boolean }>("/api/process-health/restart-docker", { method: "POST", body: JSON.stringify({ container }) }),
+
   permissions: {
     stats: (sessionId?: number, days = 30) =>
       req<{

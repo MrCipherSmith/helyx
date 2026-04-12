@@ -74,6 +74,12 @@ export const api = {
   alwaysAllowPermission: (id: number) =>
     request<{ ok: boolean }>(`/permissions/${id}/always`, { method: 'POST', body: '{}' }),
 
+  // Process health
+  processHealth: () => request<ProcessHealthResponse>('/process-health'),
+  restartDaemon: () => request<{ ok: boolean }>('/process-health/restart-daemon', { method: 'POST', body: '{}' }),
+  restartDockerContainer: (container: string) =>
+    request<{ ok: boolean }>('/process-health/restart-docker', { method: 'POST', body: JSON.stringify({ container }) }),
+
   // Projects
   projects: () => request<Project[]>('/projects'),
   createProject: (data: { name: string; path: string }) =>
@@ -247,6 +253,18 @@ export interface PendingPermission {
   session_id: number;
   session_name: string | null;
   project_path: string | null;
+}
+
+export interface ProcessHealthRow {
+  name: string;
+  status: string;
+  detail: Record<string, unknown> | null;
+  updated_at: string;
+}
+
+export interface ProcessHealthResponse {
+  health: ProcessHealthRow[];
+  activeSessionCount: number;
 }
 
 export interface ApiError {

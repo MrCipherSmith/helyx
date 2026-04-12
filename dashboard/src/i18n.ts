@@ -136,6 +136,9 @@ const translations = {
     'projects.addBtn': 'Add',
     'projects.adding': 'Adding...',
 
+    // Monitor
+    'nav.monitor': 'Monitor',
+
     // Permissions
     'nav.permissions': 'Permissions',
     'permissions.title': 'Pending Permissions',
@@ -291,6 +294,9 @@ const translations = {
     'projects.pathPlaceholder': '/абсолютный/путь/к/проекту',
     'projects.addBtn': 'Добавить',
     'projects.adding': 'Добавление...',
+
+    // Monitor
+    'nav.monitor': 'Мониторинг',
 
     // Permissions
     'nav.permissions': 'Разрешения',

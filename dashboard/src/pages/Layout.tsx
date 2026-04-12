@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import {
   LayoutDashboard, Monitor, BarChart3, ScrollText, BookOpen, FolderOpen,
-  PanelLeftClose, PanelLeft, LogOut, Languages, ChevronDown, Bot, ShieldAlert,
+  PanelLeftClose, PanelLeft, LogOut, Languages, ChevronDown, Bot, ShieldAlert, Activity,
 } from 'lucide-react'
 import { api } from '../api/client'
 import { useI18n } from '../i18n'
@@ -33,6 +33,7 @@ export function Layout() {
     { to: '/sessions', label: t('nav.sessions'), icon: Monitor },
     { to: '/projects', label: t('nav.projects'), icon: FolderOpen },
     { to: '/permissions', label: t('nav.permissions'), icon: ShieldAlert, badge: pendingCount },
+    { to: '/monitor', label: t('nav.monitor'), icon: Activity },
     { to: '/stats', label: t('nav.stats'), icon: BarChart3 },
     { to: '/logs', label: t('nav.logs'), icon: ScrollText },
     { to: '/memories', label: t('nav.memory'), icon: BookOpen },
