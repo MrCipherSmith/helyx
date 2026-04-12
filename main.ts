@@ -22,8 +22,9 @@ async function main() {
   // 1. Database migrations
   await migrate();
 
-  // Recover stale pending permissions (process may have crashed mid-timeout)
-  const expired = await permissionService.expireStale(120_000);
+  // Expire all pending permissions on startup — polling coroutines died with the previous process.
+  // Any permission left pending has no active poller and will never be delivered, so expire them all.
+  const expired = await permissionService.expireStale(0);
   if (expired > 0) console.log(`[main] expired ${expired} stale pending permission(s)`);
 
   // Recover stale status messages and undelivered replies from crashed channel processes

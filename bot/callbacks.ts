@@ -185,16 +185,16 @@ async function handlePermissionCallback(ctx: Context): Promise<void> {
         }
       }
 
-      await ctx.editMessageText(`✅ Always allowed: ${toolName}\n\n${descPart}`);
-      await ctx.answerCallbackQuery({ text: `Always: ${toolName}` });
+      await ctx.editMessageText(`✅ Always allowed: ${toolName}\n\n${descPart}`).catch(() => {});
+      await ctx.answerCallbackQuery({ text: `Always: ${toolName}` }).catch(() => {});
     } else if (action === "allow") {
-      await ctx.editMessageText(`✅ Allowed\n\n${descPart}`);
-      await ctx.answerCallbackQuery({ text: "Allowed" });
+      await ctx.editMessageText(`✅ Allowed\n\n${descPart}`).catch(() => {});
+      await ctx.answerCallbackQuery({ text: "Allowed" }).catch(() => {});
     } else {
-      await ctx.editMessageText(`❌ Denied\n\n${descPart}`);
-      await ctx.answerCallbackQuery({ text: "Denied" });
+      await ctx.editMessageText(`❌ Denied\n\n${descPart}`).catch(() => {});
+      await ctx.answerCallbackQuery({ text: "Denied" }).catch(() => {});
     }
   } else {
-    await ctx.answerCallbackQuery({ text: "Request expired" });
+    await ctx.answerCallbackQuery({ text: "Request expired" }).catch(() => {});
   }
 }
