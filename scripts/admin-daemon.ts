@@ -54,15 +54,16 @@ const DAEMON_START = Date.now();
 async function writeProcessHealth(): Promise<void> {
   const uptimeMs = Date.now() - DAEMON_START;
 
-  // Own heartbeat
+  // Own heartbeat — pass object directly so postgres.js serializes it as JSONB object
   await sql`
     INSERT INTO process_health (name, status, detail, updated_at)
-    VALUES ('admin-daemon', 'running', ${JSON.stringify({ pid: process.pid, uptime_ms: uptimeMs })}::jsonb, now())
+    VALUES ('admin-daemon', 'running', ${sql.json({ pid: process.pid, uptime_ms: uptimeMs })}, now())
     ON CONFLICT (name) DO UPDATE SET status = 'running', detail = EXCLUDED.detail, updated_at = now()
   `.catch(() => {});
 
   // Docker container statuses
-  const dockerOut = await runShell(`docker ps --format "{{.Names}}\\t{{.Status}}" 2>/dev/null || true`);
+  const dockerResult = await runShell(`docker ps --format "{{.Names}}\\t{{.Status}}" 2>/dev/null || true`);
+  const dockerOut = dockerResult.output;
   for (const line of dockerOut.split("\n").filter(Boolean)) {
     const tab = line.indexOf("\t");
     if (tab === -1) continue;
@@ -71,7 +72,7 @@ async function writeProcessHealth(): Promise<void> {
     const running = !status.toLowerCase().startsWith("exited") && !status.toLowerCase().startsWith("dead");
     await sql`
       INSERT INTO process_health (name, status, detail, updated_at)
-      VALUES (${`docker:${name}`}, ${running ? "running" : "stopped"}, ${JSON.stringify({ status })}::jsonb, now())
+      VALUES (${`docker:${name}`}, ${running ? "running" : "stopped"}, ${sql.json({ status })}, now())
       ON CONFLICT (name) DO UPDATE SET status = EXCLUDED.status, detail = EXCLUDED.detail, updated_at = now()
     `.catch(() => {});
   }
