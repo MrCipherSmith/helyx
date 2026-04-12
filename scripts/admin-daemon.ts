@@ -11,7 +11,7 @@
  */
 
 import { resolve } from "path";
-import { startTmuxPermissionWatcher } from "./tmux-permission-watcher.ts";
+import { startTmuxWatchdog } from "./tmux-watchdog.ts";
 
 const BOT_DIR = resolve(import.meta.dir, "..");
 const CLI = resolve(BOT_DIR, "cli.ts");
@@ -41,9 +41,9 @@ console.log("[admin-daemon] started, polling for commands...");
 // Start tmux permission watcher if bot token is available
 const botToken = process.env.TELEGRAM_BOT_TOKEN;
 if (botToken) {
-  startTmuxPermissionWatcher(sql, botToken);
+  startTmuxWatchdog(sql, botToken);
 } else {
-  console.warn("[admin-daemon] TELEGRAM_BOT_TOKEN not set — tmux permission watcher disabled");
+  console.warn("[admin-daemon] TELEGRAM_BOT_TOKEN not set — tmux watchdog disabled");
 }
 
 async function runCommand(cmd: string, args: string[] = []): Promise<{ ok: boolean; output: string }> {
