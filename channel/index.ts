@@ -212,11 +212,18 @@ async function main() {
 
   poller.start();
 
-  // Renew session lease + last_active every 60s (lease TTL is 3 min, so 60s is safe margin)
+  // Renew session lease + last_active every 60s (lease TTL is 3 min, so 60s is safe margin).
+  // If the lease was stolen by a newer channel.ts (e.g. after rapid Stop/Start), exit so
+  // only one process polls the session — preventing concurrent duplicate message delivery.
   const HEARTBEAT_INTERVAL_MS = 60_000;
   const heartbeatTimer = setInterval(async () => {
     if (sessionMgr.sessionId === null) return;
-    await sessionMgr.renewLease().catch(() => {});
+    const leaseHeld = await sessionMgr.renewLease().catch(() => true);
+    if (!leaseHeld) {
+      channelLogger.warn("lease lost on heartbeat — exiting to yield to new owner");
+      shutdown();
+      return;
+    }
     // Refresh forum topic ID — may have changed if topic was recreated or project added after startup
     if (forumChatId) {
       try {

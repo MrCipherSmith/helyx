@@ -50,8 +50,12 @@ export class SessionManager {
     return result.length > 0;
   }
 
-  async renewLease(): Promise<void> {
-    if (!this.leaseAcquired || this.sessionId === null) return;
+  /**
+   * Renew the lease. Returns false if the lease was lost to another process —
+   * the caller should trigger a graceful shutdown so only one channel.ts owns the session.
+   */
+  async renewLease(): Promise<boolean> {
+    if (!this.leaseAcquired || this.sessionId === null) return true;
     const result = await this.ctx.sql`
       UPDATE sessions
       SET lease_expires_at = now() + ${LEASE_TTL}::interval,
@@ -60,8 +64,11 @@ export class SessionManager {
       RETURNING id
     `;
     if (result.length === 0) {
-      channelLogger.error({ sessionId: this.sessionId, owner: this.leaseOwner }, "lease lost — another process took ownership");
+      channelLogger.warn({ sessionId: this.sessionId, owner: this.leaseOwner }, "lease lost — another process took ownership, shutting down");
+      this.leaseAcquired = false;
+      return false;
     }
+    return true;
   }
 
   private async releaseLease(): Promise<void> {
@@ -171,8 +178,8 @@ export class SessionManager {
       DELETE FROM sessions
       WHERE project_path = ${projectPath}
         AND id != ${this.sessionId}
-        AND status = 'disconnected'
-        AND client_id LIKE 'claude-%'
+        AND status IN ('disconnected', 'inactive')
+        AND (client_id LIKE 'claude-%' OR client_id LIKE 'channel-%')
     `;
 
     return this.sessionId!;
