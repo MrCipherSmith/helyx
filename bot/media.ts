@@ -13,7 +13,7 @@ import { appendLog } from "../utils/stats.ts";
 import { getBotRef, setPendingInput } from "./handlers.ts";
 import { maybeAttachVoice } from "../utils/tts.ts";
 import { getForumChatId } from "./forum-cache.ts";
-import { enqueueForTopic, topicQueueKey } from "./topic-queue.ts";
+import { enqueueForTopic, topicQueueKey, getQueueDepth } from "./topic-queue.ts";
 
 const IMAGE_INLINE_MAX_BYTES = 5 * 1024 * 1024; // 5 MB — include base64 inline
 
@@ -218,8 +218,14 @@ export async function handleVoice(ctx: Context): Promise<void> {
     return;
   }
 
-  // Send status immediately (user feedback before queue slot opens)
-  const statusMsg = await ctx.reply(`🎤 Voice message (${voice.duration}s) — downloading...`);
+  // Send status immediately (user feedback before queue slot opens).
+  // Show "queued" if there's already a task running for this topic so the user
+  // knows the message was received and isn't stuck — "downloading" starts once the slot opens.
+  const queueKey = topicQueueKey(chatId, isForumMessage ? forumTopicId : null);
+  const initialStatus = getQueueDepth(queueKey) > 0
+    ? `🎤 Voice message (${voice.duration}s) — queued...`
+    : `🎤 Voice message (${voice.duration}s) — downloading...`;
+  const statusMsg = await ctx.reply(initialStatus);
 
   /** Edit statusMsg, retrying once on 429. */
   const updateStatus = async (text: string) => {
@@ -235,12 +241,12 @@ export async function handleVoice(ctx: Context): Promise<void> {
     }
   };
 
-  const queueKey = topicQueueKey(chatId, isForumMessage ? forumTopicId : null);
   enqueueForTopic(queueKey, async () => {
     try {
       await ctx.replyWithChatAction("typing");
 
-      // Download voice file
+      // Download voice file (30 s timeout is set in downloadFile via AbortSignal.timeout)
+      await updateStatus(`🎤 Voice message (${voice.duration}s) — downloading...`);
       let filePath: string;
       try {
         filePath = await downloadFile(bot, voice.file_id);

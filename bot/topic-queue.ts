@@ -3,6 +3,11 @@ import { logger } from "../logger.ts";
 const queues = new Map<string, Promise<void>>();
 const queueDepth = new Map<string, number>();
 
+/** Returns the number of tasks currently waiting (depth >= 1 means at least one running). */
+export function getQueueDepth(key: string): number {
+  return queueDepth.get(key) ?? 0;
+}
+
 /**
  * Enqueue a task for a specific topic key.
  * Tasks for the same key run sequentially; different keys run in parallel.

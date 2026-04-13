@@ -30,7 +30,7 @@ export async function downloadFile(
   const destPath = join(INBOX_DIR, safeName);
 
   const url = `https://api.telegram.org/file/bot${bot.token}/${filePath}`;
-  const res = await fetch(url);
+  const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
 
   if (!res.ok) {
     throw new Error(`Failed to download file: ${res.status}`);
