@@ -461,6 +461,20 @@ const migrations: Migration[] = [
       await tx`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS pane_snapshot_at TIMESTAMPTZ`;
     },
   },
+  {
+    version: 19,
+    name: "message_queue deduplication index",
+    up: async (tx) => {
+      // Prevents duplicate delivery when the bot restarts mid-poll (grammY re-delivers
+      // unacknowledged Telegram updates, causing the same message to be inserted twice).
+      // Excludes empty string and 'tool' (used for synthetic tool-command queue entries).
+      await tx.unsafe(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_queue_msgid_dedup
+        ON message_queue(chat_id, message_id)
+        WHERE message_id IS NOT NULL AND message_id != '' AND message_id != 'tool'
+      `);
+    },
+  },
 ];
 
 // --- Public API ---

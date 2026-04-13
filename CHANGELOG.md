@@ -1,5 +1,46 @@
 # Changelog
 
+## v1.27.6
+
+### fix(tmux-watchdog): auto-confirm dev-channel prompt in ALL windows, not just active sessions
+
+Root cause of the "altsay stuck at Enter to confirm" deadlock: `pollWindows()` only
+checked windows with active sessions, but a session can only become active *after*
+the startup prompt is confirmed — a circular dependency. Fix adds a global window
+scan at the top of each poll cycle that sends Enter to any window showing the
+`--dangerously-load-development-channels` warning, regardless of session state.
+
+### fix(channel): heartbeat failure counter — exit after 2 consecutive DB errors
+
+Previous code used `.catch(() => true)` on `renewLease()`, silently treating any
+DB error as "lease still held". This meant a channel.ts process whose DB connection
+died would keep running indefinitely, holding a zombie session. Fix tracks
+consecutive failures; exits after 2 so the session is released and a fresh restart
+can recover.
+
+### fix(tts): return audio format from synthesize() — prevent MP3-as-WAV delivery
+
+`synthesize()` previously returned `Buffer | null`; callers always sent
+`audio/wav` / `voice.wav`. Yandex and OpenAI return MP3, so Telegram rejected the
+audio. Fix changes the return type to `{ buf: Buffer; fmt: "mp3" | "wav" } | null`.
+Each provider now tags its output format; `maybeAttachVoice` and `maybeAttachVoiceRaw`
+use the correct MIME type and filename (`voice.mp3` vs `voice.wav`).
+
+### fix(message_queue): deduplicate on restart — prevent double delivery after Docker restart
+
+Root cause of duplicate responses after `docker compose up -d`: grammY's long-polling
+re-delivers Telegram updates that weren't acknowledged before the process died. The
+same message was inserted into `message_queue` twice (no uniqueness constraint), both
+rows were dequeued and delivered to Claude, producing two replies.
+
+Fix:
+- Migration v19: partial unique index on `message_queue(chat_id, message_id)` excluding
+  empty strings and `'tool'` entries.
+- `bot/text-handler.ts` and `bot/media.ts`: INSERTs now use
+  `ON CONFLICT ... DO NOTHING` so duplicate Telegram updates are silently dropped.
+
+---
+
 ## v1.27.5
 
 ### fix(status): spinner animates at 1 fps instead of every 5 s

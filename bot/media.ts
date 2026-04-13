@@ -66,6 +66,9 @@ async function deliverMedia(
         ${route.sessionId}, ${chatId}, ${fromUser}, ${text},
         ${String(messageId ?? "")}, ${JSON.stringify([attachment])}
       )
+      ON CONFLICT (chat_id, message_id)
+        WHERE message_id IS NOT NULL AND message_id != '' AND message_id != 'tool'
+      DO NOTHING
     `;
     return;
   }

@@ -216,9 +216,22 @@ async function main() {
   // If the lease was stolen by a newer channel.ts (e.g. after rapid Stop/Start), exit so
   // only one process polls the session — preventing concurrent duplicate message delivery.
   const HEARTBEAT_INTERVAL_MS = 60_000;
+  let heartbeatFailCount = 0;
   const heartbeatTimer = setInterval(async () => {
     if (sessionMgr.sessionId === null) return;
-    const leaseHeld = await sessionMgr.renewLease().catch(() => true);
+    let leaseHeld: boolean;
+    try {
+      leaseHeld = await sessionMgr.renewLease();
+      heartbeatFailCount = 0;
+    } catch (err) {
+      heartbeatFailCount++;
+      channelLogger.warn({ err, failCount: heartbeatFailCount }, "heartbeat: DB error renewing lease");
+      if (heartbeatFailCount >= 2) {
+        channelLogger.error("too many heartbeat failures — exiting to avoid zombie session");
+        shutdown();
+      }
+      return;
+    }
     if (!leaseHeld) {
       channelLogger.warn("lease lost on heartbeat — exiting to yield to new owner");
       shutdown();

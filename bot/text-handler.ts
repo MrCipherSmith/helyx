@@ -121,7 +121,9 @@ export async function handleText(ctx: Context): Promise<void> {
 
     logger.debug({ phase: "text-handler", step: "addmsg-done", chatId, sessionId: route.sessionId, elapsedMs: Date.now() - t1 }, "perf");
 
-    // ClaudeAdapter: insert into message_queue — channel.ts handles delivery
+    // ClaudeAdapter: insert into message_queue — channel.ts handles delivery.
+    // ON CONFLICT DO NOTHING: if the bot restarts mid-poll, grammY re-delivers the same
+    // Telegram update; the dedup index on (chat_id, message_id) prevents double-queueing.
     const t2 = Date.now();
     await sql`
       INSERT INTO message_queue (session_id, chat_id, from_user, content, message_id)
@@ -132,6 +134,9 @@ export async function handleText(ctx: Context): Promise<void> {
         ${text},
         ${messageId}
       )
+      ON CONFLICT (chat_id, message_id)
+        WHERE message_id IS NOT NULL AND message_id != '' AND message_id != 'tool'
+      DO NOTHING
     `;
     logger.debug({ phase: "text-handler", step: "queue-inserted", chatId, sessionId: route.sessionId, msgId: messageId, elapsedMs: Date.now() - t2, totalMs: Date.now() - t0 }, "perf");
     appendLog(route.sessionId, chatId, "queue", "message queued for CLI");

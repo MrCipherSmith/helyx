@@ -338,9 +338,9 @@ async function synthesizeKokoro(text: string): Promise<Buffer | null> {
  *   "openai" — OpenAI TTS only (multilingual)
  *   "groq"   — Groq Orpheus only (English)
  *   "none"   — TTS disabled
- * Returns audio buffer or null on failure/disabled.
+ * Returns audio buffer + format ('mp3' | 'wav') or null on failure/disabled.
  */
-export async function synthesize(text: string): Promise<Buffer | null> {
+export async function synthesize(text: string): Promise<{ buf: Buffer; fmt: "mp3" | "wav" } | null> {
   const stripped = stripMarkdown(text);
   if (stripped.length < 10) return null;
 
@@ -368,31 +368,33 @@ export async function synthesize(text: string): Promise<Buffer | null> {
     ? (channelLogger.warn({ isRussian, isRussianNorm }, "tts: normalize changed language, using stripped"), stripped)
     : normalized;
 
+  const wrap = (buf: Buffer | null, fmt: "mp3" | "wav") => buf ? { buf, fmt } : null;
+
   if (provider === "yandex") {
     if (!YANDEX_API_KEY || !YANDEX_FOLDER_ID) {
       channelLogger.warn({}, "tts: TTS_PROVIDER=yandex but YANDEX_API_KEY/YANDEX_FOLDER_ID not set");
       return null;
     }
-    return synthesizeYandex(clean).catch((err) => {
+    return synthesizeYandex(clean).then(b => wrap(b, "mp3")).catch((err) => {
       channelLogger.error({ err }, "tts: Yandex failed");
       return null;
     });
   }
 
   if (provider === "kokoro") {
-    return synthesizeKokoro(clean);
+    return synthesizeKokoro(clean).then(b => wrap(b, "wav"));
   }
 
   if (provider === "piper") {
-    return synthesizePiper(clean, isRussian);
+    return synthesizePiper(clean, isRussian).then(b => wrap(b, "wav"));
   }
 
   if (provider === "openai") {
-    return synthesizeOpenAI(clean);
+    return synthesizeOpenAI(clean).then(b => wrap(b, "mp3"));
   }
 
   if (provider === "groq") {
-    return synthesizeGroq(clean);
+    return synthesizeGroq(clean).then(b => wrap(b, "wav"));
   }
 
   // auto (Russian): Piper → Yandex → Groq
@@ -400,7 +402,7 @@ export async function synthesize(text: string): Promise<Buffer | null> {
   if (isRussian) {
     try {
       const buf = await synthesizePiper(clean, true);
-      if (buf) return buf;
+      if (buf) return { buf, fmt: "wav" };
     } catch (err) {
       channelLogger.warn({ err }, "tts: Piper failed, trying Yandex");
     }
@@ -408,7 +410,7 @@ export async function synthesize(text: string): Promise<Buffer | null> {
     if (YANDEX_API_KEY && YANDEX_FOLDER_ID) {
       try {
         const buf = await synthesizeYandex(clean);
-        if (buf) return buf;
+        if (buf) return { buf, fmt: "mp3" };
       } catch (err) {
         channelLogger.warn({ err }, "tts: Yandex failed, trying Groq");
       }
@@ -416,20 +418,21 @@ export async function synthesize(text: string): Promise<Buffer | null> {
   } else {
     try {
       const buf = await synthesizePiper(clean, false);
-      if (buf) return buf;
+      if (buf) return { buf, fmt: "wav" };
     } catch {
       // fall through to Kokoro
     }
     try {
       const buf = await synthesizeKokoro(clean);
-      if (buf) return buf;
+      if (buf) return { buf, fmt: "wav" };
     } catch {
       // fall through to Groq
     }
   }
 
   try {
-    return await synthesizeGroq(clean);
+    const buf = await synthesizeGroq(clean);
+    return wrap(buf, "wav");
   } catch (err) {
     channelLogger.error({ err }, "tts: all providers failed");
     return null;
@@ -451,9 +454,10 @@ export function maybeAttachVoice(
   const opts = threadId ? { message_thread_id: threadId } : undefined;
 
   synthesize(text)
-    .then((buf) => {
-      if (!buf) return;
-      return bot.api.sendVoice(Number(chatId), new InputFile(buf, "voice.wav"), opts);
+    .then((result) => {
+      if (!result) return;
+      const filename = result.fmt === "mp3" ? "voice.mp3" : "voice.wav";
+      return bot.api.sendVoice(Number(chatId), new InputFile(result.buf, filename), opts);
     })
     .catch((err) => channelLogger.error({ err }, "tts: failed to send voice"));
 }
@@ -493,26 +497,29 @@ export function maybeAttachVoiceRaw(
   const actionTimer = setInterval(sendAction, 4000);
 
   synthesize(text)
-    .then(async (buf) => {
+    .then(async (result) => {
       clearInterval(actionTimer);
-      if (!buf) {
+      if (!result) {
         channelLogger.warn({ chatId }, "tts: synthesize returned null");
         return;
       }
+      const { buf, fmt } = result;
+      const mimeType = fmt === "mp3" ? "audio/mpeg" : "audio/wav";
+      const filename = fmt === "mp3" ? "voice.mp3" : "voice.wav";
       const form = new FormData();
       form.append("chat_id", String(chatId));
-      form.append("voice", new Blob([buf], { type: "audio/wav" }), "voice.wav");
+      form.append("voice", new Blob([buf.buffer as ArrayBuffer], { type: mimeType }), filename);
       if (threadId) form.append("message_thread_id", String(threadId));
-      channelLogger.info({ chatId, threadId, bufSize: buf.length }, "tts: sending voice");
+      channelLogger.info({ chatId, threadId, bufSize: buf.length, fmt }, "tts: sending voice");
       const res = await fetch(`https://api.telegram.org/bot${token}/sendVoice`, {
         method: "POST",
         body: form,
       });
       if (!res.ok) {
         const err = await res.text();
-        channelLogger.error({ status: res.status, err }, "tts: sendVoice failed");
+        channelLogger.error({ status: res.status, err, fmt }, "tts: sendVoice failed");
       } else {
-        channelLogger.info({ chatId, threadId }, "tts: voice sent ok");
+        channelLogger.info({ chatId, threadId, fmt }, "tts: voice sent ok");
       }
     })
     .catch((err) => {

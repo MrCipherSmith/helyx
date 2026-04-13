@@ -531,6 +531,19 @@ async function pollWindows(
   token: string,
   states: Map<string, WindowState>,
 ): Promise<void> {
+  // Check ALL bot windows for the dev-channel startup prompt before anything else.
+  // This must happen independently of session status: the session only becomes
+  // 'active' AFTER the prompt is confirmed, so checking only active sessions
+  // creates an unresolvable deadlock for newly-started windows.
+  const allWindows = await listBotWindows();
+  for (const win of allWindows) {
+    const visibleLines = await capturePaneVisible(win.index);
+    if (detectDevChannelPrompt(visibleLines)) {
+      console.log(`[watchdog] dev-channel startup prompt in "${win.name}" — auto-confirming`);
+      await runShell(`tmux send-keys -t "${TMUX_SESSION}:${win.index}" "" Enter`);
+    }
+  }
+
   const activeSessions = await fetchActiveSessions(sql);
   if (activeSessions.length === 0) return;
 
