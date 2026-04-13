@@ -71,6 +71,12 @@ export class MessageQueuePoller {
           continue;
         }
 
+        // FOR UPDATE SKIP LOCKED: concurrent pollers (e.g. from rapid Stop/Start
+        // cycles that leave multiple channel.ts instances alive for the same session)
+        // skip already-locked rows instead of racing on the same IDs.
+        // Without this, two pollers evaluating the subquery at the same MVCC snapshot
+        // could both get the same ID, then both UPDATE it (outer WHERE re-checks id only,
+        // not delivered=false), causing duplicate deliveries.
         const rows = await this.ctx.sql`
           UPDATE message_queue
           SET delivered = true
@@ -79,6 +85,7 @@ export class MessageQueuePoller {
             WHERE session_id = ${sid} AND delivered = false
             ORDER BY created_at
             LIMIT 10
+            FOR UPDATE SKIP LOCKED
           )
           RETURNING id, chat_id, from_user, content, message_id, created_at, attachments
         `;
