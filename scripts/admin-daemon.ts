@@ -151,6 +151,9 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
         const hasSession = await runShell("tmux has-session -t bots 2>/dev/null");
         if (hasSession.ok) {
           const wname = `${name}`;
+          // Kill ALL existing windows for this project to avoid zombie accumulation.
+          // tmux kill-window by name only kills the first match, so loop until all gone.
+          await runShell(`while tmux kill-window -t "bots:${wname}" 2>/dev/null; do :; done`);
           // Use window index (not name) for send-keys to avoid race where the shell
           // auto-renames the window before send-keys runs.
           result = await runShell(
@@ -222,8 +225,14 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
           if (prows.length > 0) name = prows[0].name;
         }
         if (!name) { result = { ok: false, output: "missing name" }; break; }
-        result = await runShell(`tmux kill-window -t "bots:${name}" 2>&1 || tmux kill-window -t "bots:${name} " 2>&1 || echo "window not found"`);
-        await sql`UPDATE sessions SET status = 'inactive' WHERE project = ${name} AND source = 'remote'`;
+        // Kill ALL windows for this project — tmux only kills the first match per call.
+        const killResult = await runShell(`count=0; while tmux kill-window -t "bots:${name}" 2>/dev/null; do count=$((count+1)); done; echo "killed $count window(s)"`);
+        result = { ok: true, output: killResult.output };
+        if (project_id) {
+          await sql`UPDATE sessions SET status = 'inactive' WHERE project_id = ${project_id} AND source = 'remote'`;
+        } else {
+          await sql`UPDATE sessions SET status = 'inactive' WHERE project = ${name} AND source = 'remote'`;
+        }
         break;
       }
 

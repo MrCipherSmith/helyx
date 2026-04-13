@@ -1,5 +1,68 @@
 # Changelog
 
+## v1.27.3
+
+### fix(projects): idempotency — suppress duplicate start/stop commands
+
+Double-clicking a project button or rapid retries no longer enqueues duplicate
+commands. Both layers are guarded:
+
+- **UI layer** (`bot/commands/projects.ts`): checks `getPendingActions()` before
+  enqueuing; answers the callback with "Already starting/stopping…" if one is
+  already in flight. Also suppresses the Telegram "message is not modified" error
+  (content unchanged → no-op instead of delete-and-resend).
+- **Service layer** (`services/project-service.ts`): `ProjectService.action()`
+  now skips `INSERT` if a matching `pending`/`processing` row already exists.
+  `listAll()` uses a `LATERAL` join to surface the most relevant session
+  (active preferred, then most-recently-active).
+
+### fix(admin-daemon): kill ALL matching tmux windows to prevent zombie accumulation
+
+`tmux kill-window -t "bots:<name>"` only kills the first matching window — if
+multiple windows share the same name (e.g. after a rapid restart), the extras
+survive as zombies. Fixed by looping `kill-window` until none remain:
+
+```bash
+while tmux kill-window -t "bots:<name>" 2>/dev/null; do :; done
+```
+
+Applied to both the `start` path (before re-creating the window) and the `stop`
+path. Stop command now prefers `project_id` over name for the session status update.
+
+### fix(tmux-watchdog): visible-only pane capture for permission prompt detection
+
+Permission prompt detection previously used `capturePane()` which includes
+scroll-back history. If a dialog had already been answered and scrolled out of
+view, the watchdog would re-detect it as active — causing spurious "still active"
+false positives.
+
+**Fix:** added `capturePaneVisible()` (no `-S`/`-E` range → current screen only)
+and switched permission detection and polling to use it. Dialogs in scroll-back
+are already answered and must not trigger re-detection.
+
+Also added a 1 s delay before the first polling iteration so a very fast
+auto-approval doesn't make the dialog disappear before the first check, which
+previously caused an immediate false "Resolved in terminal" on the first tick.
+
+### fix(tts): language guard after LLM normalization
+
+`normalizeForSpeech` now receives `isRussian` and injects a `Language: Russian /
+English. DO NOT translate. Output in <lang> only.` prefix into the user message,
+reducing wrong-language normalization.
+
+Additionally, a post-normalization guard checks whether the script ratio changed
+(Cyrillic vs Latin). If the normalizer returned text in the wrong language despite
+instructions, the bot falls back to the pre-normalization stripped text so the TTS
+model always receives input in the correct language.
+
+### feat(docker): Piper TTS directory mounted into container
+
+`docker-compose.yml` now mounts `./piper` as a read-only volume at `/app/piper`
+and passes `PIPER_DIR=/app/piper`. The `piper/` directory is added to `.gitignore`
+(binary + voice models are not tracked in git).
+
+---
+
 ## v1.27.2
 
 ### feat(setup): TTS configuration in setup wizard with Piper voice selection

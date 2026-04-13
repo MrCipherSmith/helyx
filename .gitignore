@@ -11,3 +11,6 @@ downloads
 tmux-projects.json
 # docs/ tracked in git
 .auth/
+
+# Piper TTS binary and voice models
+piper/

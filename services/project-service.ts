@@ -20,7 +20,12 @@ export class ProjectService {
       SELECT p.id, p.name, p.path, p.tmux_session_name, p.created_at,
              s.id as session_id, s.status as session_status
       FROM projects p
-      LEFT JOIN sessions s ON s.project_id = p.id AND s.source = 'remote'
+      LEFT JOIN LATERAL (
+        SELECT id, status FROM sessions
+        WHERE project_id = p.id AND source = 'remote'
+        ORDER BY (status = 'active') DESC, last_active DESC NULLS LAST
+        LIMIT 1
+      ) s ON true
       ORDER BY p.name
     ` as unknown as ProjectWithSession[];
   }
@@ -85,6 +90,17 @@ export class ProjectService {
   private async action(id: number, command: string): Promise<{ ok: boolean; error?: string }> {
     const [project] = await sql`SELECT id, name, path, tmux_session_name FROM projects WHERE id = ${id}`;
     if (!project) return { ok: false, error: "Project not found" };
+
+    // Idempotency: skip if a command for this project is already pending/processing
+    const [existing] = await sql`
+      SELECT id FROM admin_commands
+      WHERE command = ${command}
+        AND (payload->>'project_id')::int = ${id}
+        AND status IN ('pending', 'processing')
+      LIMIT 1
+    `;
+    if (existing) return { ok: true };
+
     await sql`INSERT INTO admin_commands (command, payload) VALUES (${command}, ${JSON.stringify({
       project_id: id,
       path: project.path,

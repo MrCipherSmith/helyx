@@ -73,9 +73,19 @@ export async function handleProjectCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  const project = await projectService.get(id);
+  const [project, pendingBefore] = await Promise.all([
+    projectService.get(id),
+    getPendingActions(),
+  ]);
   if (!project) {
     await ctx.answerCallbackQuery({ text: "Project not found" });
+    return;
+  }
+
+  // Idempotency: skip if there's already a pending/processing command for this project
+  const alreadyPending = pendingBefore.get(id);
+  if (alreadyPending) {
+    await ctx.answerCallbackQuery({ text: `Already ${alreadyPending === "start" ? "starting" : "stopping"} ${project.name}...` });
     return;
   }
 
@@ -117,7 +127,10 @@ export async function handleProjectCallback(ctx: Context): Promise<void> {
 
   kb.text("🔄 Refresh", "proj:refresh").row();
 
-  await ctx.editMessageText(lines.join("\n"), { reply_markup: kb }).catch(async () => {
+  await ctx.editMessageText(lines.join("\n"), { reply_markup: kb }).catch(async (err: any) => {
+    // Ignore "message is not modified" — content unchanged, nothing to do
+    if (err?.description?.includes("not modified") || err?.message?.includes("not modified")) return;
+    // For other errors (e.g. message too old to edit), delete and re-send
     await ctx.deleteMessage().catch(() => {});
     await ctx.reply(lines.join("\n"), { reply_markup: kb });
   });

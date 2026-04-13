@@ -128,16 +128,19 @@ Rules:
  * Falls back to OpenRouter if Groq unavailable.
  * Returns the original text on error/timeout — TTS is never blocked.
  */
-async function normalizeForSpeech(text: string): Promise<string> {
+async function normalizeForSpeech(text: string, isRussian: boolean): Promise<string> {
   if (!GROQ_API_KEY && !CONFIG.OPENROUTER_API_KEY) return text;
 
   const t0 = Date.now();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
 
+  const langLabel = isRussian ? "Russian" : "English";
+  const userContent = `Language: ${langLabel}. DO NOT translate. Output in ${langLabel} only.\n\n${text.slice(0, 2000)}`;
+
   const messages = [
     { role: "system", content: TTS_NORMALIZE_PROMPT },
-    { role: "user", content: text.slice(0, 2000) },
+    { role: "user", content: userContent },
   ];
 
   try {
@@ -353,7 +356,17 @@ export async function synthesize(text: string): Promise<Buffer | null> {
   const isRussian = totalLettersRaw === 0 ? true : cyrillicCountRaw / totalLettersRaw >= 0.4;
 
   // LLM-normalize before TTS: convert paths, symbols, code to natural speech
-  const clean = await normalizeForSpeech(stripped);
+  const normalized = await normalizeForSpeech(stripped, isRussian);
+
+  // Guard: if normalization changed the language (LLM returned wrong-language text despite
+  // instructions), fall back to stripped original so the TTS model gets the right language.
+  const cyrillicNorm = (normalized.match(/[\u0400-\u04FF]/g) ?? []).length;
+  const latinNorm    = (normalized.match(/[a-zA-Z]/g) ?? []).length;
+  const totalNorm    = cyrillicNorm + latinNorm;
+  const isRussianNorm = totalNorm === 0 ? isRussian : cyrillicNorm / totalNorm >= 0.4;
+  const clean = isRussianNorm !== isRussian
+    ? (channelLogger.warn({ isRussian, isRussianNorm }, "tts: normalize changed language, using stripped"), stripped)
+    : normalized;
 
   if (provider === "yandex") {
     if (!YANDEX_API_KEY || !YANDEX_FOLDER_ID) {

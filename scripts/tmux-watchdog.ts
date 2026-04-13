@@ -103,6 +103,19 @@ async function capturePane(windowName: string, numLines = 60): Promise<string[]>
   return raw.split("\n").map(stripAnsi);
 }
 
+/**
+ * Capture only the current visible screen — no scroll-back.
+ * Used for interactive UI detection (permission prompts, editors, credentials).
+ * If a dialog has scrolled into history it has already been answered, so detecting
+ * it again from scroll-back would be a false positive.
+ */
+async function capturePaneVisible(windowName: string): Promise<string[]> {
+  const raw = await runShell(
+    `tmux capture-pane -t "${TMUX_SESSION}:${windowName}" -p 2>/dev/null || true`,
+  );
+  return raw.split("\n").map(stripAnsi);
+}
+
 /** List windows in the bots session: [{name, index}] */
 async function listBotWindows(): Promise<Array<{ name: string; index: string }>> {
   const out = await runShell(
@@ -391,6 +404,12 @@ async function pollPermissionResponse(
 ): Promise<void> {
   const deadline = entry.startedAt + 600_000;
 
+  // Give the terminal a moment to render before the first check.
+  // Without this, a very fast auto-approval or key-press could make the dialog
+  // disappear before we even get to check, causing an immediate false
+  // "Resolved in terminal" on the very first iteration.
+  await Bun.sleep(1_000);
+
   while (Date.now() < deadline) {
     // User responded via Telegram
     const rows = await sql`
@@ -409,8 +428,10 @@ async function pollPermissionResponse(
       return;
     }
 
-    // Prompt disappeared — user answered in terminal
-    const paneLines = await capturePane(windowName, 30);
+    // Prompt disappeared — user answered in terminal.
+    // Use visible-only capture: same as detection, so we don't say "gone" just
+    // because the dialog scrolled into history while still being active.
+    const paneLines = await capturePaneVisible(windowName);
     const stillActive = paneLines.some(
       (l) => PERM_SIGNAL_RE.test(l) || PERM_CHOICE_RE.test(l),
     );
@@ -542,8 +563,10 @@ async function pollWindows(
     // Write last meaningful lines as pane_snapshot for live status display in Telegram
     await writePaneSnapshot(sql, session.sessionId, lines);
 
-    // 1. Permission prompt (highest priority — needs immediate interaction)
-    const perm = detectPermissionPrompt(lines);
+    // 1. Permission prompt (highest priority — needs immediate interaction).
+    //    Use visible-only capture: dialogs in scroll-back are already answered.
+    const visibleLines = await capturePaneVisible(tmuxTarget);
+    const perm = detectPermissionPrompt(visibleLines);
     if (perm) {
       await handlePermissionPrompt(sql, token, tmuxTarget, state, session, perm);
       continue; // don't process other detectors in the same tick
