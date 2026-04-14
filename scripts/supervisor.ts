@@ -9,10 +9,11 @@
  * sharing the existing DB connection and shell utilities.
  *
  * Monitoring loops:
- *  1. Session heartbeat — active_status_messages.updated_at stale >2 min → proj_start
- *  2. Queue stuck       — message_queue pending >5 min → proj_start
- *  3. Voice cleanup     — voice_status_messages >3 min → edit Telegram + delete
- *  4. Health-OK pulse   — hourly "all good" report (if no incidents in last hour)
+ *  1. Session heartbeat   — active_status_messages.updated_at stale >2 min → proj_start
+ *  2. Queue stuck         — message_queue pending >5 min → inline-button alert
+ *  3. Voice cleanup       — voice_status_messages >3 min → edit Telegram + delete
+ *  4. Status broadcast    — every 5 min (delete old + send new for notification)
+ *  5. Idle auto-compact   — sessions idle >IDLE_COMPACT_MIN min with ≥10 msgs → summarize + clear
  *
  * Alerting: Telegram topic SUPERVISOR_CHAT_ID / SUPERVISOR_TOPIC_ID (from .env).
  *           If not set, alerts are logged only.
@@ -21,12 +22,15 @@
  */
 
 import type postgres from "postgres";
+import { forceSummarize } from "../memory/summarizer.ts";
+import { clearCache } from "../memory/short-term.ts";
 
 // --- Config (read from env, not from CONFIG to avoid circular imports in admin-daemon) ---
 const SUPERVISOR_CHAT_ID  = process.env.SUPERVISOR_CHAT_ID  ?? "";
 const SUPERVISOR_TOPIC_ID = Number(process.env.SUPERVISOR_TOPIC_ID ?? "0");
 const BOT_TOKEN           = process.env.TELEGRAM_BOT_TOKEN  ?? "";
 const OLLAMA_URL          = process.env.OLLAMA_URL ?? "http://localhost:11434";
+const IDLE_COMPACT_MIN    = Number(process.env.IDLE_COMPACT_MIN ?? "60"); // minutes before auto-compact
 
 // Thresholds
 const SESSION_STALE_MS  = 2 * 60 * 1000;   // 2 min — heartbeat timeout
@@ -583,6 +587,58 @@ async function updateProcessHealth(sql: postgres.Sql): Promise<void> {
   } catch { /* non-blocking */ }
 }
 
+// --- Idle session auto-compact ---
+
+/**
+ * Finds active sessions idle > IDLE_COMPACT_MIN minutes with >= 10 messages,
+ * summarizes each (session_id, chat_id) pair, saves to long-term memory,
+ * and clears the message context so next interaction starts fresh.
+ */
+async function checkIdleSessions(sql: postgres.Sql): Promise<void> {
+  const idleSessions = await sql`
+    SELECT s.id, s.project, s.project_path,
+      COUNT(m.id) AS msg_count,
+      ARRAY_AGG(DISTINCT m.chat_id::text) AS chat_ids
+    FROM sessions s
+    JOIN messages m ON m.session_id = s.id
+    WHERE s.status = 'active'
+      AND s.id != 0
+      AND s.last_active < NOW() - (${IDLE_COMPACT_MIN} * INTERVAL '1 minute')
+    GROUP BY s.id, s.project, s.project_path
+    HAVING COUNT(m.id) >= 10
+  `.catch(() => []);
+
+  for (const sess of idleSessions as any[]) {
+    const chatIds: string[] = sess.chat_ids ?? [];
+    let compacted = 0;
+
+    for (const chatId of chatIds) {
+      try {
+        await forceSummarize(Number(sess.id), chatId, sess.project_path ?? null);
+        clearCache(Number(sess.id), chatId);
+        await sql`DELETE FROM messages WHERE session_id = ${sess.id} AND chat_id = ${chatId}`;
+        compacted++;
+      } catch (err: any) {
+        console.error(`[supervisor] idle compact failed for ${sess.project}/${chatId}: ${err?.message}`);
+      }
+    }
+
+    if (compacted === 0) continue;
+
+    console.error(`[supervisor] idle compact: ${sess.project} — ${sess.msg_count} msgs, ${compacted} chat(s) cleared`);
+
+    if (BOT_TOKEN && SUPERVISOR_CHAT_ID) {
+      const idleMin = Math.round(IDLE_COMPACT_MIN);
+      await tgPost("sendMessage", {
+        chat_id: SUPERVISOR_CHAT_ID,
+        ...(SUPERVISOR_TOPIC_ID ? { message_thread_id: SUPERVISOR_TOPIC_ID } : {}),
+        text: `🔄 <b>Авто-сжатие:</b> <b>${sess.project}</b> idle >${idleMin}мин (${sess.msg_count} сообщений).\nКонтекст сохранён в долгосрочную память и очищен.`,
+        parse_mode: "HTML",
+      }).catch(() => {});
+    }
+  }
+}
+
 // --- Main entry point ---
 
 export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
@@ -614,6 +670,10 @@ export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
   const healthTimer = setInterval(() => updateProcessHealth(sql).catch(() => {}), 30_000);
   healthTimer.unref?.();
 
+  // Loop 5: Idle session auto-compact — every 30 min
+  const idleTimer = setInterval(() => checkIdleSessions(sql).catch(() => {}), 30 * 60_000);
+  idleTimer.unref?.();
+
   // Run initial checks after a short delay (let admin-daemon settle first)
   setTimeout(() => {
     checkHungSessions(sql).catch(() => {});
@@ -623,5 +683,5 @@ export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
     setTimeout(() => sendStatusBroadcast(sql, runShell).catch(() => {}), 20_000);
   }, 10_000);
 
-  console.log("[supervisor] watchdog running (session:60s, queue:60s, voice:5min, status:5min)");
+  console.error(`[supervisor] watchdog running (session:60s, queue:60s, voice:5min, status:5min, idle-compact:30min/${IDLE_COMPACT_MIN}min-threshold)`);
 }
