@@ -95,6 +95,15 @@ Any message sent to the supervisor Telegram topic triggers an immediate status r
 - Live DB data: sessions, queue, process health
 - LLM evaluation of current state, with the user's actual question forwarded to the model
 - Model responds in Russian, staying within Helyx monitoring context
+- Status broadcast: delete previous message + send new one (edits are silent, no notification)
+
+**FR-9: Idle Session Auto-Compact**
+Every 30 minutes, check for active sessions idle > `IDLE_COMPACT_MIN` minutes (default: 60) with ≥ 10 messages:
+1. Call `forceSummarize(sessionId, chatId, projectPath)` — saves to long-term memory
+2. Clear in-memory cache + delete messages from DB
+3. Send notification to supervisor topic: project name + message count + chats compacted
+4. Configurable via `IDLE_COMPACT_MIN` env var
+Next interaction starts with clean context; summary is already in long-term memory.
 
 ---
 

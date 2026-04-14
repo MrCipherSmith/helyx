@@ -196,6 +196,38 @@ Feature: Smart Memory Reconciliation
     And no duplicate project_context record is created
 ```
 
+---
+
+## 12. Memory Quality Validation (added 2026-04-14)
+
+### Problem
+Auto-summarization of idle/trivial sessions (chit-chat, single-word acks) was saving low-quality summaries to long-term memory. These then get retrieved via vector search and injected into future Claude contexts, polluting the system prompt.
+
+### Solution
+
+**Pre-check in `trySummarize` (before calling Claude API):**
+- `isContentTrivial(messages)`: skip if avg user-message length < 25 chars, or < 2 messages ≥ 40 chars
+- Exceptions: `trigger === "manual"` (user explicitly requested /summarize) — always runs
+
+**Post-check after summary generation:**
+- `isSummaryWorthSaving(summary)`: reject if < 50 chars, or matches trivial patterns ("nothing significant", "casual conversation", etc.)
+- If rejected → return `null`, log `"summarize skipped: low-quality summary output"`
+
+**Fact filtering:**
+- Only facts 30–300 chars are saved (cuts noise fragments and wall-of-text entries)
+
+### SUMMARIZE_MODEL — local Ollama for summarization
+
+`SUMMARIZE_MODEL` env var (optional). If set, `summarizeConversation` calls Ollama directly:
+- `/api/chat` with `format: "json"`, `think: false`, `temperature: 0.2`, `num_predict: 400`
+- 30s AbortSignal timeout
+- Falls back to main LLM provider on failure/timeout
+
+**Benefits:** no API cost, offline, ~3–5s with gemma4:e4b
+**Example:** `SUMMARIZE_MODEL=gemma4:e4b`
+
+---
+
 ## 11. Verification
 
 ### Testing
