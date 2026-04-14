@@ -486,10 +486,12 @@ async function sendStatusBroadcast(sql: postgres.Sql, runShell: RunShell): Promi
         signal: AbortSignal.timeout(10_000),
       });
       if (res.ok) {
-        console.log("[supervisor] status message updated");
+        console.error("[supervisor] status message updated");
         return;
       }
       // Edit failed (message too old or deleted) — fall through to send new
+      const errBody = await res.text().catch(() => "");
+      console.error(`[supervisor] edit failed ${res.status}: ${errBody.slice(0, 100)}`);
       statusMessageId = null;
     }
 
@@ -513,7 +515,10 @@ async function sendStatusBroadcast(sql: postgres.Sql, runShell: RunShell): Promi
     if (res.ok) {
       const data = await res.json() as { result?: { message_id?: number } };
       statusMessageId = data.result?.message_id ?? null;
-      console.log("[supervisor] status broadcast sent (msg_id:", statusMessageId, ")");
+      console.error("[supervisor] status broadcast sent (msg_id:", statusMessageId, ")");
+    } else {
+      const body = await res.text().catch(() => "");
+      console.error(`[supervisor] status broadcast failed: ${res.status} ${body.slice(0, 200)}`);
     }
   } catch (err: any) {
     console.error(`[supervisor] sendStatusBroadcast error: ${err?.message}`);
