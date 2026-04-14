@@ -116,24 +116,37 @@ async function getLlmExplanation(
   actionTaken: string,
   result: string,
 ): Promise<string> {
-  const prompt = `You are a Telegram bot monitoring assistant. Briefly explain in 2-3 sentences what happened and what was done. Use simple language. Answer in Russian.
+  // System: strict role — ONLY incident summary, no general chat
+  const system = `Ты — компонент мониторинга Telegram-бота Helyx. Твоя единственная задача: кратко объяснить инцидент в 1-2 предложениях на русском языке. Не рассуждай, не задавай вопросы, не выходи за рамки описания инцидента. Отвечай только фактами о произошедшем.`;
 
-Incident: ${incidentType}
-Project: ${project}
-Elapsed: ${Math.round(elapsedSec / 60)}m ${elapsedSec % 60}s
-Action: ${actionTaken}
-Result: ${result}`;
+  // /no_think disables qwen3's extended reasoning to save tokens and latency
+  const prompt = `/no_think
+Инцидент: ${incidentType}
+Проект: ${project}
+Прошло: ${Math.round(elapsedSec / 60)}m ${elapsedSec % 60}s
+Действие: ${actionTaken}
+Результат: ${result}
+
+Объясни кратко что произошло и что было сделано.`;
 
   try {
     const res = await fetch(`${OLLAMA_URL}/api/generate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "qwen3:8b", prompt, stream: false, options: { num_predict: 120 } }),
+      body: JSON.stringify({
+        model: "qwen3:8b",
+        system,
+        prompt,
+        stream: false,
+        options: { num_predict: 100, temperature: 0.3 },
+      }),
       signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) return "";
     const data = await res.json() as { response?: string };
-    return (data.response ?? "").trim();
+    // Strip <think>...</think> blocks if model ignores /no_think
+    const raw = (data.response ?? "").trim();
+    return raw.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
   } catch {
     return "";
   }
