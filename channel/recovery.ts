@@ -56,6 +56,36 @@ export async function recoverStaleStatusMessages(sql: postgres.Sql, token: strin
 }
 
 /**
+ * Find voice_status_messages older than 5 min (bot crashed during download/transcription).
+ * Edit each to "⚠️ Бот перезапущен" and delete the record.
+ */
+export async function recoverStaleVoiceStatusMessages(sql: postgres.Sql, token: string): Promise<void> {
+  try {
+    const rows = await sql`
+      SELECT id, chat_id, thread_id, message_id
+      FROM voice_status_messages
+      WHERE created_at < NOW() - INTERVAL '5 minutes'
+    `;
+
+    if (rows.length === 0) return;
+
+    channelLogger.info({ count: rows.length }, "recovering stale voice status messages");
+
+    for (const row of rows) {
+      await editTelegramMessage(
+        token,
+        row.chat_id,
+        row.message_id,
+        `⚠️ Бот перезапущен — голосовое не обработано. Отправь повторно.`,
+      ).catch(() => {});
+      await sql`DELETE FROM voice_status_messages WHERE id = ${row.id}`;
+    }
+  } catch (err) {
+    channelLogger.warn({ err }, "recoverStaleVoiceStatusMessages error");
+  }
+}
+
+/**
  * Find pending_replies with no delivered_at (Telegram send failed or bot was down).
  * Retry delivery for each.
  */

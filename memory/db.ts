@@ -475,6 +475,24 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 20,
+    name: "voice_status_messages table",
+    up: async (tx) => {
+      // Tracks in-flight voice download/transcription status messages.
+      // Inserted when handleVoice starts; deleted when done.
+      // On startup, recoverStaleVoiceStatusMessages edits orphans to "⚠️ Бот перезапущен".
+      await tx`
+        CREATE TABLE IF NOT EXISTS voice_status_messages (
+          id          BIGSERIAL PRIMARY KEY,
+          chat_id     TEXT NOT NULL,
+          thread_id   INT,
+          message_id  BIGINT NOT NULL,
+          created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+      `;
+    },
+  },
 ];
 
 // --- Public API ---

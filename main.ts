@@ -5,7 +5,7 @@ import { startMcpHttpServer } from "./mcp/server.ts";
 import { stopAllTimers } from "./memory/summarizer.ts";
 import { runCleanup } from "./cleanup/runner.ts";
 import { permissionService } from "./services/permission-service.ts";
-import { recoverStaleStatusMessages, deliverPendingReplies } from "./channel/recovery.ts";
+import { recoverStaleStatusMessages, recoverStaleVoiceStatusMessages, deliverPendingReplies } from "./channel/recovery.ts";
 import "./adapters/index.ts"; // Register all CLI adapters at startup
 
 const DRY_RUN = process.env.DRY_RUN === "true";
@@ -29,6 +29,7 @@ async function main() {
 
   // Recover stale status messages and undelivered replies from crashed channel processes
   await recoverStaleStatusMessages(sql, CONFIG.TELEGRAM_BOT_TOKEN);
+  await recoverStaleVoiceStatusMessages(sql, CONFIG.TELEGRAM_BOT_TOKEN);
   await deliverPendingReplies(sql, CONFIG.TELEGRAM_BOT_TOKEN);
 
   // Security check — fail fast if no access control is configured
