@@ -382,7 +382,6 @@ async function sendStatusBroadcast(sql: postgres.Sql, runShell: RunShell): Promi
         s.project_path,
         s.status,
         s.last_active,
-        asm.status_text,
         asm.updated_at AS asm_updated,
         (
           SELECT COUNT(*) FROM message_queue mq
@@ -398,7 +397,6 @@ async function sendStatusBroadcast(sql: postgres.Sql, runShell: RunShell): Promi
     for (const row of sessions) {
       const project = String(row.project ?? "?");
       const pendingMsgs = Number(row.pending_msgs ?? 0);
-      const asmText = row.status_text ? String(row.status_text) : null;
       const asmUpdated = row.asm_updated ? new Date(row.asm_updated) : null;
       const lastActive = row.last_active ? new Date(row.last_active) : null;
       const idleSec = lastActive ? Math.floor((Date.now() - lastActive.getTime()) / 1000) : null;
@@ -406,11 +404,11 @@ async function sendStatusBroadcast(sql: postgres.Sql, runShell: RunShell): Promi
       let stateIcon: string;
       let stateText: string;
 
-      if (asmText && asmUpdated && Date.now() - asmUpdated.getTime() < 2 * 60 * 1000) {
-        // Has fresh status message → Claude is actively working
+      if (asmUpdated && Date.now() - asmUpdated.getTime() < 2 * 60 * 1000) {
+        // Fresh heartbeat in active_status_messages → Claude is actively working
         const elapsed = Math.floor((Date.now() - asmUpdated.getTime()) / 1000);
         stateIcon = "🔄";
-        stateText = `<i>${asmText.replace(/<[^>]+>/g, "").slice(0, 60)}</i> (${elapsed}s)`;
+        stateText = `работает (heartbeat ${elapsed}s назад)`;
       } else if (pendingMsgs > 0) {
         // Has pending messages in queue
         stateIcon = "📨";
