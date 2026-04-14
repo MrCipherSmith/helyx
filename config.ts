@@ -28,6 +28,7 @@ const EnvSchema = z.object({
   // Ollama
   OLLAMA_URL: z.string().default("http://localhost:11434"),
   OLLAMA_CHAT_MODEL: z.string().default("qwen3:8b"),
+  SUMMARIZE_MODEL: z.string().default(""), // if set, use local Ollama model for summarization
   EMBEDDING_MODEL: z.string().default("nomic-embed-text"),
 
   // PostgreSQL
@@ -147,6 +148,7 @@ export const CONFIG = {
   // Ollama
   OLLAMA_URL: env.OLLAMA_URL,
   OLLAMA_CHAT_MODEL: env.OLLAMA_CHAT_MODEL,
+  SUMMARIZE_MODEL: env.SUMMARIZE_MODEL,
   EMBEDDING_MODEL: env.EMBEDDING_MODEL,
   VECTOR_DIMENSIONS: 768 as const,
 

@@ -437,21 +437,47 @@ export async function summarizeConversation(
     .map((m) => `${m.role}: ${m.content}`)
     .join("\n");
 
-  const response = await generateResponse(
-    [
-      {
-        role: "user",
-        content: `Analyze this conversation and return JSON:
+  const userPrompt = `Analyze this conversation and return JSON:
 {
   "summary": "brief description of the conversation in 2-3 sentences",
   "facts": ["fact 1 about the user or decisions", "fact 2", ...]
 }
 
 Conversation:
-${formatted}`,
-      },
-    ],
-    "You extract structured information from conversations. Reply only with valid JSON, no markdown.",
+${formatted}`;
+
+  const systemPrompt = "You extract structured information from conversations. Reply only with valid JSON, no markdown.";
+
+  // Use local Ollama model for summarization if configured (cheaper, offline)
+  if (CONFIG.SUMMARIZE_MODEL && CONFIG.OLLAMA_URL) {
+    try {
+      const res = await fetch(`${CONFIG.OLLAMA_URL}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: CONFIG.SUMMARIZE_MODEL,
+          think: false,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          stream: false,
+          format: "json",
+          options: { num_predict: 400, temperature: 0.2 },
+        }),
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as any;
+        const text = (data.message?.content ?? "").replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+        try { return JSON.parse(text); } catch { /* fall through to main model */ }
+      }
+    } catch { /* timeout or connection error — fall through to main model */ }
+  }
+
+  const response = await generateResponse(
+    [{ role: "user", content: userPrompt }],
+    systemPrompt,
   );
 
   try {
