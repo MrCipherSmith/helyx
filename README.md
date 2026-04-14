@@ -311,7 +311,7 @@ helyx setup
 | **Docker** | Yes | [docs.docker.com/engine/install](https://docs.docker.com/engine/install/) |
 | **Git** | Yes | `apt install git` / `brew install git` |
 | **Claude Code** | For CLI sessions | `npm install -g @anthropic-ai/claude-code` |
-| **Ollama** | Optional (semantic memory search only) | [ollama.com/download](https://ollama.com/download) |
+| **Ollama** | Optional (recommended — embeddings, supervisor LLM, summarization) | [ollama.com/download](https://ollama.com/download) |
 
 <details>
 <summary><strong>Ubuntu / Debian</strong></summary>
@@ -402,6 +402,20 @@ LLM Provider for standalone mode:
 ```
 
 This is for **standalone mode** (when no CLI session is active). Choose **Google AI** for Gemma 4 models, **OpenRouter** for variety, or **Ollama** for fully local.
+
+If Ollama is running on your machine, the wizard detects it automatically and offers to use it for **memory search + summarization**:
+
+```
+✓ Ollama detected at localhost:11434
+Use Ollama for memory search + summarization?
+❯ 1. Yes, use Ollama (recommended — free, offline)
+  2. No, use main LLM provider (Claude/Google AI/etc.)
+
+Embedding model [nomic-embed-text]:
+Summarization model [gemma4:e4b]:
+```
+
+If you select **Yes**, `EMBEDDING_MODEL` and `SUMMARIZE_MODEL` are written to `.env`. If Ollama is not found, it's noted and these settings remain commented out — the main LLM provider is used as fallback.
 
 ```
 Groq API Key for voice (Enter to skip, free at console.groq.com):
