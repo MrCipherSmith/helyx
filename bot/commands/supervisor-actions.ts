@@ -150,9 +150,70 @@ export async function handleSupervisorMessage(ctx: Context): Promise<void> {
     lines.push(`<b>supervisor:</b> ${stale ? "🟡 stale" : "🛡 ok"} · uptime ${uptime} · инцидентов: ${Number(inc?.last_hour ?? 0)}/1h ${Number(inc?.last_day ?? 0)}/24h`);
   }
 
+  // --- Ollama summary ---
+  const ollamaUrl = process.env.OLLAMA_URL ?? "http://localhost:11434";
+  const summary = await getOllamaSummary(ollamaUrl, {
+    sessionCount: sessions.length,
+    workingSessions: sessions.filter((s: any) => {
+      const asmUpdated = s.asm_updated ? new Date(s.asm_updated as string) : null;
+      return asmUpdated && Date.now() - asmUpdated.getTime() < 2 * 60_000;
+    }).length,
+    pendingQueue: pending,
+    stuckQueue: stuck,
+    incidentsLastHour: Number((incRow[0] as any)?.last_hour ?? 0),
+    daemonOk: !!daemon && Date.now() - new Date(daemon.updated_at).getTime() < 90_000,
+    supervisorOk: !!supervisor && Date.now() - new Date(supervisor.updated_at).getTime() < 90_000,
+  });
+
+  if (summary) lines.push("", `💬 ${summary}`);
+
   await ctx.reply(lines.join("\n"), {
     parse_mode: "HTML",
   });
+}
+
+interface StatusSnapshot {
+  sessionCount: number;
+  workingSessions: number;
+  pendingQueue: number;
+  stuckQueue: number;
+  incidentsLastHour: number;
+  daemonOk: boolean;
+  supervisorOk: boolean;
+}
+
+async function getOllamaSummary(ollamaUrl: string, snap: StatusSnapshot): Promise<string> {
+  const system = `Ты — ассистент мониторинга Telegram-бота Helyx. Анализируй данные о состоянии системы и давай краткий (2-3 предложения) вывод на русском: что происходит, есть ли проблемы, что рекомендуешь. Только факты и конкретные советы. Не выходи за рамки мониторинга бота.`;
+
+  const prompt = `/no_think
+Данные системы:
+- Сессий активных: ${snap.sessionCount} (работают сейчас: ${snap.workingSessions})
+- Очередь: ${snap.pendingQueue} pending, ${snap.stuckQueue} зависших
+- Инцидентов за час: ${snap.incidentsLastHour}
+- admin-daemon: ${snap.daemonOk ? "ok" : "не отвечает"}
+- supervisor: ${snap.supervisorOk ? "ok" : "не отвечает"}
+
+Дай краткий вывод и рекомендации.`;
+
+  try {
+    const res = await fetch(`${ollamaUrl}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "qwen3:8b",
+        system,
+        prompt,
+        stream: false,
+        options: { num_predict: 120, temperature: 0.4 },
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return "";
+    const data = await res.json() as { response?: string };
+    return (data.response ?? "").replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+  } catch {
+    return "";
+  }
 }
 
 function fmtUptime(ms: number): string {
