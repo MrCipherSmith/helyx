@@ -171,6 +171,35 @@ async function setup() {
     ollamaModel = ask("Ollama Chat Model", "qwen3:8b");
   }
 
+  // 3b. Local Ollama for embeddings + summarization
+  console.log();
+  let ollamaEmbeddingModel = "nomic-embed-text";
+  let summarizeModel = "";
+
+  // Detect if Ollama is running locally
+  const ollamaDetected = await fetch("http://localhost:11434/api/tags", { signal: AbortSignal.timeout(2000) })
+    .then((r) => r.ok)
+    .catch(() => false);
+
+  if (ollamaDetected) {
+    console.log(`  ${c.green("✓")} Ollama detected at localhost:11434`);
+    console.log(c.dim("  Ollama can power semantic memory search (embeddings) and fast local summarization."));
+    console.log(c.dim("  Recommended: nomic-embed-text for embeddings, gemma4:e4b for summarization.\n"));
+
+    const ollamaUseIdx = askChoice("Use Ollama for memory search + summarization?", [
+      "Yes, use Ollama (recommended — free, offline)",
+      "No, use main LLM provider (Claude/Google AI/etc.)",
+    ]);
+
+    if (ollamaUseIdx === 0) {
+      ollamaEmbeddingModel = ask("Embedding model", "nomic-embed-text");
+      summarizeModel = ask("Summarization model", "gemma4:e4b");
+    }
+  } else {
+    console.log(c.dim("  Ollama not detected. Semantic memory search and local summarization will be disabled."));
+    console.log(c.dim("  Install later: https://ollama.com/download → ollama pull nomic-embed-text\n"));
+  }
+
   // 4. Telegram transport
   const transportIdx = askChoice("Telegram transport:", [
     "Polling (default — works everywhere, no domain needed)",
@@ -342,9 +371,10 @@ async function setup() {
     `DATABASE_URL=${dbUrl}`,
     `POSTGRES_PASSWORD=${dbPassword}`,
     "",
-    "# Ollama",
+    "# Ollama (embeddings + local summarization)",
     `OLLAMA_URL=http://localhost:11434`,
-    `EMBEDDING_MODEL=nomic-embed-text`,
+    `EMBEDDING_MODEL=${ollamaEmbeddingModel}`,
+    ...(summarizeModel ? [`SUMMARIZE_MODEL=${summarizeModel}`] : [`# SUMMARIZE_MODEL=gemma4:e4b`]),
     "",
     "# Voice transcription",
     `GROQ_API_KEY=${groqKey}`,
