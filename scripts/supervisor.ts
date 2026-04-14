@@ -148,6 +148,43 @@ function shouldAlert(key: string): boolean {
   return true;
 }
 
+// --- Verify session recovery (poll active_status_messages heartbeat) ---
+
+async function verifyRecovery(sql: postgres.Sql, sessionId: number): Promise<boolean> {
+  const deadline = Date.now() + 60_000; // wait up to 60s
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 5_000));
+    const [row] = await sql`
+      SELECT 1 FROM active_status_messages
+      WHERE session_id = ${sessionId}
+        AND updated_at > NOW() - INTERVAL '30 seconds'
+    `;
+    if (row) return true;
+  }
+  return false;
+}
+
+// --- Send alert with inline keyboard buttons ---
+
+async function sendAlertWithButtons(
+  text: string,
+  buttons: Array<Array<{ text: string; callback_data: string }>>,
+): Promise<number | null> {
+  if (!BOT_TOKEN || !SUPERVISOR_CHAT_ID) {
+    console.error("[supervisor] alert (no Telegram):", text.replace(/<[^>]+>/g, ""));
+    return null;
+  }
+  const body: Record<string, unknown> = {
+    chat_id: SUPERVISOR_CHAT_ID,
+    text,
+    parse_mode: "HTML",
+    reply_markup: { inline_keyboard: buttons },
+  };
+  if (SUPERVISOR_TOPIC_ID) body.message_thread_id = SUPERVISOR_TOPIC_ID;
+  const result = await tgPost("sendMessage", body).catch(() => null);
+  return result?.result?.message_id ?? null;
+}
+
 // --- Insert admin_command for proj_start ---
 
 async function triggerProjStart(
@@ -232,23 +269,6 @@ async function checkHungSessions(sql: postgres.Sql): Promise<void> {
 
       console.log(`[supervisor] hung session detected: ${project} (stale ${elapsedSec}s)`);
 
-      let actionResult = "no path configured";
-      if (projectPath) {
-        const res = await triggerProjStart(sql, projectPath);
-        actionResult = res.result;
-        console.log(`[supervisor] proj_start result for ${project}: ${actionResult}`);
-      }
-
-      const llm = await getLlmExplanation(
-        "hung_session", project, elapsedSec,
-        projectPath ? `proj_start: ${projectPath}` : "no action (no project path)",
-        actionResult,
-      );
-
-      await logIncident(sql, "hung_session", project, sessionId, "proj_start", actionResult, llm);
-
-      if (!shouldAlert(dedupKey)) continue;
-
       const isEscalation = recoveryAttempts.has(dedupKey) &&
         Date.now() - (recoveryAttempts.get(dedupKey)!.firstDetected) > ESCALATE_MS;
 
@@ -256,21 +276,57 @@ async function checkHungSessions(sql: postgres.Sql): Promise<void> {
       rec.attempts++;
       recoveryAttempts.set(dedupKey, rec);
 
-      const header = isEscalation
-        ? `⛔ <b>Supervisor: ESCALATION — hung session</b>`
-        : `⚠️ <b>Supervisor: hung session</b>`;
+      // 1. Send initial alert (before restart, so user sees something immediately)
+      if (shouldAlert(dedupKey)) {
+        const header = isEscalation
+          ? `⛔ <b>Supervisor: ESCALATION — сессия зависла</b>`
+          : `⚠️ <b>Supervisor: сессия зависла</b>`;
+        const initMsg = [
+          header,
+          `Проект: <code>${project}</code>`,
+          `Зависание: ${Math.round(elapsedSec / 60)}m ${elapsedSec % 60}s`,
+          `⏳ <i>Перезапускаю...</i>`,
+          isEscalation ? "\n🔧 <i>Требует ручного вмешательства</i>" : "",
+        ].filter(Boolean).join("\n");
+        await sendAlert(initMsg);
+      }
 
-      const msg = [
-        header,
-        `Проект: <code>${project}</code>`,
-        `Зависание: ${Math.round(elapsedSec / 60)}m ${elapsedSec % 60}s`,
-        `Действие: proj_start`,
-        `Результат: ${actionResult}`,
-        llm ? `\n💬 ${llm}` : "",
-        isEscalation ? "\n🔧 <i>Требует ручного вмешательства</i>" : "",
-      ].filter(Boolean).join("\n");
+      // 2. Trigger restart
+      let actionResult = "no path configured";
+      if (projectPath) {
+        const res = await triggerProjStart(sql, projectPath);
+        actionResult = res.result;
+        console.log(`[supervisor] proj_start result for ${project}: ${actionResult}`);
+      }
 
-      await sendAlert(msg);
+      // 3. Verify recovery (poll 60s)
+      const recovered = projectPath ? await verifyRecovery(sql, sessionId) : false;
+
+      const llm = await getLlmExplanation(
+        "hung_session", project, elapsedSec,
+        projectPath ? `proj_start: ${projectPath}` : "no action (no project path)",
+        recovered ? "recovered" : actionResult,
+      );
+
+      await logIncident(sql, "hung_session", project, sessionId, "proj_start",
+        recovered ? "recovered" : actionResult, llm);
+
+      // 4. Send recovery result
+      if (recovered) {
+        await sendAlert(`✅ <b>Сессия восстановлена</b>\nПроект: <code>${project}</code>${llm ? `\n\n💬 ${llm}` : ""}`);
+        recoveryAttempts.delete(dedupKey);
+      } else {
+        const failMsg = [
+          `⛔ <b>Сессия не восстановилась</b>`,
+          `Проект: <code>${project}</code>`,
+          `Результат: ${actionResult}`,
+          llm ? `\n💬 ${llm}` : "",
+          `\n🔧 <i>Требуется ручное вмешательство</i>`,
+        ].filter(Boolean).join("\n");
+        await sendAlertWithButtons(failMsg, [[
+          { text: "🔄 Повторить", callback_data: `sup:restart_session:${sessionId}` },
+        ]]);
+      }
     }
   } catch (err: any) {
     console.error(`[supervisor] checkHungSessions error: ${err?.message}`);
@@ -304,32 +360,21 @@ async function checkStuckQueue(sql: postgres.Sql): Promise<void> {
 
       console.log(`[supervisor] stuck queue: ${project} (oldest msg ${oldestSec}s)`);
 
-      let actionResult = "no path configured";
-      if (projectPath) {
-        const res = await triggerProjStart(sql, projectPath);
-        actionResult = res.result;
-      }
-
-      const llm = await getLlmExplanation(
-        "stuck_queue", project, oldestSec,
-        projectPath ? `proj_start: ${projectPath}` : "no action",
-        actionResult,
-      );
-
-      await logIncident(sql, "stuck_queue", project, sessionId, "proj_start", actionResult, llm);
-
       if (!shouldAlert(dedupKey)) continue;
 
+      await logIncident(sql, "stuck_queue", project, sessionId, "alert_sent", "pending_user_action", "");
+
       const msg = [
-        `⚠️ <b>Supervisor: stuck queue</b>`,
+        `⚠️ <b>Supervisor: очередь зависла</b>`,
         `Проект: <code>${project}</code>`,
         `Старейшее сообщение: ${Math.round(oldestSec / 60)}m ${oldestSec % 60}s`,
-        `Действие: proj_start`,
-        `Результат: ${actionResult}`,
-        llm ? `\n💬 ${llm}` : "",
-      ].filter(Boolean).join("\n");
+        `В очереди необработанных сообщений — требуется перезапуск сессии.`,
+      ].join("\n");
 
-      await sendAlert(msg);
+      await sendAlertWithButtons(msg, [[
+        { text: "🔄 Перезапустить", callback_data: `sup:restart_session:${sessionId}` },
+        { text: "✅ Игнорировать",  callback_data: `sup:ignore:${dedupKey}` },
+      ]]);
     }
   } catch (err: any) {
     console.error(`[supervisor] checkStuckQueue error: ${err?.message}`);

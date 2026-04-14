@@ -170,6 +170,17 @@ export function registerHandlers(b: Bot): void {
   // Poll answers (non-anonymous polls)
   b.on("poll_answer", handlePollAnswer);
 
+  // Supervisor topic — intercept text before sending to Claude
+  b.on("message:text", async (ctx, next) => {
+    const threadId = ctx.message?.message_thread_id;
+    const supervisorTopicId = Number(process.env.SUPERVISOR_TOPIC_ID ?? "0");
+    if (supervisorTopicId > 0 && threadId === supervisorTopicId) {
+      const { handleSupervisorMessage } = await import("./commands/supervisor-actions.ts");
+      return handleSupervisorMessage(ctx);
+    }
+    return next();
+  });
+
   // Text messages → Claude (must be last)
   b.on("message:text", handleText);
 }

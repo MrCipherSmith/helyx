@@ -1,0 +1,168 @@
+/**
+ * Supervisor topic handlers:
+ * - handleSupervisorCallback: inline button callbacks (sup:restart_session, sup:ignore)
+ * - handleSupervisorMessage: text messages in supervisor topic (/status, ?, статус)
+ */
+
+import type { Context } from "grammy";
+import { InlineKeyboard } from "grammy";
+import { sql } from "../../memory/db.ts";
+
+export async function handleSupervisorCallback(ctx: Context): Promise<void> {
+  const data = ctx.callbackQuery?.data ?? "";
+  const parts = data.split(":");
+  const action = parts[1];
+
+  if (action === "restart_session") {
+    const sessionId = parts[2];
+    if (!sessionId) { await ctx.answerCallbackQuery({ text: "Нет ID сессии" }); return; }
+
+    const [session] = await sql`
+      SELECT project_path, project FROM sessions WHERE id = ${sessionId}
+    `.catch(() => []);
+
+    if (!session) {
+      await ctx.answerCallbackQuery({ text: "Сессия не найдена" });
+      return;
+    }
+
+    await sql`
+      INSERT INTO admin_commands (command, payload)
+      VALUES ('proj_start', ${sql.json({ path: session.project_path })})
+    `;
+
+    await ctx.answerCallbackQuery({ text: `⏳ Запускаю ${session.project}...` });
+    await ctx.editMessageReplyMarkup({
+      reply_markup: new InlineKeyboard().text("⏳ Перезапускается...", "sup:noop"),
+    }).catch(() => {});
+    return;
+  }
+
+  if (action === "ignore") {
+    await ctx.answerCallbackQuery({ text: "Игнорируется" });
+    await ctx.editMessageReplyMarkup({ reply_markup: new InlineKeyboard() }).catch(() => {});
+    return;
+  }
+
+  if (action === "noop") {
+    await ctx.answerCallbackQuery();
+    return;
+  }
+
+  await ctx.answerCallbackQuery({ text: "Неизвестное действие" });
+}
+
+export async function handleSupervisorMessage(ctx: Context): Promise<void> {
+  const text = (ctx.message?.text ?? "").toLowerCase().trim();
+
+  const isStatusQuery =
+    text === "?" ||
+    text === "/status" ||
+    text === "status" ||
+    text === "статус" ||
+    text === "состояние" ||
+    text.startsWith("/status ");
+
+  if (!isStatusQuery) return;
+
+  const [sessions, qRow, health, incRow] = await Promise.all([
+    sql`
+      SELECT
+        s.id, s.project, s.last_active,
+        asm.updated_at AS asm_updated,
+        (
+          SELECT COUNT(*) FROM message_queue mq
+          WHERE mq.session_id = s.id AND mq.delivered = false
+        ) AS pending
+      FROM sessions s
+      LEFT JOIN active_status_messages asm ON asm.session_id = s.id
+      WHERE s.status = 'active' AND s.id != 0
+      ORDER BY s.project
+    `,
+    sql`
+      SELECT
+        COUNT(*) FILTER (WHERE delivered = false) AS pending,
+        COUNT(*) FILTER (WHERE delivered = false AND created_at < NOW() - INTERVAL '5 minutes') AS stuck
+      FROM message_queue
+    `,
+    sql`SELECT name, status, updated_at, detail FROM process_health ORDER BY name`,
+    sql`
+      SELECT
+        COUNT(*) FILTER (WHERE detected_at > NOW() - INTERVAL '1 hour')  AS last_hour,
+        COUNT(*) FILTER (WHERE detected_at > NOW() - INTERVAL '24 hours') AS last_day
+      FROM supervisor_incidents
+    `.catch(() => [{ last_hour: 0, last_day: 0 }]),
+  ]);
+
+  const now = new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  const lines: string[] = [`🖥 <b>Статус системы</b> — ${now}`, ""];
+
+  // --- Sessions ---
+  if (sessions.length > 0) {
+    lines.push(`<b>Сессии (${sessions.length}):</b>`);
+    for (const s of sessions) {
+      const project = String(s.project ?? "?");
+      const asmUpdated = s.asm_updated ? new Date(s.asm_updated as string) : null;
+      const pendingMsgs = Number(s.pending ?? 0);
+      let state: string;
+      if (asmUpdated && Date.now() - asmUpdated.getTime() < 2 * 60_000) {
+        const elapsed = Math.floor((Date.now() - asmUpdated.getTime()) / 1000);
+        state = `🔄 работает (heartbeat ${elapsed}s назад)`;
+      } else if (pendingMsgs > 0) {
+        state = `📨 ${pendingMsgs} сообщений в очереди`;
+      } else {
+        const lastActive = s.last_active ? new Date(s.last_active as string) : null;
+        const idleSec = lastActive ? Math.floor((Date.now() - lastActive.getTime()) / 1000) : null;
+        const idle = idleSec === null ? "?" :
+          idleSec < 3600 ? `${Math.floor(idleSec / 60)}m` : `${Math.floor(idleSec / 3600)}h`;
+        state = `⚪ idle ${idle}`;
+      }
+      lines.push(`  ${state} — <b>${project}</b>`);
+    }
+    lines.push("");
+  } else {
+    lines.push("Активных сессий нет", "");
+  }
+
+  // --- Queue ---
+  const q = qRow[0] as any;
+  const pending = Number(q?.pending ?? 0);
+  const stuck   = Number(q?.stuck   ?? 0);
+  lines.push(
+    stuck > 0
+      ? `<b>Очередь:</b> ⚠️ ${pending} pending, ${stuck} зависших`
+      : pending > 0
+        ? `<b>Очередь:</b> 📨 ${pending} pending`
+        : `<b>Очередь:</b> ✅ пуста`,
+  );
+
+  // --- Process health ---
+  const daemon     = (health as any[]).find((r) => r.name === "admin-daemon");
+  const supervisor = (health as any[]).find((r) => r.name === "supervisor");
+
+  if (daemon) {
+    const stale = Date.now() - new Date(daemon.updated_at).getTime() > 90_000;
+    const detail = daemon.detail as { pid?: number; uptime_ms?: number } | null;
+    const uptime = detail?.uptime_ms != null ? fmtUptime(detail.uptime_ms) : "?";
+    lines.push(`<b>admin-daemon:</b> ${stale ? "🟡 stale" : "🟢 ok"} · uptime ${uptime} · PID ${detail?.pid ?? "?"}`);
+  }
+
+  if (supervisor) {
+    const stale  = Date.now() - new Date(supervisor.updated_at).getTime() > 90_000;
+    const detail = supervisor.detail as { uptime_ms?: number; incident_count?: number } | null;
+    const uptime = detail?.uptime_ms != null ? fmtUptime(detail.uptime_ms) : "?";
+    const inc    = incRow[0] as any;
+    lines.push(`<b>supervisor:</b> ${stale ? "🟡 stale" : "🛡 ok"} · uptime ${uptime} · инцидентов: ${Number(inc?.last_hour ?? 0)}/1h ${Number(inc?.last_day ?? 0)}/24h`);
+  }
+
+  await ctx.reply(lines.join("\n"), {
+    parse_mode: "HTML",
+  });
+}
+
+function fmtUptime(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  if (s < 60)   return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+}
