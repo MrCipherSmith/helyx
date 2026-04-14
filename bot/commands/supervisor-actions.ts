@@ -185,8 +185,7 @@ interface StatusSnapshot {
 async function getOllamaSummary(ollamaUrl: string, snap: StatusSnapshot): Promise<string> {
   const system = `Ты — ассистент мониторинга Telegram-бота Helyx. Анализируй данные о состоянии системы и давай краткий (2-3 предложения) вывод на русском: что происходит, есть ли проблемы, что рекомендуешь. Только факты и конкретные советы. Не выходи за рамки мониторинга бота.`;
 
-  const prompt = `/no_think
-Данные системы:
+  const prompt = `Данные системы:
 - Сессий активных: ${snap.sessionCount} (работают сейчас: ${snap.workingSessions})
 - Очередь: ${snap.pendingQueue} pending, ${snap.stuckQueue} зависших
 - Инцидентов за час: ${snap.incidentsLastHour}
@@ -200,7 +199,7 @@ async function getOllamaSummary(ollamaUrl: string, snap: StatusSnapshot): Promis
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "qwen3:8b",
+        model: "gemma3:4b",
         system,
         prompt,
         stream: false,

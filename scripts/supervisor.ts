@@ -119,8 +119,6 @@ async function getLlmExplanation(
   // System: strict role — ONLY incident summary, no general chat
   const system = `Ты — компонент мониторинга Telegram-бота Helyx. Твоя единственная задача: кратко объяснить инцидент в 1-2 предложениях на русском языке. Не рассуждай, не задавай вопросы, не выходи за рамки описания инцидента. Отвечай только фактами о произошедшем.`;
 
-  // /no_think disables qwen3's extended reasoning to save tokens and latency
-  const prompt = `/no_think
 Инцидент: ${incidentType}
 Проект: ${project}
 Прошло: ${Math.round(elapsedSec / 60)}m ${elapsedSec % 60}s
@@ -134,7 +132,7 @@ async function getLlmExplanation(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "qwen3:8b",
+        model: "gemma3:4b",
         system,
         prompt,
         stream: false,
@@ -144,7 +142,6 @@ async function getLlmExplanation(
     });
     if (!res.ok) return "";
     const data = await res.json() as { response?: string };
-    // Strip <think>...</think> blocks if model ignores /no_think
     const raw = (data.response ?? "").trim();
     return raw.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
   } catch {
