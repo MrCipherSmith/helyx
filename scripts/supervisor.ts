@@ -354,40 +354,171 @@ async function cleanVoiceStatuses(sql: postgres.Sql): Promise<void> {
   }
 }
 
-// --- Loop 4: Hourly health-OK pulse ---
+// --- Loop 4: 5-minute full status broadcast ---
 
-async function sendHealthPulse(sql: postgres.Sql): Promise<void> {
-  // Only send if no incidents in the last hour
-  const oneHourAgo = Date.now() - 60 * 60 * 1000;
-  if (lastIncidentAt && lastIncidentAt > oneHourAgo) return;
+let statusMessageId: number | null = null; // edit existing message instead of spamming
 
+async function sendStatusBroadcast(sql: postgres.Sql, runShell: RunShell): Promise<void> {
   try {
-    const [qRow] = await sql`
-      SELECT COUNT(*) AS cnt FROM message_queue WHERE delivered = false
-    `;
-    const [sRow] = await sql`
-      SELECT COUNT(*) AS cnt FROM sessions WHERE status = 'active'
-    `;
-    const pendingCount = Number((qRow as any)?.cnt ?? 0);
-    const activeCount = Number((sRow as any)?.cnt ?? 0);
-
     const now = new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
-    const uptimeMs = Date.now() - SUPERVISOR_START;
-    const uptimeMin = Math.floor(uptimeMs / 60_000);
 
-    const msg = [
-      `✅ <b>Supervisor: всё в норме</b> — ${now}`,
-      `Сессии: ${activeCount} активных`,
-      `Очередь: ${pendingCount} pending`,
-      `Инцидентов: ${incidentCount}`,
-      `Uptime: ${uptimeMin}m`,
-    ].join("\n");
+    // --- Docker status ---
+    const dockerResult = await runShell(`docker ps --format "{{.Names}}\t{{.Status}}" 2>/dev/null || true`);
+    const dockerLines: string[] = [];
+    for (const line of dockerResult.output.split("\n").filter(Boolean)) {
+      const tab = line.indexOf("\t");
+      if (tab === -1) continue;
+      const name = line.slice(0, tab).trim();
+      const status = line.slice(tab + 1).trim();
+      const running = !status.toLowerCase().startsWith("exited") && !status.toLowerCase().startsWith("dead");
+      dockerLines.push(`${running ? "🟢" : "🔴"} ${name} — <i>${status}</i>`);
+    }
 
-    await sendAlert(msg);
-    lastHealthyAt = Date.now();
-    console.log(`[supervisor] health pulse sent (${activeCount} sessions, ${pendingCount} pending)`);
+    // --- Session states ---
+    const sessions = await sql`
+      SELECT
+        s.id,
+        s.project,
+        s.project_path,
+        s.status,
+        s.last_active,
+        asm.status_text,
+        asm.updated_at AS asm_updated,
+        (
+          SELECT COUNT(*) FROM message_queue mq
+          WHERE mq.session_id = s.id AND mq.delivered = false
+        ) AS pending_msgs
+      FROM sessions s
+      LEFT JOIN active_status_messages asm ON asm.session_id = s.id
+      WHERE s.status = 'active' AND s.id != 0
+      ORDER BY s.project
+    `;
+
+    const sessionLines: string[] = [];
+    for (const row of sessions) {
+      const project = String(row.project ?? "?");
+      const pendingMsgs = Number(row.pending_msgs ?? 0);
+      const asmText = row.status_text ? String(row.status_text) : null;
+      const asmUpdated = row.asm_updated ? new Date(row.asm_updated) : null;
+      const lastActive = row.last_active ? new Date(row.last_active) : null;
+      const idleSec = lastActive ? Math.floor((Date.now() - lastActive.getTime()) / 1000) : null;
+
+      let stateIcon: string;
+      let stateText: string;
+
+      if (asmText && asmUpdated && Date.now() - asmUpdated.getTime() < 2 * 60 * 1000) {
+        // Has fresh status message → Claude is actively working
+        const elapsed = Math.floor((Date.now() - asmUpdated.getTime()) / 1000);
+        stateIcon = "🔄";
+        stateText = `<i>${asmText.replace(/<[^>]+>/g, "").slice(0, 60)}</i> (${elapsed}s)`;
+      } else if (pendingMsgs > 0) {
+        // Has pending messages in queue
+        stateIcon = "📨";
+        stateText = `${pendingMsgs} сообщ. в очереди`;
+      } else if (idleSec !== null && idleSec < 60) {
+        stateIcon = "🟢";
+        stateText = `активна только что`;
+      } else {
+        // Idle
+        const idleStr = idleSec === null ? "?" :
+          idleSec < 3600 ? `${Math.floor(idleSec / 60)}m` : `${Math.floor(idleSec / 3600)}h`;
+        stateIcon = "⚪";
+        stateText = `ожидание (idle ${idleStr})`;
+      }
+
+      sessionLines.push(`${stateIcon} <b>${project}</b> — ${stateText}`);
+    }
+
+    // --- Queue summary ---
+    const [qRow] = await sql`
+      SELECT
+        COUNT(*) FILTER (WHERE delivered = false) AS pending,
+        COUNT(*) FILTER (WHERE delivered = false AND created_at < NOW() - INTERVAL '5 minutes') AS stuck
+      FROM message_queue
+    `;
+    const pendingTotal = Number((qRow as any)?.pending ?? 0);
+    const stuckTotal = Number((qRow as any)?.stuck ?? 0);
+
+    // --- Supervisor stats ---
+    const uptimeMin = Math.floor((Date.now() - SUPERVISOR_START) / 60_000);
+
+    // --- Build message ---
+    const lines: string[] = [
+      `🖥 <b>Статус системы</b> — ${now}`,
+      "",
+    ];
+
+    if (dockerLines.length > 0) {
+      lines.push("<b>Docker:</b>", ...dockerLines, "");
+    }
+
+    if (sessionLines.length > 0) {
+      lines.push(`<b>Сессии (${sessionLines.length}):</b>`, ...sessionLines, "");
+    } else {
+      lines.push("Активных сессий нет", "");
+    }
+
+    const queueStatus = stuckTotal > 0
+      ? `⚠️ ${pendingTotal} pending, ${stuckTotal} зависших`
+      : pendingTotal > 0
+        ? `📨 ${pendingTotal} pending`
+        : "✅ очередь пуста";
+    lines.push(`<b>Очередь:</b> ${queueStatus}`);
+    lines.push(`<b>Супервизор:</b> 🛡 uptime ${uptimeMin}m · инцидентов: ${incidentCount}`);
+
+    if (stuckTotal > 0) {
+      lines.push("", `⚠️ Зависших сообщений: ${stuckTotal}. Использую proj_start для восстановления...`);
+    }
+
+    const text = lines.join("\n");
+
+    // Try to edit the previous status message; if fails, send new
+    if (statusMessageId && BOT_TOKEN && SUPERVISOR_CHAT_ID) {
+      const editBody: Record<string, unknown> = {
+        chat_id: SUPERVISOR_CHAT_ID,
+        message_id: statusMessageId,
+        text,
+        parse_mode: "HTML",
+      };
+      if (SUPERVISOR_TOPIC_ID) editBody.message_thread_id = SUPERVISOR_TOPIC_ID;
+      const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/editMessageText`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editBody),
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (res.ok) {
+        console.log("[supervisor] status message updated");
+        return;
+      }
+      // Edit failed (message too old or deleted) — fall through to send new
+      statusMessageId = null;
+    }
+
+    // Send new status message
+    if (!BOT_TOKEN || !SUPERVISOR_CHAT_ID) {
+      console.log("[supervisor] status broadcast (no Telegram):", text.replace(/<[^>]+>/g, ""));
+      return;
+    }
+    const sendBody: Record<string, unknown> = {
+      chat_id: SUPERVISOR_CHAT_ID,
+      text,
+      parse_mode: "HTML",
+    };
+    if (SUPERVISOR_TOPIC_ID) sendBody.message_thread_id = SUPERVISOR_TOPIC_ID;
+    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(sendBody),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (res.ok) {
+      const data = await res.json() as { result?: { message_id?: number } };
+      statusMessageId = data.result?.message_id ?? null;
+      console.log("[supervisor] status broadcast sent (msg_id:", statusMessageId, ")");
+    }
   } catch (err: any) {
-    console.error(`[supervisor] sendHealthPulse error: ${err?.message}`);
+    console.error(`[supervisor] sendStatusBroadcast error: ${err?.message}`);
   }
 }
 
@@ -412,7 +543,7 @@ async function updateProcessHealth(sql: postgres.Sql): Promise<void> {
 
 // --- Main entry point ---
 
-export function startSupervisor(sql: postgres.Sql, _runShell: RunShell): void {
+export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
   console.log("[supervisor] starting session health watchdog...");
   if (!SUPERVISOR_CHAT_ID || !SUPERVISOR_TOPIC_ID) {
     console.warn("[supervisor] SUPERVISOR_CHAT_ID or SUPERVISOR_TOPIC_ID not set — alerts will be logged only");
@@ -433,9 +564,9 @@ export function startSupervisor(sql: postgres.Sql, _runShell: RunShell): void {
   const voiceTimer = setInterval(() => cleanVoiceStatuses(sql).catch(() => {}), 5 * 60_000);
   voiceTimer.unref?.();
 
-  // Loop 4: Health pulse — every 1 hour
-  const pulseTimer = setInterval(() => sendHealthPulse(sql).catch(() => {}), 60 * 60_000);
-  pulseTimer.unref?.();
+  // Loop 4: Full status broadcast — every 5 min
+  const statusTimer = setInterval(() => sendStatusBroadcast(sql, runShell).catch(() => {}), 5 * 60_000);
+  statusTimer.unref?.();
 
   // Heartbeat to process_health — every 30s
   const healthTimer = setInterval(() => updateProcessHealth(sql).catch(() => {}), 30_000);
@@ -446,7 +577,9 @@ export function startSupervisor(sql: postgres.Sql, _runShell: RunShell): void {
     checkHungSessions(sql).catch(() => {});
     cleanVoiceStatuses(sql).catch(() => {});
     updateProcessHealth(sql).catch(() => {});
+    // First status broadcast after 30s settle time
+    setTimeout(() => sendStatusBroadcast(sql, runShell).catch(() => {}), 20_000);
   }, 10_000);
 
-  console.log("[supervisor] watchdog running (session:60s, queue:60s, voice:5min, pulse:1h)");
+  console.log("[supervisor] watchdog running (session:60s, queue:60s, voice:5min, status:5min)");
 }
