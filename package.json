@@ -1,6 +1,13 @@
 {
   "name": "helyx",
-  "version": "0.1.0",
+  "version": "1.30.0",
+  "description": "Telegram bot that turns your phone into a Claude Code control panel — approve terminal commands, monitor multiple projects in forum topics, talk hands-free via voice",
+  "keywords": ["telegram", "claude", "claude-code", "ai", "bot", "mcp", "voice", "typescript", "bun"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MrCipherSmith/helyx.git"
+  },
+  "homepage": "https://github.com/MrCipherSmith/helyx#readme",
   "type": "module",
   "scripts": {
     "start": "bun main.ts",

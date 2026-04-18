@@ -14,8 +14,8 @@ Thanks for your interest in contributing to Helyx! This guide will help you get 
 
 ```bash
 # Clone the repo
-git clone https://github.com/MrCipherSmith/multiclaude-tg-bot.git
-cd multiclaude-tg-bot
+git clone https://github.com/MrCipherSmith/helyx.git
+cd helyx
 
 # Install dependencies
 bun install
@@ -44,13 +44,13 @@ bun run build  # Production build
 
 ### Reporting Bugs
 
-- Check [existing issues](https://github.com/MrCipherSmith/multiclaude-tg-bot/issues) first
+- Check [existing issues](https://github.com/MrCipherSmith/helyx/issues) first
 - Include steps to reproduce, expected vs actual behavior
 - Include relevant logs (`docker compose logs bot`)
 
 ### Suggesting Features
 
-- Open a [GitHub Issue](https://github.com/MrCipherSmith/multiclaude-tg-bot/issues/new) with the `enhancement` label
+- Open a [GitHub Issue](https://github.com/MrCipherSmith/helyx/issues/new) with the `enhancement` label
 - Describe the use case and why it would be useful
 
 ### Pull Requests
@@ -134,4 +134,4 @@ Prefixes: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
 
 ## Questions?
 
-Open an issue or start a [discussion](https://github.com/MrCipherSmith/multiclaude-tg-bot/issues). We're happy to help!
+Open an issue or start a [discussion](https://github.com/MrCipherSmith/helyx/issues). We're happy to help!

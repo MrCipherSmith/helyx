@@ -14,7 +14,7 @@ If you discover a security vulnerability, please report it responsibly.
 
 Instead, please report via one of the following:
 
-1. **GitHub Security Advisories** — [Report a vulnerability](https://github.com/MrCipherSmith/multiclaude-tg-bot/security/advisories/new) (preferred)
+1. **GitHub Security Advisories** — [Report a vulnerability](https://github.com/MrCipherSmith/helyx/security/advisories/new) (preferred)
 2. **Email** — contact the maintainer via their GitHub profile
 
 ### What to include
