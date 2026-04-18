@@ -275,6 +275,11 @@ export class StatusManager {
     }
   }
 
+  private diffKey(chatId: string, extra: Record<string, unknown> = {}): string {
+    const threadId = extra.message_thread_id;
+    return threadId ? `${chatId}:${threadId}` : chatId;
+  }
+
   /**
    * Send or edit the "diff companion" message for this status session.
    * Only one diff message exists per session — subsequent calls edit it in-place
@@ -283,7 +288,7 @@ export class StatusManager {
   async updateDiff(chatId: string, content: string, extra: Record<string, unknown> = {}): Promise<void> {
     const token = this.ctx.token();
     if (!token) return;
-    const key = this.stateKey(chatId);
+    const key = this.diffKey(chatId, extra);
     const existingId = this.diffMessages.get(key);
     if (existingId) {
       // Edit existing diff message in-place
@@ -291,7 +296,11 @@ export class StatusManager {
       if (!res.ok && !res.errorBody?.includes("message is not modified")) {
         // Message was deleted externally — send a new one
         this.diffMessages.delete(key);
-        await this.updateDiff(chatId, content, extra);
+        const effectiveChatId = this.activeStatus.get(key)?.chatId ?? chatId;
+        const res2 = await sendTelegramMessage(token, effectiveChatId, content, { parse_mode: "HTML", ...extra });
+        if (res2.ok && res2.messageId) {
+          this.diffMessages.set(key, res2.messageId);
+        }
       }
     } else {
       // Send new companion message
@@ -390,9 +399,11 @@ export class StatusManager {
     this.stopTypingForChat(chatId);
 
     // Delete the diff companion message if one was sent during this session
-    const diffMsgId = this.diffMessages.get(key);
+    const diffExtra = state.threadId ? { message_thread_id: state.threadId } : {};
+    const diffMapKey = this.diffKey(state.chatId, diffExtra);
+    const diffMsgId = this.diffMessages.get(diffMapKey);
     if (diffMsgId) {
-      this.diffMessages.delete(key);
+      this.diffMessages.delete(diffMapKey);
     }
 
     const token = this.ctx.token();

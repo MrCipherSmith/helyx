@@ -39,6 +39,12 @@ const sql = postgres(process.env.DATABASE_URL, { max: 3 });
 
 console.log("[admin-daemon] started, polling for commands...");
 
+// Recover stuck commands from previous crash
+await sql`UPDATE admin_commands SET status = 'pending', updated_at = now()
+          WHERE status = 'processing' AND updated_at < now() - interval '5 minutes'`
+  .catch(err => console.error("[admin-daemon] stuck command recovery error:", err));
+console.log("[admin-daemon] stuck command recovery complete");
+
 // Start tmux watchdog if bot token is available
 const botToken = process.env.TELEGRAM_BOT_TOKEN;
 if (botToken) {
@@ -66,7 +72,7 @@ async function writeProcessHealth(): Promise<void> {
   `.catch(() => {});
 
   // Docker container statuses
-  const dockerResult = await runShell(`docker ps --format "{{.Names}}\\t{{.Status}}" 2>/dev/null || true`);
+  const dockerResult = await runShell(`timeout 10 docker ps --format "{{.Names}}\\t{{.Status}}" 2>/dev/null || true`);
   const dockerOut = dockerResult.output;
   for (const line of dockerOut.split("\n").filter(Boolean)) {
     const tab = line.indexOf("\t");
@@ -97,7 +103,12 @@ async function writeProcessHealth(): Promise<void> {
 
 // Write immediately on startup, then every 30 s
 writeProcessHealth().catch(() => {});
-const healthInterval = setInterval(() => writeProcessHealth().catch(() => {}), 30_000);
+let healthWriteRunning = false;
+const healthInterval = setInterval(() => {
+  if (healthWriteRunning) return;
+  healthWriteRunning = true;
+  writeProcessHealth().catch(() => {}).finally(() => { healthWriteRunning = false; });
+}, 30_000);
 // Prevent the interval from keeping the process alive if everything else exits
 healthInterval.unref?.();
 

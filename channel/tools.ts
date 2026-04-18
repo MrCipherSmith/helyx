@@ -2,6 +2,7 @@
  * MCP tool registry and dispatch.
  */
 
+import { resolve } from "path";
 import type postgres from "postgres";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
@@ -526,9 +527,23 @@ export function registerTools(
       case "scan_project_knowledge": {
         const scanPath = String(args!.project_path ?? ctx.projectPath ?? "");
         if (!scanPath) return text("No project_path available — pass it explicitly");
+
+        const resolvedScanPath = resolve(scanPath);
+        const allowedRoot = process.env.HOST_PROJECTS_DIR
+          ?? process.env.HOME
+          ?? "/home";
+        const currentProject = ctx.projectPath ?? "";
+
+        if (
+          !resolvedScanPath.startsWith(allowedRoot) &&
+          (currentProject === "" || !resolvedScanPath.startsWith(resolve(currentProject)))
+        ) {
+          return text(`scan_project_knowledge: path must be within ${allowedRoot}`);
+        }
+
         const forceRescan = Boolean(args!.force_rescan ?? false);
-        const count = await scanProjectKnowledge(scanPath, forceRescan);
-        return text(`Scanned ${scanPath}: ${count} knowledge facts saved`);
+        const count = await scanProjectKnowledge(resolvedScanPath, forceRescan);
+        return text(`Scanned ${resolvedScanPath}: ${count} knowledge facts saved`);
       }
 
       default:

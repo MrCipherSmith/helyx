@@ -1112,7 +1112,16 @@ async function tmuxAdd(dir?: string) {
   const customName = nameIdx >= 0 ? process.argv[nameIdx + 1] : undefined;
   const name = customName ?? basename(projectDir);
 
+  // Validate name before building SQL (guard against injection via --name flag)
+  if (!/^[a-zA-Z0-9_\-. ]+$/.test(name)) {
+    console.log(c.red(`  Invalid project name: ${name}`));
+    console.log(c.dim("  Project names may only contain letters, digits, spaces, and: _ - ."));
+    process.exit(1);
+  }
+
   // Upsert into DB
+  // Single-quote escape is sufficient here because the name is already validated above
+  // and projectDir comes from resolve() which produces an absolute POSIX path (no quotes).
   const escapedName = name.replace(/'/g, "''");
   const escapedPath = projectDir.replace(/'/g, "''");
   const { ok } = await dbQuery(
@@ -1151,9 +1160,18 @@ async function tmuxRemove(name?: string) {
     return;
   }
 
-  const escaped = name.replace(/'/g, "''");
+  // Validate name to block SQL injection / LIKE wildcard abuse
+  if (!/^[a-zA-Z0-9_\-. ]+$/.test(name)) {
+    console.log(c.red(`  Invalid project name: ${name}`));
+    console.log(c.dim("  Project names may only contain letters, digits, spaces, and: _ - ."));
+    process.exit(1);
+  }
+
+  // Escape single-quotes for the SQL literal, and LIKE metacharacters for the path suffix match.
+  const escapedName    = name.replace(/'/g, "''");
+  const escapedForLike = name.replace(/[%_\\]/g, "\\$&").replace(/'/g, "''");
   const { ok, rows } = await dbQuery(
-    `DELETE FROM projects WHERE name = '${escaped}' OR path LIKE '%/${escaped}' RETURNING name`
+    `DELETE FROM projects WHERE name = '${escapedName}' OR path LIKE '%/${escapedForLike}' ESCAPE '\\' RETURNING name`
   );
   if (!ok || rows.length === 0) {
     console.log(`  ${c.yellow(name)} not found in DB.`);

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, type ProcessHealthRow } from '../api/client'
 
@@ -27,6 +28,7 @@ function StatusDot({ status, stale }: { status: string; stale?: boolean }) {
 
 export function MonitorPage() {
   const queryClient = useQueryClient()
+  const [mutationError, setMutationError] = useState<string | null>(null)
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['process-health'],
@@ -36,12 +38,20 @@ export function MonitorPage() {
 
   const restartDaemon = useMutation({
     mutationFn: api.restartDaemon,
-    onSuccess: () => setTimeout(() => queryClient.invalidateQueries({ queryKey: ['process-health'] }), 3000),
+    onSuccess: () => {
+      setMutationError(null)
+      setTimeout(() => queryClient.invalidateQueries({ queryKey: ['process-health'] }), 3000)
+    },
+    onError: (err) => setMutationError(err instanceof Error ? err.message : 'Restart failed'),
   })
 
   const restartDocker = useMutation({
     mutationFn: (container: string) => api.restartDockerContainer(container),
-    onSuccess: () => setTimeout(() => queryClient.invalidateQueries({ queryKey: ['process-health'] }), 5000),
+    onSuccess: () => {
+      setMutationError(null)
+      setTimeout(() => queryClient.invalidateQueries({ queryKey: ['process-health'] }), 5000)
+    },
+    onError: (err) => setMutationError(err instanceof Error ? err.message : 'Restart failed'),
   })
 
   if (isLoading) return <div className="text-gray-400">Loading...</div>
@@ -78,12 +88,21 @@ export function MonitorPage() {
         </button>
       </div>
 
+      {mutationError && (
+        <div className="text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-2">
+          ⚠ {mutationError}
+        </div>
+      )}
+
       {/* admin-daemon */}
       <section className="bg-gray-900/60 border border-gray-800/50 rounded-xl p-5">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">admin-daemon</h2>
           <button
-            onClick={() => restartDaemon.mutate()}
+            onClick={() => {
+              if (!window.confirm('Restart daemon? This will cause brief downtime.')) return;
+              restartDaemon.mutate();
+            }}
             disabled={restartDaemon.isPending}
             className="text-xs px-3 py-1.5 rounded-lg bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 disabled:opacity-40 transition-colors"
           >
@@ -109,7 +128,11 @@ export function MonitorPage() {
           <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">Docker</h2>
           {botContainer && (
             <button
-              onClick={() => restartDocker.mutate(botContainer.name.slice('docker:'.length))}
+              onClick={() => {
+                const container = botContainer.name.slice('docker:'.length);
+                if (!window.confirm(`Restart container "${container}"?`)) return;
+                restartDocker.mutate(container);
+              }}
               disabled={restartDocker.isPending}
               className="text-xs px-3 py-1.5 rounded-lg bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 disabled:opacity-40 transition-colors"
             >

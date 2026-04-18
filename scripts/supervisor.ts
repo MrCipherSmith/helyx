@@ -30,7 +30,7 @@ const SUPERVISOR_CHAT_ID  = process.env.SUPERVISOR_CHAT_ID  ?? "";
 const SUPERVISOR_TOPIC_ID = Number(process.env.SUPERVISOR_TOPIC_ID ?? "0");
 const BOT_TOKEN           = process.env.TELEGRAM_BOT_TOKEN  ?? "";
 const OLLAMA_URL          = process.env.OLLAMA_URL ?? "http://localhost:11434";
-const IDLE_COMPACT_MIN    = Number(process.env.IDLE_COMPACT_MIN ?? "60"); // minutes before auto-compact
+const IDLE_COMPACT_MIN    = Math.max(10, Number(process.env.IDLE_COMPACT_MIN ?? "60") || 60); // minutes before auto-compact
 
 // Thresholds
 const SESSION_STALE_MS  = 2 * 60 * 1000;   // 2 min — heartbeat timeout
@@ -74,7 +74,7 @@ async function tgPost(method: string, body: Record<string, unknown>): Promise<an
     } catch { /* use default */ }
     console.error(`[supervisor] tgPost ${method} 429 — retrying in ${wait}s`);
     await new Promise(r => setTimeout(r, wait * 1000));
-    res = await fetch(url, opts);
+    res = await fetch(url, { ...opts, signal: AbortSignal.timeout(10_000) });
   }
   if (!res.ok) {
     const errText = await res.text().catch(() => "");
@@ -135,7 +135,7 @@ async function getLlmExplanation(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "gemma4:e4b",
+        model: process.env.OLLAMA_CHAT_MODEL ?? process.env.SUMMARIZE_MODEL ?? "gemma4:e4b",
         think: false,
         messages: [
           { role: "system", content: system },
@@ -561,7 +561,7 @@ async function sendStatusBroadcast(sql: postgres.Sql, runShell: RunShell): Promi
     const sendResult = await tgPost("sendMessage", sendBody);
     if (sendResult?.result?.message_id) {
       statusMessageId = sendResult.result.message_id;
-      console.error("[supervisor] status broadcast sent (msg_id:", statusMessageId, ")");
+      console.log("[supervisor] status broadcast sent (msg_id:", statusMessageId, ")");
     }
   } catch (err: any) {
     console.error(`[supervisor] sendStatusBroadcast error: ${err?.message}`);
@@ -614,9 +614,14 @@ async function checkIdleSessions(sql: postgres.Sql): Promise<void> {
 
     for (const chatId of chatIds) {
       try {
-        await forceSummarize(Number(sess.id), chatId, sess.project_path ?? null);
+        const deleteBefore = new Date();
+        const result = await forceSummarize(Number(sess.id), chatId, sess.project_path ?? null);
+        if (!result) {
+          console.warn(`[supervisor] summarize returned null for session, skipping delete`);
+          continue;
+        }
         clearCache(Number(sess.id), chatId);
-        await sql`DELETE FROM messages WHERE session_id = ${sess.id} AND chat_id = ${chatId}`;
+        await sql`DELETE FROM messages WHERE session_id = ${sess.id} AND chat_id = ${chatId} AND created_at <= ${deleteBefore}`;
         compacted++;
       } catch (err: any) {
         console.error(`[supervisor] idle compact failed for ${sess.project}/${chatId}: ${err?.message}`);
@@ -647,23 +652,49 @@ export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
     console.warn("[supervisor] SUPERVISOR_CHAT_ID or SUPERVISOR_TOPIC_ID not set — alerts will be logged only");
   }
 
+  // In-flight guards (prevent overlapping concurrent executions)
+  let sessionCheckRunning = false;
+  let queueCheckRunning   = false;
+  let voiceCheckRunning   = false;
+  let broadcastRunning    = false;
+  let idleCheckRunning    = false;
+
   // Loop 1: Session heartbeat — every 60s
-  const sessionTimer = setInterval(() => checkHungSessions(sql).catch(() => {}), 60_000);
+  const sessionTimer = setInterval(() => {
+    if (sessionCheckRunning) return;
+    sessionCheckRunning = true;
+    checkHungSessions(sql).catch(() => {}).finally(() => { sessionCheckRunning = false; });
+  }, 60_000);
   sessionTimer.unref?.();
 
   // Loop 2: Stuck queue — every 60s (offset 15s from session loop to spread DB load)
   setTimeout(() => {
-    checkStuckQueue(sql).catch(() => {});
-    const queueTimer = setInterval(() => checkStuckQueue(sql).catch(() => {}), 60_000);
+    if (!queueCheckRunning) {
+      queueCheckRunning = true;
+      checkStuckQueue(sql).catch(() => {}).finally(() => { queueCheckRunning = false; });
+    }
+    const queueTimer = setInterval(() => {
+      if (queueCheckRunning) return;
+      queueCheckRunning = true;
+      checkStuckQueue(sql).catch(() => {}).finally(() => { queueCheckRunning = false; });
+    }, 60_000);
     queueTimer.unref?.();
   }, 15_000);
 
   // Loop 3: Voice cleanup — every 5 min
-  const voiceTimer = setInterval(() => cleanVoiceStatuses(sql).catch(() => {}), 5 * 60_000);
+  const voiceTimer = setInterval(() => {
+    if (voiceCheckRunning) return;
+    voiceCheckRunning = true;
+    cleanVoiceStatuses(sql).catch(() => {}).finally(() => { voiceCheckRunning = false; });
+  }, 5 * 60_000);
   voiceTimer.unref?.();
 
   // Loop 4: Full status broadcast — every 5 min
-  const statusTimer = setInterval(() => sendStatusBroadcast(sql, runShell).catch(() => {}), 5 * 60_000);
+  const statusTimer = setInterval(() => {
+    if (broadcastRunning) return;
+    broadcastRunning = true;
+    sendStatusBroadcast(sql, runShell).catch(() => {}).finally(() => { broadcastRunning = false; });
+  }, 5 * 60_000);
   statusTimer.unref?.();
 
   // Heartbeat to process_health — every 30s
@@ -671,7 +702,11 @@ export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
   healthTimer.unref?.();
 
   // Loop 5: Idle session auto-compact — every 30 min
-  const idleTimer = setInterval(() => checkIdleSessions(sql).catch(() => {}), 30 * 60_000);
+  const idleTimer = setInterval(() => {
+    if (idleCheckRunning) return;
+    idleCheckRunning = true;
+    checkIdleSessions(sql).catch(() => {}).finally(() => { idleCheckRunning = false; });
+  }, 30 * 60_000);
   idleTimer.unref?.();
 
   // Run initial checks after a short delay (let admin-daemon settle first)

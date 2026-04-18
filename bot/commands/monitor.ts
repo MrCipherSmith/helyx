@@ -114,14 +114,25 @@ export async function handleMonitor(ctx: Context): Promise<void> {
 }
 
 export async function handleMonitorCallback(ctx: Context): Promise<void> {
+  const adminChatId = String(process.env.TELEGRAM_CHAT_ID ?? "");
+  if (adminChatId && String(ctx.chat?.id) !== adminChatId) {
+    await ctx.answerCallbackQuery({ text: "Unauthorized" });
+    return;
+  }
+
   const data  = ctx.callbackQuery?.data ?? "";
   const parts = data.split(":");
   const action = parts[1];
 
   if (action === "refresh") {
     await ctx.answerCallbackQuery({ text: "Refreshed" });
-    await ctx.deleteMessage().catch(() => {});
-    await handleMonitor(ctx);
+    try {
+      await handleMonitor(ctx);           // send new message first
+      await ctx.deleteMessage().catch(() => {}); // then delete old one
+    } catch (err) {
+      // handleMonitor failed — old message stays, user can retry
+      console.error("[monitor] refresh failed:", err);
+    }
     return;
   }
 

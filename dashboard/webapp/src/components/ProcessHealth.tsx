@@ -37,6 +37,7 @@ export function ProcessHealth() {
   const [data, setData] = useState<ProcessHealthData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -59,7 +60,10 @@ export function ProcessHealth() {
 
   const action = useCallback(async (fn: () => Promise<unknown>, key: string) => {
     setBusy(key);
-    try { await fn(); await load(); } catch { /* ignore */ }
+    setActionError(null);
+    try { await fn(); await load(); } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Action failed");
+    }
     finally { setBusy(null); }
   }, [load]);
 
@@ -94,12 +98,21 @@ export function ProcessHealth() {
         <button onClick={load} className="text-xs text-[var(--tg-link)]">↻ Refresh</button>
       </div>
 
+      {actionError && (
+        <div className="text-red-400 text-xs px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20">
+          ⚠ {actionError}
+        </div>
+      )}
+
       {/* admin-daemon */}
       <div className="rounded-xl border border-black/10" style={{ background: "var(--tg-secondary-bg)" }}>
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-black/5">
           <span className="text-xs font-semibold text-[var(--tg-hint)] uppercase tracking-wide">admin-daemon</span>
           <button
-            onClick={() => action(() => (api as any).restartDaemon(), "daemon")}
+            onClick={() => {
+              if (!window.confirm('Restart? This will cause brief downtime.')) return;
+              action(() => (api as any).restartDaemon(), "daemon");
+            }}
             disabled={busy === "daemon"}
             className="text-[10px] px-2 py-1 rounded-lg font-medium text-[var(--tg-button)] bg-[var(--tg-button)]/10 disabled:opacity-40"
           >
@@ -124,10 +137,11 @@ export function ProcessHealth() {
           <span className="text-xs font-semibold text-[var(--tg-hint)] uppercase tracking-wide">Docker</span>
           {botContainer && (
             <button
-              onClick={() => action(
-                () => (api as any).restartDockerContainer(botContainer.name.slice("docker:".length)),
-                "docker"
-              )}
+              onClick={() => {
+                const container = botContainer.name.slice("docker:".length);
+                if (!window.confirm(`Restart container "${container}"?`)) return;
+                action(() => (api as any).restartDockerContainer(container), "docker");
+              }}
               disabled={busy === "docker"}
               className="text-[10px] px-2 py-1 rounded-lg font-medium text-[var(--tg-button)] bg-[var(--tg-button)]/10 disabled:opacity-40"
             >

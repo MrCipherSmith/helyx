@@ -228,12 +228,17 @@ export async function handleVoice(ctx: Context): Promise<void> {
   const statusMsg = await ctx.reply(initialStatus);
 
   // Track this status message in DB so startup recovery can clean it up if the bot restarts.
+  // Must be awaited before the queue task starts to guarantee voiceStatusId is set
+  // before clearVoiceStatus() runs in the finally block (fixes race condition F-004).
   let voiceStatusId: number | null = null;
-  sql`
-    INSERT INTO voice_status_messages (chat_id, thread_id, message_id)
-    VALUES (${chatId}, ${forumTopicId ?? null}, ${statusMsg.message_id})
-    RETURNING id
-  `.then((rows) => { voiceStatusId = rows[0]?.id ?? null; }).catch(() => {});
+  try {
+    const rows = await sql`
+      INSERT INTO voice_status_messages (chat_id, thread_id, message_id)
+      VALUES (${chatId}, ${forumTopicId ?? null}, ${statusMsg.message_id})
+      RETURNING id
+    `;
+    voiceStatusId = rows[0]?.id ?? null;
+  } catch { /* ignore — status tracking is best-effort */ }
 
   /** Delete the tracking row when voice processing is done (success or failure). */
   const clearVoiceStatus = () => {
@@ -271,7 +276,6 @@ export async function handleVoice(ctx: Context): Promise<void> {
         appendLog(route.sessionId, chatId, "voice", `download failed: ${err}`, "error");
         const reason = err?.message ?? String(err);
         await updateStatus(`🎤 Failed to download voice message.\n${reason}`);
-        clearVoiceStatus();
         return;
       }
 
@@ -320,7 +324,6 @@ export async function handleVoice(ctx: Context): Promise<void> {
             if (dup.length > 0) {
               appendLog(route.sessionId, chatId, "voice", `duplicate message_id=${tgMsgId}, skipping`);
               await updateStatus(`🎤 Transcribed (already queued): ${text}`);
-              clearVoiceStatus();
               return;
             }
           }
