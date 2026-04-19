@@ -12,6 +12,53 @@ import { sendTelegramMessage, setTelegramReaction, editTelegramMessage, sendTele
 import { maybeAttachVoiceRaw } from "../utils/tts.ts";
 import { channelLogger } from "../logger.ts";
 import { scanProjectKnowledge } from "../memory/project-scanner.ts";
+import { CONFIG } from "../config.ts";
+import {
+  runTtsBenchmark,
+  appendBenchmarkLog,
+  formatBenchmarkReport,
+  detectRussian,
+  sendTelegramVoice,
+  sendTelegramText,
+} from "../utils/benchmark.ts";
+
+/** Benchmark: run both TTS pipelines, send two voice messages + stats report. */
+function runTtsBenchmarkAndReport(
+  token: string,
+  chatId: string,
+  replyText: string,
+  threadId: number | null,
+  forceVoice: boolean,
+): void {
+  import("../utils/tts.ts").then(({ shouldSendVoice }) => {
+    if (!forceVoice && !shouldSendVoice(replyText)) return;
+
+    const isRussian = detectRussian(replyText);
+
+    runTtsBenchmark(replyText, isRussian)
+      .then(async (results) => {
+        // Send both voice messages
+        for (const r of results) {
+          if (r.buf && r.fmt) {
+            await sendTelegramVoice(token, chatId, r.buf, r.fmt, threadId, `🎙 ${r.provider}`);
+          }
+        }
+
+        // Send comparison stats
+        const report = formatBenchmarkReport([], results);
+        await sendTelegramText(token, chatId, report, threadId);
+
+        // Log to file
+        appendBenchmarkLog({
+          ts: new Date().toISOString(),
+          chatId,
+          asr: [],
+          tts: results.map(({ buf: _buf, ...r }) => r),
+        });
+      })
+      .catch((err) => channelLogger.error({ err }, "benchmark: TTS benchmark failed"));
+  }).catch(() => {});
+}
 
 export interface ToolContext {
   sql: postgres.Sql;
@@ -289,10 +336,12 @@ export function registerTools(
             res = await sendTelegramMessage(token, chatId, replyText, { ...forumExtra, ...(replyMarkup && { reply_markup: replyMarkup }) });
             if (!res.ok) {
               channelLogger.warn({ error: res.errorBody }, "reply: Telegram API error (fallback)");
+              status.deleteStatusMessage(chatId).catch(() => {});
               return text(`Telegram API error`);
             }
           } else {
             channelLogger.warn({ error: res.errorBody }, "reply: Telegram API error");
+            status.deleteStatusMessage(chatId).catch(() => {});
             return text(`Telegram API error`);
           }
         }
@@ -302,7 +351,11 @@ export function registerTools(
         // Telegram rate-limits editMessageText (can block for 60+ seconds otherwise).
         status.deleteStatusMessage(chatId).catch((err) => channelLogger.warn({ err }, "deleteStatusMessage failed"));
         // Fire-and-forget TTS voice attachment (forced if user sent voice, otherwise ≥300 chars)
-        maybeAttachVoiceRaw(token, chatId, replyText, forumTopicId ?? null, ctx.forceVoice?.() ?? false);
+        if (CONFIG.KESHA_BENCHMARK) {
+          runTtsBenchmarkAndReport(token, chatId, replyText, forumTopicId ?? null, ctx.forceVoice?.() ?? false);
+        } else {
+          maybeAttachVoiceRaw(token, chatId, replyText, forumTopicId ?? null, ctx.forceVoice?.() ?? false);
+        }
         if (sessionId) {
           await ctx.sql`
             INSERT INTO messages (session_id, project_path, chat_id, role, content)

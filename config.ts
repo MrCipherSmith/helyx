@@ -85,6 +85,8 @@ const EnvSchema = z.object({
   KESHA_ENABLED: z.string().default("true").transform((s) => s !== "false"),
   KESHA_TTS_ENABLED: z.string().default("false").transform((s) => s === "true"),
   KESHA_BIN: z.string().default("kesha-engine"),
+  // Benchmark mode: run current + kesha pipelines in parallel and report stats
+  KESHA_BENCHMARK: z.string().default("false").transform((s) => s === "true"),
 
   // GitHub
   GITHUB_TOKEN: z.string().default(""),
@@ -202,6 +204,7 @@ export const CONFIG = {
   KESHA_ENABLED: env.KESHA_ENABLED,
   KESHA_TTS_ENABLED: env.KESHA_TTS_ENABLED,
   KESHA_BIN: env.KESHA_BIN,
+  KESHA_BENCHMARK: env.KESHA_BENCHMARK,
 
   // Security / paths
   JWT_SECRET: env.JWT_SECRET,

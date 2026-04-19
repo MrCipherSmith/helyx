@@ -13,7 +13,7 @@ export interface TranscribeContext {
 }
 
 /** Transcribe via Groq whisper-large-v3 API (primary) */
-async function transcribeGroq(
+export async function transcribeGroq(
   audioBuffer: ArrayBuffer,
   fileName: string,
   mimeType: string,
@@ -51,7 +51,7 @@ async function transcribeGroq(
 }
 
 /** Transcribe via local Whisper ASR (fallback) */
-async function transcribeLocal(
+export async function transcribeLocal(
   audioBuffer: ArrayBuffer,
   fileName: string,
   mimeType: string,
@@ -87,7 +87,7 @@ async function transcribeLocal(
 }
 
 /** Transcribe via kesha-engine local ONNX ASR (offline, no API key needed). */
-async function transcribeKesha(
+export async function transcribeKesha(
   audioBuffer: ArrayBuffer,
   fileName: string,
 ): Promise<string | null> {

@@ -48,6 +48,13 @@ export async function handleProjects(ctx: Context): Promise<void> {
     }
   }
 
+  const inactiveProjects = projects.filter(
+    p => p.session_status !== "active" && !pending.has(p.id),
+  );
+  if (inactiveProjects.length > 1) {
+    kb.text("▶️ Start All", "proj:start_all").row();
+  }
+
   if (pending.size > 0) {
     kb.text("🔄 Refresh", "proj:refresh").row();
   }
@@ -63,6 +70,21 @@ export async function handleProjectCallback(ctx: Context): Promise<void> {
 
   if (action === "refresh") {
     await ctx.answerCallbackQuery({ text: "Refreshed" });
+    await ctx.deleteMessage().catch(() => {});
+    await handleProjects(ctx);
+    return;
+  }
+
+  if (action === "start_all") {
+    const [allProjects, pendingNow] = await Promise.all([
+      projectService.list(),
+      getPendingActions(),
+    ]);
+    const toStart = allProjects.filter(
+      p => p.session_status !== "active" && !pendingNow.has(p.id),
+    );
+    await Promise.all(toStart.map(p => projectService.start(p.id)));
+    await ctx.answerCallbackQuery({ text: `Starting ${toStart.length} project(s)...` });
     await ctx.deleteMessage().catch(() => {});
     await handleProjects(ctx);
     return;

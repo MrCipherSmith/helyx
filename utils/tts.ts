@@ -286,7 +286,7 @@ async function synthesizeOpenAI(text: string): Promise<Buffer | null> {
 }
 
 /** Synthesize via kesha-engine local TTS (Kokoro EN / Piper RU, auto-routed). Returns WAV buffer. */
-async function synthesizeKesha(text: string, isRussian: boolean): Promise<Buffer | null> {
+export async function synthesizeKesha(text: string, isRussian: boolean): Promise<Buffer | null> {
   if (!CONFIG.KESHA_TTS_ENABLED || !CONFIG.KESHA_ENABLED) return null;
 
   const voice = isRussian ? "ru-denis" : "en-af_heart";
@@ -352,6 +352,35 @@ async function synthesizeKokoro(text: string): Promise<Buffer | null> {
     channelLogger.error({ err }, "tts: Kokoro error");
     return null;
   }
+}
+
+/**
+ * Run the current (non-kesha) TTS chain for benchmark comparison.
+ * Tries Yandex → Piper → Kokoro without touching kesha.
+ */
+export async function synthesizeCurrentOnly(text: string, isRussian: boolean): Promise<{ buf: Buffer; fmt: "mp3" | "wav"; provider: string } | null> {
+  if (isRussian) {
+    if (YANDEX_API_KEY && YANDEX_FOLDER_ID) {
+      try {
+        const buf = await synthesizeYandex(text);
+        if (buf) return { buf, fmt: "mp3", provider: "yandex" };
+      } catch { /* fall through */ }
+    }
+    try {
+      const buf = await synthesizePiper(text, true);
+      if (buf) return { buf, fmt: "wav", provider: "piper-ru" };
+    } catch { /* fall through */ }
+  } else {
+    try {
+      const buf = await synthesizePiper(text, false);
+      if (buf) return { buf, fmt: "wav", provider: "piper-en" };
+    } catch { /* fall through */ }
+    try {
+      const buf = await synthesizeKokoro(text);
+      if (buf) return { buf, fmt: "wav", provider: "kokoro" };
+    } catch { /* fall through */ }
+  }
+  return null;
 }
 
 /**
