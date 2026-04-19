@@ -19,8 +19,9 @@ function sendAsrBenchReport(
   chatId: number,
   asr: AsrBenchResult[],
   threadId?: number | null,
+  audioDurationSec?: number,
 ): void {
-  const report = formatBenchmarkReport(asr, []);
+  const report = formatBenchmarkReport(asr, [], audioDurationSec);
   const opts = threadId ? { message_thread_id: threadId, parse_mode: "HTML" as const } : { parse_mode: "HTML" as const };
   bot.api.sendMessage(chatId, report, opts).catch(() => {});
 }
@@ -407,7 +408,7 @@ export async function handleVoice(ctx: Context): Promise<void> {
             asr: asrBenchResults,
             tts: [],
           });
-          sendAsrBenchReport(bot, ctx.chat!.id, asrBenchResults, isForumMessage ? forumTopicId : null);
+          sendAsrBenchReport(bot, ctx.chat!.id, asrBenchResults, isForumMessage ? forumTopicId : null, voice.duration);
         }
       } else {
         appendLog(route.sessionId, chatId, "voice", "transcription failed", "error");

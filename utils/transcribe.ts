@@ -86,18 +86,46 @@ export async function transcribeLocal(
   return data.text?.trim() || null;
 }
 
+let keshaModelsReady: boolean | null = null;
+
+async function ensureKeshaModels(): Promise<boolean> {
+  if (keshaModelsReady !== null) return keshaModelsReady;
+
+  const home = process.env.HOME ?? "";
+  const modelFile = `${home}/.cache/kesha/models/parakeet-tdt-v3/encoder-model.onnx`;
+  const hasModels = home ? await Bun.file(modelFile).exists() : false;
+
+  if (!hasModels) {
+    console.error("[transcribe] kesha models not found, running install...");
+    const proc = Bun.spawn([CONFIG.KESHA_BIN, "install"], {
+      stdout: "inherit",
+      stderr: "inherit",
+      env: { ...process.env },
+    });
+    const code = await proc.exited;
+    keshaModelsReady = code === 0;
+    if (!keshaModelsReady) {
+      console.error(`[transcribe] kesha install failed with code ${code}`);
+    }
+  } else {
+    keshaModelsReady = true;
+  }
+  return keshaModelsReady;
+}
+
 /** Transcribe via kesha-engine local ONNX ASR (offline, no API key needed). */
 export async function transcribeKesha(
   audioBuffer: ArrayBuffer,
   fileName: string,
 ): Promise<string | null> {
   if (!CONFIG.KESHA_ENABLED) return null;
+  if (!(await ensureKeshaModels())) return null;
 
   const tmpFile = `/tmp/kesha-asr-${Date.now()}-${fileName}`;
   try {
     await writeFile(tmpFile, Buffer.from(audioBuffer));
 
-    const proc = Bun.spawn([CONFIG.KESHA_BIN, tmpFile], {
+    const proc = Bun.spawn([CONFIG.KESHA_BIN, "transcribe", tmpFile], {
       stdout: "pipe",
       stderr: "ignore",
     });

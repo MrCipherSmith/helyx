@@ -18,6 +18,7 @@ services:
       HOST_HOME: ${HOME}
       PIPER_DIR: /app/piper
       KESHA_BIN: /usr/local/bin/kesha-engine
+      HOME: /home/bun
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -29,7 +30,6 @@ services:
       - ${HOME}:/host-home:ro
       - ./logs:/app/logs
       - ./piper:/app/piper:ro
-      - kesha-models:/app/kesha-models
     healthcheck:
       test: ["CMD-SHELL", "bun -e \"fetch('http://localhost:${PORT:-3847}/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))\""]
       interval: 15s
@@ -79,8 +79,6 @@ services:
 volumes:
   pgdata:
     name: helyx-pgdata
-  kesha-models:
-    name: helyx-kesha-models
 
 networks:
   helyx:

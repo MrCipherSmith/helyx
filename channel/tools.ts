@@ -45,7 +45,7 @@ function runTtsBenchmarkAndReport(
         }
 
         // Send comparison stats
-        const report = formatBenchmarkReport([], results);
+        const report = formatBenchmarkReport([], results, undefined);
         await sendTelegramText(token, chatId, report, threadId);
 
         // Log to file

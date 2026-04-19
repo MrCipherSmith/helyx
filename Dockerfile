@@ -20,6 +20,22 @@ FROM base AS production
 
 ARG KESHA_INSTALL_TTS=false
 
+# Install system deps: git, curl, espeak-ng (required by kesha-engine for ASR + TTS)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends git curl ca-certificates espeak-ng && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install kesha-engine binary (linux-x64 only — darwin handled at runtime)
+RUN curl -fsSL -o /usr/local/bin/kesha-engine \
+      "https://github.com/drakulavich/kesha-voice-kit/releases/download/v1.1.3/kesha-engine-linux-x64" && \
+    chmod +x /usr/local/bin/kesha-engine
+
+# Bake kesha models BEFORE source copy so this layer is cached across code changes.
+# TTS models (~390MB, Kokoro EN + Piper RU) only when KESHA_INSTALL_TTS=true.
+RUN mkdir -p /home/bun/.cache && \
+    HOME=/home/bun /usr/local/bin/kesha-engine install \
+      $([ "$KESHA_INSTALL_TTS" = "true" ] && echo "--tts" || true)
+
 # Install backend dependencies
 COPY package.json bun.lock* ./
 RUN bun install --frozen-lockfile --production
@@ -33,27 +49,8 @@ COPY --from=dashboard-build /app/dashboard/dist dashboard/dist
 # Copy webapp build output from stage 1b
 COPY --from=webapp-build /app/dashboard/webapp/dist dashboard/webapp/dist
 
-# Install git for webapp git API; espeak-ng only when KESHA_INSTALL_TTS=true
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends git curl ca-certificates \
-      $([ "$KESHA_INSTALL_TTS" = "true" ] && echo "espeak-ng" || true) && \
-    rm -rf /var/lib/apt/lists/*
-
-# Install kesha-engine binary (linux-x64 only — darwin handled at runtime)
-RUN curl -fsSL -o /usr/local/bin/kesha-engine \
-      "https://github.com/drakulavich/kesha-voice-kit/releases/download/v1.1.3/kesha-engine-linux-x64" && \
-    chmod +x /usr/local/bin/kesha-engine
-
-# Pre-install kesha ASR models into the image cache dir (populated into volume on first run)
-# Models are stored in /app/kesha-models (mounted as a Docker volume to survive restarts)
-ENV KESHA_MODELS_DIR=/app/kesha-models
-RUN mkdir -p /app/kesha-models
-
-# Ensure downloads dir exists and is writable
-RUN mkdir -p /app/downloads
-
-# Use uid=1000 (bun) to match host user for volume read access
-RUN chown -R bun /app
+# Ensure downloads dir exists and set permissions
+RUN mkdir -p /app/downloads && chown -R bun /app /home/bun/.cache
 USER bun
 
 EXPOSE 3847
