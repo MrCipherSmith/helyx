@@ -35,7 +35,7 @@ COPY --from=webapp-build /app/dashboard/webapp/dist dashboard/webapp/dist
 
 # Install git for webapp git API; espeak-ng only when KESHA_INSTALL_TTS=true
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends git curl \
+    apt-get install -y --no-install-recommends git curl ca-certificates \
       $([ "$KESHA_INSTALL_TTS" = "true" ] && echo "espeak-ng" || true) && \
     rm -rf /var/lib/apt/lists/*
 
