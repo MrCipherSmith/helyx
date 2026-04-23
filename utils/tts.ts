@@ -470,10 +470,11 @@ export async function synthesize(text: string): Promise<{ buf: Buffer; fmt: "mp3
     return synthesizeGroq(clean).then(b => wrap(b, "wav"));
   }
 
-  // auto (Russian): Yandex → Kesha → Piper → Groq
+  // auto (Russian): Yandex → Piper → Kesha → Groq
   // Yandex is first because it handles mixed Russian/English text correctly.
-  // Kesha (Piper VITS ru-denis) is the offline fallback before raw Piper.
-  // auto (English): Piper(EN) → Kesha → Kokoro → Groq
+  // Piper Russian (irina) is preferred over Kesha ru-denis (EN model quality).
+  // Kesha is last offline fallback before cloud Groq.
+  // auto (English): Piper(EN) → Kokoro → Kesha → Groq
   if (isRussian) {
     if (YANDEX_API_KEY && YANDEX_FOLDER_ID) {
       try {
@@ -483,18 +484,8 @@ export async function synthesize(text: string): Promise<{ buf: Buffer; fmt: "mp3
           return { buf, fmt: "mp3" };
         }
       } catch (err) {
-        channelLogger.warn({ err }, "tts: Yandex failed, trying Kesha");
+        channelLogger.warn({ err }, "tts: Yandex failed, trying Piper");
       }
-    }
-
-    try {
-      const buf = await synthesizeKesha(clean, true);
-      if (buf) {
-        channelLogger.info({}, "tts: provider=kesha-ru");
-        return { buf, fmt: "wav" };
-      }
-    } catch (err) {
-      channelLogger.warn({ err }, "tts: Kesha failed, trying Piper");
     }
 
     try {
@@ -504,7 +495,17 @@ export async function synthesize(text: string): Promise<{ buf: Buffer; fmt: "mp3
         return { buf, fmt: "wav" };
       }
     } catch (err) {
-      channelLogger.warn({ err }, "tts: Piper failed, trying Groq");
+      channelLogger.warn({ err }, "tts: Piper failed, trying Kesha");
+    }
+
+    try {
+      const buf = await synthesizeKesha(clean, true);
+      if (buf) {
+        channelLogger.info({}, "tts: provider=kesha-ru");
+        return { buf, fmt: "wav" };
+      }
+    } catch (err) {
+      channelLogger.warn({ err }, "tts: Kesha failed, trying Groq");
     }
   } else {
     try {
@@ -514,21 +515,21 @@ export async function synthesize(text: string): Promise<{ buf: Buffer; fmt: "mp3
         return { buf, fmt: "wav" };
       }
     } catch {
-      // fall through to Kesha
-    }
-    try {
-      const buf = await synthesizeKesha(clean, false);
-      if (buf) {
-        channelLogger.info({}, "tts: provider=kesha-en");
-        return { buf, fmt: "wav" };
-      }
-    } catch {
       // fall through to Kokoro
     }
     try {
       const buf = await synthesizeKokoro(clean);
       if (buf) {
         channelLogger.info({}, "tts: provider=kokoro");
+        return { buf, fmt: "wav" };
+      }
+    } catch {
+      // fall through to Kesha
+    }
+    try {
+      const buf = await synthesizeKesha(clean, false);
+      if (buf) {
+        channelLogger.info({}, "tts: provider=kesha-en");
         return { buf, fmt: "wav" };
       }
     } catch {
