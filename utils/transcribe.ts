@@ -1,5 +1,6 @@
 import { recordTranscription } from "./stats.ts";
 import { CONFIG } from "../config.ts";
+import { unlink, writeFile } from "node:fs/promises";
 
 const GROQ_API_KEY = CONFIG.GROQ_API_KEY;
 const WHISPER_URL = CONFIG.WHISPER_URL;
@@ -12,7 +13,7 @@ export interface TranscribeContext {
 }
 
 /** Transcribe via Groq whisper-large-v3 API (primary) */
-async function transcribeGroq(
+export async function transcribeGroq(
   audioBuffer: ArrayBuffer,
   fileName: string,
   mimeType: string,
@@ -50,7 +51,7 @@ async function transcribeGroq(
 }
 
 /** Transcribe via local Whisper ASR (fallback) */
-async function transcribeLocal(
+export async function transcribeLocal(
   audioBuffer: ArrayBuffer,
   fileName: string,
   mimeType: string,
@@ -85,7 +86,69 @@ async function transcribeLocal(
   return data.text?.trim() || null;
 }
 
-/** Transcribe audio: Groq (primary) → local Whisper (fallback) */
+let keshaModelsPromise: Promise<boolean> | null = null;
+
+function ensureKeshaModels(): Promise<boolean> {
+  if (!keshaModelsPromise) keshaModelsPromise = _initKeshaModels();
+  return keshaModelsPromise;
+}
+
+async function _initKeshaModels(): Promise<boolean> {
+  const home = process.env.HOME ?? "";
+  const modelFile = `${home}/.cache/kesha/models/parakeet-tdt-v3/encoder-model.onnx`;
+  const hasModels = home ? await Bun.file(modelFile).exists() : false;
+
+  if (!hasModels) {
+    console.error("[transcribe] kesha models not found, running install...");
+    const proc = Bun.spawn([CONFIG.KESHA_BIN, "install"], {
+      stdout: "inherit",
+      stderr: "inherit",
+      env: { ...process.env },
+    });
+    const code = await proc.exited;
+    if (code !== 0) {
+      console.error(`[transcribe] kesha install failed with code ${code}`);
+      return false;
+    }
+  }
+  return true;
+}
+
+/** Transcribe via kesha-engine local ONNX ASR (offline, no API key needed). */
+export async function transcribeKesha(
+  audioBuffer: ArrayBuffer,
+  fileName: string,
+): Promise<string | null> {
+  if (!CONFIG.KESHA_ENABLED) return null;
+  if (!(await ensureKeshaModels())) return null;
+
+  const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const tmpFile = `/tmp/kesha-asr-${Date.now()}-${safeName}`;
+  try {
+    await writeFile(tmpFile, Buffer.from(audioBuffer));
+
+    const proc = Bun.spawn([CONFIG.KESHA_BIN, "transcribe", tmpFile], {
+      stdout: "pipe",
+      stderr: "ignore",
+    });
+
+    const code = await proc.exited;
+    if (code !== 0) {
+      console.error(`[transcribe] kesha exited with code ${code}`);
+      return null;
+    }
+
+    const text = await new Response(proc.stdout).text();
+    return text.trim() || null;
+  } catch (err) {
+    console.error(`[transcribe] kesha error:`, err);
+    return null;
+  } finally {
+    unlink(tmpFile).catch(() => {});
+  }
+}
+
+/** Transcribe audio: Groq (primary) → Kesha local ONNX → local Whisper (fallback) */
 export async function transcribe(
   audioBuffer: ArrayBuffer,
   fileName: string,
@@ -115,6 +178,36 @@ export async function transcribe(
       chatId: ctx?.chatId,
       provider: "groq",
       durationMs: Date.now() - groqStart,
+      audioDurationSec: ctx?.audioDurationSec,
+      status: "error",
+      errorMessage: err?.message ?? String(err),
+    });
+  }
+
+  // Fallback to kesha local ONNX ASR
+  console.error(`[transcribe] falling back to kesha ASR`);
+  const keshaStart = Date.now();
+  try {
+    const result = await transcribeKesha(audioBuffer, fileName);
+    if (result) {
+      console.error(`[transcribe] kesha ASR OK`);
+      recordTranscription({
+        sessionId: ctx?.sessionId,
+        chatId: ctx?.chatId,
+        provider: "kesha",
+        durationMs: Date.now() - keshaStart,
+        audioDurationSec: ctx?.audioDurationSec,
+        status: "success",
+      });
+      return result;
+    }
+  } catch (err: any) {
+    console.error(`[transcribe] kesha ASR failed:`, err);
+    recordTranscription({
+      sessionId: ctx?.sessionId,
+      chatId: ctx?.chatId,
+      provider: "kesha",
+      durationMs: Date.now() - keshaStart,
       audioDurationSec: ctx?.audioDurationSec,
       status: "error",
       errorMessage: err?.message ?? String(err),

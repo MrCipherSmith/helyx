@@ -81,6 +81,13 @@ const EnvSchema = z.object({
   KOKORO_DTYPE: z.enum(["q4", "q8", "fp16", "fp32"]).default("q8"),
   KOKORO_VOICE: z.string().default("af_bella"),
 
+  // Kesha Voice Kit (local offline ASR + TTS)
+  KESHA_ENABLED: z.string().default("false").transform((s) => s === "true"),
+  KESHA_TTS_ENABLED: z.string().default("false").transform((s) => s === "true"),
+  KESHA_BIN: z.string().default("kesha-engine"),
+  // Benchmark mode: run current + kesha pipelines in parallel and report stats
+  KESHA_BENCHMARK: z.string().default("false").transform((s) => s === "true"),
+
   // GitHub
   GITHUB_TOKEN: z.string().default(""),
   GITHUB_USERNAME: z.string().default(""),
@@ -88,6 +95,7 @@ const EnvSchema = z.object({
   // Security / paths
   JWT_SECRET: z.string().optional(),
   SECURE_COOKIES: z.string().optional(),
+  LOGS_DIR: z.string().default("logs"),
   DOWNLOADS_DIR: z.string().default("/app/downloads"),
   HOST_DOWNLOADS_DIR: z.string().optional(),
   HOST_CLAUDE_CONFIG: z.string().default("/host-claude-config"),
@@ -193,9 +201,16 @@ export const CONFIG = {
   KOKORO_DTYPE: env.KOKORO_DTYPE,
   KOKORO_VOICE: env.KOKORO_VOICE,
 
+  // Kesha Voice Kit
+  KESHA_ENABLED: env.KESHA_ENABLED,
+  KESHA_TTS_ENABLED: env.KESHA_TTS_ENABLED,
+  KESHA_BIN: env.KESHA_BIN,
+  KESHA_BENCHMARK: env.KESHA_BENCHMARK,
+
   // Security / paths
   JWT_SECRET: env.JWT_SECRET,
   SECURE_COOKIES: env.SECURE_COOKIES,
+  LOGS_DIR: env.LOGS_DIR,
   DOWNLOADS_DIR: env.DOWNLOADS_DIR,
   HOST_DOWNLOADS_DIR: env.HOST_DOWNLOADS_DIR,
   HOST_CLAUDE_CONFIG: env.HOST_CLAUDE_CONFIG,

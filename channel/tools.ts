@@ -9,9 +9,61 @@ import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprot
 import { markdownToTelegramHtml } from "../bot/format.ts";
 import type { StatusManager } from "./status.ts";
 import { sendTelegramMessage, setTelegramReaction, editTelegramMessage, sendTelegramPoll, deleteTelegramMessage } from "./telegram.ts";
-import { maybeAttachVoiceRaw } from "../utils/tts.ts";
+import { maybeAttachVoiceRaw, shouldSendVoice } from "../utils/tts.ts";
 import { channelLogger } from "../logger.ts";
 import { scanProjectKnowledge } from "../memory/project-scanner.ts";
+import { CONFIG } from "../config.ts";
+import {
+  runTtsBenchmark,
+  appendBenchmarkLog,
+  formatBenchmarkReport,
+  detectRussian,
+  sendTelegramVoice,
+} from "../utils/benchmark.ts";
+
+/** Benchmark: run both TTS pipelines, send two voice messages + stats report. */
+function runTtsBenchmarkAndReport(
+  token: string,
+  chatId: string,
+  replyText: string,
+  threadId: number | null,
+  forceVoice: boolean,
+): void {
+  channelLogger.info({ forceVoice, textLen: replyText.length, threadId }, "tts-bench: runTtsBenchmarkAndReport called");
+  const svResult = shouldSendVoice(replyText);
+  channelLogger.info({ forceVoice, shouldSendVoice: svResult }, "tts-bench: guard check");
+  if (!forceVoice && !svResult) return;
+
+  const isRussian = detectRussian(replyText);
+
+  channelLogger.info({ isRussian }, "tts-bench: starting runTtsBenchmark");
+  runTtsBenchmark(replyText, isRussian)
+    .then(async (results) => {
+      channelLogger.info({ count: results.length, providers: results.map(r => r.provider + ':' + r.success) }, "tts-bench: results");
+      // Send both voice messages with a gap to reduce 429 rate-limit hits
+      for (let i = 0; i < results.length; i++) {
+        const r = results[i]!;
+        if (r.buf && r.fmt) {
+          if (i > 0) await new Promise(res => setTimeout(res, 4000));
+          channelLogger.info({ provider: r.provider, bytes: r.buf.length }, "tts-bench: sending voice");
+          await sendTelegramVoice(token, chatId, r.buf, r.fmt, threadId, `🎙 ${r.provider}`);
+        }
+      }
+
+      // Send comparison stats
+      const report = formatBenchmarkReport([], results, undefined);
+      await sendTelegramMessage(token, chatId, report, { parse_mode: "HTML", ...(threadId !== null && { message_thread_id: threadId }) });
+
+      // Log to file
+      appendBenchmarkLog({
+        ts: new Date().toISOString(),
+        chatId,
+        asr: [],
+        tts: results.map(({ buf: _buf, ...r }) => r),
+      });
+    })
+    .catch((err) => channelLogger.error({ err }, "benchmark: TTS benchmark failed"));
+}
 
 export interface ToolContext {
   sql: postgres.Sql;
@@ -289,10 +341,12 @@ export function registerTools(
             res = await sendTelegramMessage(token, chatId, replyText, { ...forumExtra, ...(replyMarkup && { reply_markup: replyMarkup }) });
             if (!res.ok) {
               channelLogger.warn({ error: res.errorBody }, "reply: Telegram API error (fallback)");
+              status.deleteStatusMessage(chatId).catch(() => {});
               return text(`Telegram API error`);
             }
           } else {
             channelLogger.warn({ error: res.errorBody }, "reply: Telegram API error");
+            status.deleteStatusMessage(chatId).catch(() => {});
             return text(`Telegram API error`);
           }
         }
@@ -302,7 +356,11 @@ export function registerTools(
         // Telegram rate-limits editMessageText (can block for 60+ seconds otherwise).
         status.deleteStatusMessage(chatId).catch((err) => channelLogger.warn({ err }, "deleteStatusMessage failed"));
         // Fire-and-forget TTS voice attachment (forced if user sent voice, otherwise ≥300 chars)
-        maybeAttachVoiceRaw(token, chatId, replyText, forumTopicId ?? null, ctx.forceVoice?.() ?? false);
+        if (CONFIG.KESHA_BENCHMARK) {
+          runTtsBenchmarkAndReport(token, chatId, replyText, forumTopicId ?? null, ctx.forceVoice?.() ?? false);
+        } else {
+          maybeAttachVoiceRaw(token, chatId, replyText, forumTopicId ?? null, ctx.forceVoice?.() ?? false);
+        }
         if (sessionId) {
           await ctx.sql`
             INSERT INTO messages (session_id, project_path, chat_id, role, content)

@@ -2,6 +2,7 @@ import type { Context } from "grammy";
 import { InlineKeyboard } from "grammy";
 import { projectService } from "../../services/project-service.ts";
 import { sql } from "../../memory/db.ts";
+import { replyInThread } from "../format.ts";
 
 async function getPendingActions(): Promise<Map<number, "start" | "stop">> {
   const rows = await sql`
@@ -24,7 +25,7 @@ export async function handleProjects(ctx: Context): Promise<void> {
   ]);
 
   if (projects.length === 0) {
-    await ctx.reply("No projects configured.\nUse /project-add to add one.");
+    await replyInThread(ctx, "No projects configured.\nUse /project-add to add one.");
     return;
   }
 
@@ -48,11 +49,18 @@ export async function handleProjects(ctx: Context): Promise<void> {
     }
   }
 
+  const inactiveProjects = projects.filter(
+    p => p.session_status !== "active" && !pending.has(p.id),
+  );
+  if (inactiveProjects.length > 1) {
+    kb.text("▶️ Start All", "proj:start_all").row();
+  }
+
   if (pending.size > 0) {
     kb.text("🔄 Refresh", "proj:refresh").row();
   }
 
-  await ctx.reply(lines.join("\n"), { reply_markup: kb });
+  await replyInThread(ctx, lines.join("\n"), { reply_markup: kb });
 }
 
 export async function handleProjectCallback(ctx: Context): Promise<void> {
@@ -63,6 +71,21 @@ export async function handleProjectCallback(ctx: Context): Promise<void> {
 
   if (action === "refresh") {
     await ctx.answerCallbackQuery({ text: "Refreshed" });
+    await ctx.deleteMessage().catch(() => {});
+    await handleProjects(ctx);
+    return;
+  }
+
+  if (action === "start_all") {
+    const [allProjects, pendingNow] = await Promise.all([
+      projectService.list(),
+      getPendingActions(),
+    ]);
+    const toStart = allProjects.filter(
+      p => p.session_status !== "active" && !pendingNow.has(p.id),
+    );
+    await Promise.all(toStart.map(p => projectService.start(p.id)));
+    await ctx.answerCallbackQuery({ text: `Starting ${toStart.length} project(s)...` });
     await ctx.deleteMessage().catch(() => {});
     await handleProjects(ctx);
     return;
@@ -132,6 +155,6 @@ export async function handleProjectCallback(ctx: Context): Promise<void> {
     if (err?.description?.includes("not modified") || err?.message?.includes("not modified")) return;
     // For other errors (e.g. message too old to edit), delete and re-send
     await ctx.deleteMessage().catch(() => {});
-    await ctx.reply(lines.join("\n"), { reply_markup: kb });
+    await replyInThread(ctx, lines.join("\n"), { reply_markup: kb });
   });
 }

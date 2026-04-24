@@ -1,6 +1,7 @@
 import type { Bot } from "grammy";
 import { InputFile } from "grammy";
 import { join } from "path";
+import { unlink } from "node:fs";
 import { CONFIG } from "../config.ts";
 import { channelLogger } from "../logger.ts";
 
@@ -66,6 +67,14 @@ function pcmToWav(pcm: Float32Array, sampleRate = 24000): Buffer {
 }
 
 const VOICE_MIN_CHARS = 300;
+
+/** Returns true if text is predominantly Russian (Cyrillic ≥ 40% of letters). */
+export function detectRussian(text: string): boolean {
+  const cyr = (text.match(/[Ѐ-ӿ]/g) ?? []).length;
+  const lat = (text.match(/[a-zA-Z]/g) ?? []).length;
+  const total = cyr + lat;
+  return total === 0 ? true : cyr / total >= 0.4;
+}
 
 /**
  * Returns true if the text qualifies for a voice attachment:
@@ -285,6 +294,32 @@ async function synthesizeOpenAI(text: string): Promise<Buffer | null> {
   return Buffer.from(await res.arrayBuffer());
 }
 
+/** Synthesize via kesha-engine local TTS (Kokoro EN / Piper RU, auto-routed). Returns WAV buffer. */
+export async function synthesizeKesha(text: string, isRussian: boolean): Promise<Buffer | null> {
+  if (!CONFIG.KESHA_TTS_ENABLED || !CONFIG.KESHA_ENABLED) return null;
+
+  const voice = isRussian ? "ru-denis" : "en-af_heart";
+  const tmpFile = `/tmp/kesha-tts-${Date.now()}.wav`;
+  try {
+    const proc = Bun.spawn(
+      [CONFIG.KESHA_BIN, "say", "--voice", voice, "--out", tmpFile, text.slice(0, 5000)],
+      { stdout: "ignore", stderr: "ignore" },
+    );
+    const code = await proc.exited;
+    if (code !== 0) {
+      channelLogger.warn({ code }, "tts: kesha say exited with non-zero code");
+      return null;
+    }
+    const buf = await Bun.file(tmpFile).arrayBuffer();
+    return Buffer.from(buf);
+  } catch (err) {
+    channelLogger.error({ err }, "tts: kesha say error");
+    return null;
+  } finally {
+    unlink(tmpFile, () => {});
+  }
+}
+
 /** Synthesize via Piper local TTS (offline). Picks model by language. Returns WAV buffer. */
 async function synthesizePiper(text: string, isRussian = true): Promise<Buffer | null> {
   const modelPath = isRussian ? PIPER_MODEL_RU : PIPER_MODEL_EN;
@@ -326,6 +361,37 @@ async function synthesizeKokoro(text: string): Promise<Buffer | null> {
     channelLogger.error({ err }, "tts: Kokoro error");
     return null;
   }
+}
+
+/**
+ * Run the current (non-kesha) TTS chain for benchmark comparison.
+ * Tries Yandex → Piper → Kokoro without touching kesha.
+ */
+export async function synthesizeCurrentOnly(text: string, isRussian: boolean): Promise<{ buf: Buffer; fmt: "mp3" | "wav"; provider: string } | null> {
+  const clean = stripMarkdown(text).slice(0, 1500);
+  if (!clean) return null;
+  if (isRussian) {
+    if (YANDEX_API_KEY && YANDEX_FOLDER_ID) {
+      try {
+        const buf = await synthesizeYandex(clean);
+        if (buf) return { buf, fmt: "mp3", provider: "yandex" };
+      } catch { /* fall through */ }
+    }
+    try {
+      const buf = await synthesizePiper(clean, true);
+      if (buf) return { buf, fmt: "wav", provider: "piper-ru" };
+    } catch { /* fall through */ }
+  } else {
+    try {
+      const buf = await synthesizePiper(clean, false);
+      if (buf) return { buf, fmt: "wav", provider: "piper-en" };
+    } catch { /* fall through */ }
+    try {
+      const buf = await synthesizeKokoro(clean);
+      if (buf) return { buf, fmt: "wav", provider: "kokoro" };
+    } catch { /* fall through */ }
+  }
+  return null;
 }
 
 /**
@@ -404,10 +470,11 @@ export async function synthesize(text: string): Promise<{ buf: Buffer; fmt: "mp3
     return synthesizeGroq(clean).then(b => wrap(b, "wav"));
   }
 
-  // auto (Russian): Yandex → Piper → Groq
+  // auto (Russian): Yandex → Piper → Kesha → Groq
   // Yandex is first because it handles mixed Russian/English text correctly.
-  // Piper Russian (irina) mangles Latin identifiers that survive normalization.
-  // auto (English): Piper(EN) → Kokoro → Groq
+  // Piper Russian (irina) is preferred over Kesha ru-denis (EN model quality).
+  // Kesha is last offline fallback before cloud Groq.
+  // auto (English): Piper(EN) → Kokoro → Kesha → Groq
   if (isRussian) {
     if (YANDEX_API_KEY && YANDEX_FOLDER_ID) {
       try {
@@ -428,7 +495,17 @@ export async function synthesize(text: string): Promise<{ buf: Buffer; fmt: "mp3
         return { buf, fmt: "wav" };
       }
     } catch (err) {
-      channelLogger.warn({ err }, "tts: Piper failed, trying Groq");
+      channelLogger.warn({ err }, "tts: Piper failed, trying Kesha");
+    }
+
+    try {
+      const buf = await synthesizeKesha(clean, true);
+      if (buf) {
+        channelLogger.info({}, "tts: provider=kesha-ru");
+        return { buf, fmt: "wav" };
+      }
+    } catch (err) {
+      channelLogger.warn({ err }, "tts: Kesha failed, trying Groq");
     }
   } else {
     try {
@@ -444,6 +521,15 @@ export async function synthesize(text: string): Promise<{ buf: Buffer; fmt: "mp3
       const buf = await synthesizeKokoro(clean);
       if (buf) {
         channelLogger.info({}, "tts: provider=kokoro");
+        return { buf, fmt: "wav" };
+      }
+    } catch {
+      // fall through to Kesha
+    }
+    try {
+      const buf = await synthesizeKesha(clean, false);
+      if (buf) {
+        channelLogger.info({}, "tts: provider=kesha-en");
         return { buf, fmt: "wav" };
       }
     } catch {
