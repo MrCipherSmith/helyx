@@ -24,6 +24,7 @@
 import type postgres from "postgres";
 import { forceSummarize } from "../memory/summarizer.ts";
 import { clearCache } from "../memory/short-term.ts";
+import { agentManager } from "../agents/agent-manager.ts";
 
 // --- Config (read from env, not from CONFIG to avoid circular imports in admin-daemon) ---
 const SUPERVISOR_CHAT_ID  = process.env.SUPERVISOR_CHAT_ID  ?? "";
@@ -224,8 +225,6 @@ async function mirrorRecoveryToAgentInstance(
       console.log(`[supervisor] no agent_instance linked for ${projectPath}, skipping agent-layer mirror`);
       return;
     }
-    // Lazy-import to avoid pulling agent layer into supervisor's hot path eagerly.
-    const { agentManager } = await import("../agents/agent-manager.ts");
     await agentManager.setDesiredState(agentInstanceId, "running", "supervisor heartbeat recovery");
   } catch (err: any) {
     console.error(`[supervisor] agent-layer mirror failed (non-fatal): ${err?.message ?? err}`);

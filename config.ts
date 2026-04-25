@@ -35,7 +35,7 @@ const EnvSchema = z.object({
   // Agent runtime config (Phase 4 forward-looking)
   DEFAULT_RUNTIME_DRIVER: z.string().default("tmux"),
   DEFAULT_CODING_RUNTIME: z.string().default("claude-code"),
-  AGENT_RECONCILE_INTERVAL_MS: z.coerce.number().int().positive().default(5000),
+  AGENT_RECONCILE_INTERVAL_MS: z.coerce.number().int().min(0).default(5000),  // 0 disables the reconcile loop
   AGENT_HEARTBEAT_TIMEOUT_MS: z.coerce.number().int().positive().default(120000),
   AGENT_RESTART_LIMIT: z.coerce.number().int().min(0).default(3),
 

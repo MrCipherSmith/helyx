@@ -106,8 +106,13 @@ export class AgentManager {
 
   // ---------- Instances ----------
 
+  /**
+   * List agent_instances with optional filter.
+   * NOTE: filter is single-dimension first-wins (projectId > desiredState > actualState).
+   * If multiple fields are passed, only the highest-priority one is applied.
+   * Pass exactly one field, or none to list all.
+   */
   async listInstances(filter?: { projectId?: number; desiredState?: DesiredState; actualState?: ActualState }): Promise<AgentInstance[]> {
-    // Build dynamic WHERE without sql injection
     let rows: any[];
     if (filter?.projectId !== undefined) {
       rows = await sql`SELECT * FROM agent_instances WHERE project_id = ${filter.projectId} ORDER BY name` as any[];

@@ -28,6 +28,7 @@
 import type postgres from "postgres";
 import { escapeHtml } from "../utils/html.ts";
 import type { RuntimeDriver, RuntimeHandle } from "../runtime/types.ts";
+import { agentManager } from "../agents/agent-manager.ts";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -596,7 +597,6 @@ async function writePaneSnapshot(sql: postgres.Sql, sessionId: number, lines: st
     ` as any[];
     const linkedId = linked?.id ? Number(linked.id) : null;
     if (linkedId) {
-      const { agentManager } = await import("../agents/agent-manager.ts");
       await agentManager.updateSnapshot(linkedId, snapshot);
     }
   } catch (err: any) {
