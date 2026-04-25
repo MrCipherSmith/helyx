@@ -51,6 +51,10 @@ export async function handleAgents(ctx: Context): Promise<void> {
   const keyboard = new InlineKeyboard();
 
   function stateEmoji(actual: string, desired: string): string {
+    // Permission/approval pending — special state. The watchdog set this when it
+    // detected a permission prompt and is awaiting human response via Telegram.
+    // Show before any other classification so it's never hidden behind 🟢/🟡.
+    if (actual === "waiting_approval") return "🟣";
     // "new" means the reconciler has never probed yet — treat as equivalent to stopped
     // for display purposes (no actuating activity has happened)
     const effectiveActual = actual === "new" ? "stopped" : actual;
@@ -74,7 +78,7 @@ export async function handleAgents(ctx: Context): Promise<void> {
   }
 
   lines.push("");
-  lines.push("<i>🟢 running   ⚫ stopped   🟡 converging↑   🟠 converging↓   ❓ unknown</i>");
+  lines.push("<i>🟢 running   ⚫ stopped   🟡 converging↑   🟠 converging↓   🟣 waiting approval   ❓ unknown</i>");
 
   await ctx.reply(lines.join("\n"), { parse_mode: "HTML", reply_markup: keyboard });
 }
