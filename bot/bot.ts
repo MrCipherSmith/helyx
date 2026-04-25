@@ -44,6 +44,8 @@ export function createBot(): Bot {
     { command: "skills", description: "Skills from goodai-base" },
     { command: "rules", description: "Rules from goodai-base" },
     { command: "tools", description: "MCP tools" },
+    // Model providers
+    { command: "providers", description: "List configured model providers" },
     // Remote control
     { command: "interrupt", description: "Interrupt running Claude session (send Escape)" },
     { command: "monitor", description: "Process dashboard (daemon, Docker, sessions)" },
