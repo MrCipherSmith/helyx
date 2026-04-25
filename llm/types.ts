@@ -1,4 +1,4 @@
-import type { MessageParam, ContentBlock, StreamContext } from "../claude/client.ts";
+import type { MessageParam, ContentBlock, StreamContext } from "./client.ts";
 
 export type ProviderType =
   | "anthropic"
