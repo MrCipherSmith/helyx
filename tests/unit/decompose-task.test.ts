@@ -42,12 +42,17 @@ describe("decomposeTask: types and contract", () => {
     expect(stub.attempts).toBe(1);
   });
 
-  test("orchestrator.decomposeTask is a function", async () => {
+  // The two tests below import orchestrator.ts which initializes a postgres
+  // connection at module load. They require DATABASE_URL pointing at a live DB
+  // with the agent_tasks table. Skip when the env is not configured (e.g. CI).
+  const HAS_DB = Boolean(process.env.DATABASE_URL);
+
+  test.skipIf(!HAS_DB)("orchestrator.decomposeTask is a function (requires DB)", async () => {
     const mod = await import("../../agents/orchestrator.ts");
     expect(typeof mod.orchestrator.decomposeTask).toBe("function");
   });
 
-  test("decomposeTask rejects when task id is not found", async () => {
+  test.skipIf(!HAS_DB)("decomposeTask rejects when task id is not found (requires DB)", async () => {
     const mod = await import("../../agents/orchestrator.ts");
     await expect(mod.orchestrator.decomposeTask(999999999)).rejects.toThrow(/not found/);
   });

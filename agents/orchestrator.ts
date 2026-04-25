@@ -364,8 +364,8 @@ Rules:
     }
 
     const system = (options.systemPrompt ?? Orchestrator.DEFAULT_SYSTEM_PROMPT)
-      .replace("{{MIN_SUBTASKS}}", String(minSubtasks))
-      .replace("{{MAX_SUBTASKS}}", String(maxSubtasks));
+      .replaceAll("{{MIN_SUBTASKS}}", String(minSubtasks))
+      .replaceAll("{{MAX_SUBTASKS}}", String(maxSubtasks));
 
     const userMessage =
       `Task title: ${task.title}\n` +
@@ -389,7 +389,10 @@ Rules:
       const finalUser = userMessage + retryHint;
       messages[0] = { role: "user", content: finalUser };
 
-      rawResponse = await generateResponse(messages, system, { provider } as any);
+      rawResponse = await generateResponse(messages, system, {
+        provider,
+        operation: "decompose-task",
+      } as any);
 
       // Strip optional markdown code fences
       let text = rawResponse.trim();
