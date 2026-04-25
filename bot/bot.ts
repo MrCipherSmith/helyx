@@ -45,6 +45,7 @@ export function createBot(): Bot {
     { command: "rules", description: "Rules from goodai-base" },
     { command: "tools", description: "MCP tools" },
     // Model providers
+    { command: "model", description: "Set Claude model for current session" },
     { command: "providers", description: "List configured model providers" },
     { command: "models", description: "List model profiles, set one for session" },
     // Remote control

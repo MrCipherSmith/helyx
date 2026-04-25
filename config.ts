@@ -10,7 +10,7 @@ const EnvSchema = z.object({
 
   // Claude (Anthropic)
   ANTHROPIC_API_KEY: z.string().default(""),
-  CLAUDE_MODEL: z.string().default("claude-sonnet-4-20250514"),
+  CLAUDE_MODEL: z.string().default("claude-sonnet-4-6"),
   MAX_TOKENS: z.coerce.number().int().positive().default(8192),
 
   // Google AI
