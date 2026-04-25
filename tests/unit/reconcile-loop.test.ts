@@ -85,11 +85,28 @@ function makeInstance(overrides: Partial<AgentInstance> = {}): AgentInstance {
   };
 }
 
+// ---------- Health helpers ----------
+
+const stoppedHealth = mock(async () => ({
+  state: "stopped" as const,
+  lastChecked: new Date(),
+}));
+
+function makeStoppedDriver(overrides?: Partial<RuntimeDriver>): RuntimeDriver {
+  return makeMockDriver({
+    health: mock(async () => ({
+      state: "stopped" as const,
+      lastChecked: new Date(),
+    })),
+    ...overrides,
+  });
+}
+
 // ---------- Tests: desired=stopped ----------
 
 describe("reconcile-loop: desired=stopped", () => {
-  test("does nothing when actual=stopped (terminal converged state)", async () => {
-    const driver = makeMockDriver();
+  test("does nothing when actual=stopped and health=stopped (terminal converged state)", async () => {
+    const driver = makeStoppedDriver();
     const mgr = new RuntimeManager();
     mgr.registerDriver(driver);
     const agentMgr = makeMockAgentMgr();
@@ -105,8 +122,8 @@ describe("reconcile-loop: desired=stopped", () => {
     expect(agentMgr.setActualState).not.toHaveBeenCalled();
   });
 
-  test("does nothing when actual=new and desired=stopped", async () => {
-    const driver = makeMockDriver();
+  test("does nothing when actual=new and desired=stopped and health=stopped", async () => {
+    const driver = makeStoppedDriver();
     const mgr = new RuntimeManager();
     mgr.registerDriver(driver);
     const agentMgr = makeMockAgentMgr();
@@ -121,8 +138,25 @@ describe("reconcile-loop: desired=stopped", () => {
     expect(driver.start).not.toHaveBeenCalled();
   });
 
-  test("calls driver.stop when actual=running", async () => {
-    const driver = makeMockDriver();
+  test("no-op when desired=stopped and health=stopped (actual=stopped)", async () => {
+    const driver = makeStoppedDriver();
+    const mgr = new RuntimeManager();
+    mgr.registerDriver(driver);
+    const agentMgr = makeMockAgentMgr();
+    const inst = makeInstance({
+      desiredState: "stopped",
+      actualState: "stopped",
+    });
+
+    await (mgr as any).reconcileInstance(inst, agentMgr, 3);
+
+    expect(driver.stop).not.toHaveBeenCalled();
+    expect(driver.start).not.toHaveBeenCalled();
+    expect(agentMgr.setActualState).not.toHaveBeenCalled();
+  });
+
+  test("stops when desired=stopped and health=running (actual=running)", async () => {
+    const driver = makeMockDriver(); // default health=running
     const mgr = new RuntimeManager();
     mgr.registerDriver(driver);
     const agentMgr = makeMockAgentMgr();
@@ -142,8 +176,8 @@ describe("reconcile-loop: desired=stopped", () => {
     expect(states).toContain("stopped");
   });
 
-  test("calls driver.stop when actual=starting", async () => {
-    const driver = makeMockDriver();
+  test("calls driver.stop when health=running and actual=starting", async () => {
+    const driver = makeMockDriver(); // default health=running
     const mgr = new RuntimeManager();
     mgr.registerDriver(driver);
     const agentMgr = makeMockAgentMgr();
@@ -182,8 +216,11 @@ describe("reconcile-loop: desired=stopped", () => {
 // ---------- Tests: desired=running ----------
 
 describe("reconcile-loop: desired=running", () => {
-  test("skips start when runtime_handle is missing projectPath/projectName", async () => {
-    const driver = makeMockDriver();
+  test("normalizes actualState to running when health=running and runtime_handle lacks projectPath", async () => {
+    // Health-first semantics: probe runs BEFORE deciding to start.
+    // Even if projectPath/projectName are missing, a healthy probe means the
+    // window already exists — we just sync actualState to reflect reality.
+    const driver = makeMockDriver(); // default health=running
     const mgr = new RuntimeManager();
     mgr.registerDriver(driver);
     const agentMgr = makeMockAgentMgr();
@@ -199,15 +236,15 @@ describe("reconcile-loop: desired=running", () => {
 
     await (mgr as any).reconcileInstance(inst, agentMgr, 3);
 
+    expect(driver.health).toHaveBeenCalled();
     expect(driver.start).not.toHaveBeenCalled();
-    // setActualState called: once 'starting', then 'failed' with explanation
     const calls = (agentMgr.setActualState as any).mock.calls;
     const states = calls.map((c: any[]) => c[1]);
-    expect(states).toContain("failed");
+    expect(states).toContain("running");
   });
 
-  test("calls driver.start when runtime_handle has projectPath/projectName", async () => {
-    const driver = makeMockDriver();
+  test("starts when health=stopped and handle has projectPath", async () => {
+    const driver = makeStoppedDriver();
     const mgr = new RuntimeManager();
     mgr.registerDriver(driver);
     const agentMgr = makeMockAgentMgr();
@@ -230,8 +267,8 @@ describe("reconcile-loop: desired=running", () => {
     expect(agentMgr.logEvent).toHaveBeenCalled();
   });
 
-  test("calls driver.start when actual=stopped (cold restart)", async () => {
-    const driver = makeMockDriver();
+  test("calls driver.start when actual=stopped and health=stopped (cold restart)", async () => {
+    const driver = makeStoppedDriver();
     const mgr = new RuntimeManager();
     mgr.registerDriver(driver);
     const agentMgr = makeMockAgentMgr();
@@ -251,7 +288,7 @@ describe("reconcile-loop: desired=running", () => {
   });
 
   test("respects restart limit when actual=failed and restartCount >= limit", async () => {
-    const driver = makeMockDriver();
+    const driver = makeStoppedDriver();
     const mgr = new RuntimeManager();
     mgr.registerDriver(driver);
     const agentMgr = makeMockAgentMgr();
@@ -272,8 +309,8 @@ describe("reconcile-loop: desired=running", () => {
     expect(agentMgr.setActualState).not.toHaveBeenCalled();
   });
 
-  test("retries start when actual=failed and restartCount < limit", async () => {
-    const driver = makeMockDriver();
+  test("retries start when actual=failed, health=stopped, and restartCount < limit", async () => {
+    const driver = makeStoppedDriver();
     const mgr = new RuntimeManager();
     mgr.registerDriver(driver);
     const agentMgr = makeMockAgentMgr();
@@ -294,7 +331,7 @@ describe("reconcile-loop: desired=running", () => {
   });
 
   test("increments restart count when driver.start throws", async () => {
-    const driver = makeMockDriver({
+    const driver = makeStoppedDriver({
       start: mock(async () => {
         throw new Error("start failure");
       }),
@@ -364,13 +401,11 @@ describe("reconcile-loop: desired=running", () => {
     expect(states).toContain("running");
   });
 
-  test("marks stopped + increments restart when health=stopped under restart limit", async () => {
-    const driver = makeMockDriver({
-      health: mock(async () => ({
-        state: "stopped" as const,
-        lastChecked: new Date(),
-      })),
-    });
+  test("starts (does not increment restart) when health=stopped under restart limit", async () => {
+    // Health-first: when desired=running and health=stopped, we simply (re)start.
+    // The previous "mark stopped + increment restart count" semantics are gone —
+    // the start path itself handles failures via try/catch.
+    const driver = makeStoppedDriver();
     const mgr = new RuntimeManager();
     mgr.registerDriver(driver);
     const agentMgr = makeMockAgentMgr();
@@ -387,19 +422,18 @@ describe("reconcile-loop: desired=running", () => {
 
     await (mgr as any).reconcileInstance(inst, agentMgr, 3);
 
+    expect(driver.start).toHaveBeenCalled();
+    // Successful start does NOT increment restart count.
+    expect(agentMgr.incrementRestartCount).not.toHaveBeenCalled();
     const calls = (agentMgr.setActualState as any).mock.calls;
     const states = calls.map((c: any[]) => c[1]);
-    expect(states).toContain("stopped");
-    expect(agentMgr.incrementRestartCount).toHaveBeenCalled();
+    expect(states).toContain("starting");
   });
 
-  test("marks failed when health.state=stopped and restart limit reached", async () => {
-    const driver = makeMockDriver({
-      health: mock(async () => ({
-        state: "stopped" as const,
-        lastChecked: new Date(),
-      })),
-    });
+  test("respects restart limit only when actualState=failed (otherwise still attempts start)", async () => {
+    // Under new semantics, the budget check is `restartCount >= limit && actualState === "failed"`.
+    // If actualState is e.g. "running" but health says stopped, we still attempt to start.
+    const driver = makeStoppedDriver();
     const mgr = new RuntimeManager();
     mgr.registerDriver(driver);
     const agentMgr = makeMockAgentMgr();
@@ -416,10 +450,8 @@ describe("reconcile-loop: desired=running", () => {
 
     await (mgr as any).reconcileInstance(inst, agentMgr, 3);
 
-    const calls = (agentMgr.setActualState as any).mock.calls;
-    const sawFailed = calls.some((c: any[]) => c[1] === "failed");
-    expect(sawFailed).toBe(true);
-    expect(agentMgr.incrementRestartCount).not.toHaveBeenCalled();
+    // Start IS attempted (actualState !== 'failed', so budget check doesn't gate it).
+    expect(driver.start).toHaveBeenCalled();
   });
 
   test("ignores health=unknown (leaves state alone, no transitions)", async () => {
@@ -449,7 +481,7 @@ describe("reconcile-loop: desired=running", () => {
     expect(agentMgr.incrementRestartCount).not.toHaveBeenCalled();
   });
 
-  test("swallows health probe errors (logs warn, continues)", async () => {
+  test("swallows health probe errors and treats as unknown (no transitions)", async () => {
     const driver = makeMockDriver({
       health: mock(async () => {
         throw new Error("probe failed");
@@ -472,6 +504,9 @@ describe("reconcile-loop: desired=running", () => {
     await (mgr as any).reconcileInstance(inst, agentMgr, 3);
 
     expect(driver.health).toHaveBeenCalled();
+    // Probe error → healthState=unknown → no state transitions, no start, no stop.
+    expect(driver.start).not.toHaveBeenCalled();
+    expect(driver.stop).not.toHaveBeenCalled();
   });
 });
 
