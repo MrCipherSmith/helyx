@@ -54,6 +54,22 @@ export interface TaskNode extends AgentTask {
   children: TaskNode[];
 }
 
+export interface HandleFailureOptions {
+  /** Max number of reassignments before giving up. Default: 2. */
+  maxReassignments?: number;
+  /** Excluded agent IDs (e.g., the one that failed). Auto-includes failed agent. */
+  excludeAgentIds?: number[];
+  /** Reason message for the audit trail. */
+  reason?: string;
+}
+
+export interface HandleFailureResult {
+  task: AgentTask;
+  outcome: "reassigned" | "no_alternative" | "limit_reached";
+  newAgentInstanceId: number | null;
+  attempts: number;
+}
+
 function rowToTask(r: any): AgentTask {
   return {
     id: r.id,
@@ -492,6 +508,149 @@ Rules:
 
     // Build AgentInstance shape via agentManager.getInstance for canonical mapping
     return await agentManager.getInstance(Number(rows[0].id));
+  }
+
+  // ---------- Failure handling (Phase 10) ----------
+
+  /**
+   * Handle a task failure: reassign to an alternative agent with matching
+   * capabilities, or mark as 'failed' permanently if no alternative exists.
+   *
+   * Reassignment limit prevents infinite ping-pong between failing agents.
+   * Each reassignment is recorded as agent_events (task_unassigned + task_assigned),
+   * plus an explicit `task_reassigned` event with previous/new agent metadata.
+   */
+  async handleFailure(taskId: number, options: HandleFailureOptions = {}): Promise<HandleFailureResult> {
+    const maxReassignments = options.maxReassignments ?? 2;
+    const reason = options.reason ?? "task failure — auto-reassign";
+
+    const task = await this.getTask(taskId);
+    if (!task) throw new Error(`agent_task ${taskId} not found`);
+
+    // Count prior reassignments via agent_events (every assignment writes a task_assigned).
+    // The first assignment counts as attempt 0; subsequent ones bump the cap.
+    const reassignEvents = await sql`
+      SELECT COUNT(*)::int AS count
+      FROM agent_events
+      WHERE task_id = ${taskId} AND event_type = 'task_reassigned'
+    ` as any[];
+    const attempts = Number(reassignEvents[0]?.count ?? 0);
+
+    // Build excluded IDs: failed agent + any explicitly excluded
+    const excluded = new Set<number>(options.excludeAgentIds ?? []);
+    if (task.agentInstanceId) excluded.add(task.agentInstanceId);
+
+    if (attempts >= maxReassignments) {
+      const updated = await this.setStatus(
+        taskId,
+        "failed",
+        `${reason}: reassignment limit (${maxReassignments}) reached`,
+      );
+      return { task: updated, outcome: "limit_reached", newAgentInstanceId: null, attempts };
+    }
+
+    // Look up the failed agent's capabilities to find alternatives
+    let requiredCapabilities: string[] = [];
+    if (task.agentInstanceId) {
+      const defRows = await sql`
+        SELECT ad.capabilities
+        FROM agent_instances ai
+        JOIN agent_definitions ad ON ad.id = ai.definition_id
+        WHERE ai.id = ${task.agentInstanceId}
+        LIMIT 1
+      ` as any[];
+      const defRow = defRows[0];
+      if (defRow?.capabilities && Array.isArray(defRow.capabilities)) {
+        requiredCapabilities = defRow.capabilities as string[];
+      }
+    }
+
+    // Fall back to capabilities encoded in task.payload (set by createTask/decomposeTask)
+    if (requiredCapabilities.length === 0) {
+      const payloadCaps =
+        (task.payload?.required_capabilities ?? task.payload?.capabilities) as unknown;
+      if (Array.isArray(payloadCaps)) requiredCapabilities = payloadCaps as string[];
+    }
+
+    if (requiredCapabilities.length === 0) {
+      // No way to find an alternative — mark failed
+      const updated = await this.setStatus(
+        taskId,
+        "failed",
+        `${reason}: cannot determine required capabilities`,
+      );
+      return { task: updated, outcome: "no_alternative", newAgentInstanceId: null, attempts };
+    }
+
+    // Find candidate agents matching capabilities; filter excluded IDs in JS for SQL robustness.
+    const requiredJson = JSON.stringify(requiredCapabilities);
+    const allCandidates = await sql`
+      SELECT ai.id
+      FROM agent_instances ai
+      JOIN agent_definitions ad ON ad.id = ai.definition_id
+      WHERE ad.enabled = true
+        AND ai.desired_state != 'stopped'
+        AND ad.capabilities @> ${requiredJson}::jsonb
+      ORDER BY
+        CASE ai.actual_state
+          WHEN 'running' THEN 0
+          WHEN 'idle' THEN 0
+          WHEN 'busy' THEN 1
+          WHEN 'starting' THEN 2
+          ELSE 3
+        END,
+        ai.id
+    ` as any[];
+
+    const winner = allCandidates.find((c) => !excluded.has(Number(c.id)));
+
+    if (!winner) {
+      const updated = await this.setStatus(
+        taskId,
+        "failed",
+        `${reason}: no alternative agent with capabilities ${requiredCapabilities.join(", ")}`,
+      );
+      return { task: updated, outcome: "no_alternative", newAgentInstanceId: null, attempts };
+    }
+
+    const newAgentId = Number(winner.id);
+    // Reassign: this records task_unassigned (old) + task_assigned (new) events.
+    await this.assignTask(taskId, newAgentId);
+    // Reset task to pending so the new agent picks it up on its next poll.
+    await this.setStatus(taskId, "pending", `${reason}: reassigned to agent ${newAgentId}`);
+    // Audit: explicit reassignment event with metadata so we can count attempts.
+    await sql`
+      INSERT INTO agent_events (agent_instance_id, task_id, event_type, message, metadata)
+      VALUES (
+        ${newAgentId},
+        ${taskId},
+        'task_reassigned',
+        ${reason},
+        ${JSON.stringify({
+          previous_agent_id: task.agentInstanceId,
+          attempts: attempts + 1,
+          required_capabilities: requiredCapabilities,
+        })}::jsonb
+      )
+    `;
+    logger.info(
+      {
+        taskId,
+        previousAgentId: task.agentInstanceId,
+        newAgentId,
+        attempts: attempts + 1,
+        reason,
+      },
+      "task reassigned after failure",
+    );
+
+    const updated = (await this.getTask(taskId))!;
+    return {
+      task: updated,
+      outcome: "reassigned",
+      newAgentInstanceId: newAgentId,
+      attempts: attempts + 1,
+    };
   }
 }
 
