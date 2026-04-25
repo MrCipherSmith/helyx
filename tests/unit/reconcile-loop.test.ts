@@ -651,3 +651,42 @@ describe("reconcile-loop: startReconcileLoop", () => {
     stop();
   });
 });
+
+describe("reconcile-loop: waiting_approval guard", () => {
+  test("does nothing when actual_state='waiting_approval'", async () => {
+    const driver = makeMockDriver();
+    const mgr = new RuntimeManager();
+    mgr.registerDriver(driver);
+    const agentMgr = makeMockAgentMgr();
+    const inst = makeInstance({
+      desiredState: "running",
+      actualState: "waiting_approval",
+      runtimeHandle: { driver: "tmux", projectPath: "/p", projectName: "test", tmuxSession: "bots", tmuxWindow: "test" },
+    });
+
+    await (mgr as any).reconcileInstance(inst, agentMgr, 3);
+
+    expect(driver.start).not.toHaveBeenCalled();
+    expect(driver.stop).not.toHaveBeenCalled();
+    expect(driver.health).not.toHaveBeenCalled();
+    expect(agentMgr.setActualState).not.toHaveBeenCalled();
+  });
+
+  test("waiting_approval guard wins even when desired=stopped + would otherwise stop", async () => {
+    // Critical: don't kill a window that's mid-prompt even if user toggled desired=stopped
+    const driver = makeMockDriver(); // health returns 'running'
+    const mgr = new RuntimeManager();
+    mgr.registerDriver(driver);
+    const agentMgr = makeMockAgentMgr();
+    const inst = makeInstance({
+      desiredState: "stopped",
+      actualState: "waiting_approval",
+      runtimeHandle: { driver: "tmux", tmuxSession: "bots", tmuxWindow: "test" },
+    });
+
+    await (mgr as any).reconcileInstance(inst, agentMgr, 3);
+
+    expect(driver.stop).not.toHaveBeenCalled();
+    expect(agentMgr.setActualState).not.toHaveBeenCalled();
+  });
+});

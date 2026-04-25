@@ -116,6 +116,15 @@ export class RuntimeManager {
     // instances incur zero driver work.
     if (inst.desiredState === "paused") return;
 
+    // === waiting_approval grace ===
+    // Don't take any reconcile action while waiting for human approval. The
+    // watchdog set this state when it detected a permission prompt in the pane
+    // and will transition us back to 'running' once the prompt is resolved
+    // (Telegram callback, in-terminal answer, or timeout). Acting here would
+    // either kill the window mid-prompt or generate spurious health-probe noise
+    // while a human is responding. Total no-op is the safest contract.
+    if (inst.actualState === "waiting_approval") return;
+
     // === Health-first probe ===
     // Always probe driver.health() before deciding to start. This handles:
     //   - bootstrapped instances with actual_state='new' but tmux window already exists

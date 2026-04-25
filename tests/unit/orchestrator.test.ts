@@ -1,5 +1,12 @@
 import { describe, test, expect } from "bun:test";
-import type { TaskStatus, AgentTask, CreateTaskInput, TaskNode } from "../../agents/orchestrator.ts";
+import type {
+  TaskStatus,
+  AgentTask,
+  CreateTaskInput,
+  TaskNode,
+  HandleFailureOptions,
+  HandleFailureResult,
+} from "../../agents/orchestrator.ts";
 
 describe("orchestrator: types", () => {
   test("TaskStatus accepts the 7 documented states", () => {
@@ -129,5 +136,58 @@ describe("orchestrator: setResult contract", () => {
   test("throws when task id is not found", async () => {
     const mod = await import("../../agents/orchestrator.ts");
     await expect(mod.orchestrator.setResult(999999999, { ok: true })).rejects.toThrow(/not found/);
+  });
+});
+
+describe("orchestrator: handleFailure contract", () => {
+  test("HandleFailureOptions accepts all expected fields", () => {
+    const opts: HandleFailureOptions = {
+      maxReassignments: 3,
+      excludeAgentIds: [1, 2, 3],
+      reason: "test",
+    };
+    expect(opts.maxReassignments).toBe(3);
+  });
+
+  test("HandleFailureOptions all fields optional", () => {
+    const opts: HandleFailureOptions = {};
+    expect(opts).toEqual({});
+  });
+
+  test("HandleFailureResult shape", () => {
+    const stub: HandleFailureResult = {
+      task: {
+        id: 1,
+        agentInstanceId: null,
+        parentTaskId: null,
+        title: "x",
+        description: null,
+        status: "failed",
+        payload: {},
+        result: null,
+        priority: 0,
+        createdAt: new Date(),
+        startedAt: null,
+        completedAt: null,
+        updatedAt: new Date(),
+      },
+      outcome: "no_alternative",
+      newAgentInstanceId: null,
+      attempts: 0,
+    };
+    expect(stub.outcome).toBe("no_alternative");
+    expect(stub.newAgentInstanceId).toBeNull();
+  });
+
+  test("orchestrator.handleFailure is a function", async () => {
+    const mod = await import("../../agents/orchestrator.ts");
+    expect(typeof mod.orchestrator.handleFailure).toBe("function");
+  });
+
+  // DB-touching test guarded by env (consistent with decompose-task.test.ts pattern)
+  const HAS_DB = Boolean(process.env.DATABASE_URL);
+  test.skipIf(!HAS_DB)("handleFailure rejects when task not found (requires DB)", async () => {
+    const mod = await import("../../agents/orchestrator.ts");
+    await expect(mod.orchestrator.handleFailure(999999999)).rejects.toThrow(/not found/);
   });
 });
