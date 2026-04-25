@@ -117,6 +117,15 @@ export class Orchestrator {
     return r ? rowToTask(r) : null;
   }
 
+  /**
+   * List tasks with an optional filter.
+   *
+   * NOTE: filter is single-dimension first-wins. Priority order:
+   *   status > agentInstanceId > parentTaskId.
+   * Pass exactly one field per call. Combining multiple filters in one call
+   * silently keeps only the highest-priority field — pass `undefined` for
+   * fields you do not want to filter on.
+   */
   async listTasks(filter?: {
     status?: TaskStatus;
     agentInstanceId?: number;
@@ -179,19 +188,19 @@ export class Orchestrator {
         RETURNING *
       ` as any[];
 
-      if (before.agent_instance_id) {
-        await tx`
-          INSERT INTO agent_events (agent_instance_id, task_id, event_type, from_state, to_state, message)
-          VALUES (
-            ${before.agent_instance_id},
-            ${taskId},
-            'task_status_change',
-            ${before.status},
-            ${status},
-            ${message ?? null}
-          )
-        `;
-      }
+      // Always emit audit event — agent_events.agent_instance_id is nullable per
+      // migration v23, so unassigned tasks get NULL agent in their status history.
+      await tx`
+        INSERT INTO agent_events (agent_instance_id, task_id, event_type, from_state, to_state, message)
+        VALUES (
+          ${before.agent_instance_id ?? null},
+          ${taskId},
+          'task_status_change',
+          ${before.status},
+          ${status},
+          ${message ?? null}
+        )
+      `;
       logger.info({ taskId, fromStatus: before.status, toStatus: status, message }, "task status changed");
       return rowToTask(after);
     }) as AgentTask;
@@ -229,16 +238,30 @@ export class Orchestrator {
     }) as AgentTask;
   }
 
-  /** Set task result (final output). */
+  /** Set task result (final output). Emits a `task_result_set` audit event. */
   async setResult(taskId: number, result: Record<string, unknown>): Promise<AgentTask> {
-    const [r] = await sql`
-      UPDATE agent_tasks
-      SET result = ${JSON.stringify(result)}::jsonb, updated_at = now()
-      WHERE id = ${taskId}
-      RETURNING *
-    ` as any[];
-    if (!r) throw new Error(`agent_task ${taskId} not found`);
-    return rowToTask(r);
+    return await sql.begin(async (tx) => {
+      const [before] = await tx`SELECT agent_instance_id FROM agent_tasks WHERE id = ${taskId} FOR UPDATE` as any[];
+      if (!before) throw new Error(`agent_task ${taskId} not found`);
+
+      const [after] = await tx`
+        UPDATE agent_tasks
+        SET result = ${JSON.stringify(result)}::jsonb, updated_at = now()
+        WHERE id = ${taskId}
+        RETURNING *
+      ` as any[];
+
+      await tx`
+        INSERT INTO agent_events (agent_instance_id, task_id, event_type, metadata)
+        VALUES (
+          ${before.agent_instance_id ?? null},
+          ${taskId},
+          'task_result_set',
+          ${JSON.stringify({ result_keys: Object.keys(result) })}::jsonb
+        )
+      `;
+      return rowToTask(after);
+    }) as AgentTask;
   }
 
   // ---------- Subtask helpers ----------

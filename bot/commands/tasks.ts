@@ -1,7 +1,12 @@
 /**
- * /tasks — list agent_tasks (read-only for Phase 4).
+ * /tasks — list agent_tasks (read-only).
  * Supports optional argument: /tasks <agent_instance_name> to filter.
- * Phase 7 will add CRUD via this command.
+ *
+ * Per-task CRUD lives in /task (singular, see bot/commands/task.ts):
+ *   /task <id>                   view
+ *   /task <id> assign <agent>    reassign
+ *   /task <id> sub <title>       add subtask
+ *   /task <id> <status>          change status
  */
 import type { Context } from "grammy";
 import { sql } from "../../memory/db.ts";
