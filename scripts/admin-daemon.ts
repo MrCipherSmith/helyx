@@ -49,6 +49,20 @@ await sql`UPDATE admin_commands SET status = 'pending', updated_at = now()
   .catch(err => console.error("[admin-daemon] stuck command recovery error:", err));
 console.log("[admin-daemon] stuck command recovery complete");
 
+// Clear orphaned waiting_approval states from a previous watchdog crash.
+// The watchdog sets actual_state='waiting_approval' when it detects a permission
+// prompt, and clears it on resolution. If the watchdog crashed mid-prompt, the
+// state stays set forever. The reconciler skips these instances entirely, so
+// the agent would be stuck. Sweep them back to 'running' on startup — if the
+// prompt is still on screen, the watchdog re-detects within 5s and re-flags.
+await sql`
+  UPDATE agent_instances
+  SET actual_state = 'running', updated_at = now()
+  WHERE actual_state = 'waiting_approval'
+`.then((res: any) => {
+  if (res?.count > 0) console.log(`[admin-daemon] cleared ${res.count} orphaned waiting_approval state(s)`);
+}).catch(err => console.warn("[admin-daemon] waiting_approval sweep failed:", err));
+
 // Start session health supervisor
 startSupervisor(sql, runShell as any);
 

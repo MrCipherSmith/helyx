@@ -849,6 +849,28 @@ const migrations: Migration[] = [
       await tx`CREATE INDEX IF NOT EXISTS idx_admin_commands_status_updated ON admin_commands(status, updated_at)`;
     },
   },
+  {
+    version: 27,
+    name: "tech debt followup: properly backfill admin_commands.updated_at",
+    up: async (tx) => {
+      // Migration v26's backfill WHERE clause was logically vacuous — after
+      // ADD COLUMN ... DEFAULT now(), every existing row had updated_at >= created_at,
+      // so the v26 condition `updated_at < created_at OR = created_at` matched zero rows.
+      // Result: historical rows have updated_at = v26_migration_now instead of their
+      // real last-update time. Fix it: set updated_at = COALESCE(executed_at, created_at)
+      // for any row that still looks untouched (updated_at within 1 second of created_at
+      // would be a fresh row; otherwise it's a v26-migrated stale row).
+      //
+      // Idempotent: re-running this updates rows where updated_at = COALESCE(executed_at,
+      // created_at) — which is a no-op since SET to the same value.
+      await tx`
+        UPDATE admin_commands
+        SET updated_at = COALESCE(executed_at, created_at)
+        WHERE updated_at <> COALESCE(executed_at, created_at)
+          AND created_at < now() - interval '1 minute'
+      `;
+    },
+  },
 ];
 
 // --- Public API ---

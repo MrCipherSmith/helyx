@@ -527,8 +527,10 @@ Rules:
     const task = await this.getTask(taskId);
     if (!task) throw new Error(`agent_task ${taskId} not found`);
 
-    // Count prior reassignments via agent_events (every assignment writes a task_assigned).
-    // The first assignment counts as attempt 0; subsequent ones bump the cap.
+    // Count prior task_reassigned events specifically (NOT task_assigned — the
+    // initial createTask assignment fires task_assigned but does not count as a
+    // reassignment). With maxReassignments=2, this allows exactly 2 reassignment
+    // attempts before falling through to the limit_reached terminal path.
     const reassignEvents = await sql`
       SELECT COUNT(*)::int AS count
       FROM agent_events
