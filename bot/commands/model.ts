@@ -3,13 +3,15 @@ import { InlineKeyboard } from "grammy";
 import { sessionManager } from "../../sessions/manager.ts";
 import { routeMessage } from "../../sessions/router.ts";
 
-const CLAUDE_MODELS = [
-  "claude-opus-4-6",
-  "claude-sonnet-4-6",
-  "claude-haiku-4-5-20251001",
-  "claude-opus-4-20250514",
-  "claude-sonnet-4-20250514",
-];
+function getAvailableModels(): string[] {
+  return [
+    "claude-opus-4-6",
+    "claude-sonnet-4-6",
+    "claude-haiku-4-5-20251001",
+    "claude-opus-4-20250514",
+    "claude-sonnet-4-20250514",
+  ];
+}
 
 /**
  * /model — select Claude model for the current active session.
@@ -32,7 +34,7 @@ export async function handleModel(ctx: Context): Promise<void> {
   const currentModel = (route.cliConfig as any).model ?? "default";
 
   const keyboard = new InlineKeyboard();
-  for (const model of CLAUDE_MODELS) {
+  for (const model of getAvailableModels()) {
     const label = model === currentModel ? `✓ ${model}` : model;
     keyboard.text(label, `set_model:${model}`).row();
   }
