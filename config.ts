@@ -25,6 +25,28 @@ const EnvSchema = z.object({
   OPENROUTER_BASE_URL: z.string().default(""),
   OPENAI_BASE_URL: z.string().default(""),
 
+  // Custom OpenAI-compatible provider (e.g., DeepSeek). Aliases DEEPSEEK_*.
+  CUSTOM_OPENAI_API_KEY: z.string().default(""),
+  CUSTOM_OPENAI_BASE_URL: z.string().default("https://api.deepseek.com"),
+  CUSTOM_OPENAI_DEFAULT_MODEL: z.string().default("deepseek-chat"),
+  DEEPSEEK_API_KEY: z.string().default(""),
+  DEEPSEEK_BASE_URL: z.string().default("https://api.deepseek.com"),
+
+  // Agent runtime config (Phase 4 forward-looking)
+  DEFAULT_RUNTIME_DRIVER: z.string().default("tmux"),
+  DEFAULT_CODING_RUNTIME: z.string().default("claude-code"),
+  AGENT_RECONCILE_INTERVAL_MS: z.coerce.number().int().positive().default(5000),
+  AGENT_HEARTBEAT_TIMEOUT_MS: z.coerce.number().int().positive().default(120000),
+  AGENT_RESTART_LIMIT: z.coerce.number().int().min(0).default(3),
+
+  // Role defaults — empty means fall back to env-detected default provider/model.
+  DEFAULT_ORCHESTRATOR_PROVIDER: z.string().default(""),
+  DEFAULT_ORCHESTRATOR_MODEL: z.string().default(""),
+  DEFAULT_PLANNER_PROVIDER: z.string().default(""),
+  DEFAULT_PLANNER_MODEL: z.string().default(""),
+  DEFAULT_REVIEWER_PROVIDER: z.string().default(""),
+  DEFAULT_REVIEWER_MODEL: z.string().default(""),
+
   // Ollama
   OLLAMA_URL: z.string().default("http://localhost:11434"),
   OLLAMA_CHAT_MODEL: z.string().default("qwen3:8b"),
@@ -152,6 +174,29 @@ export const CONFIG = {
   OPENROUTER_API_KEY: env.OPENROUTER_API_KEY || env.OPENAI_API_KEY,
   OPENROUTER_MODEL: env.OPENROUTER_MODEL || env.OPENAI_MODEL || "qwen/qwen3-235b-a22b:free",
   OPENROUTER_BASE_URL: env.OPENROUTER_BASE_URL || env.OPENAI_BASE_URL || "https://openrouter.ai/api/v1",
+
+  // Custom OpenAI-compatible provider (e.g., DeepSeek) — CUSTOM_OPENAI_* aliases DEEPSEEK_*.
+  CUSTOM_OPENAI_API_KEY: env.CUSTOM_OPENAI_API_KEY || env.DEEPSEEK_API_KEY,
+  CUSTOM_OPENAI_BASE_URL:
+    env.CUSTOM_OPENAI_BASE_URL || env.DEEPSEEK_BASE_URL || "https://api.deepseek.com",
+  CUSTOM_OPENAI_DEFAULT_MODEL: env.CUSTOM_OPENAI_DEFAULT_MODEL,
+  DEEPSEEK_API_KEY: env.DEEPSEEK_API_KEY,
+  DEEPSEEK_BASE_URL: env.DEEPSEEK_BASE_URL,
+
+  // Agent runtime config
+  DEFAULT_RUNTIME_DRIVER: env.DEFAULT_RUNTIME_DRIVER,
+  DEFAULT_CODING_RUNTIME: env.DEFAULT_CODING_RUNTIME,
+  AGENT_RECONCILE_INTERVAL_MS: env.AGENT_RECONCILE_INTERVAL_MS,
+  AGENT_HEARTBEAT_TIMEOUT_MS: env.AGENT_HEARTBEAT_TIMEOUT_MS,
+  AGENT_RESTART_LIMIT: env.AGENT_RESTART_LIMIT,
+
+  // Role defaults
+  DEFAULT_ORCHESTRATOR_PROVIDER: env.DEFAULT_ORCHESTRATOR_PROVIDER,
+  DEFAULT_ORCHESTRATOR_MODEL: env.DEFAULT_ORCHESTRATOR_MODEL,
+  DEFAULT_PLANNER_PROVIDER: env.DEFAULT_PLANNER_PROVIDER,
+  DEFAULT_PLANNER_MODEL: env.DEFAULT_PLANNER_MODEL,
+  DEFAULT_REVIEWER_PROVIDER: env.DEFAULT_REVIEWER_PROVIDER,
+  DEFAULT_REVIEWER_MODEL: env.DEFAULT_REVIEWER_MODEL,
 
   // Ollama
   OLLAMA_URL: env.OLLAMA_URL,
