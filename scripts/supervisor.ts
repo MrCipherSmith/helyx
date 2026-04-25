@@ -200,6 +200,38 @@ async function sendAlertWithButtons(
   return result?.result?.message_id ?? null;
 }
 
+// --- Agent layer mirror: set desired_state='running' on the project's default agent_instance ---
+//
+// Additive (Phase 4 Wave 3): the supervisor still drives recovery via admin_commands
+// (triggerProjStart below). This call also sets desired_state='running' on the
+// linked agent_instance so the new agent layer reflects the recovery intent.
+// Failures are logged and ignored — admin_commands path remains the source of truth.
+async function mirrorRecoveryToAgentInstance(
+  sql: postgres.Sql,
+  projectPath: string,
+): Promise<void> {
+  if (!projectPath) return;
+  try {
+    const [row] = await sql`
+      SELECT ai.id
+      FROM agent_instances ai
+      JOIN projects p ON p.id = ai.project_id AND p.default_agent_instance_id = ai.id
+      WHERE p.path = ${projectPath}
+      LIMIT 1
+    ` as any[];
+    const agentInstanceId = row?.id ? Number(row.id) : null;
+    if (!agentInstanceId) {
+      console.log(`[supervisor] no agent_instance linked for ${projectPath}, skipping agent-layer mirror`);
+      return;
+    }
+    // Lazy-import to avoid pulling agent layer into supervisor's hot path eagerly.
+    const { agentManager } = await import("../agents/agent-manager.ts");
+    await agentManager.setDesiredState(agentInstanceId, "running", "supervisor heartbeat recovery");
+  } catch (err: any) {
+    console.error(`[supervisor] agent-layer mirror failed (non-fatal): ${err?.message ?? err}`);
+  }
+}
+
 // --- Insert admin_command for proj_start ---
 
 async function triggerProjStart(
@@ -309,6 +341,10 @@ async function checkHungSessions(sql: postgres.Sql): Promise<void> {
       // 2. Trigger restart
       let actionResult = "no path configured";
       if (projectPath) {
+        // Additive (Phase 4 Wave 3): mirror desired_state='running' on the
+        // linked agent_instance BEFORE the admin_commands insert. Non-fatal.
+        await mirrorRecoveryToAgentInstance(sql, projectPath);
+
         const res = await triggerProjStart(sql, projectPath);
         actionResult = res.result;
         console.log(`[supervisor] proj_start result for ${project}: ${actionResult}`);
