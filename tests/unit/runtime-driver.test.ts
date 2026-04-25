@@ -134,6 +134,71 @@ describe("TmuxDriver", () => {
       );
       expect(calls.some((c) => c.includes("new-session"))).toBe(true);
     });
+
+    test("appends runtimeType to default command", async () => {
+      const { runShell, calls } = makeMockShell(
+        new Map([
+          ["has-session", { exitCode: 0 }],
+          ["new-window", { exitCode: 0, stdout: "1" }],
+        ]),
+      );
+      const driver = makeDriver(runShell);
+      await driver.start(
+        { driver: "tmux" },
+        { projectPath: "/x", projectName: "p", runtimeType: "codex-cli" },
+      );
+      // The send-keys call carries the launcher command; runtimeType is the
+      // 2nd positional arg to run-cli.sh (1st is projectPath).
+      const sendKeys = calls.find(
+        (c) => c.includes("send-keys") && c.includes("/path/to/run-cli.sh"),
+      );
+      expect(sendKeys).toBeDefined();
+      expect(sendKeys).toContain("/path/to/run-cli.sh /x codex-cli");
+    });
+
+    test("defaults runtimeType to claude-code when omitted", async () => {
+      const { runShell, calls } = makeMockShell(
+        new Map([
+          ["has-session", { exitCode: 0 }],
+          ["new-window", { exitCode: 0, stdout: "1" }],
+        ]),
+      );
+      const driver = makeDriver(runShell);
+      await driver.start(
+        { driver: "tmux" },
+        { projectPath: "/x", projectName: "p" }, // no runtimeType
+      );
+      const sendKeys = calls.find(
+        (c) => c.includes("send-keys") && c.includes("/path/to/run-cli.sh"),
+      );
+      expect(sendKeys).toBeDefined();
+      expect(sendKeys).toContain("/path/to/run-cli.sh /x claude-code");
+    });
+
+    test("explicit command override ignores runtimeType", async () => {
+      const { runShell, calls } = makeMockShell(
+        new Map([
+          ["has-session", { exitCode: 0 }],
+          ["new-window", { exitCode: 0, stdout: "1" }],
+        ]),
+      );
+      const driver = makeDriver(runShell);
+      await driver.start(
+        { driver: "tmux" },
+        {
+          projectPath: "/x",
+          projectName: "p",
+          runtimeType: "codex-cli",
+          command: "echo hello",
+        },
+      );
+      const sendKeys = calls.find((c) => c.includes("send-keys"));
+      expect(sendKeys).toBeDefined();
+      expect(sendKeys).toContain("echo hello");
+      // Override path bypasses the launcher entirely — runtimeType is ignored.
+      expect(sendKeys).not.toContain("/path/to/run-cli.sh");
+      expect(sendKeys).not.toContain("codex-cli");
+    });
   });
 
   describe("stop()", () => {
