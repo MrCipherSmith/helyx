@@ -10,6 +10,7 @@ import { RuntimeDriver, RuntimeDriverError } from "./types.ts";
 import type { AgentManager, AgentInstance } from "../agents/agent-manager.ts";
 import { CONFIG } from "../config.ts";
 import { logger } from "../logger.ts";
+import { sql } from "../memory/db.ts";
 
 export class RuntimeManager {
   private readonly drivers = new Map<string, RuntimeDriver>();
@@ -111,29 +112,103 @@ export class RuntimeManager {
     const driver = this.getDriver(driverName);
     const handle = inst.runtimeHandle as any; // RuntimeHandle shape
 
-    // desired=running
+    // desired=paused — no-op (forward compat). Skip BEFORE health probe so paused
+    // instances incur zero driver work.
+    if (inst.desiredState === "paused") return;
+
+    // === Health-first probe ===
+    // Always probe driver.health() before deciding to start. This handles:
+    //   - bootstrapped instances with actual_state='new' but tmux window already exists
+    //   - drift cases where actual_state in DB doesn't match reality
+    let healthState: "running" | "stopped" | "unknown" = "unknown";
+    try {
+      const health = await driver.health(handle);
+      healthState = health.state;
+    } catch (err) {
+      logger.warn({ instanceId: inst.id, err: String(err) }, "health probe threw — treating as unknown");
+    }
+
+    // === desired=running ===
     if (inst.desiredState === "running") {
-      if (inst.actualState === "new" || inst.actualState === "stopped" || inst.actualState === "failed") {
-        // Need to start
+      if (healthState === "running") {
+        // Reality matches desired — just normalize actual_state if needed.
+        if (
+          inst.actualState !== "running" &&
+          inst.actualState !== "idle" &&
+          inst.actualState !== "busy"
+        ) {
+          await agentMgr.setActualState(inst.id, "running", "health probe found running window");
+        } else {
+          await agentMgr.setActualState(inst.id, inst.actualState); // touch lastHealthAt
+        }
+        return;
+      }
+
+      if (healthState === "stopped") {
+        // Need to start. Check restart budget first — if we already gave up, stay there.
         if (inst.restartCount >= restartLimit && inst.actualState === "failed") {
-          logger.warn({ instanceId: inst.id, restartCount: inst.restartCount }, "restart limit reached, leaving in failed state");
+          logger.warn(
+            { instanceId: inst.id, restartCount: inst.restartCount },
+            "restart limit reached, leaving in failed state",
+          );
           return;
         }
+
+        // Resolve projectPath / projectName: prefer handle, fallback to projects table.
+        let projectPath = handle.projectPath as string | undefined;
+        let projectName = handle.projectName as string | undefined;
+        if ((!projectPath || !projectName) && inst.projectId) {
+          try {
+            const rows = (await sql`
+              SELECT path, name FROM projects WHERE id = ${inst.projectId} LIMIT 1
+            `) as any[];
+            const proj = rows[0];
+            if (proj) {
+              projectPath = projectPath ?? proj.path;
+              projectName = projectName ?? proj.name;
+            }
+          } catch (err) {
+            logger.warn(
+              { instanceId: inst.id, projectId: inst.projectId, err: String(err) },
+              "project lookup failed",
+            );
+          }
+        }
+
+        if (!projectPath || !projectName) {
+          logger.warn(
+            { instanceId: inst.id, projectId: inst.projectId },
+            "cannot resolve projectPath/projectName — marking failed",
+          );
+          await agentMgr.setActualState(
+            inst.id,
+            "failed",
+            "cannot resolve projectPath/projectName",
+          );
+          return;
+        }
+
+        // Resolve runtime_type from agent_definition for the start command.
+        let runtimeType: string | undefined;
+        try {
+          const defRows = (await sql`
+            SELECT runtime_type FROM agent_definitions WHERE id = ${inst.definitionId} LIMIT 1
+          `) as any[];
+          runtimeType = defRows[0]?.runtime_type as string | undefined;
+        } catch (err) {
+          logger.warn(
+            { instanceId: inst.id, definitionId: inst.definitionId, err: String(err) },
+            "agent_definition lookup failed",
+          );
+        }
+
         try {
           await agentMgr.setActualState(inst.id, "starting");
           await agentMgr.logEvent({ agentInstanceId: inst.id, eventType: "start_attempt" });
-          // Driver.start needs RuntimeStartConfig — derive from handle/project
-          // For now we cannot start agents that lack projectPath in handle. Tmux driver requires path+name.
-          if (!handle.projectPath || !handle.projectName) {
-            // Bootstrapped instances don't have these. Need a project lookup.
-            // For Wave 2, we skip — Wave 4 will integrate project-service to fill these.
-            logger.warn({ instanceId: inst.id }, "missing projectPath/projectName in runtime_handle — skipping start");
-            await agentMgr.setActualState(inst.id, "failed", "missing projectPath/projectName in runtime_handle");
-            return;
-          }
           const updatedHandle = await driver.start(handle, {
-            projectPath: handle.projectPath,
-            projectName: handle.projectName,
+            projectPath,
+            projectName,
+            runtimeType,
           });
           await agentMgr.updateRuntimeHandle(inst.id, updatedHandle);
           // Don't immediately mark as running — let next tick verify via health
@@ -144,39 +219,14 @@ export class RuntimeManager {
         return;
       }
 
-      // actual ∈ {starting, running, idle, busy} — probe health
-      try {
-        const health = await driver.health(handle);
-        if (health.state === "running") {
-          if (inst.actualState !== "running" && inst.actualState !== "idle" && inst.actualState !== "busy") {
-            await agentMgr.setActualState(inst.id, "running");
-          } else {
-            await agentMgr.setActualState(inst.id, inst.actualState);  // touch lastHealthAt
-          }
-        } else if (health.state === "stopped") {
-          // Unexpected — restart if under limit
-          if (inst.restartCount < restartLimit) {
-            await agentMgr.setActualState(inst.id, "stopped", "health probe found stopped, will restart");
-            await agentMgr.incrementRestartCount(inst.id);
-          } else {
-            await agentMgr.setActualState(inst.id, "failed", "health probe found stopped, restart limit reached");
-          }
-        }
-        // health.state === "unknown" — leave actualState alone
-      } catch (err) {
-        logger.warn({ instanceId: inst.id, err: String(err) }, "health probe failed");
-      }
+      // healthState === "unknown" — leave actualState alone, will retry next tick.
       return;
     }
 
-    // desired=stopped
+    // === desired=stopped ===
     if (inst.desiredState === "stopped") {
-      if (
-        inst.actualState === "running" ||
-        inst.actualState === "idle" ||
-        inst.actualState === "busy" ||
-        inst.actualState === "starting"
-      ) {
+      if (healthState === "running") {
+        // Need to stop.
         try {
           await agentMgr.setActualState(inst.id, "stopping");
           await driver.stop(handle);
@@ -186,11 +236,13 @@ export class RuntimeManager {
         }
         return;
       }
-      // actual ∈ {new, stopped, failed} — already where we want
-      return;
-    }
 
-    // desired=paused — no-op (forward compat)
+      // healthState === "stopped" or "unknown" — already where we want; just normalize.
+      if (inst.actualState !== "stopped" && inst.actualState !== "new") {
+        await agentMgr.setActualState(inst.id, "stopped");
+      }
+      // If already stopped or new — no-op (no need to touch lastHealthAt for terminal state).
+    }
   }
 }
 
