@@ -751,6 +751,68 @@ const migrations: Migration[] = [
       `;
     },
   },
+  {
+    version: 24,
+    name: "phase6: register codex-cli, opencode, deepseek-cli runtimes",
+    up: async (tx) => {
+      // Phase 6 Wave 1 — register three new agent runtime types as templates.
+      // Idempotent: ON CONFLICT (name) DO NOTHING for both model_profiles and agent_definitions.
+
+      // --- DeepSeek model_profile (so deepseek-cli-default can reference it) ---
+      await tx`
+        INSERT INTO model_profiles (name, provider_id, model)
+        SELECT 'deepseek-default', pr.id, COALESCE(pr.default_model, 'deepseek-chat')
+        FROM model_providers pr
+        WHERE pr.name = 'DeepSeek'
+        ON CONFLICT (name) DO NOTHING
+      `;
+
+      // --- codex-cli-default ---
+      await tx`
+        INSERT INTO agent_definitions (name, description, runtime_type, runtime_driver, model_profile_id, capabilities, config)
+        VALUES (
+          'codex-cli-default',
+          'OpenAI Codex CLI agent (npx @openai/codex)',
+          'codex-cli',
+          'tmux',
+          NULL,
+          '["code","review"]'::jsonb,
+          '{"launcher":"npx -y @openai/codex"}'::jsonb
+        )
+        ON CONFLICT (name) DO NOTHING
+      `;
+
+      // --- opencode-default ---
+      await tx`
+        INSERT INTO agent_definitions (name, description, runtime_type, runtime_driver, model_profile_id, capabilities, config)
+        VALUES (
+          'opencode-default',
+          'opencode agent (open-source AI CLI)',
+          'opencode',
+          'tmux',
+          NULL,
+          '["code","review"]'::jsonb,
+          '{"launcher":"opencode"}'::jsonb
+        )
+        ON CONFLICT (name) DO NOTHING
+      `;
+
+      // --- deepseek-cli-default ---
+      await tx`
+        INSERT INTO agent_definitions (name, description, runtime_type, runtime_driver, model_profile_id, capabilities, config)
+        VALUES (
+          'deepseek-cli-default',
+          'DeepSeek REPL wrapper — calls DeepSeek API via Helyx llm client',
+          'deepseek-cli',
+          'tmux',
+          (SELECT id FROM model_profiles WHERE name = 'deepseek-default' LIMIT 1),
+          '["code","review","plan"]'::jsonb,
+          '{"launcher":"bun /home/altsay/bots/helyx/scripts/deepseek-repl.ts","provider":"deepseek"}'::jsonb
+        )
+        ON CONFLICT (name) DO NOTHING
+      `;
+    },
+  },
 ];
 
 // --- Public API ---
