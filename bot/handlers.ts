@@ -72,6 +72,7 @@ import { handleProviders } from "./commands/providers.ts";
 import { handleModels } from "./commands/models.ts";
 import { handleAgents, handleAgentCallback } from "./commands/agents.ts";
 import { handleTasks } from "./commands/tasks.ts";
+import { handleOrchestrate } from "./commands/orchestrate.ts";
 import { handleRemoteControl } from "./commands/remote-control.ts";
 import { handleInterrupt } from "./commands/interrupt.ts";
 import { handleMonitor } from "./commands/monitor.ts";
@@ -140,6 +141,7 @@ export function registerHandlers(b: Bot): void {
   b.command("models", handleModels);
   b.command("agents", handleAgents);
   b.command("tasks", handleTasks);
+  b.command("orchestrate", handleOrchestrate);
 
   // Codex
   b.command("codex_setup", handleCodexSetup);
