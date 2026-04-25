@@ -25,7 +25,7 @@ export interface Session {
   metadata: Record<string, unknown>;
   connectedAt: Date;
   lastActive: Date;
-  cliType: "claude";
+  runtimeType: string;
   cliConfig: Record<string, unknown>;
 }
 
@@ -79,7 +79,7 @@ export class SessionManager {
         ${clientId},
         'active',
         ${JSON.stringify(metadata ?? {})}::jsonb,
-        'claude',
+        'claude-code',
         ${JSON.stringify(cliConfig ?? {})}::jsonb
       )
       ON CONFLICT (client_id) DO UPDATE SET
@@ -117,7 +117,7 @@ export class SessionManager {
         ${'remote-' + projectId},
         'inactive',
         '{}'::jsonb,
-        'claude',
+        'claude-code',
         '{}'::jsonb
       )
       ON CONFLICT (project_id) WHERE source = 'remote' DO UPDATE SET
@@ -201,7 +201,7 @@ export class SessionManager {
       metadata: {},
       connectedAt: new Date(),
       lastActive: new Date(),
-      cliType: "claude",
+      runtimeType: "claude-code",
       cliConfig: {},
     };
     return session;
@@ -359,7 +359,7 @@ export class SessionManager {
       metadata: r.metadata ?? {},
       connectedAt: r.connected_at,
       lastActive: r.last_active,
-      cliType: "claude" as const,
+      runtimeType: r.cli_type === "claude" ? "claude-code" : r.cli_type,
       cliConfig: normalizeCLIConfig(r.cli_config),
     };
   }
