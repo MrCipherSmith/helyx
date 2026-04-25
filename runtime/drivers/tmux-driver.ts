@@ -140,7 +140,13 @@ export class TmuxDriver implements RuntimeDriver {
     // 4. Create the new window AND send-keys in one shell invocation, capturing
     //    the numeric index so subsequent send-keys is not racing the shell's
     //    auto-rename of the window. Matches admin-daemon.ts proj_start exactly.
-    const command = startConfig.command ?? `${runCli} ${startConfig.projectPath}`;
+    //
+    //    `run-cli.sh` accepts a 2nd positional arg `runtime_type` (claude-code,
+    //    codex-cli, opencode, deepseek-cli). Defaults to `claude-code` for
+    //    backward compatibility when the caller does not specify one.
+    const runtimeType = startConfig.runtimeType ?? "claude-code";
+    const command =
+      startConfig.command ?? `${runCli} ${startConfig.projectPath} ${runtimeType}`;
     const escapedCommand = command.replace(/"/g, '\\"');
     const startResult = await this.config.runShell(
       `idx=$(tmux new-window -t ${session} -n "${window}" -c "${startConfig.projectPath}" -P -F "#{window_index}") && ` +

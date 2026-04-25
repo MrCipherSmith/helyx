@@ -41,6 +41,13 @@ export interface RuntimeStartConfig {
   command?: string;
   /** Additional environment variables for the spawned process. */
   env?: Record<string, string>;
+  /**
+   * Helyx runtime type to launch (e.g. `"claude-code"`, `"codex-cli"`,
+   * `"opencode"`, `"deepseek-cli"`). Forwarded as the second positional
+   * argument to `run-cli.sh` when no explicit `command` override is provided.
+   * Defaults to `"claude-code"` for backward compatibility.
+   */
+  runtimeType?: string;
 }
 
 /**
