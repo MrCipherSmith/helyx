@@ -48,14 +48,6 @@ await sql`UPDATE admin_commands SET status = 'pending', updated_at = now()
   .catch(err => console.error("[admin-daemon] stuck command recovery error:", err));
 console.log("[admin-daemon] stuck command recovery complete");
 
-// Start tmux watchdog if bot token is available
-const botToken = process.env.TELEGRAM_BOT_TOKEN;
-if (botToken) {
-  startTmuxWatchdog(sql, botToken);
-} else {
-  console.warn("[admin-daemon] TELEGRAM_BOT_TOKEN not set — tmux watchdog disabled");
-}
-
 // Start session health supervisor
 startSupervisor(sql, runShell as any);
 
@@ -172,6 +164,16 @@ const tmuxDriver = new TmuxDriver({
 
 if (!runtimeManager.hasDriver("tmux")) {
   runtimeManager.registerDriver(tmuxDriver);
+}
+
+// Start tmux watchdog if bot token is available. The watchdog uses the same
+// TmuxDriver instance for pane snapshot operations (capturePane / capturePaneVisible)
+// so the driver's shell-runner injection and naming conventions stay consistent.
+const botToken = process.env.TELEGRAM_BOT_TOKEN;
+if (botToken) {
+  startTmuxWatchdog(sql, botToken, tmuxDriver);
+} else {
+  console.warn("[admin-daemon] TELEGRAM_BOT_TOKEN not set — tmux watchdog disabled");
 }
 
 async function processCommand(row: { id: bigint; command: string; payload: any }): Promise<void> {
