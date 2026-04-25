@@ -830,6 +830,25 @@ const migrations: Migration[] = [
       `;
     },
   },
+  {
+    version: 26,
+    name: "tech debt: add admin_commands.updated_at — fixes long-standing recovery query error",
+    up: async (tx) => {
+      // The stuck-command recovery query in scripts/admin-daemon.ts (line ~47) has
+      // been writing to admin_commands.updated_at since before the refactor, but
+      // the column never existed. Every daemon start logged a 42703 (column does
+      // not exist) error. Add the column with a sensible default and an index on
+      // (status, updated_at) matching the recovery filter.
+      await tx`ALTER TABLE admin_commands ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()`;
+      // Backfill existing rows: prefer executed_at when set, else created_at
+      await tx`
+        UPDATE admin_commands
+        SET updated_at = COALESCE(executed_at, created_at)
+        WHERE updated_at < created_at OR updated_at = created_at
+      `;
+      await tx`CREATE INDEX IF NOT EXISTS idx_admin_commands_status_updated ON admin_commands(status, updated_at)`;
+    },
+  },
 ];
 
 // --- Public API ---
