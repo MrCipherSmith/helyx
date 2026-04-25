@@ -1,14 +1,22 @@
 #!/bin/bash
-# Auto-restart wrapper for Claude Code CLI sessions.
-# Usage: scripts/run-cli.sh /path/to/project
+# Auto-restart wrapper for Helyx CLI sessions (multi-runtime).
+# Usage: scripts/run-cli.sh /path/to/project [runtime_type]
 #
-# Runs claude with channel adapter in a loop, restarting on crash.
+# runtime_type defaults to "claude-code" for backward compatibility.
+# Supported runtimes:
+#   - claude-code  (default) — Claude Code CLI with helyx-channel MCP integration
+#   - codex-cli    — npx @openai/codex
+#   - opencode     — opencode binary
+#   - deepseek-cli — Helyx-internal DeepSeek REPL (scripts/deepseek-repl.ts)
+#
+# Runs the chosen CLI in a loop, restarting on crash.
 # Clean exit (code 0) stops the loop.
 #
 # When running outside tmux, captures terminal output via `script`
 # to /tmp/claude-output-<project>.log for progress monitoring.
 
 PROJECT_DIR="${1:-.}"
+RUNTIME_TYPE="${2:-claude-code}"
 RESTART_DELAY="${RESTART_DELAY:-5}"
 PROJECT_NAME="$(basename "$PROJECT_DIR")"
 LOG_FILE="/tmp/cli-${PROJECT_NAME}.log"
@@ -17,6 +25,7 @@ OUTPUT_FILE="/tmp/claude-output-${PROJECT_NAME}.log"
 cd "$PROJECT_DIR" || { echo "[run-cli] Cannot cd to $PROJECT_DIR"; exit 1; }
 
 echo "[run-cli] Project: $PROJECT_DIR"
+echo "[run-cli] Runtime: $RUNTIME_TYPE"
 echo "[run-cli] Log: $LOG_FILE"
 
 # Load shared API keys from helyx .env (GROQ_API_KEY, OPENAI_API_KEY, etc.)
@@ -46,8 +55,37 @@ if [ -z "$IN_TMUX" ]; then
   echo "[run-cli] Not in tmux — capturing output to $OUTPUT_FILE"
 fi
 
+# Resolve launcher command based on runtime_type.
+# launcher_cmd: the actual shell command to run.
+# needs_claude_confirm: whether to spawn the "Enter to confirm" watcher (Claude only).
+case "$RUNTIME_TYPE" in
+  claude-code)
+    launcher_cmd='CHANNEL_SOURCE=remote claude --dangerously-load-development-channels server:helyx-channel'
+    needs_claude_confirm=1
+    ;;
+  codex-cli)
+    launcher_cmd='npx -y @openai/codex'
+    needs_claude_confirm=0
+    ;;
+  opencode)
+    launcher_cmd='opencode'
+    needs_claude_confirm=0
+    ;;
+  deepseek-cli)
+    # Use the Helyx-internal REPL. PROFILE_NAME defaults to deepseek-default
+    # (created by migration v24); override via MODEL_PROFILE_ID env.
+    launcher_cmd="bun \"$HELYX_DIR/scripts/deepseek-repl.ts\""
+    needs_claude_confirm=0
+    ;;
+  *)
+    echo "[run-cli] ERROR: unknown runtime_type '$RUNTIME_TYPE'"
+    echo "[run-cli] Supported: claude-code, codex-cli, opencode, deepseek-cli"
+    exit 2
+    ;;
+esac
+
 while true; do
-  echo "[run-cli] Starting claude at $(date '+%Y-%m-%d %H:%M:%S')" | tee -a "$LOG_FILE"
+  echo "[run-cli] Starting $RUNTIME_TYPE at $(date '+%Y-%m-%d %H:%M:%S')" | tee -a "$LOG_FILE"
 
   CHANNEL_LOG_FILE="/tmp/channel-${PROJECT_NAME}.log"
   export CHANNEL_LOG_FILE
@@ -55,32 +93,38 @@ while true; do
   if [ -z "$IN_TMUX" ]; then
     # Outside tmux: capture terminal output via script for monitoring
     > "$OUTPUT_FILE"  # truncate
-    script -qfc "CHANNEL_SOURCE=remote claude --dangerously-load-development-channels server:helyx-channel" "$OUTPUT_FILE"
+    script -qfc "$launcher_cmd" "$OUTPUT_FILE"
     EXIT_CODE=$?
   else
-    # Inside tmux: watch for the "development channels" warning prompt and auto-confirm.
-    # Checks immediately, then every 0.5s for up to 60s (120 iterations).
-    # Stops as soon as the prompt is confirmed or Claude moves past it.
-    PANE="${TMUX_PANE}"
-    (
-      for i in $(seq 1 120); do
-        out=$(tmux capture-pane -t "$PANE" -p 2>/dev/null)
-        if echo "$out" | grep -q "Enter to confirm"; then
-          tmux send-keys -t "$PANE" "" Enter
-          break
-        fi
-        # Already past the prompt (running or exited) — stop watching
-        if echo "$out" | grep -q "Listening for channel\|run-cli\] Exited"; then
-          break
-        fi
-        sleep 0.5
-      done
-    ) &
-    CONFIRM_PID=$!
-    CHANNEL_SOURCE=remote claude --dangerously-load-development-channels server:helyx-channel
+    # Inside tmux: optionally watch for Claude's "development channels" warning
+    # prompt and auto-confirm. Only relevant for claude-code runtime.
+    CONFIRM_PID=""
+    if [ "$needs_claude_confirm" = "1" ]; then
+      PANE="${TMUX_PANE}"
+      (
+        for i in $(seq 1 120); do
+          out=$(tmux capture-pane -t "$PANE" -p 2>/dev/null)
+          if echo "$out" | grep -q "Enter to confirm"; then
+            tmux send-keys -t "$PANE" "" Enter
+            break
+          fi
+          # Already past the prompt (running or exited) — stop watching
+          if echo "$out" | grep -q "Listening for channel\|run-cli\] Exited"; then
+            break
+          fi
+          sleep 0.5
+        done
+      ) &
+      CONFIRM_PID=$!
+    fi
+
+    eval "$launcher_cmd"
     EXIT_CODE=$?
-    # Clean up the confirm watcher if Claude exited before it finished
-    kill "$CONFIRM_PID" 2>/dev/null
+
+    # Clean up the confirm watcher if it's still running
+    if [ -n "$CONFIRM_PID" ]; then
+      kill "$CONFIRM_PID" 2>/dev/null
+    fi
   fi
 
   echo "[run-cli] Exited with code $EXIT_CODE at $(date '+%Y-%m-%d %H:%M:%S')" | tee -a "$LOG_FILE"
