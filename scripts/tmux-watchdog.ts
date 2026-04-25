@@ -446,6 +446,25 @@ async function handlePermissionPrompt(
     ON CONFLICT (id) DO NOTHING
   `.catch((e) => console.error("[watchdog] perm insert:", e.message));
 
+  // Mirror state into the agent layer: any agent_instance linked to this session
+  // should now show actual_state='waiting_approval' until the prompt is resolved.
+  // This pauses the reconciler (via runtime-manager guard) so it doesn't kill the
+  // window mid-prompt while the human is responding via Telegram.
+  try {
+    const [linked] = (await sql`
+      SELECT id FROM agent_instances WHERE session_id = ${session.sessionId} LIMIT 1
+    `) as any[];
+    if (linked) {
+      await agentManager.setActualState(
+        Number(linked.id),
+        "waiting_approval",
+        "permission prompt detected by watchdog",
+      );
+    }
+  } catch (err) {
+    console.warn(`[watchdog] failed to mark agent_instance waiting_approval: ${String(err)}`);
+  }
+
   const entry: PendingPermEntry = {
     requestId,
     chatId: chat.chatId,
@@ -458,6 +477,34 @@ async function handlePermissionPrompt(
   pollPermissionResponse(sql, token, windowName, state, entry).catch((e) =>
     console.error("[watchdog] perm poll:", e.message),
   );
+}
+
+/**
+ * Clear `waiting_approval` on any agent_instance linked to this session and
+ * transition it back to 'running'. Called when the permission prompt is resolved
+ * (either via Telegram callback or in-terminal answer or timeout).
+ *
+ * Safe to call unconditionally — checks current state and only acts if the
+ * instance is still in waiting_approval.
+ */
+async function clearWaitingApprovalForSession(
+  sql: postgres.Sql,
+  sessionId: number,
+): Promise<void> {
+  try {
+    const [inst] = (await sql`
+      SELECT id, actual_state FROM agent_instances WHERE session_id = ${sessionId} LIMIT 1
+    `) as any[];
+    if (inst && inst.actual_state === "waiting_approval") {
+      await agentManager.setActualState(
+        Number(inst.id),
+        "running",
+        "permission prompt cleared",
+      );
+    }
+  } catch (err) {
+    console.warn(`[watchdog] failed to clear waiting_approval: ${String(err)}`);
+  }
 }
 
 async function pollPermissionResponse(
@@ -493,6 +540,7 @@ async function pollPermissionResponse(
       entry.resolvedAt = Date.now();
       await sql`UPDATE permission_requests SET archived_at = NOW() WHERE id = ${entry.requestId}`.catch(() => {});
       state.pendingPermission = undefined;
+      await clearWaitingApprovalForSession(sql, state.sessionId);
       return;
     }
 
@@ -511,6 +559,7 @@ async function pollPermissionResponse(
       }
       await sql`UPDATE permission_requests SET archived_at = NOW() WHERE id = ${entry.requestId}`.catch(() => {});
       state.pendingPermission = undefined;
+      await clearWaitingApprovalForSession(sql, state.sessionId);
       return;
     }
 
@@ -527,6 +576,7 @@ async function pollPermissionResponse(
   }
   await sql`UPDATE permission_requests SET archived_at = NOW() WHERE id = ${entry.requestId}`.catch(() => {});
   state.pendingPermission = undefined;
+  await clearWaitingApprovalForSession(sql, state.sessionId);
 }
 
 // ---------------------------------------------------------------------------
