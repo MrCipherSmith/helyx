@@ -307,7 +307,7 @@ export function startMcpHttpServer(bot: Bot | null): ReturnType<typeof createSer
         });
         const parsed = JSON.parse(body);
         const { projectPath, name } = parsed;
-        const cliType = parsed.cliType ?? "claude";
+        const runtimeType = parsed.runtimeType ?? parsed.cliType ?? "claude-code";
         const rawConfig = parsed.cliConfig ?? {};
 
         if (!projectPath || typeof projectPath !== "string") {

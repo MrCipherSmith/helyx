@@ -1542,7 +1542,7 @@ async function internalRegister() {
     const res = await fetch(`http://localhost:${port}/api/sessions/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectPath, cliType: "claude", cliConfig: {}, name }),
+      body: JSON.stringify({ projectPath, runtimeType: "claude-code", cliConfig: {}, name }),
     });
     const data = await res.json() as { ok?: boolean; sessionId?: number; name?: string; error?: string };
     if (res.ok) {
