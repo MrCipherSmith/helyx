@@ -1,3 +1,4 @@
+// Prefer importing from "../llm/client.ts" — this path is being phased out
 import Anthropic from "@anthropic-ai/sdk";
 import { CONFIG } from "../config.ts";
 import { recordApiRequest } from "../utils/stats.ts";
