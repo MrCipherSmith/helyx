@@ -565,7 +565,16 @@ async function fetchActiveSessions(sql: postgres.Sql): Promise<ActiveSession[]> 
 // Chars to filter from pane snapshot (spinner frames, box-drawing, etc.)
 const NOISE_RE = /^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏○◐◑◒◓●▸▹►▻◆◇■□▪▫─│╭╮╰╯┌┐└┘├┤┬┴┼\s]*$/;
 
-/** Write last N meaningful lines of the pane to sessions.pane_snapshot. */
+/** Write last N meaningful lines of the pane to sessions.pane_snapshot.
+ *
+ * Phase 4 / Wave 3 (additive): also mirrors the snapshot into
+ * `agent_instances.last_snapshot` (and bumps `last_snapshot_at`) for any
+ * agent_instance currently linked via `session_id`. The legacy
+ * `sessions.pane_snapshot` write is preserved unchanged — it is still the
+ * source of truth for live status display until the agent layer is fully
+ * reconciled. Failures on the mirror are logged and never block the legacy
+ * write path.
+ */
 async function writePaneSnapshot(sql: postgres.Sql, sessionId: number, lines: string[]): Promise<void> {
   const meaningful = lines
     .map(l => l.trim())
@@ -573,10 +582,26 @@ async function writePaneSnapshot(sql: postgres.Sql, sessionId: number, lines: st
     .slice(-6);
   if (meaningful.length === 0) return;
   const snapshot = meaningful.join("\n");
+
+  // Legacy write — DO NOT remove. Remains the source of truth for now.
   await sql`
     UPDATE sessions SET pane_snapshot = ${snapshot}, pane_snapshot_at = NOW()
     WHERE id = ${sessionId}
   `.catch(() => {});
+
+  // Additive: dual-write into the agent layer if the session is linked.
+  try {
+    const [linked] = await sql`
+      SELECT id FROM agent_instances WHERE session_id = ${sessionId} LIMIT 1
+    ` as any[];
+    const linkedId = linked?.id ? Number(linked.id) : null;
+    if (linkedId) {
+      const { agentManager } = await import("../agents/agent-manager.ts");
+      await agentManager.updateSnapshot(linkedId, snapshot);
+    }
+  } catch (err: any) {
+    console.warn(`[watchdog] agent-layer snapshot mirror failed (non-fatal) sid=${sessionId}: ${err?.message ?? err}`);
+  }
 }
 
 async function pollWindows(
