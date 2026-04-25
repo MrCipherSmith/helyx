@@ -7,3 +7,4 @@ registerAdapter(claudeAdapter);
 export { claudeAdapter };
 export { getAdapter, registerAdapter } from "./types.ts";
 export type { CliAdapter, CliConfig, MessageMeta } from "./types.ts";
+export { ClaudeCodeAdapter } from "./claude.ts";

@@ -2,13 +2,13 @@ import { sql } from "../memory/db.ts";
 import type { CliAdapter, CliConfig, MessageMeta } from "./types.ts";
 
 /**
- * ClaudeAdapter — wraps the existing message_queue INSERT mechanism.
+ * ClaudeCodeAdapter — wraps the existing message_queue INSERT mechanism.
  * channel.ts (stdio process) picks up messages from the queue and
  * delivers them to Claude Code via MCP notifications/claude/channel.
  * The response path is handled autonomously by channel.ts (passive).
  */
-export class ClaudeAdapter implements CliAdapter {
-  readonly type = "claude" as const;
+export class ClaudeCodeAdapter implements CliAdapter {
+  readonly type = "claude-code" as const;
 
   async send(sessionId: number, text: string, meta: MessageMeta): Promise<void> {
     await sql`
@@ -31,4 +31,4 @@ export class ClaudeAdapter implements CliAdapter {
   }
 }
 
-export const claudeAdapter = new ClaudeAdapter();
+export const claudeAdapter = new ClaudeCodeAdapter();
