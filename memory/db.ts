@@ -596,6 +596,161 @@ const migrations: Migration[] = [
       await tx`CREATE INDEX IF NOT EXISTS idx_sessions_model_profile ON sessions(model_profile_id)`;
     },
   },
+  {
+    version: 23,
+    name: "agent_definitions, agent_instances, agent_tasks, agent_events + projects.default_agent_instance_id + bootstrap",
+    up: async (tx) => {
+      // Phase 4 Wave 1 — Agent runtime tables.
+      // Additive only: no NOT NULL on existing columns, no DROP, no RENAME.
+      // After migration, existing tmux windows continue to run unchanged.
+      // The agent_instance rows are observers (desired_state='stopped', actual_state='new'),
+      // not controllers, until someone explicitly calls setDesiredState.
+
+      // --- agent_definitions: TEMPLATE for an agent type ---
+      await tx`
+        CREATE TABLE IF NOT EXISTS agent_definitions (
+          id               SERIAL PRIMARY KEY,
+          name             TEXT NOT NULL UNIQUE,
+          description      TEXT,
+          runtime_type     TEXT NOT NULL,
+          runtime_driver   TEXT NOT NULL DEFAULT 'tmux',
+          model_profile_id INTEGER REFERENCES model_profiles(id) ON DELETE SET NULL,
+          system_prompt    TEXT,
+          capabilities     JSONB NOT NULL DEFAULT '[]'::jsonb,
+          config           JSONB NOT NULL DEFAULT '{}'::jsonb,
+          enabled          BOOLEAN NOT NULL DEFAULT true,
+          created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+      `;
+      await tx`CREATE INDEX IF NOT EXISTS idx_agent_definitions_runtime_type ON agent_definitions(runtime_type)`;
+      await tx`CREATE INDEX IF NOT EXISTS idx_agent_definitions_enabled ON agent_definitions(enabled)`;
+
+      // --- agent_instances: RUNTIME instance, with desired/actual state ---
+      // See R1 in analysis-report.md: this state machine is INTENTIONALLY separate from
+      // sessions/state-machine.ts. A running agent_instance may have zero or one active session.
+      await tx.unsafe(`
+        CREATE TABLE IF NOT EXISTS agent_instances (
+          id               SERIAL PRIMARY KEY,
+          definition_id    INTEGER NOT NULL REFERENCES agent_definitions(id) ON DELETE RESTRICT,
+          project_id       INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+          name             TEXT NOT NULL,
+          desired_state    TEXT NOT NULL DEFAULT 'stopped'
+            CHECK (desired_state IN ('running','stopped','paused')),
+          actual_state     TEXT NOT NULL DEFAULT 'new'
+            CHECK (actual_state IN ('new','starting','running','idle','busy','waiting_approval','stuck','stopping','stopped','failed')),
+          runtime_handle   JSONB NOT NULL DEFAULT '{}'::jsonb,
+          last_snapshot    TEXT,
+          last_snapshot_at TIMESTAMPTZ,
+          last_health_at   TIMESTAMPTZ,
+          restart_count    INTEGER NOT NULL DEFAULT 0,
+          last_restart_at  TIMESTAMPTZ,
+          session_id       INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
+          created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+          UNIQUE (project_id, name)
+        )
+      `);
+      await tx`CREATE INDEX IF NOT EXISTS idx_agent_instances_desired ON agent_instances(desired_state)`;
+      await tx`CREATE INDEX IF NOT EXISTS idx_agent_instances_actual ON agent_instances(actual_state)`;
+      await tx`CREATE INDEX IF NOT EXISTS idx_agent_instances_project ON agent_instances(project_id)`;
+      await tx`CREATE INDEX IF NOT EXISTS idx_agent_instances_session ON agent_instances(session_id)`;
+
+      // --- agent_tasks: work units assigned to an agent ---
+      await tx.unsafe(`
+        CREATE TABLE IF NOT EXISTS agent_tasks (
+          id                SERIAL PRIMARY KEY,
+          agent_instance_id INTEGER REFERENCES agent_instances(id) ON DELETE SET NULL,
+          parent_task_id    INTEGER REFERENCES agent_tasks(id) ON DELETE SET NULL,
+          title             TEXT NOT NULL,
+          description       TEXT,
+          status            TEXT NOT NULL DEFAULT 'pending'
+            CHECK (status IN ('pending','in_progress','blocked','review','done','cancelled','failed')),
+          payload           JSONB NOT NULL DEFAULT '{}'::jsonb,
+          result            JSONB,
+          priority          INTEGER NOT NULL DEFAULT 0,
+          created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+          started_at        TIMESTAMPTZ,
+          completed_at      TIMESTAMPTZ,
+          updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+      `);
+      await tx`CREATE INDEX IF NOT EXISTS idx_agent_tasks_agent ON agent_tasks(agent_instance_id)`;
+      await tx`CREATE INDEX IF NOT EXISTS idx_agent_tasks_status ON agent_tasks(status)`;
+      await tx`CREATE INDEX IF NOT EXISTS idx_agent_tasks_parent ON agent_tasks(parent_task_id)`;
+
+      // --- agent_events: audit trail of state transitions and actions ---
+      await tx`
+        CREATE TABLE IF NOT EXISTS agent_events (
+          id                SERIAL PRIMARY KEY,
+          agent_instance_id INTEGER REFERENCES agent_instances(id) ON DELETE CASCADE,
+          task_id           INTEGER REFERENCES agent_tasks(id) ON DELETE SET NULL,
+          event_type        TEXT NOT NULL,
+          from_state        TEXT,
+          to_state          TEXT,
+          message           TEXT,
+          metadata          JSONB NOT NULL DEFAULT '{}'::jsonb,
+          created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+      `;
+      await tx`CREATE INDEX IF NOT EXISTS idx_agent_events_agent ON agent_events(agent_instance_id)`;
+      await tx`CREATE INDEX IF NOT EXISTS idx_agent_events_task ON agent_events(task_id)`;
+      await tx`CREATE INDEX IF NOT EXISTS idx_agent_events_type ON agent_events(event_type)`;
+      await tx`CREATE INDEX IF NOT EXISTS idx_agent_events_created ON agent_events(created_at)`;
+
+      // --- projects.default_agent_instance_id: backlink to bootstrapped instance ---
+      await tx`
+        ALTER TABLE projects
+        ADD COLUMN IF NOT EXISTS default_agent_instance_id INTEGER
+        REFERENCES agent_instances(id) ON DELETE SET NULL
+      `;
+      await tx`CREATE INDEX IF NOT EXISTS idx_projects_default_agent ON projects(default_agent_instance_id)`;
+
+      // --- Bootstrap: default claude-code agent definition ---
+      await tx`
+        INSERT INTO agent_definitions (name, description, runtime_type, runtime_driver, model_profile_id)
+        SELECT 'claude-code-default',
+               'Default Claude Code agent — one per project',
+               'claude-code',
+               'tmux',
+               (SELECT id FROM model_profiles WHERE name = 'default' LIMIT 1)
+        ON CONFLICT (name) DO NOTHING
+      `;
+
+      // --- Bootstrap: one agent_instance per project ---
+      // See R4 in analysis-report.md: runtime_handle uses tmux_session_name as the window name,
+      // matching what admin-daemon.ts shell calls do today (tmux session "bots", window = project name).
+      await tx`
+        INSERT INTO agent_instances (definition_id, project_id, name, desired_state, actual_state, runtime_handle)
+        SELECT
+          (SELECT id FROM agent_definitions WHERE name = 'claude-code-default' LIMIT 1) AS definition_id,
+          p.id   AS project_id,
+          p.name AS name,
+          'stopped' AS desired_state,
+          'new'     AS actual_state,
+          jsonb_build_object(
+            'driver',      'tmux',
+            'tmuxSession', 'bots',
+            'tmuxWindow',  p.tmux_session_name
+          ) AS runtime_handle
+        FROM projects p
+        WHERE NOT EXISTS (
+          SELECT 1 FROM agent_instances ai
+          WHERE ai.project_id = p.id AND ai.name = p.name
+        )
+      `;
+
+      // --- Backlink: set projects.default_agent_instance_id to the bootstrapped instance ---
+      await tx`
+        UPDATE projects p
+        SET default_agent_instance_id = ai.id
+        FROM agent_instances ai
+        WHERE ai.project_id = p.id
+          AND ai.name = p.name
+          AND p.default_agent_instance_id IS NULL
+      `;
+    },
+  },
 ];
 
 // --- Public API ---
