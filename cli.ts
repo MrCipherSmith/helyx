@@ -124,16 +124,86 @@ async function setup() {
   console.log(`\n  ${c.bold("Helyx Setup")}`);
   console.log(`  ${"─".repeat(40)}\n`);
 
+  // 0. Existing-install guard.
+  //
+  // PRD §16.1 p.8: "Never overwrite secrets without explicit confirmation."
+  // The wizard ends with `Bun.write(.env)` which destroys the existing file
+  // unconditionally. If a user re-runs `helyx setup` (e.g. to pick up new
+  // questions added by a later release), they must NOT silently lose their
+  // bot token, API keys, and DB password.
+  //
+  // Three options:
+  //   1. Re-run wizard, overwrite .env (destructive — we will ask the user
+  //      to type "yes" before doing this; otherwise we abort).
+  //   2. Run only the post-setup steps against the existing .env (no
+  //      questions; just deps install + Docker up + migrations + MCP
+  //      registration).
+  //   3. Cancel.
+  //
+  // For (2), the wizard skips ahead to the install phase. This means new
+  // env vars (e.g. DEFAULT_RUNTIME_DRIVER added in PRD §16.3) are NOT
+  // automatically appended — the user is expected to read .env.example
+  // and merge by hand. A future `helyx setup-agents` (P1) provides a
+  // safer additive path.
+  const envPath = `${BOT_DIR}/.env`;
+  let skipQuestions = false;
+  if (existsSync(envPath)) {
+    console.log(`  ${c.yellow("⚠")} An existing .env was found at ${c.dim(envPath)}\n`);
+    const choice = askChoice("How should we proceed?", [
+      "Run install steps only (preserve existing .env — recommended for upgrades)",
+      "Re-run full wizard (will OVERWRITE .env, all secrets must be re-entered)",
+      "Cancel",
+    ]);
+    if (choice === 2) {
+      console.log(`\n  ${c.dim("Aborted by user.")}`);
+      return;
+    }
+    if (choice === 1) {
+      const confirm = ask(
+        `Type ${c.bold("yes")} to confirm overwriting .env (anything else cancels)`,
+      );
+      if (confirm.trim().toLowerCase() !== "yes") {
+        console.log(`\n  ${c.dim("Aborted — .env preserved.")}`);
+        return;
+      }
+    } else {
+      skipQuestions = true;
+    }
+  }
+
+  // Pre-declare shared vars; both branches (questions vs skip) set them.
+  let useDocker: boolean;
+  let port: string;
+  let dbUrl: string;
+  let botToken: string;
+
+  // Skip-questions path: parse the existing .env, derive the few vars
+  // needed by the post-questions install steps, and jump there.
+  if (skipQuestions) {
+    console.log(`\n  ${c.dim("Using existing .env. Running install steps only…")}\n`);
+    const envContents = readFileSync(envPath, "utf8");
+    const envMap: Record<string, string> = {};
+    for (const line of envContents.split("\n")) {
+      const m = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
+      if (m) envMap[m[1]!] = m[2]!;
+    }
+    // Heuristic: Docker mapping uses port 5433; manual install uses 5432.
+    useDocker = (envMap.DATABASE_URL ?? "").includes(":5433/");
+    port = envMap.PORT ?? "3847";
+    dbUrl = envMap.DATABASE_URL ?? "";
+    botToken = envMap.TELEGRAM_BOT_TOKEN ?? "";
+  } else {
+
   // 1. Deployment type
   const deployIdx = askChoice("Deployment type:", [
     "Docker (recommended — PostgreSQL included)",
     "Manual (PostgreSQL + Ollama already installed)",
   ]);
-  const useDocker = deployIdx === 0;
+  useDocker = deployIdx === 0;
 
   // 2. Telegram
   console.log();
-  const botToken = ask("Telegram Bot Token (from @BotFather)");
+  botToken = ask("Telegram Bot Token (from @BotFather)");
   if (!botToken) {
     console.log(c.red("\n  Bot token is required. Get one from @BotFather in Telegram."));
     return;
@@ -336,13 +406,13 @@ async function setup() {
   const dbPassword = ask("PostgreSQL password", "helyx_secret");
 
   // 6. Port
-  const port = ask("Bot port", "3847");
+  port = ask("Bot port", "3847");
 
   // Generate .env
   console.log();
   step("Creating .env");
 
-  const dbUrl = useDocker
+  dbUrl = useDocker
     ? `postgres://helyx:${dbPassword}@localhost:5433/helyx`
     : `postgres://helyx:${dbPassword}@localhost:5432/helyx`;
 
@@ -406,6 +476,8 @@ async function setup() {
 
   await Bun.write(`${BOT_DIR}/.env`, envLines.join("\n") + "\n");
   done();
+
+  } // end of `if (!skipQuestions)` — install steps below run in BOTH branches
 
   // Ensure required dirs exist with correct ownership (before Docker creates them as root)
   await run(["mkdir", "-p", `${BOT_DIR}/logs`], { silent: true });
@@ -581,6 +653,191 @@ Write as self-contained sentences. Good: \`"Port 3847 serves both MCP and dashbo
   console.log(`    ${c.cyan("helyx bounce")}   — restart all sessions`);
   console.log(`    ${c.cyan("helyx ps")}       — list session status`);
   console.log(`    ${c.cyan("helyx down")}     — stop all sessions\n`);
+}
+
+// --- Runtime doctor ---
+
+/**
+ * Non-destructive prerequisite check. Implements PRD §16.7 `helyx runtime
+ * doctor`: verifies that the runtime drivers and adapters this install
+ * configures (or could configure) actually have their host-side dependencies
+ * available. Never starts/stops services, never mutates files, never calls
+ * paid APIs. Result codes:
+ *   0 — all required checks PASS
+ *   1 — at least one required check FAIL
+ * Optional checks (e.g. ollama) are SKIPPED when not configured; they never
+ * fail the run.
+ */
+async function runtimeDoctor() {
+  console.log(`\n  ${c.bold("Helyx Runtime Doctor")}`);
+  console.log(`  ${"─".repeat(40)}\n`);
+
+  // Read .env to know what's actually configured. Missing .env is itself a
+  // failure mode — the install isn't ready to use.
+  const envPath = `${BOT_DIR}/.env`;
+  const envMap: Record<string, string> = {};
+  let hasEnv = existsSync(envPath);
+  if (hasEnv) {
+    for (const line of readFileSync(envPath, "utf8").split("\n")) {
+      const m = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
+      if (m) envMap[m[1]!] = m[2]!;
+    }
+  }
+
+  type Check = { name: string; result: "PASS" | "FAIL" | "SKIP"; detail: string; required: boolean };
+  const checks: Check[] = [];
+
+  // 1. .env presence — required.
+  checks.push({
+    name: ".env exists",
+    result: hasEnv ? "PASS" : "FAIL",
+    detail: hasEnv ? envPath : `missing — run "helyx setup"`,
+    required: true,
+  });
+
+  // 2. bun — required (we're literally running on it; this is mostly to
+  //    surface the version and confirm `which bun` resolves).
+  const bunWhich = await run(["which", "bun"], { silent: true });
+  const bunVer = await run(["bun", "--version"], { silent: true });
+  checks.push({
+    name: "bun installed",
+    result: bunWhich.ok && bunVer.ok ? "PASS" : "FAIL",
+    detail: bunWhich.ok ? `${bunWhich.output} (v${bunVer.output})` : "not in PATH",
+    required: true,
+  });
+
+  // 3. Docker (only required if DATABASE_URL points to docker-mapped port).
+  const useDocker = (envMap.DATABASE_URL ?? "").includes(":5433/");
+  if (useDocker) {
+    const dockerVer = await run(["docker", "--version"], { silent: true });
+    checks.push({
+      name: "docker available",
+      result: dockerVer.ok ? "PASS" : "FAIL",
+      detail: dockerVer.ok ? dockerVer.output : "not in PATH (Docker deploy requires it)",
+      required: true,
+    });
+    const composeVer = await run(["docker", "compose", "version"], { silent: true });
+    checks.push({
+      name: "docker compose v2",
+      result: composeVer.ok ? "PASS" : "FAIL",
+      detail: composeVer.ok ? composeVer.output : "v2 plugin missing",
+      required: true,
+    });
+  }
+
+  // 4. PostgreSQL reachable on the configured DATABASE_URL.
+  if (envMap.DATABASE_URL) {
+    // postgres.js URL parsing is too heavyweight to import here; do a quick
+    // tcp probe via `bash -c 'cat </dev/tcp/host/port'` portably.
+    const m = (envMap.DATABASE_URL).match(/postgres:\/\/[^@]+@([^:/]+):(\d+)\//);
+    if (m) {
+      const probe = await run(
+        ["bash", "-c", `exec 3<>/dev/tcp/${m[1]}/${m[2]} && echo ok`],
+        { silent: true },
+      );
+      checks.push({
+        name: `postgres reachable (${m[1]}:${m[2]})`,
+        result: probe.ok ? "PASS" : "FAIL",
+        detail: probe.ok ? "tcp open" : "no route — start postgres or check DATABASE_URL",
+        required: true,
+      });
+    }
+  }
+
+  // 5. tmux — required if DEFAULT_RUNTIME_DRIVER is tmux (the default).
+  const driver = envMap.DEFAULT_RUNTIME_DRIVER ?? "tmux";
+  if (driver === "tmux") {
+    const tmuxVer = await run(["tmux", "-V"], { silent: true });
+    checks.push({
+      name: "tmux installed",
+      result: tmuxVer.ok ? "PASS" : "FAIL",
+      detail: tmuxVer.ok ? tmuxVer.output : `not in PATH (DEFAULT_RUNTIME_DRIVER=tmux)`,
+      required: true,
+    });
+  } else {
+    checks.push({
+      name: `runtime driver "${driver}"`,
+      result: "SKIP",
+      detail: "non-tmux driver — no host check yet",
+      required: false,
+    });
+  }
+
+  // 6. claude-code CLI — required if DEFAULT_CODING_RUNTIME is claude-code.
+  const codingRuntime = envMap.DEFAULT_CODING_RUNTIME ?? "claude-code";
+  if (codingRuntime === "claude-code") {
+    const claudeWhich = await run(["which", "claude"], { silent: true });
+    checks.push({
+      name: "claude-code CLI installed",
+      result: claudeWhich.ok ? "PASS" : "FAIL",
+      detail: claudeWhich.ok
+        ? claudeWhich.output
+        : `not in PATH (DEFAULT_CODING_RUNTIME=claude-code) — install: npm install -g @anthropic-ai/claude-code`,
+      required: true,
+    });
+  } else if (codingRuntime === "codex-cli") {
+    const codexWhich = await run(["which", "codex"], { silent: true });
+    checks.push({
+      name: "codex CLI installed",
+      result: codexWhich.ok ? "PASS" : "FAIL",
+      detail: codexWhich.ok ? codexWhich.output : "not in PATH",
+      required: true,
+    });
+  }
+
+  // 7. Ollama — optional. Only check if URL is configured AND points
+  //    somewhere we can reach. Manual installs often skip Ollama entirely.
+  const ollamaUrl = envMap.OLLAMA_URL;
+  if (ollamaUrl) {
+    const probe = await run(
+      ["curl", "-sf", "--max-time", "3", `${ollamaUrl}/api/tags`],
+      { silent: true },
+    );
+    checks.push({
+      name: `ollama reachable (${ollamaUrl})`,
+      result: probe.ok ? "PASS" : "SKIP",
+      detail: probe.ok ? "responding" : "not running — embeddings/summarization disabled",
+      required: false,
+    });
+  }
+
+  // 8. API key presence (no network call — just env presence).
+  const keys = [
+    { env: "TELEGRAM_BOT_TOKEN", label: "Telegram token", required: true },
+    { env: "ANTHROPIC_API_KEY", label: "Anthropic key", required: false },
+    { env: "GROQ_API_KEY", label: "Groq key (voice STT)", required: false },
+  ];
+  for (const k of keys) {
+    const v = envMap[k.env] ?? "";
+    checks.push({
+      name: `${k.label} configured`,
+      result: v ? "PASS" : (k.required ? "FAIL" : "SKIP"),
+      detail: v ? `${k.env}=*** (${v.length} chars)` : `${k.env} not set`,
+      required: k.required,
+    });
+  }
+
+  // Print results.
+  for (const ck of checks) {
+    const tag = ck.result === "PASS"
+      ? c.green("PASS")
+      : ck.result === "FAIL"
+        ? c.red("FAIL")
+        : c.dim("SKIP");
+    const reqMark = ck.required ? " " : c.dim(" (optional)");
+    console.log(`  [${tag}] ${ck.name}${reqMark}`);
+    console.log(`         ${c.dim(ck.detail)}`);
+  }
+
+  const failedRequired = checks.filter((c) => c.result === "FAIL" && c.required);
+  console.log();
+  if (failedRequired.length === 0) {
+    console.log(`  ${c.green(c.bold("All required checks passed."))}\n`);
+    process.exit(0);
+  } else {
+    console.log(`  ${c.red(c.bold(`${failedRequired.length} required check(s) failed.`))} Fix the issues above and re-run.\n`);
+    process.exit(1);
+  }
 }
 
 // --- Stop hook registration ---
@@ -1574,6 +1831,7 @@ function help() {
 
   ${c.bold("Setup:")}
     setup           Interactive installation wizard (server)
+    runtime doctor  Validate prerequisites (bun, docker, pg, tmux, claude-code)
     remote          Connect laptop to a remote bot server
     mcp-register    Re-register MCP servers in Claude Code
 
@@ -1613,6 +1871,19 @@ const command = process.argv[2];
 
 switch (command) {
   case "setup":       await setup(); break;
+  case "runtime": {
+    // Subcommands under `helyx runtime`. Currently only `doctor` (P0b);
+    // `status` and others (PRD §16.7) land in subsequent waves.
+    const sub = process.argv[3];
+    if (sub === "doctor") {
+      await runtimeDoctor();
+    } else {
+      console.log(c.red(`  Unknown runtime subcommand: ${sub ?? "(missing)"}`));
+      console.log(`  Available: ${c.cyan("doctor")}`);
+      process.exit(2);
+    }
+    break;
+  }
   case "remote":      await remote(); break;
   // Bot (Docker service)
   case "bot-start":   await dockerStart(); break;
