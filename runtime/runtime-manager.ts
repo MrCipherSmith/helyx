@@ -9,6 +9,7 @@
 import { RuntimeDriver, RuntimeDriverError } from "./types.ts";
 import type { AgentManager, AgentInstance } from "../agents/agent-manager.ts";
 import { projectService } from "../services/project-service.ts";
+import { sanitizeTmuxWindowName } from "./drivers/tmux-driver.ts";
 import { CONFIG } from "../config.ts";
 import { logger } from "../logger.ts";
 
@@ -110,7 +111,36 @@ export class RuntimeManager {
       return;
     }
     const driver = this.getDriver(driverName);
-    const handle = inst.runtimeHandle as any; // RuntimeHandle shape
+    // P0 fix: postgres.js returns JSONB rows as frozen objects — we
+    // CANNOT mutate inst.runtimeHandle directly. Spread into a fresh
+    // mutable object so we can stamp tmuxWindow below.
+    const handle = { ...(inst.runtimeHandle as any) }; // RuntimeHandle shape
+
+    // Legacy instances persisted with `runtime_handle = "{}"` have never
+    // had their tmux window name stamped. Without that, health() can't
+    // detect the existing tmux window (named after the project), and
+    // reconciler false-positive-respawns it on every tick — wiping out
+    // the user's running claude-code session.
+    //
+    // Pre-stamp `handle.tmuxWindow` from the instance name (sanitized to
+    // strip `:` etc.) before any health/start call. health() then finds
+    // the existing legacy window and reports running — no kill+respawn
+    // tick storm. New instances also get a window name pre-resolved so
+    // start() lands at the right name on the first attempt.
+    //
+    // Driver-specific: this only applies to the tmux driver. PTY/process/
+    // docker drivers (deferred per Phase 5) can populate their own handle
+    // hints via a similar hook.
+    if (driverName === "tmux" && !handle.tmuxWindow && inst.name) {
+      try {
+        handle.tmuxWindow = sanitizeTmuxWindowName(inst.name);
+      } catch (err) {
+        // Sanitize threw — instance name doesn't survive cleanup. Leave
+        // handle empty; health()/start() will fail loudly with a clearer
+        // error than a silent loop.
+        logger.warn({ instanceId: inst.id, name: inst.name, err: String(err) }, "could not derive tmux window name");
+      }
+    }
 
     // desired=paused — no-op (forward compat). Skip BEFORE health probe so paused
     // instances incur zero driver work.
@@ -235,10 +265,20 @@ export class RuntimeManager {
         try {
           await agentMgr.setActualState(inst.id, "starting");
           await agentMgr.logEvent({ agentInstanceId: inst.id, eventType: "start_attempt" });
+          // P0 fix: pass instanceName + AGENT_INSTANCE_ID env so:
+          //   1. tmux-driver creates a UNIQUE per-instance window
+          //      (sanitized name, e.g. `helyx:planner` → `helyx_planner`)
+          //      instead of clobbering or substring-matching the
+          //      project's coder window.
+          //   2. standalone-llm worker receives AGENT_INSTANCE_ID via
+          //      env (worker exits 2 without it). Other runtimes that
+          //      don't read this env ignore it — harmless.
           const updatedHandle = await driver.start(handle, {
             projectPath,
             projectName,
             runtimeType,
+            instanceName: inst.name,
+            env: { AGENT_INSTANCE_ID: String(inst.id) },
           });
           await agentMgr.updateRuntimeHandle(inst.id, updatedHandle);
           // Don't immediately mark as running — let next tick verify via health

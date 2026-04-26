@@ -16,6 +16,7 @@
 import { describe, test, expect } from "bun:test";
 import {
   TmuxDriver,
+  sanitizeTmuxWindowName,
   type ShellRunner,
   type ShellResult,
 } from "../../runtime/drivers/tmux-driver.ts";
@@ -59,6 +60,36 @@ function makeDriver(runShell: ShellRunner): TmuxDriver {
     runShell,
   });
 }
+
+describe("sanitizeTmuxWindowName (P0 fix)", () => {
+  test("PRD §17.4 `:` collapses to `_`", () => {
+    expect(sanitizeTmuxWindowName("helyx:planner")).toBe("helyx_planner");
+    expect(sanitizeTmuxWindowName("altsay:reviewer")).toBe("altsay_reviewer");
+    expect(sanitizeTmuxWindowName("proj:role:subrole")).toBe("proj_role_subrole");
+  });
+
+  test("legacy bare project names round-trip unchanged", () => {
+    expect(sanitizeTmuxWindowName("helyx")).toBe("helyx");
+    expect(sanitizeTmuxWindowName("carlson-bot")).toBe("carlson-bot");
+    expect(sanitizeTmuxWindowName("vantage_frontend")).toBe("vantage_frontend");
+  });
+
+  test("`/` and `.` collapse to `_`", () => {
+    expect(sanitizeTmuxWindowName("a/b/c")).toBe("a_b_c");
+    expect(sanitizeTmuxWindowName("v1.2.3")).toBe("v1_2_3");
+  });
+
+  test("strips remaining invalid characters", () => {
+    expect(sanitizeTmuxWindowName("helyx@planner")).toBe("helyxplanner");
+    expect(sanitizeTmuxWindowName("name with spaces")).toBe("namewithspaces");
+  });
+
+  test("throws on names that sanitize to empty/invalid", () => {
+    expect(() => sanitizeTmuxWindowName("")).toThrow(RuntimeDriverError);
+    expect(() => sanitizeTmuxWindowName("@@@@")).toThrow(/sanitizes to empty/);
+    expect(() => sanitizeTmuxWindowName("   ")).toThrow(RuntimeDriverError);
+  });
+});
 
 describe("TmuxDriver", () => {
   describe("constructor", () => {
@@ -255,6 +286,143 @@ describe("TmuxDriver", () => {
       expect(sendKeys).toContain("\\$HOME");
     });
 
+    test("instanceName drives tmux window name (P0 fix)", async () => {
+      const { runShell, calls } = makeMockShell(
+        new Map([
+          ["has-session", { exitCode: 0 }],
+          ["new-window", { exitCode: 0, stdout: "5" }],
+        ]),
+      );
+      const driver = makeDriver(runShell);
+      const handle = await driver.start(
+        { driver: "tmux" },
+        {
+          projectPath: "/p",
+          projectName: "helyx",
+          instanceName: "helyx:planner",
+          runtimeType: "standalone-llm",
+        },
+      );
+      // Window name must be sanitized — `:` → `_`
+      expect(handle.tmuxWindow).toBe("helyx_planner");
+      // tmux new-window targets the sanitized name, not projectName
+      const newWindow = calls.find((c) => c.includes("new-window"));
+      expect(newWindow).toContain('-n "helyx_planner"');
+      expect(newWindow).not.toContain('-n "helyx" '); // would be the legacy projectName fallback
+    });
+
+    test("falls back to projectName when instanceName is omitted (legacy)", async () => {
+      const { runShell, calls } = makeMockShell(
+        new Map([
+          ["has-session", { exitCode: 0 }],
+          ["new-window", { exitCode: 0, stdout: "1" }],
+        ]),
+      );
+      const driver = makeDriver(runShell);
+      const handle = await driver.start(
+        { driver: "tmux" },
+        { projectPath: "/p", projectName: "carlson-bot" },
+      );
+      expect(handle.tmuxWindow).toBe("carlson-bot");
+      const newWindow = calls.find((c) => c.includes("new-window"));
+      expect(newWindow).toContain('-n "carlson-bot"');
+    });
+
+    test("env vars prepend as single-quoted assignments (P0 — AGENT_INSTANCE_ID propagation)", async () => {
+      const { runShell, calls } = makeMockShell(
+        new Map([
+          ["has-session", { exitCode: 0 }],
+          ["new-window", { exitCode: 0, stdout: "3" }],
+        ]),
+      );
+      const driver = makeDriver(runShell);
+      await driver.start(
+        { driver: "tmux" },
+        {
+          projectPath: "/p",
+          projectName: "helyx",
+          instanceName: "helyx:planner",
+          runtimeType: "standalone-llm",
+          env: { AGENT_INSTANCE_ID: "12" },
+        },
+      );
+      const sendKeys = calls.find((c) => c.includes("send-keys"));
+      // Inline shell env-var assignment: `KEY='value' cmd ...`
+      expect(sendKeys).toContain("AGENT_INSTANCE_ID='12'");
+      expect(sendKeys).toContain("/path/to/run-cli.sh /p standalone-llm");
+    });
+
+    test("env var name with shell metacharacters is rejected", async () => {
+      const { runShell } = makeMockShell(new Map([["has-session", { exitCode: 0 }]]));
+      const driver = makeDriver(runShell);
+      await expect(
+        driver.start(
+          { driver: "tmux" },
+          {
+            projectPath: "/p",
+            projectName: "helyx",
+            env: { "BAD;INJECTION": "value" },
+          },
+        ),
+      ).rejects.toThrow(/invalid env var name/);
+    });
+
+    test("env var values are single-quote-isolated (no shell expansion)", async () => {
+      // Single-quote POSIX-literal: NOTHING inside is shell-expanded
+      // except `'` itself (escaped as `'\''`). So a value containing
+      // `$(rm -rf /)` lands as 4 literal chars, not a subshell call.
+      const { runShell, calls } = makeMockShell(
+        new Map([
+          ["has-session", { exitCode: 0 }],
+          ["new-window", { exitCode: 0, stdout: "1" }],
+        ]),
+      );
+      const driver = makeDriver(runShell);
+      await driver.start(
+        { driver: "tmux" },
+        {
+          projectPath: "/p",
+          projectName: "helyx",
+          instanceName: "helyx:p",
+          runtimeType: "standalone-llm",
+          env: { TOKEN: "boom $(rm -rf /) `id`" },
+        },
+      );
+      const sendKeys = calls.find((c) => c.includes("send-keys"));
+      // The literal $(...) and `...` are inside single quotes; they
+      // round-trip unchanged through shell interpretation. The outer
+      // command is double-quoted for tmux send-keys, so $ and ` get
+      // backslash-escaped at THAT layer.
+      expect(sendKeys).toContain("TOKEN='boom \\$(rm -rf /) \\`id\\`'");
+    });
+
+    test("env var value containing single quote is properly escaped", async () => {
+      const { runShell, calls } = makeMockShell(
+        new Map([
+          ["has-session", { exitCode: 0 }],
+          ["new-window", { exitCode: 0, stdout: "1" }],
+        ]),
+      );
+      const driver = makeDriver(runShell);
+      await driver.start(
+        { driver: "tmux" },
+        {
+          projectPath: "/p",
+          projectName: "helyx",
+          instanceName: "helyx:p",
+          runtimeType: "standalone-llm",
+          env: { GREETING: "it's fine" },
+        },
+      );
+      const sendKeys = calls.find((c) => c.includes("send-keys"));
+      // POSIX single-quote-escape pattern: in source code `'\''` →
+      // 'it'\''s fine'. The `\` gets escapeForDoubleQuotedShell'd ONCE
+      // more for tmux's outer double-quote layer → `\\`. So the final
+      // string the test sees has TWO backslashes (TS source `\\\\` = 2
+      // literal backslashes in the matched substring).
+      expect(sendKeys).toContain("GREETING='it'\\\\''s fine'");
+    });
+
     test("explicit command override ignores runtimeType", async () => {
       const { runShell, calls } = makeMockShell(
         new Map([
@@ -426,7 +594,12 @@ describe("TmuxDriver", () => {
       expect(health.state).toBe("stopped");
     });
 
-    test("returns 'running' (session-level) when no window on handle", async () => {
+    test("returns 'stopped' when no window on handle (P0 fix — was running false-positive)", async () => {
+      // Earlier behavior returned "running" at session level when the
+      // handle had no tmuxWindow, which made every freshly-created
+      // agent_instance immediately false-positive into actual=running
+      // and skip the spawn path. Now: empty handle → stopped → reconciler
+      // proceeds to driver.start().
       const { runShell } = makeMockShell(
         new Map([["has-session", { exitCode: 0 }]]),
       );
@@ -435,7 +608,8 @@ describe("TmuxDriver", () => {
         driver: "tmux",
         tmuxSession: "bots",
       });
-      expect(health.state).toBe("running");
+      expect(health.state).toBe("stopped");
+      expect(health.details?.reason).toBe("handle_has_no_tmuxWindow");
     });
   });
 
