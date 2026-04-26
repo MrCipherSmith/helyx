@@ -181,6 +181,7 @@ async function setup() {
   // seed step (wave-4 — model_profiles) can read them after the questions
   // block closes. The skip-questions branch leaves them at safe defaults
   // and skips the seed step entirely.
+  let createDefaultAgents = false;
   let createPlannerReviewer = false;
   let plannerReviewerProvider = "";
   let plannerReviewerProviderName = "";
@@ -315,7 +316,7 @@ async function setup() {
     "Yes — create a coder agent for every registered project",
     "No — I will configure agents manually via /agents",
   ]);
-  const createDefaultAgents = createDefaultAgentsIdx === 0;
+  createDefaultAgents = createDefaultAgentsIdx === 0;
 
   const createPlannerReviewerIdx = askChoice("Create planner + reviewer agents (use API models, not interactive CLIs)?", [
     "Yes — create planner + reviewer using API models",
@@ -692,6 +693,29 @@ async function setup() {
     seedOk ? done() : fail("seed failed (non-fatal — agents will still start, profile lookup falls back to env)");
   }
 
+  // Seed per-project coder agent_instances (PRD §17.4 — Agent Bootstrap).
+  // Conservative bootstrap: every existing project gets a `<project>:coder`
+  // instance pointing to the claude-code-default definition with
+  // desired_state='stopped'. The user starts them manually via /agents
+  // when they want — never auto-start, never restart existing sessions.
+  if (createDefaultAgents) {
+    step("Bootstrapping per-project coder agents");
+    const bootOk = await seedAgentBootstrap({ dbUrl });
+    bootOk ? done() : fail("bootstrap failed (non-fatal — register agents manually via /agents)");
+  }
+
+  // Inform the user about deferred planner/reviewer instance creation.
+  // PRD §16.4 lists planner/reviewer per-project instances, but these
+  // need a working standalone-llm runtime adapter (PRD §10.4) which is
+  // not yet implemented in run-cli.sh. Creating instances now would
+  // produce broken agents that can never start. So we surface a notice
+  // instead of seeding broken rows.
+  if (createPlannerReviewer) {
+    console.log(`  ${c.dim("Note: planner/reviewer per-project instances are deferred until")}`);
+    console.log(`  ${c.dim("the standalone-llm runtime adapter ships (PRD §10.4). Their")}`);
+    console.log(`  ${c.dim("model_profiles are already seeded — see /providers in Telegram.")}`);
+  }
+
   // Register MCP servers
   step("Registering MCP servers in Claude Code");
   await run(["claude", "mcp", "remove", "helyx", "-s", "user"], { silent: true });
@@ -921,6 +945,84 @@ async function seedModelProfiles(opts: {
     return true;
   } catch (err) {
     console.error(c.red(`  seed error: ${err instanceof Error ? err.message : String(err)}`));
+    return false;
+  } finally {
+    await sql.end({ timeout: 2 });
+  }
+}
+
+// --- Agent bootstrap (wave-5, PRD §17.4) ---
+
+/**
+ * Seed per-project coder agent_instances. For every project in the
+ * `projects` table that has no default_agent_instance_id yet, insert one
+ * agent_instance row pointing at claude-code-default with desired_state
+ * 'stopped' and link it as the project's default.
+ *
+ * The "conservative" bootstrap from PRD §17.4: never auto-start, never
+ * touch existing sessions, never reassign. Idempotent on the
+ * (project_id, name) unique constraint — re-running is a no-op for
+ * already-bootstrapped projects.
+ *
+ * Also bumps claude-code-default.capabilities to ["code"] so the
+ * orchestrator's capability-based selection (handleFailure / selectAgent)
+ * can find it when reassigning.
+ *
+ * Returns false on DB error so the caller can warn but continue.
+ */
+async function seedAgentBootstrap(opts: { dbUrl: string }): Promise<boolean> {
+  const postgres = (await import("postgres")).default;
+  const sql = postgres(opts.dbUrl, { max: 2, onnotice: () => {} });
+  try {
+    // Update claude-code-default capabilities so handleFailure can match it.
+    // The migration v24 left capabilities=[] for claude-code-default; here
+    // we promote it to a "code"-capable agent so it participates in
+    // capability-based reassignment.
+    await sql`
+      UPDATE agent_definitions
+      SET capabilities = '["code"]'::jsonb, updated_at = now()
+      WHERE name = 'claude-code-default' AND capabilities = '[]'::jsonb
+    `;
+
+    // Find the claude-code-default definition id.
+    const defRows = (await sql`
+      SELECT id FROM agent_definitions WHERE name = 'claude-code-default' LIMIT 1
+    `) as { id: number }[];
+    if (!defRows[0]) {
+      console.error(c.red("  claude-code-default definition not found — skipping bootstrap"));
+      return false;
+    }
+    const definitionId = Number(defRows[0].id);
+
+    // Iterate projects without a default agent.
+    const projects = (await sql`
+      SELECT id, name FROM projects WHERE default_agent_instance_id IS NULL
+    `) as { id: number; name: string }[];
+
+    let created = 0;
+    for (const proj of projects) {
+      const instanceName = `${proj.name}:coder`;
+      // Insert with ON CONFLICT (project_id, name) — guards against re-run
+      // races where an instance was created between our SELECT and INSERT.
+      const ins = (await sql`
+        INSERT INTO agent_instances (definition_id, project_id, name, desired_state, actual_state)
+        VALUES (${definitionId}, ${proj.id}, ${instanceName}, 'stopped', 'new')
+        ON CONFLICT (project_id, name) DO NOTHING
+        RETURNING id
+      `) as { id: number }[];
+      const instanceId = ins[0]?.id;
+      if (instanceId) {
+        await sql`
+          UPDATE projects SET default_agent_instance_id = ${instanceId} WHERE id = ${proj.id}
+        `;
+        created++;
+      }
+    }
+
+    console.log(c.dim(`    ${created} new instance(s) created across ${projects.length} project(s)`));
+    return true;
+  } catch (err) {
+    console.error(c.red(`  bootstrap error: ${err instanceof Error ? err.message : String(err)}`));
     return false;
   } finally {
     await sql.end({ timeout: 2 });
