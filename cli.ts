@@ -951,6 +951,170 @@ async function seedModelProfiles(opts: {
   }
 }
 
+// --- helyx setup-agents (wave-5, PRD §17.7) ---
+
+/**
+ * Re-run only the agent-runtime portion of `helyx setup`. Useful when:
+ *   - User upgrades to a release that adds new agent-runtime questions
+ *   - User wants to swap planner/reviewer provider without re-touching
+ *     Telegram/voice/TTS settings
+ *   - Operator added new projects and wants to bootstrap their agents
+ *
+ * Requires .env to exist (i.e. `helyx setup` was already run). Reads the
+ * existing values, prompts ONLY the wave-3 questions, updates the
+ * corresponding env keys in-place (preserving everything else), then runs
+ * seedModelProfiles + seedAgentBootstrap.
+ *
+ * Never overwrites secrets the user did not re-enter — when the wizard
+ * receives an empty answer for an existing key, the previous value is
+ * kept. This is the same default-honoring pattern as the ask() helper.
+ */
+async function setupAgents() {
+  console.log(`\n  ${c.bold("Helyx — Agent Setup (re-run)")}`);
+  console.log(`  ${"─".repeat(40)}\n`);
+
+  const envPath = `${BOT_DIR}/.env`;
+  if (!existsSync(envPath)) {
+    console.log(c.red("  .env not found. Run 'helyx setup' first."));
+    process.exit(1);
+  }
+
+  // Parse existing .env into a map; preserve original line order so the
+  // updated file does not reshuffle unrelated keys.
+  const envContents = readFileSync(envPath, "utf8");
+  const lines = envContents.split("\n");
+  const envMap: Record<string, string> = {};
+  for (const line of lines) {
+    const m = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
+    if (m) envMap[m[1]!] = m[2]!;
+  }
+
+  const dbUrl = envMap.DATABASE_URL;
+  if (!dbUrl) {
+    console.log(c.red("  DATABASE_URL not set in .env"));
+    process.exit(1);
+  }
+
+  // Wave-3 questions, with current .env values as defaults so re-runs
+  // can simply press Enter to keep settings unchanged.
+  const driverIdx = askChoice(
+    `Default runtime driver (current: ${envMap.DEFAULT_RUNTIME_DRIVER ?? "tmux"}):`,
+    [
+      "tmux (recommended)",
+      "pty (experimental)",
+      "docker (sandboxed)",
+    ],
+  );
+  const driver = ["tmux", "pty", "docker"][driverIdx] ?? "tmux";
+
+  const codingIdx = askChoice(
+    `Default coding runtime (current: ${envMap.DEFAULT_CODING_RUNTIME ?? "claude-code"}):`,
+    [
+      "claude-code",
+      "opencode",
+      "codex-cli",
+      "gemini-cli",
+      "None — configure later",
+    ],
+  );
+  const coding = ["claude-code", "opencode", "codex-cli", "gemini-cli", "none"][codingIdx] ?? "claude-code";
+
+  const bootIdx = askChoice("Bootstrap per-project coder agents now?", [
+    "Yes — create coder agent for every project without one",
+    "No",
+  ]);
+  const wantBootstrap = bootIdx === 0;
+
+  const apiIdx = askChoice("Configure planner / reviewer / orchestrator (API-based)?", [
+    "Yes — pick a provider",
+    "No — keep current settings",
+  ]);
+
+  // Persist the two basic agent-runtime settings.
+  const updates: Record<string, string> = {
+    DEFAULT_RUNTIME_DRIVER: driver,
+    DEFAULT_CODING_RUNTIME: coding,
+  };
+
+  let didSeedProfiles = false;
+  if (apiIdx === 0) {
+    const provIdx = askChoice("API provider:", [
+      "OpenAI-compatible (DeepSeek, etc.)",
+      "OpenRouter",
+      "Anthropic",
+      "Google AI",
+      "Ollama",
+    ]);
+    const providerType = ["custom-openai", "openrouter", "anthropic", "google-ai", "ollama"][provIdx]!;
+    const providerName = ["DeepSeek", "OpenRouter", "Anthropic", "Google AI", "Ollama"][provIdx]!;
+    const providerBaseUrl = [
+      "https://api.deepseek.com",
+      "https://openrouter.ai/api/v1",
+      "https://api.anthropic.com",
+      "https://generativelanguage.googleapis.com/v1",
+      "http://localhost:11434",
+    ][provIdx]!;
+    const providerKeyEnv = ["DEEPSEEK_API_KEY", "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_AI_API_KEY", ""][provIdx]!;
+    const apiKeyDefault = providerKeyEnv ? envMap[providerKeyEnv] ?? "" : "";
+    const apiKey = providerKeyEnv ? ask(`${providerKeyEnv} (Enter to keep existing)`, apiKeyDefault) : "";
+    const planner = ask("Planner model", envMap.DEFAULT_PLANNER_MODEL ?? "deepseek-chat");
+    const reviewer = ask("Reviewer model", envMap.DEFAULT_REVIEWER_MODEL ?? "deepseek-chat");
+    const orch = ask("Orchestrator model", envMap.DEFAULT_ORCHESTRATOR_MODEL ?? "deepseek-chat");
+
+    updates.DEFAULT_PLANNER_PROVIDER = providerType;
+    updates.DEFAULT_PLANNER_MODEL = planner;
+    updates.DEFAULT_REVIEWER_PROVIDER = providerType;
+    updates.DEFAULT_REVIEWER_MODEL = reviewer;
+    updates.DEFAULT_ORCHESTRATOR_PROVIDER = providerType;
+    updates.DEFAULT_ORCHESTRATOR_MODEL = orch;
+    if (providerKeyEnv && apiKey) updates[providerKeyEnv] = apiKey;
+    if (providerType === "custom-openai" && apiKey) {
+      updates.CUSTOM_OPENAI_API_KEY = apiKey;
+      updates.CUSTOM_OPENAI_BASE_URL = providerBaseUrl;
+      updates.CUSTOM_OPENAI_DEFAULT_MODEL = planner;
+    }
+
+    step("Seeding model_profiles");
+    didSeedProfiles = await seedModelProfiles({
+      providerType,
+      providerName,
+      providerBaseUrl,
+      providerKeyEnv,
+      plannerModel: planner,
+      reviewerModel: reviewer,
+      orchestratorModel: orch,
+      dbUrl,
+    });
+    didSeedProfiles ? done() : fail("seed failed (check DB)");
+  }
+
+  // Apply updates to .env in-place: replace existing key=value lines,
+  // append new keys at end. Preserves comment lines and blank lines.
+  const updatedKeys = new Set<string>();
+  const newLines = lines.map((line) => {
+    const m = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
+    if (m && Object.prototype.hasOwnProperty.call(updates, m[1]!)) {
+      updatedKeys.add(m[1]!);
+      return `${m[1]}=${updates[m[1]!]!}`;
+    }
+    return line;
+  });
+  for (const [k, v] of Object.entries(updates)) {
+    if (!updatedKeys.has(k)) newLines.push(`${k}=${v}`);
+  }
+  step("Updating .env");
+  await Bun.write(envPath, newLines.join("\n"));
+  done();
+
+  if (wantBootstrap) {
+    step("Bootstrapping per-project coder agents");
+    const ok = await seedAgentBootstrap({ dbUrl });
+    ok ? done() : fail("bootstrap failed");
+  }
+
+  console.log(`\n  ${c.green(c.bold("Agent setup complete."))}\n`);
+}
+
 // --- Agent bootstrap (wave-5, PRD §17.4) ---
 
 /**
@@ -2205,6 +2369,7 @@ function help() {
 
   ${c.bold("Setup:")}
     setup           Interactive installation wizard (server)
+    setup-agents    Re-run only the agent-runtime portion of setup
     runtime doctor  Validate prerequisites (bun, docker, pg, tmux, claude-code)
     remote          Connect laptop to a remote bot server
     mcp-register    Re-register MCP servers in Claude Code
@@ -2245,6 +2410,7 @@ const command = process.argv[2];
 
 switch (command) {
   case "setup":       await setup(); break;
+  case "setup-agents": await setupAgents(); break;
   case "runtime": {
     // Subcommands under `helyx runtime`. Currently only `doctor` (P0b);
     // `status` and others (PRD §16.7) land in subsequent waves.
