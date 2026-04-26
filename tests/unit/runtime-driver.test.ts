@@ -246,6 +246,55 @@ describe("TmuxDriver", () => {
       expect(sendKeys).not.toContain("/path/to/run-cli.sh");
       expect(sendKeys).not.toContain("codex-cli");
     });
+
+    test("command override skips runtimeType whitelist (custom-launcher path)", async () => {
+      // When the caller supplies a custom command, runtimeType is irrelevant
+      // (it's never interpolated into the shell). Whitelist must NOT fire,
+      // otherwise valid custom-launcher use cases get spurious rejections.
+      const { runShell, calls } = makeMockShell(
+        new Map([
+          ["has-session", { exitCode: 0 }],
+          ["new-window", { exitCode: 0, stdout: "1" }],
+        ]),
+      );
+      const driver = makeDriver(runShell);
+      await expect(
+        driver.start(
+          { driver: "tmux" },
+          {
+            projectPath: "/x",
+            projectName: "p",
+            runtimeType: "future-runtime-not-yet-whitelisted",
+            command: "/usr/local/bin/my-custom-launcher",
+          },
+        ),
+      ).resolves.toBeDefined();
+      const sendKeys = calls.find((c) => c.includes("send-keys"));
+      expect(sendKeys).toContain("my-custom-launcher");
+    });
+
+    test("escapes backslash in command override (start path)", async () => {
+      const { runShell, calls } = makeMockShell(
+        new Map([
+          ["has-session", { exitCode: 0 }],
+          ["new-window", { exitCode: 0, stdout: "1" }],
+        ]),
+      );
+      const driver = makeDriver(runShell);
+      await driver.start(
+        { driver: "tmux" },
+        {
+          projectPath: "/x",
+          projectName: "p",
+          command: "echo \\path\\to\\file",
+        },
+      );
+      const sendKeys = calls.find((c) => c.includes("send-keys"));
+      expect(sendKeys).toBeDefined();
+      // Each `\` must become `\\` in the shell string. TS source `\\\\` is two
+      // runtime backslashes; the driver doubles them to four (= `\\\\` source).
+      expect(sendKeys).toContain("\\\\path\\\\to\\\\file");
+    });
   });
 
   describe("stop()", () => {
@@ -526,6 +575,37 @@ describe("TmuxDriver", () => {
           tmuxWindow: "x;y",
         }),
       ).rejects.toThrow(/invalid/i);
+    });
+
+    test("rejects non-integer lines value (shell injection guard)", async () => {
+      // `lines` is typed `number | undefined`, but at runtime the value can
+      // come from a JSON payload or coerced caller. A value like "100; reboot"
+      // would interpolate raw into the shell — guard must reject it.
+      const { runShell } = makeMockShell(new Map());
+      const driver = makeDriver(runShell);
+      await expect(
+        driver.snapshot(
+          { driver: "tmux", tmuxSession: "bots", tmuxWindow: "x" },
+          { lines: "100; reboot" as unknown as number },
+        ),
+      ).rejects.toThrow(/invalid lines/);
+    });
+
+    test("rejects out-of-range lines value", async () => {
+      const { runShell } = makeMockShell(new Map());
+      const driver = makeDriver(runShell);
+      await expect(
+        driver.snapshot(
+          { driver: "tmux", tmuxSession: "bots", tmuxWindow: "x" },
+          { lines: 0 },
+        ),
+      ).rejects.toThrow(/invalid lines/);
+      await expect(
+        driver.snapshot(
+          { driver: "tmux", tmuxSession: "bots", tmuxWindow: "x" },
+          { lines: 1_000_000 },
+        ),
+      ).rejects.toThrow(/invalid lines/);
     });
   });
 });

@@ -58,12 +58,16 @@ const NAME_REGEX = /^[a-zA-Z0-9_-]+$/;
  * argument. Used to reject shell-injection attempts via runtime_type, which
  * is otherwise sourced from agent_definitions.runtime_type in the DB.
  */
-const SUPPORTED_RUNTIME_TYPES = new Set([
+type SupportedRuntimeType = "claude-code" | "codex-cli" | "opencode" | "deepseek-cli";
+const SUPPORTED_RUNTIME_TYPES = new Set<SupportedRuntimeType>([
   "claude-code",
   "codex-cli",
   "opencode",
   "deepseek-cli",
-] as const);
+]);
+function isSupportedRuntimeType(s: string): s is SupportedRuntimeType {
+  return (SUPPORTED_RUNTIME_TYPES as Set<string>).has(s);
+}
 
 /**
  * Escape a string for safe interpolation inside double-quoted shell command.
@@ -150,18 +154,6 @@ export class TmuxDriver implements RuntimeDriver {
     const window = handle.tmuxWindow ?? startConfig.projectName;
     const runCli = this.config.runCliPath;
 
-    // Validate runtime_type BEFORE building the command — this value is
-    // sourced from agent_definitions.runtime_type in the DB and would
-    // otherwise interpolate unescaped into a shell command.
-    const runtimeType = startConfig.runtimeType ?? "claude-code";
-    if (!SUPPORTED_RUNTIME_TYPES.has(runtimeType as never)) {
-      throw new RuntimeDriverError(
-        "tmux",
-        "validation",
-        `invalid runtimeType: ${runtimeType}. Supported: ${[...SUPPORTED_RUNTIME_TYPES].join(", ")}`,
-      );
-    }
-
     // 2. Ensure tmux session exists. `has-session` exits non-zero when missing.
     //
     // BEHAVIOR DIVERGENCE FROM OLD admin-daemon proj_start: when the bots session
@@ -197,11 +189,29 @@ export class TmuxDriver implements RuntimeDriver {
     //    the numeric index so subsequent send-keys is not racing the shell's
     //    auto-rename of the window. Matches admin-daemon.ts proj_start exactly.
     //
-    //    `run-cli.sh` accepts a 2nd positional arg `runtime_type` (claude-code,
-    //    codex-cli, opencode, deepseek-cli). Defaults to `claude-code` for
-    //    backward compatibility when the caller does not specify one.
-    const command =
-      startConfig.command ?? `${runCli} ${startConfig.projectPath} ${runtimeType}`;
+    //    Build the launch command. Two paths:
+    //      a) caller supplied `command` override → use as-is. The override is
+    //         ADVANCED and the caller is responsible for its content (see
+    //         RuntimeStartConfig.command JSDoc). We intentionally skip the
+    //         runtimeType whitelist here so a custom launcher is not blocked
+    //         by an unsupported runtimeType label.
+    //      b) no override → build `<runCli> <projectPath> <runtimeType>` and
+    //         validate runtimeType against the whitelist before interpolation
+    //         (the value comes from agent_definitions.runtime_type in the DB).
+    let command: string;
+    if (startConfig.command) {
+      command = startConfig.command;
+    } else {
+      const runtimeType = startConfig.runtimeType ?? "claude-code";
+      if (!isSupportedRuntimeType(runtimeType)) {
+        throw new RuntimeDriverError(
+          "tmux",
+          "validation",
+          `invalid runtimeType: ${runtimeType}. Supported: ${[...SUPPORTED_RUNTIME_TYPES].join(", ")}`,
+        );
+      }
+      command = `${runCli} ${startConfig.projectPath} ${runtimeType}`;
+    }
     const escapedCommand = escapeForDoubleQuotedShell(command);
     const startResult = await this.config.runShell(
       `idx=$(tmux new-window -t "${session}" -n "${window}" -c "${startConfig.projectPath}" -P -F "#{window_index}") && ` +
@@ -495,10 +505,25 @@ export class TmuxDriver implements RuntimeDriver {
     }
     const target = `${session}:${window}`;
 
+    // Validate lines BEFORE interpolation — the type system declares it
+    // `number | undefined`, but at runtime the value can come from a JSON
+    // payload (e.g. tool args) where TS types are not enforced. A non-integer
+    // or out-of-range value would interpolate into the shell command unchecked.
     const useVisibleOnly = options?.visibleOnly === true || options?.lines === undefined;
-    const cmd = useVisibleOnly
-      ? `tmux capture-pane -t "${target}" -p`
-      : `tmux capture-pane -t "${target}" -p -S -${options!.lines}`;
+    let cmd: string;
+    if (useVisibleOnly) {
+      cmd = `tmux capture-pane -t "${target}" -p`;
+    } else {
+      const lines = options!.lines;
+      if (!Number.isInteger(lines) || (lines as number) < 1 || (lines as number) > 100000) {
+        throw new RuntimeDriverError(
+          "tmux",
+          "validation",
+          `invalid lines value: ${lines} (must be integer 1..100000)`,
+        );
+      }
+      cmd = `tmux capture-pane -t "${target}" -p -S -${lines}`;
+    }
 
     const result = await this.config.runShell(cmd);
     if (result.exitCode !== 0) {

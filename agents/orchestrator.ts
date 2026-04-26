@@ -559,7 +559,12 @@ Rules:
     // All DB ops use the `tx` handle — we cannot delegate to setStatus /
     // assignTask helpers here because those open their own sql.begin and
     // would deadlock or break atomicity.
-    const result = await sql.begin(async (tx) => {
+    //
+    // The transaction body returns a richer object than HandleFailureResult
+    // — it carries `previousAgentId` (captured pre-UPDATE) so the post-tx
+    // logger can report the real "before" agent. The public return strips
+    // that field via the cast below.
+    const txResult = await sql.begin(async (tx) => {
       // 1. Lock the task row for the duration of the transaction.
       const taskRows = (await tx`
         SELECT * FROM agent_tasks WHERE id = ${taskId} FOR UPDATE
@@ -603,6 +608,7 @@ Rules:
           outcome: "limit_reached" as const,
           newAgentInstanceId: null as number | null,
           attempts,
+          previousAgentId: task.agentInstanceId,
         };
       }
 
@@ -652,6 +658,7 @@ Rules:
           outcome: "no_alternative" as const,
           newAgentInstanceId: null as number | null,
           attempts,
+          previousAgentId: task.agentInstanceId,
         };
       }
 
@@ -699,6 +706,7 @@ Rules:
           outcome: "no_alternative" as const,
           newAgentInstanceId: null as number | null,
           attempts,
+          previousAgentId: task.agentInstanceId,
         };
       }
 
@@ -758,22 +766,26 @@ Rules:
         outcome: "reassigned" as const,
         newAgentInstanceId: newAgentId as number | null,
         attempts: attempts + 1,
+        previousAgentId: task.agentInstanceId,
       };
     });
 
-    if (result.outcome === "reassigned") {
+    if (txResult.outcome === "reassigned") {
       logger.info(
         {
           taskId,
-          previousAgentId: result.task.agentInstanceId, // already the new id post-tx
-          newAgentId: result.newAgentInstanceId,
-          attempts: result.attempts,
+          previousAgentId: txResult.previousAgentId,
+          newAgentId: txResult.newAgentInstanceId,
+          attempts: txResult.attempts,
           reason,
         },
         "task reassigned after failure",
       );
     }
 
+    // Strip the internal `previousAgentId` field — it is logging-only metadata
+    // and is not part of the public HandleFailureResult contract.
+    const { previousAgentId: _previousAgentId, ...result } = txResult;
     return result as HandleFailureResult;
   }
 }
