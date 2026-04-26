@@ -1,5 +1,53 @@
 # Changelog
 
+## v1.36.0
+
+### test: integration tests lock in jsonb capability routing fix
+
+`tests/unit/capability-routing.integration.test.ts` — 8 new tests against a
+live DB exercise `orchestrator.selectAgent` and `orchestrator.handleFailure`
+end-to-end with seeded `agent_definitions`. Reverting either call site to
+the broken `@> ${json}::jsonb` form fails 5/8 of the suite. Skipped via
+`test.skipIf(!HAS_DB)` when DATABASE_URL is unset.
+
+Coverage:
+- selectAgent: subset match, exact match, missing-cap returns null, mixed
+  match+missing returns null, agent with unrelated cap excluded.
+- handleFailure: reassigns to alternative, no_alternative when callers
+  exclude every matching agent, payload.required_capabilities fallback
+  path (when task has no failing agent_instance_id).
+
+### feat: startup state-recovery sweeps for daemon-crash resilience
+
+`runtime/state-recovery.ts` — new module exporting `sweepStaleTransientStates`,
+`sweepOrphanedWaitingApproval`, `runStartupSweeps`. Replaces the inline SQL
+that previously ran in `scripts/admin-daemon.ts`.
+
+The reconciler sets `actual_state` to `'starting'` / `'stopping'` BEFORE
+calling `driver.start()` / `driver.stop()`. A daemon crash mid-call leaves
+the row in a transient state forever — the reconciler's branching logic
+treats `'starting'` as in-flight and never spontaneously re-evaluates it.
+The new sweep resets such rows to `'stopped'` if `last_health_at` is older
+than 60s (or NULL), so the next reconcile pass probes health and either
+flips to `'running'` (if the tmux window survived the crash) or calls
+`driver.start` again (subject to the per-instance restart budget).
+
+The 60-second staleness window protects the *current* daemon's in-flight
+transitions from accidental reset — tick (~5s) plus driver.start latency
+fits comfortably inside it.
+
+`tests/unit/state-recovery.integration.test.ts` — 10 tests against a live
+DB:
+- Stale `'starting'` / `'stopping'` reset to `'stopped'`.
+- NULL `last_health_at` treated as stale.
+- Fresh `'starting'` (within window) NOT touched.
+- `'running'` rows untouched regardless of staleness.
+- Custom `staleSeconds` threshold respected.
+- Orphaned `'waiting_approval'` flips to `'running'` (no staleness bound).
+- `runStartupSweeps` returns counts and is idempotent.
+
+Closes the deferred follow-up filed at the end of v1.35.0.
+
 ## v1.35.0
 
 ### feat: tmux-driver instance-aware window naming + AGENT_INSTANCE_ID env propagation (P0 architecture)
