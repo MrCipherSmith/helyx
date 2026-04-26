@@ -1,5 +1,103 @@
 # Changelog
 
+## v1.33.0
+
+### feat: agent runtime refactor — provider-agnostic agent control plane
+
+PR #7 — 91 commits, +13K LOC, 66 files. Refactors Helyx from a Claude/tmux-centric
+Telegram control panel into a provider-agnostic agent control plane. ~98% of the
+`agent-runtime-refactor-2026-04-25` PRD shipped (see `docs/requirements/`).
+
+**Provider-agnostic agent runtime (PRD §10.4, §9.4)**
+- 5 runtime adapters now whitelisted: `claude-code`, `codex-cli`, `opencode`,
+  `deepseek-cli`, `standalone-llm` (new)
+- standalone-llm worker (`scripts/standalone-llm-worker.ts`): polls
+  `agent_tasks`, claims via `FOR UPDATE SKIP LOCKED`, runs through
+  `generateResponse()`, writes `done`/`failed` with audit events.
+  Crash-recovery sweep on startup resets stuck `in_progress` rows.
+- Capability-based agent routing in `orchestrator.handleFailure` /
+  `selectAgent` (`code` / `review` / `plan` / `orchestrate`).
+
+**Atomic orchestrator (PRD §14)**
+- `handleFailure` and `decomposeTask` now run under single transactions
+  with `FOR UPDATE` row locks — closes the double-assignment race in
+  cross-agent reassignment.
+- Three terminal-failure paths collapsed into one `inlineFail()` closure.
+- Non-string `requiredCapabilities` rejected up-front.
+
+**Provider failover (PRD §11.2)**
+- New `LLM_FALLBACK_PROFILE` env: when set, `generateResponse` retries
+  via the named `model_profiles` row on retryable errors (429, 5xx,
+  timeout, network failure, rate-limit, "service unavailable").
+  Non-retryable errors (401/403/404/context-length) skip fallback to
+  avoid storms.
+- `agent_events` traceability: `model_primary_failed` /
+  `model_fallback_selected` / `model_request_completed` events written
+  when taskId is in scope.
+
+**Operator surface (PRD §17.7 — 13/13 CLI commands)**
+- `helyx agents` / `agent {create,start,stop,restart,snapshot,logs}`
+- `helyx runtime {doctor,status}` — non-destructive prerequisite
+  checks + live driver readiness
+- `helyx providers` / `provider test <ref>` — credential validation
+  via ping/pong against the configured endpoint
+- `helyx models` / `model set <agent> <profile>` — profile binding
+- `helyx setup-agents` — re-run agent-runtime portion only
+- 12 new HTTP API endpoints under `/api/agents/*`, `/api/tasks/*`,
+  `/api/providers/*`, `/api/profiles`, `/api/runtime/status`
+
+**Dashboard (PRD §16)**
+- Three new pages: Agents (start/stop/restart + drift indicator),
+  Tasks (filter chips + parent pivot + reassign), Models (read-only
+  providers/profiles).
+- React `<ErrorBoundary>` above `<Outlet />` — sidebar survives page
+  errors instead of white-screening.
+- 3 new nav items with full en+ru i18n.
+
+**Wizard hygiene (PRD §17.1, §17.6)**
+- Existing-`.env` guard: `helyx setup` re-run prompts
+  overwrite/skip/cancel with literal `yes` confirmation before
+  destroying secrets.
+- `chmod 600 .env` on every wizard write — file is no longer
+  world-readable.
+- 4 new agent-runtime prompts (driver, coding-runtime,
+  default-agents, planner-reviewer) with API provider sub-flow.
+- Per-project coder + planner/reviewer/orchestrator instance
+  bootstrap. DeepSeek quick-setup auto-seeds `model_providers` +
+  `model_profiles`.
+
+**Security hardening (PRD §20)**
+- Shell-injection closures across `tmux-driver`: `tmuxSession`,
+  `runtimeType`, `command` override, `text` input, `snapshot.lines`
+  all validated/escaped. 5 new tests on attack vectors.
+- SSRF guard on `/api/providers/:id/test`: Ollama localhost-only
+  allowlist; non-Ollama require https + public allowlisted host
+  (anthropic / openai / openrouter / google / deepseek / groq);
+  RFC-1918, link-local, loopback rejected.
+- Upstream API response bodies sanitized before storage in
+  `api_request_stats.error_message`: `sk-/pk-/Bearer/api_key`
+  patterns stripped, length capped at 500 bytes.
+- All new `/api/*` endpoints behind the existing JWT gate.
+
+**Database**
+- 8 new migrations (v22 → v29): provider/profile tables, agent
+  tables, runtime_type column, `agent_events`, hot-path indexes,
+  standalone-llm role definitions.
+- v28 indexes: `idx_agent_events_task_event (task_id, event_type)`
+  composite + `idx_agent_definitions_capabilities` GIN — both
+  inside the `FOR UPDATE` hot path of `handleFailure`.
+
+**Test growth**: 289 unit tests (was ~100). New suites:
+runtime-driver (36 tests, shell-injection vectors), orchestrator
+(17 tests, transaction contracts), llm-fallback (11 tests,
+retry classifier).
+
+**Deferred to follow-up**: §22 E2E suite (Telegram-mock + Playwright
+infra), §9.3 pty-driver / §9.5 docker-driver (PRD §18 marks Phase 5
+as optional), 4 architecture refactors from the review pass
+(F-005..F-008 — RuntimeManager → agent_* boundary leak,
+LLM-client/agent coupling, single-source-of-truth for runtime types).
+
 ## v1.31.0
 
 ### fix: security hardening + concurrency correctness (full project review)
