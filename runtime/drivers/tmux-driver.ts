@@ -78,6 +78,36 @@ function validateProjectPath(p: string): boolean {
 /** Project-name validation regex — mirrors admin-daemon.ts tmux_send_keys (line ~220). */
 const NAME_REGEX = /^[a-zA-Z0-9_-]+$/;
 
+/**
+ * Sanitize an agent_instance.name for use as a tmux window name.
+ *
+ * PRD §17.4 prescribes `<project>:<role>` naming for instances (e.g.
+ * `helyx:planner`), but tmux window names — and our NAME_REGEX guard —
+ * reject `:` (it's the session/window separator in `tmux -t`). We keep
+ * the canonical name in the DB and only rewrite at the driver boundary:
+ * `:` and `/` collapse to `_`, anything else outside `[a-zA-Z0-9_-]` is
+ * stripped. The result MUST still satisfy NAME_REGEX or we throw, so
+ * pathological input (e.g. all-Unicode name) fails loudly instead of
+ * silently producing an empty window name.
+ *
+ * Forward-compat: legacy instances named after a project (`helyx`,
+ * `altsay`, …) round-trip unchanged through this function — sanitize
+ * is a no-op for already-conforming names.
+ */
+export function sanitizeTmuxWindowName(instanceName: string): string {
+  const sanitized = instanceName
+    .replace(/[:/.]/g, "_")
+    .replace(/[^a-zA-Z0-9_-]/g, "");
+  if (!NAME_REGEX.test(sanitized)) {
+    throw new RuntimeDriverError(
+      "tmux",
+      "validation",
+      `instance name "${instanceName}" sanitizes to empty/invalid tmux window name`,
+    );
+  }
+  return sanitized;
+}
+
 // Runtime-type whitelist now lives in `runtime/supported-runtimes.ts` —
 // the single source of truth shared with the wizard and validated against
 // scripts/run-cli.sh by tests/unit/supported-runtimes.test.ts. See that
@@ -165,7 +195,15 @@ export class TmuxDriver implements RuntimeDriver {
     }
 
     const session = this.resolveSession(handle);
-    const window = handle.tmuxWindow ?? startConfig.projectName;
+    // P0 fix: window name now derives from `instanceName` (per PRD §17.4
+    // `<project>:<role>` convention) instead of `projectName`, so two
+    // agents on the same project get distinct tmux windows. Falls back to
+    // projectName when instanceName isn't supplied (legacy callers and
+    // direct CLI launches via `helyx run` that aren't agent-instance-
+    // backed). The instance name is sanitized — `:` and `/` collapse to
+    // `_` since tmux can't have those in window names.
+    const window = handle.tmuxWindow
+      ?? (startConfig.instanceName ? sanitizeTmuxWindowName(startConfig.instanceName) : startConfig.projectName);
     const runCli = this.config.runCliPath;
 
     // 2. Ensure tmux session exists. `has-session` exits non-zero when missing.
@@ -226,6 +264,30 @@ export class TmuxDriver implements RuntimeDriver {
       }
       command = `${runCli} ${startConfig.projectPath} ${runtimeType}`;
     }
+
+    // P0 fix: prepend `KEY='value'` env-var assignments to the command
+    // so they propagate to the spawned process. tmux send-keys types into
+    // a shell, so inline `KEY='val' cmd` sets the var FOR that command
+    // without polluting the parent shell. This is how standalone-llm
+    // receives AGENT_INSTANCE_ID — without it the worker exits 2.
+    //
+    // Values are wrapped in single quotes (POSIX literal — nothing inside
+    // is shell-expanded except `'` itself, which is escaped as `'\''`).
+    // The key is restricted to a safe charset to prevent shell injection
+    // via the env-vars dict.
+    if (startConfig.env) {
+      const envPrefix = Object.entries(startConfig.env)
+        .map(([k, v]) => {
+          if (!/^[A-Z_][A-Z0-9_]*$/.test(k)) {
+            throw new RuntimeDriverError("tmux", "validation", `invalid env var name: ${k}`);
+          }
+          const safe = String(v).replace(/'/g, "'\\''");
+          return `${k}='${safe}'`;
+        })
+        .join(" ");
+      if (envPrefix) command = `${envPrefix} ${command}`;
+    }
+
     const escapedCommand = escapeForDoubleQuotedShell(command);
     const startResult = await this.config.runShell(
       `idx=$(tmux new-window -t "${session}" -n "${window}" -c "${startConfig.projectPath}" -P -F "#{window_index}") && ` +
@@ -450,12 +512,20 @@ export class TmuxDriver implements RuntimeDriver {
       };
     }
 
-    // 2. No window on the handle → just report session-level running.
+    // 2. No window on the handle → instance has never been started by
+    //    this driver (or its handle was wiped). Report "stopped" so the
+    //    reconciler proceeds to driver.start() instead of false-
+    //    positive-ing on a session-level "running" check.
+    //
+    // The earlier behavior here was to return "running" with no window
+    // check at all. That caused every freshly-created agent_instance
+    // to immediately observe `actual_state=running` and skip the
+    // spawn path, leaving the row stuck and the worker never launched.
     if (!window) {
       return {
-        state: "running",
+        state: "stopped",
         lastChecked: new Date(),
-        details: { session },
+        details: { session, reason: "handle_has_no_tmuxWindow" },
       };
     }
 

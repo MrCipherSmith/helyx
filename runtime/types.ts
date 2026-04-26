@@ -57,6 +57,15 @@ export interface RuntimeStartConfig {
    * Defaults to `"claude-code"` for backward compatibility.
    */
   runtimeType?: string;
+  /**
+   * Optional agent_instance.name — when supplied, the driver derives a
+   * unique tmux window name from it (sanitized, `:` and `/` → `_`)
+   * instead of falling back to `projectName`. Required for multi-
+   * instance-per-project (PRD §17.4 `<project>:<role>` naming); legacy
+   * callers without an instance can omit it and the driver uses
+   * `projectName` as before.
+   */
+  instanceName?: string;
 }
 
 /**

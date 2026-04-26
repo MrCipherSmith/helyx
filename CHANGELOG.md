@@ -1,5 +1,90 @@
 # Changelog
 
+## v1.35.0
+
+### feat: tmux-driver instance-aware window naming + AGENT_INSTANCE_ID env propagation (P0 architecture)
+
+**Closes the four architectural gaps surfaced during the v1.34.x smoke
+session.** Multi-instance-per-project was effectively broken before this
+release: the runtime layer used `projectName` as the tmux window name,
+forcing all agents on a project to share one window. PRD §17.4's
+`<project>:<role>` naming convention was incompatible with tmux because
+of `:` in window names.
+
+**`runtime/drivers/tmux-driver.ts`**
+
+- New exported `sanitizeTmuxWindowName(name)` helper. Maps `:` and `/`
+  to `_`, strips other non-`[a-zA-Z0-9_-]` characters. Throws on
+  pathological input that sanitizes to empty.
+- `start()` now takes optional `instanceName` from `RuntimeStartConfig`
+  and derives the tmux window name from it (sanitized). Falls back to
+  `projectName` when omitted (legacy callers).
+- `start()` accepts `env: Record<string, string>` and prepends each as
+  `KEY='value'` (POSIX single-quote literal — no shell expansion of the
+  value). Key validated against `/^[A-Z_][A-Z0-9_]*$/`. Value's single
+  quote escaped as `'\\\''`.
+- `health()` returns `state: "stopped"` (was: `"running"`) when the
+  handle has no `tmuxWindow`. Previous behavior was a session-level
+  false-positive that made every fresh agent_instance immediately
+  observe `actual_state=running` and skip the spawn path.
+
+**`runtime/types.ts`**
+
+- `RuntimeStartConfig.instanceName?: string` field documented.
+
+**`runtime/runtime-manager.ts`**
+
+- Reconciler stamps `handle.tmuxWindow` from sanitized `inst.name` BEFORE
+  calling `driver.health(handle)` for legacy instances persisted with
+  empty `runtime_handle`. Without this, the new "stopped on empty"
+  health behavior would respawn every legacy claude-code window on
+  every tick — wiping out user's running sessions.
+- Reconciler now passes `instanceName: inst.name` and
+  `env: { AGENT_INSTANCE_ID: String(inst.id) }` to `driver.start()`.
+  AGENT_INSTANCE_ID propagation is required for the standalone-llm
+  worker — without it the worker exits 2 immediately.
+- `runtimeHandle` from postgres.js is frozen — spread into a fresh
+  object before mutating. The pre-stamp threw `TypeError: Attempted to
+  assign to readonly property` until this was fixed.
+
+**Tests** (`tests/unit/runtime-driver.test.ts`)
+
+11 new tests:
+- `sanitizeTmuxWindowName` describe block (5 tests): `:` collapse,
+  legacy round-trip, `/` and `.` collapse, invalid char strip, empty
+  rejection.
+- `instanceName drives tmux window name` — proves `helyx:planner` ⇒
+  `helyx_planner` window in tmux new-window.
+- `falls back to projectName when instanceName is omitted` — legacy.
+- `env vars prepend as single-quoted assignments` — proves
+  `AGENT_INSTANCE_ID='12'` lands in the typed shell command.
+- `env var name with shell metacharacters is rejected`.
+- `env var values are single-quote-isolated` — proves `$(rm -rf /)` is
+  literal not subshell.
+- `env var value containing single quote is properly escaped` (POSIX
+  `'\\\''` round-trip).
+- `health() returns 'stopped' when no window on handle (P0 fix)`
+  — replaces the old "session-level running" test.
+
+305/305 unit tests pass. 22 pre-existing non-TS5097 errors unchanged.
+
+**Live verification**
+
+- 5 of 8 legacy instances stayed `running` across daemon restart
+  (no respawn loop) — pre-stamp correctly identifies existing tmux
+  windows.
+- Fresh `helyx:autoplan` instance auto-spawned via reconciler with
+  `AGENT_INSTANCE_ID='15'` env — first ever PRD §17.4-compliant
+  agent in this install.
+- Standalone-llm worker received the env var, started polling
+  agent_tasks, no exit-2.
+
+**Deferred (still open follow-up)**: there's a stuck-state cleanup
+needed for instances that landed in `actual_state="starting"` during
+the buggy daemon runs. A startup sweep that resets `starting` →
+`stopped` for instances older than N seconds would prevent operator
+confusion. Filed as a follow-up to the next release.
+
 ## v1.34.1
 
 ### fix(orchestrator): CRITICAL ::jsonb cast bug + DeepSeek V4 migration (PR #9)
