@@ -937,6 +937,52 @@ const migrations: Migration[] = [
       await tx`CREATE INDEX IF NOT EXISTS idx_agent_instances_project_id ON agent_instances(project_id)`;
     },
   },
+  {
+    version: 31,
+    name: "deepseek v4: migrate deepseek-chat → v4-flash, role profiles → v4-pro",
+    up: async (tx) => {
+      // DeepSeek deprecated `deepseek-chat` (v3) when shipping V4. The API
+      // now exposes only `deepseek-v4-flash` (small/fast) and
+      // `deepseek-v4-pro` (complex/reasoning). We retire the old name
+      // everywhere in the seed config.
+      //
+      // Default model on the provider becomes flash (cheaper baseline);
+      // role-bound profiles (planner / reviewer / orchestrator) — which
+      // perform decompose / review / route reasoning — bind to pro.
+      // Operators can override per-agent via `helyx model set <agent>
+      // <profile>`.
+      //
+      // Two new general-purpose profiles (`deepseek-flash`, `deepseek-pro`)
+      // are added so future agents can pick a tier explicitly without
+      // reassigning a role-bound profile.
+      await tx`
+        UPDATE model_providers
+        SET default_model = 'deepseek-v4-flash', updated_at = now()
+        WHERE name = 'DeepSeek' AND default_model = 'deepseek-chat'
+      `;
+      await tx`
+        INSERT INTO model_profiles (name, provider_id, model)
+        SELECT 'deepseek-flash', id, 'deepseek-v4-flash' FROM model_providers WHERE name = 'DeepSeek'
+        ON CONFLICT (name) DO UPDATE SET model = EXCLUDED.model, updated_at = now()
+      `;
+      await tx`
+        INSERT INTO model_profiles (name, provider_id, model)
+        SELECT 'deepseek-pro', id, 'deepseek-v4-pro' FROM model_providers WHERE name = 'DeepSeek'
+        ON CONFLICT (name) DO UPDATE SET model = EXCLUDED.model, updated_at = now()
+      `;
+      await tx`
+        UPDATE model_profiles
+        SET model = 'deepseek-v4-pro', updated_at = now()
+        WHERE name IN ('planner-default', 'reviewer-default', 'orchestrator-default')
+          AND model = 'deepseek-chat'
+      `;
+      await tx`
+        UPDATE model_profiles
+        SET model = 'deepseek-v4-flash', updated_at = now()
+        WHERE name = 'deepseek-default' AND model = 'deepseek-chat'
+      `;
+    },
+  },
 ];
 
 // --- Public API ---
