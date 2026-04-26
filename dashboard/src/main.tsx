@@ -18,6 +18,9 @@ import { MemoriesPage } from './pages/Memories'
 import { ProjectsPage } from './pages/Projects'
 import { PermissionsPage } from './pages/Permissions'
 import { MonitorPage } from './pages/Monitor'
+import { AgentsPage } from './pages/Agents'
+import { TasksPage } from './pages/Tasks'
+import { ModelsPage } from './pages/Models'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -107,6 +110,24 @@ const monitorRoute = createRoute({
   component: MonitorPage,
 })
 
+const agentsRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: '/agents',
+  component: AgentsPage,
+})
+
+const tasksRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: '/tasks',
+  component: TasksPage,
+})
+
+const modelsRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: '/models',
+  component: ModelsPage,
+})
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   layoutRoute.addChildren([
@@ -119,6 +140,9 @@ const routeTree = rootRoute.addChildren([
     projectsRoute,
     permissionsRoute,
     monitorRoute,
+    agentsRoute,
+    tasksRoute,
+    modelsRoute,
   ]),
 ])
 

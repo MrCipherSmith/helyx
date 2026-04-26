@@ -87,6 +87,43 @@ export const api = {
   startProject: (id: number) => request<{ ok: boolean }>(`/projects/${id}/start`, { method: 'POST' }),
   stopProject: (id: number) => request<{ ok: boolean }>(`/projects/${id}/stop`, { method: 'POST' }),
   deleteProject: (id: number) => request<{ ok: boolean }>(`/projects/${id}`, { method: 'DELETE' }),
+
+  // --- Agents / Tasks / Models (PRD §16, wired to wave-6 endpoints) ---
+  agents: (params?: { project_id?: number; desired_state?: string; actual_state?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.project_id != null) q.set('project_id', String(params.project_id));
+    if (params?.desired_state) q.set('desired_state', params.desired_state);
+    if (params?.actual_state) q.set('actual_state', params.actual_state);
+    return request<AgentInstanceRow[]>(`/agents${q.toString() ? '?' + q.toString() : ''}`);
+  },
+  agentDefinitions: () => request<AgentDefinitionRow[]>('/agents/definitions'),
+  agentDetail: (id: number) => request<AgentInstanceRow>(`/agents/${id}`),
+  agentEvents: (id: number, limit = 50) =>
+    request<AgentEventRow[]>(`/agents/${id}/events?limit=${limit}`),
+  agentAction: (id: number, action: 'start' | 'stop' | 'restart', reason?: string) =>
+    request<AgentInstanceRow>(`/agents/${id}/${action}`, {
+      method: 'POST',
+      body: JSON.stringify({ reason: reason ?? `dashboard ${action}` }),
+    }),
+
+  tasks: (params?: { status?: string; agent_instance_id?: number; parent_task_id?: number | 'null' }) => {
+    const q = new URLSearchParams();
+    if (params?.status) q.set('status', params.status);
+    if (params?.agent_instance_id != null) q.set('agent_instance_id', String(params.agent_instance_id));
+    if (params?.parent_task_id != null) q.set('parent_task_id', String(params.parent_task_id));
+    return request<AgentTaskRow[]>(`/tasks${q.toString() ? '?' + q.toString() : ''}`);
+  },
+  taskTree: (id: number) => request<AgentTaskRow & { children?: AgentTaskRow[] }>(`/tasks/${id}`),
+  reassignTask: (id: number, reason?: string) =>
+    request<{ task: AgentTaskRow; outcome: string; newAgentInstanceId: number | null; attempts: number }>(
+      `/tasks/${id}/reassign`,
+      { method: 'POST', body: JSON.stringify({ reason: reason ?? 'manual reassign from dashboard' }) },
+    ),
+
+  modelProviders: () => request<ModelProviderRow[]>('/providers'),
+  modelProfiles: () => request<ModelProfileRow[]>('/profiles'),
+
+  runtimeStatus: () => request<RuntimeStatusResponse>('/runtime/status'),
 };
 
 // Types
@@ -277,4 +314,124 @@ export interface ApiError {
   session_name: string | null;
   project_path: string | null;
   created_at: string;
+}
+
+// --- Agents / Tasks / Models (PRD §16) ---
+
+export interface AgentDefinitionRow {
+  id: number;
+  name: string;
+  description: string | null;
+  runtimeType: string;
+  runtimeDriver: string;
+  modelProfileId: number | null;
+  systemPrompt: string | null;
+  capabilities: string[];
+  config: Record<string, unknown>;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// AgentInstanceRow comes from the raw-SQL list endpoint, so it's snake_case
+// with definition/project columns joined in. Single-instance endpoint
+// (handleGetAgent) routes through agentManager and returns camelCase —
+// we coalesce in the UI layer to keep one type.
+export interface AgentInstanceRow {
+  id: number;
+  definition_id: number;
+  project_id: number | null;
+  name: string;
+  desired_state: 'running' | 'stopped' | 'paused' | string;
+  actual_state: 'new' | 'running' | 'idle' | 'busy' | 'starting' | 'stopping' | 'stuck' | 'failed' | 'waiting_approval' | string;
+  runtime_handle: Record<string, unknown>;
+  last_snapshot: string | null;
+  last_snapshot_at: string | null;
+  last_health_at: string | null;
+  restart_count: number;
+  last_restart_at: string | null;
+  session_id: number | null;
+  created_at: string;
+  updated_at: string;
+  // Joined columns (only present on /api/agents list)
+  definition_name?: string;
+  runtime_type?: string;
+  capabilities?: string[];
+  definition_enabled?: boolean;
+  project_name?: string | null;
+  // camelCase variants from agentManager (single-instance endpoint)
+  desiredState?: string;
+  actualState?: string;
+  definitionId?: number;
+  projectId?: number | null;
+}
+
+export interface AgentEventRow {
+  id: number;
+  agent_instance_id: number;
+  task_id: number | null;
+  event_type: string;
+  from_state: string | null;
+  to_state: string | null;
+  message: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface AgentTaskRow {
+  id: number;
+  agentInstanceId: number | null;
+  parentTaskId: number | null;
+  title: string;
+  description: string | null;
+  status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'cancelled' | 'waiting_approval' | string;
+  priority: number;
+  payload: Record<string, unknown>;
+  result: Record<string, unknown> | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ModelProviderRow {
+  id: number;
+  name: string;
+  provider_type: string;
+  base_url: string | null;
+  api_key_env: string | null;
+  default_model: string | null;
+  enabled: boolean;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ModelProfileRow {
+  id: number;
+  name: string;
+  provider_id: number;
+  provider_name: string;
+  model: string;
+  max_tokens: number | null;
+  temperature: number | null;
+  system_prompt: string | null;
+  enabled: boolean;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RuntimeStatusResponse {
+  totals: {
+    total_instances: number;
+    running_instances: number;
+    stopped_instances: number;
+    waiting_approval: number;
+    desired_actual_drift: number;
+    pending_tasks: number;
+    in_progress_tasks: number;
+    failed_tasks: number;
+  };
+  drivers: Record<string, string>;
 }

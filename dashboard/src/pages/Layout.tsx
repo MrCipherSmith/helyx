@@ -4,6 +4,7 @@ import { useState } from 'react'
 import {
   LayoutDashboard, Monitor, BarChart3, ScrollText, BookOpen, FolderOpen,
   PanelLeftClose, PanelLeft, LogOut, Languages, ChevronDown, Bot, ShieldAlert, Activity,
+  Cpu, ListChecks, Boxes,
 } from 'lucide-react'
 import { api } from '../api/client'
 import { useI18n } from '../i18n'
@@ -32,6 +33,9 @@ export function Layout() {
     { to: '/', label: t('nav.overview'), icon: LayoutDashboard },
     { to: '/sessions', label: t('nav.sessions'), icon: Monitor },
     { to: '/projects', label: t('nav.projects'), icon: FolderOpen },
+    { to: '/agents', label: 'Agents', icon: Cpu },
+    { to: '/tasks', label: 'Tasks', icon: ListChecks },
+    { to: '/models', label: 'Models', icon: Boxes },
     { to: '/permissions', label: t('nav.permissions'), icon: ShieldAlert, badge: pendingCount },
     { to: '/monitor', label: t('nav.monitor'), icon: Activity },
     { to: '/stats', label: t('nav.stats'), icon: BarChart3 },
