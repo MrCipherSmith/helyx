@@ -1,5 +1,77 @@
 # Changelog
 
+## v1.37.0
+
+### fix: systemic ::jsonb cast bug across 14 call sites + data migration (CRITICAL)
+
+**v1.34.1 fixed the `${json}::jsonb` parameter-cast bug for the two
+capability-routing call sites. This release closes the same bug across
+twelve more.** postgres.js v3 silently strips trailing `::jsonb` casts on
+parameter placeholders, so `${JSON.stringify(x)}::jsonb` binds the value
+as TEXT — postgres then stores it as a JSONB **scalar string** containing
+the stringified JSON, instead of parsing it as a proper JSONB
+object/array.
+
+**Production impact (pre-fix)**:
+- `agent_tasks.payload` of every task created via `orchestrator.createTask`
+  was a scalar string. Reads returned a JS string, not an object.
+  `task.payload.required_capabilities` and `task.payload.model_tier`
+  silently evaluated to `undefined` — `handleFailure`'s payload-fallback
+  path and the v1.36.0 tier-override never fired in production.
+- `agent_instances.runtime_handle` corruption: each reconcile cycle
+  spread a stringified handle into a char-map object
+  (`{"0":"{","1":"\""...}`), then re-stringified it. **Exponential
+  doubling**. One instance's row hit **240 MB** before the bug was
+  discovered, blocking the reconcile loop from reaching downstream
+  instances.
+- `agent_events.metadata`, `agent_tasks.result`, `sessions.metadata`,
+  `sessions.cli_config` all stored as scalar strings — readable by
+  postgres but useless from JS without a manual `JSON.parse`.
+
+**Code patches** — every `${JSON.stringify(x)}::jsonb` replaced with
+`${sql.json(x)}` (or `${tx.json(x)}` inside transactions):
+
+- `agents/agent-manager.ts:207, 287, 326` — `createInstance.runtime_handle`,
+  `updateRuntimeHandle`, `logEvent.metadata`.
+- `agents/orchestrator.ts:182, 196, 370, 381, 538, 815` —
+  `createTask.payload`, `task_assigned` event, `setResult.result`,
+  `task_result_set` event, `decomposeTask` event, `task_reassigned` event.
+- `scripts/standalone-llm-worker.ts:175, 255` — `completeTask.result`,
+  `onFallbackEvent` metadata.
+- `sessions/manager.ts:81, 83, 285` — sessions `metadata`, `cli_config`
+  (INSERT and UPDATE).
+
+**Migration v32** — repairs existing corrupted rows:
+- `agent_tasks.payload`, `agent_tasks.result`, `agent_events.metadata`,
+  `agent_instances.runtime_handle`, `sessions.metadata`,
+  `sessions.cli_config`: parse-back via `(col#>>'{}')::jsonb` for rows
+  whose `jsonb_typeof = 'string'` AND text starts with `"{` or `"[`.
+- Bloated `agent_instances.runtime_handle` rows (>1MB) reset to `'{}'`:
+  the char-map artifact is unrecoverable; the reconciler re-derives the
+  handle on the next tick. Idempotent — re-running finds zero rows.
+
+**Tests** (`tests/unit/jsonb-cast-systemic.integration.test.ts`) — 8
+integration tests against a live DB:
+- `createTask.payload` stored as object (empty + nested).
+- `setResult.result` stored as object.
+- `logEvent.metadata` stored as object.
+- `createInstance.runtime_handle` + `updateRuntimeHandle` preserve object
+  shape across two write cycles (regression catches the bloat-spread bug
+  via `handle["0"] === undefined` assertion).
+- `handleFailure.task_reassigned` event metadata stored as object.
+- Round-trip: `task.payload.required_capabilities` reachable as a real
+  array, not via index-access on a string.
+
+Reverting any patched site to the broken form fails the corresponding
+test. 344/344 unit tests pass.
+
+**Live verification post-migration**:
+- `agent_instances.runtime_handle` for instance 6: 240 MB scalar string
+  → 2 B JSONB object `{}`.
+- Instance 16 (`helyx:p0verify`) `runtime_handle`: scalar string `"{}"`
+  → JSONB object `{}`.
+- Existing tasks: `jsonb_typeof = 'object'` for all `payload` fields.
+
 ## v1.36.0
 
 ### feat: per-task model_tier override ("flash" / "pro")

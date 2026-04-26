@@ -179,7 +179,7 @@ Rules:
         ${input.title},
         ${input.description ?? null},
         'pending',
-        ${JSON.stringify(input.payload ?? {})}::jsonb,
+        ${tx.json(input.payload ?? {})},
         ${input.priority ?? 0}
       )
       RETURNING *
@@ -193,7 +193,7 @@ Rules:
           ${r.id},
           'task_assigned',
           ${`task #${r.id}: ${r.title}`},
-          ${JSON.stringify({ priority: r.priority, parent_task_id: r.parent_task_id })}::jsonb
+          ${tx.json({ priority: r.priority, parent_task_id: r.parent_task_id })}
         )
       `;
     }
@@ -367,7 +367,7 @@ Rules:
 
       const [after] = await tx`
         UPDATE agent_tasks
-        SET result = ${JSON.stringify(result)}::jsonb, updated_at = now()
+        SET result = ${tx.json(result)}, updated_at = now()
         WHERE id = ${taskId}
         RETURNING *
       ` as any[];
@@ -378,7 +378,7 @@ Rules:
           ${before.agent_instance_id ?? null},
           ${taskId},
           'task_result_set',
-          ${JSON.stringify({ result_keys: Object.keys(result) })}::jsonb
+          ${tx.json({ result_keys: Object.keys(result) })}
         )
       `;
       return rowToTask(after);
@@ -530,12 +530,12 @@ Rules:
           ${taskId},
           'task_decomposed',
           ${`Decomposed into ${subs.length} subtasks via LLM (${provider.providerType}/${provider.model})`},
-          ${JSON.stringify({
+          ${tx.json({
             provider_type: provider.providerType,
             model: provider.model,
             attempts,
             subtask_count: subs.length,
-          })}::jsonb
+          })}
         )
       `;
       return { subs, parentTask: refreshedTask };
@@ -808,11 +808,11 @@ Rules:
           ${taskId},
           'task_reassigned',
           ${reason},
-          ${JSON.stringify({
+          ${tx.json({
             previous_agent_id: task.agentInstanceId,
             attempts: attempts + 1,
             required_capabilities: requiredCapabilities,
-          })}::jsonb
+          })}
         )
       `;
 

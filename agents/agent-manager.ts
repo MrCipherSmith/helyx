@@ -196,6 +196,11 @@ export class AgentManager {
   }): Promise<AgentInstance> {
     const handle = input.runtimeHandle ?? {};
     const desired = input.desiredState ?? "stopped";
+    // sql.json() forces JSONB encoding at the wire-protocol layer.
+    // The previous `${JSON.stringify(handle)}::jsonb` form was silently
+    // stripped by postgres.js v3, binding the parameter as TEXT and
+    // storing it as a JSONB scalar string (not a parsed object).
+    // See v1.37.0 systemic fix.
     const [r] = await sql`
       INSERT INTO agent_instances (definition_id, project_id, name, desired_state, actual_state, runtime_handle)
       VALUES (
@@ -204,7 +209,7 @@ export class AgentManager {
         ${input.name},
         ${desired},
         'new',
-        ${JSON.stringify(handle)}::jsonb
+        ${sql.json(handle)}
       )
       RETURNING *
     ` as any[];
@@ -284,7 +289,7 @@ export class AgentManager {
   async updateRuntimeHandle(id: number, handle: Record<string, unknown>): Promise<void> {
     await sql`
       UPDATE agent_instances
-      SET runtime_handle = ${JSON.stringify(handle)}::jsonb, updated_at = now()
+      SET runtime_handle = ${sql.json(handle)}, updated_at = now()
       WHERE id = ${id}
     `;
   }
@@ -323,7 +328,7 @@ export class AgentManager {
         ${input.taskId ?? null},
         ${input.eventType},
         ${input.message ?? null},
-        ${JSON.stringify(input.metadata ?? {})}::jsonb
+        ${sql.json(input.metadata ?? {})}
       )
     `;
   }
