@@ -809,32 +809,43 @@ async function handleAlwaysAllowPermission(req: IncomingMessage, res: ServerResp
 // directly without re-mapping.
 
 async function handleListAgents(res: ServerResponse, url: URL): Promise<void> {
-  // Match-if-set idiom: each filter parameter collapses to TRUE when null,
-  // so the dimension is effectively skipped without dynamic SQL fragment
-  // assembly. Same pattern as orchestrator.listTasks (agents/orchestrator.ts).
+  // Delegated to AgentManager.listInstancesEnriched — see F-006 in the
+  // PR #7 review. Previously this handler issued its own JOIN across
+  // agent_instances + agent_definitions + projects, duplicating schema
+  // knowledge with AgentManager.
   const projectIdParam = url.searchParams.get("project_id");
-  const projectId = projectIdParam ? Number(projectIdParam) : null;
-  const desiredState = url.searchParams.get("desired_state");
-  const actualState = url.searchParams.get("actual_state");
-
-  // Join definitions for capabilities + runtime_type — saves the dashboard
-  // a second roundtrip per row.
-  const rows = await sql`
-    SELECT ai.*,
-           ad.name AS definition_name,
-           ad.runtime_type,
-           ad.capabilities,
-           ad.enabled AS definition_enabled,
-           p.name AS project_name
-    FROM agent_instances ai
-    JOIN agent_definitions ad ON ad.id = ai.definition_id
-    LEFT JOIN projects p ON p.id = ai.project_id
-    WHERE (${projectId}::int IS NULL OR ai.project_id = ${projectId})
-      AND (${desiredState}::text IS NULL OR ai.desired_state = ${desiredState})
-      AND (${actualState}::text IS NULL OR ai.actual_state = ${actualState})
-    ORDER BY ai.id ASC
-  ` as any[];
-  sendJson(res, rows);
+  const desiredState = url.searchParams.get("desired_state") ?? undefined;
+  const actualState = url.searchParams.get("actual_state") ?? undefined;
+  const rows = await agentManager.listInstancesEnriched({
+    ...(projectIdParam ? { projectId: Number(projectIdParam) } : {}),
+    ...(desiredState ? { desiredState: desiredState as any } : {}),
+    ...(actualState ? { actualState: actualState as any } : {}),
+  });
+  // Translate camelCase AgentInstance fields back to snake_case for the
+  // wire format the dashboard already consumes (avoid breaking change).
+  const wire = rows.map((r) => ({
+    id: r.id,
+    definition_id: r.definitionId,
+    project_id: r.projectId,
+    name: r.name,
+    desired_state: r.desiredState,
+    actual_state: r.actualState,
+    runtime_handle: r.runtimeHandle,
+    last_snapshot: r.lastSnapshot,
+    last_snapshot_at: r.lastSnapshotAt,
+    last_health_at: r.lastHealthAt,
+    restart_count: r.restartCount,
+    last_restart_at: r.lastRestartAt,
+    session_id: r.sessionId,
+    created_at: r.createdAt,
+    updated_at: r.updatedAt,
+    definition_name: r.definition_name,
+    runtime_type: r.runtime_type,
+    capabilities: r.capabilities,
+    definition_enabled: r.definition_enabled,
+    project_name: r.project_name,
+  }));
+  sendJson(res, wire);
 }
 
 async function handleListAgentDefinitions(res: ServerResponse): Promise<void> {

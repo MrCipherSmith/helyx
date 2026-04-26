@@ -8,9 +8,9 @@
  */
 import { RuntimeDriver, RuntimeDriverError } from "./types.ts";
 import type { AgentManager, AgentInstance } from "../agents/agent-manager.ts";
+import { projectService } from "../services/project-service.ts";
 import { CONFIG } from "../config.ts";
 import { logger } from "../logger.ts";
-import { sql } from "../memory/db.ts";
 
 export class RuntimeManager {
   private readonly drivers = new Map<string, RuntimeDriver>();
@@ -183,15 +183,15 @@ export class RuntimeManager {
           return;
         }
 
-        // Resolve projectPath / projectName: prefer handle, fallback to projects table.
+        // Resolve projectPath / projectName: prefer handle, fallback to
+        // projectService. Going through the service (rather than raw SQL
+        // here) keeps the runtime layer agnostic of the projects-table
+        // schema — F-005 from the PR #7 review.
         let projectPath = handle.projectPath as string | undefined;
         let projectName = handle.projectName as string | undefined;
         if ((!projectPath || !projectName) && inst.projectId) {
           try {
-            const rows = (await sql`
-              SELECT path, name FROM projects WHERE id = ${inst.projectId} LIMIT 1
-            `) as any[];
-            const proj = rows[0];
+            const proj = await projectService.get(inst.projectId);
             if (proj) {
               projectPath = projectPath ?? proj.path;
               projectName = projectName ?? proj.name;
@@ -217,13 +217,14 @@ export class RuntimeManager {
           return;
         }
 
-        // Resolve runtime_type from agent_definition for the start command.
+        // Resolve runtime_type from the agent definition. agentMgr.
+        // getDefinition returns the camelCase mapping (runtimeType) — same
+        // as listDefinitions. This replaces a raw SQL query that
+        // previously knew about agent_definitions schema directly.
         let runtimeType: string | undefined;
         try {
-          const defRows = (await sql`
-            SELECT runtime_type FROM agent_definitions WHERE id = ${inst.definitionId} LIMIT 1
-          `) as any[];
-          runtimeType = defRows[0]?.runtime_type as string | undefined;
+          const def = await agentMgr.getDefinition(inst.definitionId);
+          runtimeType = def?.runtimeType;
         } catch (err) {
           logger.warn(
             { instanceId: inst.id, definitionId: inst.definitionId, err: String(err) },

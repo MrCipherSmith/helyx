@@ -499,11 +499,22 @@ Rules:
     // a crash between the two would leave subtasks orphaned (no record of
     // who decomposed them or via which model).
     const created = (await sql.begin(async (tx) => {
+      // F-018: refresh task.agentInstanceId inside the tx — between the
+      // initial getTask() at line ~410 and now, a concurrent
+      // handleFailure could have reassigned the task to a different
+      // agent. Using the stale id in the audit event would mis-attribute
+      // the decomposition. The refresh is a single-row read, no FOR
+      // UPDATE needed (audit events are write-once).
+      const refreshRows = (await tx`
+        SELECT agent_instance_id FROM agent_tasks WHERE id = ${taskId} LIMIT 1
+      `) as { agent_instance_id: number | null }[];
+      const currentAgentInstanceId = refreshRows[0]?.agent_instance_id ?? task.agentInstanceId ?? null;
+
       const subs = await this.addSubtasksTx(tx, taskId, subtaskInputs);
       await tx`
         INSERT INTO agent_events (agent_instance_id, task_id, event_type, message, metadata)
         VALUES (
-          ${task.agentInstanceId ?? null},
+          ${currentAgentInstanceId},
           ${taskId},
           'task_decomposed',
           ${`Decomposed into ${subs.length} subtasks via LLM (${provider.providerType}/${provider.model})`},
@@ -584,6 +595,19 @@ Rules:
     // All DB ops use the `tx` handle — we cannot delegate to setStatus /
     // assignTask helpers here because those open their own sql.begin and
     // would deadlock or break atomicity.
+    //
+    // F-016 caveat: postgres.js runs at READ COMMITTED by default, and
+    // FOR UPDATE only locks the agent_tasks row. The capability lookup
+    // (step 5) and the candidate query (step 6) read from
+    // agent_definitions / agent_instances which are NOT row-locked here.
+    // A concurrent handleSetAgentProfile that re-points a definition
+    // mid-transaction is invisible to this snapshot and could route the
+    // task to an agent whose definition just changed. The race is narrow
+    // (capability changes are rare, and the reassignment is still atomic
+    // at the agent_tasks-row level) and fixing it would require
+    // REPEATABLE READ or row-locking the joined tables — both costly.
+    // Documented here so the next refactor doesn't quietly assume full
+    // serializability.
     //
     // The transaction body returns a richer object than HandleFailureResult
     // — it carries `previousAgentId` (captured pre-UPDATE) so the post-tx

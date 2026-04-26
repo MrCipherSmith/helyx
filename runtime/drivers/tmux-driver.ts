@@ -20,6 +20,7 @@ import {
   SnapshotOptions,
   SnapshotResult,
 } from "../types.ts";
+import { SUPPORTED_RUNTIME_TYPES, isSupportedRuntimeType } from "../supported-runtimes.ts";
 
 /**
  * Result shape produced by an injected shell runner. Mirrors the common
@@ -48,27 +49,31 @@ export interface TmuxDriverConfig {
   log?: (msg: string, meta?: unknown) => void;
 }
 
-/** Path validation regex — mirrors admin-daemon.ts proj_start (line ~165). */
+/**
+ * Path validation regex — mirrors admin-daemon.ts proj_start (line ~165).
+ * Tightened (F-019 from PR #7 review): rejects path segments equal to ".."
+ * to prevent traversal via DB-injected project_path. The base character set
+ * already disallows shell metacharacters; this adds segment-level
+ * validation on top of it via `validateProjectPath` below.
+ */
 const PATH_REGEX = /^[a-zA-Z0-9/_.-]+$/;
+function validateProjectPath(p: string): boolean {
+  if (!PATH_REGEX.test(p)) return false;
+  // Reject any `..` segment — even though all chars are allowlisted,
+  // tmux resolves the path before `cd`, so /a/b/../../etc would land in
+  // /etc despite the operator-only write surface. Defense in depth.
+  for (const seg of p.split("/")) {
+    if (seg === "..") return false;
+  }
+  return true;
+}
 /** Project-name validation regex — mirrors admin-daemon.ts tmux_send_keys (line ~220). */
 const NAME_REGEX = /^[a-zA-Z0-9_-]+$/;
 
-/**
- * Whitelist of runtime types accepted by run-cli.sh as the 2nd positional
- * argument. Used to reject shell-injection attempts via runtime_type, which
- * is otherwise sourced from agent_definitions.runtime_type in the DB.
- */
-type SupportedRuntimeType = "claude-code" | "codex-cli" | "opencode" | "deepseek-cli" | "standalone-llm";
-const SUPPORTED_RUNTIME_TYPES = new Set<SupportedRuntimeType>([
-  "claude-code",
-  "codex-cli",
-  "opencode",
-  "deepseek-cli",
-  "standalone-llm",
-]);
-function isSupportedRuntimeType(s: string): s is SupportedRuntimeType {
-  return (SUPPORTED_RUNTIME_TYPES as Set<string>).has(s);
-}
+// Runtime-type whitelist now lives in `runtime/supported-runtimes.ts` —
+// the single source of truth shared with the wizard and validated against
+// scripts/run-cli.sh by tests/unit/supported-runtimes.test.ts. See that
+// module for the rationale and how to add a new runtime.
 
 /**
  * Escape a string for safe interpolation inside double-quoted shell command.
@@ -136,7 +141,7 @@ export class TmuxDriver implements RuntimeDriver {
    */
   async start(handle: RuntimeHandle, startConfig: RuntimeStartConfig): Promise<RuntimeHandle> {
     // 1. Validate inputs.
-    if (!PATH_REGEX.test(startConfig.projectPath)) {
+    if (!validateProjectPath(startConfig.projectPath)) {
       throw new RuntimeDriverError(
         "tmux",
         "validation",
