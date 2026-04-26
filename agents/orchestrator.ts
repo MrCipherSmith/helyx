@@ -552,136 +552,229 @@ Rules:
   async handleFailure(taskId: number, options: HandleFailureOptions = {}): Promise<HandleFailureResult> {
     const maxReassignments = options.maxReassignments ?? 2;
     const reason = options.reason ?? "task failure — auto-reassign";
+    const explicitExclusions = options.excludeAgentIds ?? [];
 
-    const task = await this.getTask(taskId);
-    if (!task) throw new Error(`agent_task ${taskId} not found`);
+    // Single transaction with FOR UPDATE row lock so concurrent handleFailure
+    // calls cannot both pass the reassignment-cap check and double-assign.
+    // All DB ops use the `tx` handle — we cannot delegate to setStatus /
+    // assignTask helpers here because those open their own sql.begin and
+    // would deadlock or break atomicity.
+    const result = await sql.begin(async (tx) => {
+      // 1. Lock the task row for the duration of the transaction.
+      const taskRows = (await tx`
+        SELECT * FROM agent_tasks WHERE id = ${taskId} FOR UPDATE
+      `) as any[];
+      if (taskRows.length === 0) throw new Error(`agent_task ${taskId} not found`);
+      const task = rowToTask(taskRows[0]);
 
-    // Count prior task_reassigned events specifically (NOT task_assigned — the
-    // initial createTask assignment fires task_assigned but does not count as a
-    // reassignment). With maxReassignments=2, this allows exactly 2 reassignment
-    // attempts before falling through to the limit_reached terminal path.
-    const reassignEvents = await sql`
-      SELECT COUNT(*)::int AS count
-      FROM agent_events
-      WHERE task_id = ${taskId} AND event_type = 'task_reassigned'
-    ` as any[];
-    const attempts = Number(reassignEvents[0]?.count ?? 0);
+      // 2. Count prior reassignments inside the transaction, after the lock.
+      const eventRows = (await tx`
+        SELECT COUNT(*)::int AS count
+        FROM agent_events
+        WHERE task_id = ${taskId} AND event_type = 'task_reassigned'
+      `) as any[];
+      const attempts = Number(eventRows[0]?.count ?? 0);
 
-    // Build excluded IDs: failed agent + any explicitly excluded
-    const excluded = new Set<number>(options.excludeAgentIds ?? []);
-    if (task.agentInstanceId) excluded.add(task.agentInstanceId);
+      // 3. Build excluded set (failed agent + caller exclusions).
+      const excluded = new Set<number>(explicitExclusions);
+      if (task.agentInstanceId) excluded.add(task.agentInstanceId);
 
-    if (attempts >= maxReassignments) {
-      const updated = await this.setStatus(
-        taskId,
-        "failed",
-        `${reason}: reassignment limit (${maxReassignments}) reached`,
-      );
-      return { task: updated, outcome: "limit_reached", newAgentInstanceId: null, attempts };
-    }
+      // 4. Reassignment-cap reached → terminal failure.
+      if (attempts >= maxReassignments) {
+        await tx`
+          UPDATE agent_tasks
+          SET status = 'failed', completed_at = now(), updated_at = now()
+          WHERE id = ${taskId}
+        `;
+        await tx`
+          INSERT INTO agent_events (agent_instance_id, task_id, event_type, from_state, to_state, message)
+          VALUES (
+            ${task.agentInstanceId ?? null},
+            ${taskId},
+            'task_status_change',
+            ${task.status},
+            'failed',
+            ${`${reason}: reassignment limit (${maxReassignments}) reached`}
+          )
+        `;
+        const updatedRows = (await tx`SELECT * FROM agent_tasks WHERE id = ${taskId}`) as any[];
+        return {
+          task: rowToTask(updatedRows[0]),
+          outcome: "limit_reached" as const,
+          newAgentInstanceId: null as number | null,
+          attempts,
+        };
+      }
 
-    // Look up the failed agent's capabilities to find alternatives
-    let requiredCapabilities: string[] = [];
-    if (task.agentInstanceId) {
-      const defRows = await sql`
-        SELECT ad.capabilities
+      // 5. Resolve required capabilities — first from the failed agent's
+      //    definition, then fall back to whatever was stashed in the payload
+      //    by createTask/decomposeTask.
+      let requiredCapabilities: string[] = [];
+      if (task.agentInstanceId) {
+        const defRows = (await tx`
+          SELECT ad.capabilities
+          FROM agent_instances ai
+          JOIN agent_definitions ad ON ad.id = ai.definition_id
+          WHERE ai.id = ${task.agentInstanceId}
+          LIMIT 1
+        `) as any[];
+        const defRow = defRows[0];
+        if (defRow?.capabilities && Array.isArray(defRow.capabilities)) {
+          requiredCapabilities = defRow.capabilities as string[];
+        }
+      }
+      if (requiredCapabilities.length === 0) {
+        const payloadCaps =
+          (task.payload?.required_capabilities ?? task.payload?.capabilities) as unknown;
+        if (Array.isArray(payloadCaps)) requiredCapabilities = payloadCaps as string[];
+      }
+
+      if (requiredCapabilities.length === 0) {
+        await tx`
+          UPDATE agent_tasks
+          SET status = 'failed', completed_at = now(), updated_at = now()
+          WHERE id = ${taskId}
+        `;
+        await tx`
+          INSERT INTO agent_events (agent_instance_id, task_id, event_type, from_state, to_state, message)
+          VALUES (
+            ${task.agentInstanceId ?? null},
+            ${taskId},
+            'task_status_change',
+            ${task.status},
+            'failed',
+            ${`${reason}: cannot determine required capabilities`}
+          )
+        `;
+        const updatedRows = (await tx`SELECT * FROM agent_tasks WHERE id = ${taskId}`) as any[];
+        return {
+          task: rowToTask(updatedRows[0]),
+          outcome: "no_alternative" as const,
+          newAgentInstanceId: null as number | null,
+          attempts,
+        };
+      }
+
+      // 6. Find candidate agents (filter excluded IDs in JS for SQL robustness).
+      const requiredJson = JSON.stringify(requiredCapabilities);
+      const candidates = (await tx`
+        SELECT ai.id
         FROM agent_instances ai
         JOIN agent_definitions ad ON ad.id = ai.definition_id
-        WHERE ai.id = ${task.agentInstanceId}
-        LIMIT 1
-      ` as any[];
-      const defRow = defRows[0];
-      if (defRow?.capabilities && Array.isArray(defRow.capabilities)) {
-        requiredCapabilities = defRow.capabilities as string[];
+        WHERE ad.enabled = true
+          AND ai.desired_state != 'stopped'
+          AND ad.capabilities @> ${requiredJson}::jsonb
+        ORDER BY
+          CASE ai.actual_state
+            WHEN 'running' THEN 0
+            WHEN 'idle' THEN 0
+            WHEN 'busy' THEN 1
+            WHEN 'starting' THEN 2
+            ELSE 3
+          END,
+          ai.id
+      `) as any[];
+      const winner = candidates.find((c) => !excluded.has(Number(c.id)));
+
+      if (!winner) {
+        await tx`
+          UPDATE agent_tasks
+          SET status = 'failed', completed_at = now(), updated_at = now()
+          WHERE id = ${taskId}
+        `;
+        await tx`
+          INSERT INTO agent_events (agent_instance_id, task_id, event_type, from_state, to_state, message)
+          VALUES (
+            ${task.agentInstanceId ?? null},
+            ${taskId},
+            'task_status_change',
+            ${task.status},
+            'failed',
+            ${`${reason}: no alternative agent with capabilities ${requiredCapabilities.join(", ")}`}
+          )
+        `;
+        const updatedRows = (await tx`SELECT * FROM agent_tasks WHERE id = ${taskId}`) as any[];
+        return {
+          task: rowToTask(updatedRows[0]),
+          outcome: "no_alternative" as const,
+          newAgentInstanceId: null as number | null,
+          attempts,
+        };
       }
-    }
 
-    // Fall back to capabilities encoded in task.payload (set by createTask/decomposeTask)
-    if (requiredCapabilities.length === 0) {
-      const payloadCaps =
-        (task.payload?.required_capabilities ?? task.payload?.capabilities) as unknown;
-      if (Array.isArray(payloadCaps)) requiredCapabilities = payloadCaps as string[];
-    }
+      const newAgentId = Number(winner.id);
 
-    if (requiredCapabilities.length === 0) {
-      // No way to find an alternative — mark failed
-      const updated = await this.setStatus(
-        taskId,
-        "failed",
-        `${reason}: cannot determine required capabilities`,
-      );
-      return { task: updated, outcome: "no_alternative", newAgentInstanceId: null, attempts };
-    }
+      // 7. Reassign + reset to pending atomically.
+      await tx`
+        UPDATE agent_tasks
+        SET agent_instance_id = ${newAgentId},
+            status = 'pending',
+            started_at = NULL,
+            completed_at = NULL,
+            updated_at = now()
+        WHERE id = ${taskId}
+      `;
+      // Audit trail: unassign-from-old (if any) + assign-to-new, mirroring
+      // assignTask's event shape so existing consumers keep working.
+      if (task.agentInstanceId) {
+        await tx`
+          INSERT INTO agent_events (agent_instance_id, task_id, event_type, message)
+          VALUES (
+            ${task.agentInstanceId},
+            ${taskId},
+            'task_unassigned',
+            ${`task #${taskId}: ${task.title}`}
+          )
+        `;
+      }
+      await tx`
+        INSERT INTO agent_events (agent_instance_id, task_id, event_type, message)
+        VALUES (
+          ${newAgentId},
+          ${taskId},
+          'task_assigned',
+          ${`task #${taskId}: ${task.title}`}
+        )
+      `;
+      // Reassignment-specific event — this is what `attempts` counts.
+      await tx`
+        INSERT INTO agent_events (agent_instance_id, task_id, event_type, message, metadata)
+        VALUES (
+          ${newAgentId},
+          ${taskId},
+          'task_reassigned',
+          ${reason},
+          ${JSON.stringify({
+            previous_agent_id: task.agentInstanceId,
+            attempts: attempts + 1,
+            required_capabilities: requiredCapabilities,
+          })}::jsonb
+        )
+      `;
 
-    // Find candidate agents matching capabilities; filter excluded IDs in JS for SQL robustness.
-    const requiredJson = JSON.stringify(requiredCapabilities);
-    const allCandidates = await sql`
-      SELECT ai.id
-      FROM agent_instances ai
-      JOIN agent_definitions ad ON ad.id = ai.definition_id
-      WHERE ad.enabled = true
-        AND ai.desired_state != 'stopped'
-        AND ad.capabilities @> ${requiredJson}::jsonb
-      ORDER BY
-        CASE ai.actual_state
-          WHEN 'running' THEN 0
-          WHEN 'idle' THEN 0
-          WHEN 'busy' THEN 1
-          WHEN 'starting' THEN 2
-          ELSE 3
-        END,
-        ai.id
-    ` as any[];
-
-    const winner = allCandidates.find((c) => !excluded.has(Number(c.id)));
-
-    if (!winner) {
-      const updated = await this.setStatus(
-        taskId,
-        "failed",
-        `${reason}: no alternative agent with capabilities ${requiredCapabilities.join(", ")}`,
-      );
-      return { task: updated, outcome: "no_alternative", newAgentInstanceId: null, attempts };
-    }
-
-    const newAgentId = Number(winner.id);
-    // Reassign: this records task_unassigned (old) + task_assigned (new) events.
-    await this.assignTask(taskId, newAgentId);
-    // Reset task to pending so the new agent picks it up on its next poll.
-    await this.setStatus(taskId, "pending", `${reason}: reassigned to agent ${newAgentId}`);
-    // Audit: explicit reassignment event with metadata so we can count attempts.
-    await sql`
-      INSERT INTO agent_events (agent_instance_id, task_id, event_type, message, metadata)
-      VALUES (
-        ${newAgentId},
-        ${taskId},
-        'task_reassigned',
-        ${reason},
-        ${JSON.stringify({
-          previous_agent_id: task.agentInstanceId,
-          attempts: attempts + 1,
-          required_capabilities: requiredCapabilities,
-        })}::jsonb
-      )
-    `;
-    logger.info(
-      {
-        taskId,
-        previousAgentId: task.agentInstanceId,
-        newAgentId,
+      const updatedRows = (await tx`SELECT * FROM agent_tasks WHERE id = ${taskId}`) as any[];
+      return {
+        task: rowToTask(updatedRows[0]),
+        outcome: "reassigned" as const,
+        newAgentInstanceId: newAgentId as number | null,
         attempts: attempts + 1,
-        reason,
-      },
-      "task reassigned after failure",
-    );
+      };
+    });
 
-    const updated = (await this.getTask(taskId))!;
-    return {
-      task: updated,
-      outcome: "reassigned",
-      newAgentInstanceId: newAgentId,
-      attempts: attempts + 1,
-    };
+    if (result.outcome === "reassigned") {
+      logger.info(
+        {
+          taskId,
+          previousAgentId: result.task.agentInstanceId, // already the new id post-tx
+          newAgentId: result.newAgentInstanceId,
+          attempts: result.attempts,
+          reason,
+        },
+        "task reassigned after failure",
+      );
+    }
+
+    return result as HandleFailureResult;
   }
 }
 
