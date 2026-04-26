@@ -37,7 +37,16 @@ export interface RuntimeStartConfig {
   projectPath: string;
   /** Sanitized name used for tmux window naming and other identifiers. */
   projectName: string;
-  /** Optional command override; default: the project's run-cli.sh path. */
+  /**
+   * ADVANCED: pre-sanitized launcher command. Caller is responsible for
+   * shell-escape safety. The command string is double-quote-escaped (\, $, `, ")
+   * before being interpolated into `tmux send-keys`, but any structural shell
+   * tokens the caller bakes in (semicolons, redirects, command substitutions
+   * the caller actually wants) are preserved as-is. Use the `runtimeType`
+   * parameter for safe selection from the supported runtimes; only use
+   * `command` when you need a fully custom launcher and have already
+   * validated/sanitized every dynamic component yourself.
+   */
   command?: string;
   /** Additional environment variables for the spawned process. */
   env?: Record<string, string>;

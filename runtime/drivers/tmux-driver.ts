@@ -53,6 +53,31 @@ const PATH_REGEX = /^[a-zA-Z0-9/_.-]+$/;
 /** Project-name validation regex — mirrors admin-daemon.ts tmux_send_keys (line ~220). */
 const NAME_REGEX = /^[a-zA-Z0-9_-]+$/;
 
+/**
+ * Whitelist of runtime types accepted by run-cli.sh as the 2nd positional
+ * argument. Used to reject shell-injection attempts via runtime_type, which
+ * is otherwise sourced from agent_definitions.runtime_type in the DB.
+ */
+const SUPPORTED_RUNTIME_TYPES = new Set([
+  "claude-code",
+  "codex-cli",
+  "opencode",
+  "deepseek-cli",
+] as const);
+
+/**
+ * Escape a string for safe interpolation inside double-quoted shell command.
+ * Handles backslash, double-quote, dollar sign, and backtick — the four
+ * characters that are interpreted inside `"..."` by bash.
+ */
+function escapeForDoubleQuotedShell(s: string): string {
+  return s
+    .replace(/\\/g, "\\\\")
+    .replace(/`/g, "\\`")
+    .replace(/\$/g, "\\$")
+    .replace(/"/g, '\\"');
+}
+
 export class TmuxDriver implements RuntimeDriver {
   readonly name = "tmux" as const;
 
@@ -71,6 +96,25 @@ export class TmuxDriver implements RuntimeDriver {
         "runShell is required in TmuxDriverConfig",
       );
     }
+  }
+
+  /**
+   * Resolve and validate the tmux session name from a handle. The session is
+   * interpolated into shell commands by every public method, so we MUST
+   * validate it against NAME_REGEX exactly like we do for window names —
+   * otherwise a hostile session value (e.g. from DB or stale config) would
+   * achieve shell injection.
+   */
+  private resolveSession(handle: RuntimeHandle): string {
+    const session = handle.tmuxSession ?? this.config.defaultSession ?? "bots";
+    if (!NAME_REGEX.test(session)) {
+      throw new RuntimeDriverError(
+        "tmux",
+        "validation",
+        `invalid tmuxSession: ${session}`,
+      );
+    }
+    return session;
   }
 
   /**
@@ -102,9 +146,21 @@ export class TmuxDriver implements RuntimeDriver {
       );
     }
 
-    const session = handle.tmuxSession ?? this.config.defaultSession ?? "bots";
+    const session = this.resolveSession(handle);
     const window = handle.tmuxWindow ?? startConfig.projectName;
     const runCli = this.config.runCliPath;
+
+    // Validate runtime_type BEFORE building the command — this value is
+    // sourced from agent_definitions.runtime_type in the DB and would
+    // otherwise interpolate unescaped into a shell command.
+    const runtimeType = startConfig.runtimeType ?? "claude-code";
+    if (!SUPPORTED_RUNTIME_TYPES.has(runtimeType as never)) {
+      throw new RuntimeDriverError(
+        "tmux",
+        "validation",
+        `invalid runtimeType: ${runtimeType}. Supported: ${[...SUPPORTED_RUNTIME_TYPES].join(", ")}`,
+      );
+    }
 
     // 2. Ensure tmux session exists. `has-session` exits non-zero when missing.
     //
@@ -116,9 +172,9 @@ export class TmuxDriver implements RuntimeDriver {
     // session is created at boot by `helyx up`). If it does trigger, you'll see
     // a "[tmux] created bare session" log line — that's a hint to run
     // `helyx up -s` manually to bring up the rest of the projects.
-    const hasSession = await this.config.runShell(`tmux has-session -t ${session} 2>/dev/null`);
+    const hasSession = await this.config.runShell(`tmux has-session -t "${session}" 2>/dev/null`);
     if (hasSession.exitCode !== 0) {
-      const newSession = await this.config.runShell(`tmux new-session -d -s ${session}`);
+      const newSession = await this.config.runShell(`tmux new-session -d -s "${session}"`);
       if (newSession.exitCode !== 0) {
         throw new RuntimeDriverError(
           "tmux",
@@ -144,12 +200,11 @@ export class TmuxDriver implements RuntimeDriver {
     //    `run-cli.sh` accepts a 2nd positional arg `runtime_type` (claude-code,
     //    codex-cli, opencode, deepseek-cli). Defaults to `claude-code` for
     //    backward compatibility when the caller does not specify one.
-    const runtimeType = startConfig.runtimeType ?? "claude-code";
     const command =
       startConfig.command ?? `${runCli} ${startConfig.projectPath} ${runtimeType}`;
-    const escapedCommand = command.replace(/"/g, '\\"');
+    const escapedCommand = escapeForDoubleQuotedShell(command);
     const startResult = await this.config.runShell(
-      `idx=$(tmux new-window -t ${session} -n "${window}" -c "${startConfig.projectPath}" -P -F "#{window_index}") && ` +
+      `idx=$(tmux new-window -t "${session}" -n "${window}" -c "${startConfig.projectPath}" -P -F "#{window_index}") && ` +
         `tmux send-keys -t "${session}:$idx" "${escapedCommand}" Enter`,
     );
     if (startResult.exitCode !== 0) {
@@ -188,7 +243,7 @@ export class TmuxDriver implements RuntimeDriver {
    *   first `kill-window` invocation will exit non-zero and we return cleanly).
    */
   async stop(handle: RuntimeHandle): Promise<void> {
-    const session = handle.tmuxSession ?? this.config.defaultSession ?? "bots";
+    const session = this.resolveSession(handle);
     const window = handle.tmuxWindow;
     if (!window || !NAME_REGEX.test(window)) {
       throw new RuntimeDriverError(
@@ -234,7 +289,7 @@ export class TmuxDriver implements RuntimeDriver {
    *  - `close_editor`— Escape + 200 ms + `:q!` Enter (matches admin-daemon `close_editor`)
    */
   async sendInput(handle: RuntimeHandle, action: RuntimeInputAction): Promise<void> {
-    const session = handle.tmuxSession ?? this.config.defaultSession ?? "bots";
+    const session = this.resolveSession(handle);
     const window = handle.tmuxWindow;
     if (!window || !NAME_REGEX.test(window)) {
       throw new RuntimeDriverError(
@@ -247,9 +302,10 @@ export class TmuxDriver implements RuntimeDriver {
 
     switch (action.kind) {
       case "text": {
-        // Escape double quotes in the user-supplied text for shell safety.
+        // Escape backslash, backtick, dollar, and double-quote in user text
+        // for safe interpolation inside the double-quoted shell argument.
         // The window name is regex-validated above, so the target is safe.
-        const escaped = action.text.replace(/"/g, '\\"');
+        const escaped = escapeForDoubleQuotedShell(action.text);
         const r = await this.config.runShell(
           `tmux send-keys -t "${target}" "${escaped}" Enter`,
         );
@@ -355,12 +411,12 @@ export class TmuxDriver implements RuntimeDriver {
    * Cheap operation: at most two `tmux` calls (`has-session`, `list-windows`).
    */
   async health(handle: RuntimeHandle): Promise<RuntimeHealth> {
-    const session = handle.tmuxSession ?? this.config.defaultSession ?? "bots";
+    const session = this.resolveSession(handle);
     const window = handle.tmuxWindow;
 
     // 1. Check that the session exists at all.
     const sessionCheck = await this.config.runShell(
-      `tmux has-session -t ${session} 2>/dev/null`,
+      `tmux has-session -t "${session}" 2>/dev/null`,
     );
     if (sessionCheck.exitCode !== 0) {
       return {
@@ -391,7 +447,7 @@ export class TmuxDriver implements RuntimeDriver {
 
     // 4. List windows and check for the target name.
     const windows = await this.config.runShell(
-      `tmux list-windows -t ${session} -F "#{window_name}"`,
+      `tmux list-windows -t "${session}" -F "#{window_name}"`,
     );
     if (windows.exitCode !== 0) {
       return {
@@ -428,7 +484,7 @@ export class TmuxDriver implements RuntimeDriver {
    *   visible only. Otherwise → `-S -${lines}`.
    */
   async snapshot(handle: RuntimeHandle, options?: SnapshotOptions): Promise<SnapshotResult> {
-    const session = handle.tmuxSession ?? this.config.defaultSession ?? "bots";
+    const session = this.resolveSession(handle);
     const window = handle.tmuxWindow;
     if (!window || !NAME_REGEX.test(window)) {
       throw new RuntimeDriverError(

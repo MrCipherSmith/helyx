@@ -175,6 +175,53 @@ describe("TmuxDriver", () => {
       expect(sendKeys).toContain("/path/to/run-cli.sh /x claude-code");
     });
 
+    test("rejects malicious tmuxSession on the handle (shell injection)", async () => {
+      const { runShell } = makeMockShell(new Map());
+      const driver = makeDriver(runShell);
+      await expect(
+        driver.start(
+          { driver: "tmux", tmuxSession: "bots; rm -rf /" },
+          { projectPath: "/x", projectName: "p" },
+        ),
+      ).rejects.toThrow(/invalid tmuxSession/);
+    });
+
+    test("rejects unsupported runtimeType (shell injection)", async () => {
+      const { runShell } = makeMockShell(new Map());
+      const driver = makeDriver(runShell);
+      await expect(
+        driver.start(
+          { driver: "tmux" },
+          { projectPath: "/x", projectName: "p", runtimeType: "evil; reboot" },
+        ),
+      ).rejects.toThrow(/invalid runtimeType/);
+    });
+
+    test("escapes backtick and dollar in command override", async () => {
+      const { runShell, calls } = makeMockShell(
+        new Map([
+          ["has-session", { exitCode: 0 }],
+          ["new-window", { exitCode: 0, stdout: "1" }],
+        ]),
+      );
+      const driver = makeDriver(runShell);
+      await driver.start(
+        { driver: "tmux" },
+        {
+          projectPath: "/x",
+          projectName: "p",
+          command: "echo `id` $(whoami) $HOME",
+        },
+      );
+      const sendKeys = calls.find((c) => c.includes("send-keys"));
+      expect(sendKeys).toBeDefined();
+      // Backticks must be escaped — substring "\`" must appear (TS source: \\`)
+      expect(sendKeys).toContain("\\`id\\`");
+      // Dollar signs must be escaped — substring "\$" must appear (TS source: \\$)
+      expect(sendKeys).toContain("\\$(whoami)");
+      expect(sendKeys).toContain("\\$HOME");
+    });
+
     test("explicit command override ignores runtimeType", async () => {
       const { runShell, calls } = makeMockShell(
         new Map([
@@ -360,6 +407,37 @@ describe("TmuxDriver", () => {
         { kind: "text", text: 'hello "world"' },
       );
       expect(calls.some((c) => c.includes('hello \\"world\\"'))).toBe(true);
+    });
+
+    test("text action escapes backtick, dollar, and backslash", async () => {
+      const { runShell, calls } = makeMockShell(new Map());
+      const driver = makeDriver(runShell);
+      await driver.sendInput(
+        { driver: "tmux", tmuxSession: "bots", tmuxWindow: "x" },
+        { kind: "text", text: "boom `id` $(rm -rf /) $HOME \\path" },
+      );
+      const sendKeys = calls.find(
+        (c) => c.includes("send-keys") && c.includes("boom"),
+      );
+      expect(sendKeys).toBeDefined();
+      // Backticks → \`id\`
+      expect(sendKeys).toContain("\\`id\\`");
+      // Dollar signs → \$(...) and \$HOME
+      expect(sendKeys).toContain("\\$(rm -rf /)");
+      expect(sendKeys).toContain("\\$HOME");
+      // Backslash → \\ (TS source `\\\\` is two backslashes in the runtime string)
+      expect(sendKeys).toContain("\\\\path");
+    });
+
+    test("rejects malicious tmuxSession on the handle (shell injection)", async () => {
+      const { runShell } = makeMockShell(new Map());
+      const driver = makeDriver(runShell);
+      await expect(
+        driver.sendInput(
+          { driver: "tmux", tmuxSession: "bots; rm -rf /", tmuxWindow: "x" },
+          { kind: "esc" },
+        ),
+      ).rejects.toThrow(/invalid tmuxSession/);
     });
 
     test("rejects invalid window name", async () => {
