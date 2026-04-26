@@ -68,6 +68,12 @@ import { handleRemember, handleRecall, handleMemories, handleForget, handleSumma
 import { handleStats, handleLogs, handleStatus, handlePending, handleTools, handleSkills, handleCommands, handleHooks, handleRules, handlePermissionStats, handleSessionExport } from "./commands/admin.ts";
 import { handleAdd } from "./commands/add.ts";
 import { handleModel } from "./commands/model.ts";
+import { handleProviders } from "./commands/providers.ts";
+import { handleModels } from "./commands/models.ts";
+import { handleAgents, handleAgentCallback } from "./commands/agents.ts";
+import { handleTasks } from "./commands/tasks.ts";
+import { handleOrchestrate } from "./commands/orchestrate.ts";
+import { handleTask } from "./commands/task.ts";
 import { handleRemoteControl } from "./commands/remote-control.ts";
 import { handleInterrupt } from "./commands/interrupt.ts";
 import { handleMonitor } from "./commands/monitor.ts";
@@ -132,6 +138,12 @@ export function registerHandlers(b: Bot): void {
   // Session CLI commands
   b.command("add", handleAdd);
   b.command("model", handleModel);
+  b.command("providers", handleProviders);
+  b.command("models", handleModels);
+  b.command("agents", handleAgents);
+  b.command("tasks", handleTasks);
+  b.command("orchestrate", handleOrchestrate);
+  b.command("task", handleTask);
 
   // Codex
   b.command("codex_setup", handleCodexSetup);

@@ -16,7 +16,7 @@
  *   bun cli.ts mcp-register   Register MCP servers in Claude Code
  */
 
-import { existsSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, chmodSync } from "fs";
 import { resolve, basename, dirname } from "path";
 import { homedir } from "os";
 
@@ -124,16 +124,101 @@ async function setup() {
   console.log(`\n  ${c.bold("Helyx Setup")}`);
   console.log(`  ${"─".repeat(40)}\n`);
 
+  // 0. Existing-install guard.
+  //
+  // PRD §16.1 p.8: "Never overwrite secrets without explicit confirmation."
+  // The wizard ends with `Bun.write(.env)` which destroys the existing file
+  // unconditionally. If a user re-runs `helyx setup` (e.g. to pick up new
+  // questions added by a later release), they must NOT silently lose their
+  // bot token, API keys, and DB password.
+  //
+  // Three options:
+  //   1. Re-run wizard, overwrite .env (destructive — we will ask the user
+  //      to type "yes" before doing this; otherwise we abort).
+  //   2. Run only the post-setup steps against the existing .env (no
+  //      questions; just deps install + Docker up + migrations + MCP
+  //      registration).
+  //   3. Cancel.
+  //
+  // For (2), the wizard skips ahead to the install phase. This means new
+  // env vars (e.g. DEFAULT_RUNTIME_DRIVER added in PRD §16.3) are NOT
+  // automatically appended — the user is expected to read .env.example
+  // and merge by hand. A future `helyx setup-agents` (P1) provides a
+  // safer additive path.
+  const envPath = `${BOT_DIR}/.env`;
+  let skipQuestions = false;
+  if (existsSync(envPath)) {
+    console.log(`  ${c.yellow("⚠")} An existing .env was found at ${c.dim(envPath)}\n`);
+    const choice = askChoice("How should we proceed?", [
+      "Run install steps only (preserve existing .env — recommended for upgrades)",
+      "Re-run full wizard (will OVERWRITE .env, all secrets must be re-entered)",
+      "Cancel",
+    ]);
+    if (choice === 2) {
+      console.log(`\n  ${c.dim("Aborted by user.")}`);
+      return;
+    }
+    if (choice === 1) {
+      const confirm = ask(
+        `Type ${c.bold("yes")} to confirm overwriting .env (anything else cancels)`,
+      );
+      if (confirm.trim().toLowerCase() !== "yes") {
+        console.log(`\n  ${c.dim("Aborted — .env preserved.")}`);
+        return;
+      }
+    } else {
+      skipQuestions = true;
+    }
+  }
+
+  // Pre-declare shared vars; both branches (questions vs skip) set them.
+  let useDocker: boolean;
+  let port: string;
+  let dbUrl: string;
+  let botToken: string;
+
+  // Pre-declare wave-3 (PRD §17.2) vars at outer scope so the post-migration
+  // seed step (wave-4 — model_profiles) can read them after the questions
+  // block closes. The skip-questions branch leaves them at safe defaults
+  // and skips the seed step entirely.
+  let createDefaultAgents = false;
+  let createPlannerReviewer = false;
+  let plannerReviewerProvider = "";
+  let plannerReviewerProviderName = "";
+  let plannerReviewerBaseUrl = "";
+  let plannerReviewerApiKey = "";
+  let plannerReviewerKeyEnv = "";
+  let plannerModel = "";
+  let reviewerModel = "";
+  let orchestratorModel = "";
+
+  // Skip-questions path: parse the existing .env, derive the few vars
+  // needed by the post-questions install steps, and jump there.
+  if (skipQuestions) {
+    console.log(`\n  ${c.dim("Using existing .env. Running install steps only…")}\n`);
+    const envContents = readFileSync(envPath, "utf8");
+    const envMap: Record<string, string> = {};
+    for (const line of envContents.split("\n")) {
+      const m = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
+      if (m) envMap[m[1]!] = m[2]!;
+    }
+    // Heuristic: Docker mapping uses port 5433; manual install uses 5432.
+    useDocker = (envMap.DATABASE_URL ?? "").includes(":5433/");
+    port = envMap.PORT ?? "3847";
+    dbUrl = envMap.DATABASE_URL ?? "";
+    botToken = envMap.TELEGRAM_BOT_TOKEN ?? "";
+  } else {
+
   // 1. Deployment type
   const deployIdx = askChoice("Deployment type:", [
     "Docker (recommended — PostgreSQL included)",
     "Manual (PostgreSQL + Ollama already installed)",
   ]);
-  const useDocker = deployIdx === 0;
+  useDocker = deployIdx === 0;
 
   // 2. Telegram
   console.log();
-  const botToken = ask("Telegram Bot Token (from @BotFather)");
+  botToken = ask("Telegram Bot Token (from @BotFather)");
   if (!botToken) {
     console.log(c.red("\n  Bot token is required. Get one from @BotFather in Telegram."));
     return;
@@ -198,6 +283,116 @@ async function setup() {
   } else {
     console.log(c.dim("  Ollama not detected. Semantic memory search and local summarization will be disabled."));
     console.log(c.dim("  Install later: https://ollama.com/download → ollama pull nomic-embed-text\n"));
+  }
+
+  // 3c. Agent Runtime Configuration (PRD §17.2)
+  //
+  // Helyx is provider-agnostic: agents can run via different runtime drivers
+  // (tmux/pty/docker/process) and different coding CLIs (claude-code, codex,
+  // opencode, gemini). These four prompts configure the defaults; per-agent
+  // overrides come later via /agents in Telegram or `helyx agent create`.
+  //
+  // The defaults written here also drive `helyx runtime doctor` checks —
+  // e.g. tmux is only required if DEFAULT_RUNTIME_DRIVER=tmux.
+  console.log();
+  console.log(`  ${c.bold("Agent Runtime Configuration")}`);
+  const driverIdx = askChoice("Default runtime driver for interactive coding agents:", [
+    "tmux (recommended — works on existing installs)",
+    "pty (experimental — no tmux dependency)",
+    "docker (sandboxed — advanced)",
+  ]);
+  const defaultRuntimeDriver = ["tmux", "pty", "docker"][driverIdx] ?? "tmux";
+
+  const codingIdx = askChoice("Default coding runtime:", [
+    "claude-code (recommended if already installed)",
+    "opencode",
+    "codex-cli",
+    "gemini-cli",
+    "None — configure later",
+  ]);
+  const defaultCodingRuntime = ["claude-code", "opencode", "codex-cli", "gemini-cli", "none"][codingIdx] ?? "claude-code";
+
+  const createDefaultAgentsIdx = askChoice("Create default project agents?", [
+    "Yes — create a coder agent for every registered project",
+    "No — I will configure agents manually via /agents",
+  ]);
+  createDefaultAgents = createDefaultAgentsIdx === 0;
+
+  const createPlannerReviewerIdx = askChoice("Create planner + reviewer agents (use API models, not interactive CLIs)?", [
+    "Yes — create planner + reviewer using API models",
+    "No — coder agents only",
+  ]);
+  createPlannerReviewer = createPlannerReviewerIdx === 0;
+
+  // model_providers.name lookup — populated below per-provider.
+  let plannerReviewerProviderId = "";
+
+  if (createPlannerReviewer) {
+    const apiIdx = askChoice("API model provider for planner/reviewer:", [
+      "OpenAI-compatible custom endpoint (DeepSeek, etc.)",
+      "OpenRouter",
+      "Anthropic",
+      "Google AI",
+      "Ollama (local)",
+    ]);
+    if (apiIdx === 0) {
+      plannerReviewerProvider = "custom-openai";
+      plannerReviewerProviderName = ask("Provider display name", "DeepSeek");
+      plannerReviewerProviderId = ask("Provider ID (used in DB)", "deepseek-direct");
+      plannerReviewerBaseUrl = ask("Base URL", "https://api.deepseek.com");
+      plannerReviewerKeyEnv = ask("API key env name", "DEEPSEEK_API_KEY");
+      plannerReviewerApiKey = ask("API key");
+      plannerModel = ask("Planner model", "deepseek-chat");
+      reviewerModel = ask("Reviewer model", "deepseek-chat");
+      orchestratorModel = ask("Orchestrator model", "deepseek-chat");
+    } else if (apiIdx === 1) {
+      plannerReviewerProvider = "openrouter";
+      plannerReviewerProviderId = "openrouter-default";
+      plannerReviewerProviderName = "OpenRouter";
+      plannerReviewerBaseUrl = "https://openrouter.ai/api/v1";
+      plannerReviewerKeyEnv = "OPENROUTER_API_KEY";
+      // Re-use the key already collected in step 3 if user picked OpenRouter
+      // there; otherwise prompt for one.
+      plannerReviewerApiKey = openrouterKey || ask("OpenRouter API Key");
+      plannerModel = ask("Planner model", "deepseek/deepseek-chat");
+      reviewerModel = ask("Reviewer model", "anthropic/claude-sonnet-4.5");
+      orchestratorModel = ask("Orchestrator model", "deepseek/deepseek-chat");
+    } else if (apiIdx === 2) {
+      plannerReviewerProvider = "anthropic";
+      plannerReviewerProviderId = "anthropic-default";
+      plannerReviewerProviderName = "Anthropic";
+      plannerReviewerBaseUrl = "https://api.anthropic.com";
+      plannerReviewerKeyEnv = "ANTHROPIC_API_KEY";
+      plannerReviewerApiKey = anthropicKey || ask("Anthropic API Key");
+      plannerModel = ask("Planner model", "claude-haiku-4-5");
+      reviewerModel = ask("Reviewer model", "claude-sonnet-4-6");
+      orchestratorModel = ask("Orchestrator model", "claude-sonnet-4-6");
+    } else if (apiIdx === 3) {
+      plannerReviewerProvider = "google-ai";
+      plannerReviewerProviderId = "google-ai-default";
+      plannerReviewerProviderName = "Google AI";
+      plannerReviewerBaseUrl = "https://generativelanguage.googleapis.com/v1";
+      plannerReviewerKeyEnv = "GOOGLE_AI_API_KEY";
+      plannerReviewerApiKey = googleAiKey || ask("Google AI API Key");
+      plannerModel = ask("Planner model", "gemma-4-31b-it");
+      reviewerModel = ask("Reviewer model", "gemma-4-31b-it");
+      orchestratorModel = ask("Orchestrator model", "gemma-4-31b-it");
+    } else {
+      plannerReviewerProvider = "ollama";
+      plannerReviewerProviderId = "ollama-default";
+      plannerReviewerProviderName = "Ollama";
+      plannerReviewerBaseUrl = "http://localhost:11434";
+      plannerReviewerKeyEnv = ""; // no key needed
+      plannerModel = ask("Planner model", "qwen3:8b");
+      reviewerModel = ask("Reviewer model", "qwen3:8b");
+      orchestratorModel = ask("Orchestrator model", "qwen3:8b");
+    }
+
+    // PRD §16.5 important limitation — surface to user before they wait
+    // for an "agent" that can't actually edit files.
+    console.log(`\n  ${c.yellow("Note:")} planner/reviewer/orchestrator agents reason and route tasks but`);
+    console.log(`  ${c.dim("do not edit files or run commands until tool execution is configured.")}`);
+    console.log(`  ${c.dim("Use Claude Code/OpenCode/Codex/Aider for code-writing agents.\n")}`);
   }
 
   // 4. Telegram transport
@@ -336,13 +531,13 @@ async function setup() {
   const dbPassword = ask("PostgreSQL password", "helyx_secret");
 
   // 6. Port
-  const port = ask("Bot port", "3847");
+  port = ask("Bot port", "3847");
 
   // Generate .env
   console.log();
   step("Creating .env");
 
-  const dbUrl = useDocker
+  dbUrl = useDocker
     ? `postgres://helyx:${dbPassword}@localhost:5433/helyx`
     : `postgres://helyx:${dbPassword}@localhost:5432/helyx`;
 
@@ -402,10 +597,44 @@ async function setup() {
     "# Host paths (used inside Docker to verify project existence)",
     `HOST_HOME=${process.env.HOME ?? "/root"}`,
     `HOST_PROJECTS_DIR=${process.env.HOME ?? "/root"}`,
+    "",
+    "# Agent runtime (PRD §17.3)",
+    `DEFAULT_RUNTIME_DRIVER=${defaultRuntimeDriver}`,
+    `DEFAULT_CODING_RUNTIME=${defaultCodingRuntime}`,
+    `AGENT_RECONCILE_INTERVAL_MS=5000`,
+    `AGENT_HEARTBEAT_TIMEOUT_MS=120000`,
+    `AGENT_RESTART_LIMIT=3`,
+    ...(createPlannerReviewer ? [
+      "",
+      "# Planner / reviewer / orchestrator (API-based agents — PRD §17.3)",
+      `DEFAULT_PLANNER_PROVIDER=${plannerReviewerProvider}`,
+      `DEFAULT_PLANNER_MODEL=${plannerModel}`,
+      `DEFAULT_REVIEWER_PROVIDER=${plannerReviewerProvider}`,
+      `DEFAULT_REVIEWER_MODEL=${reviewerModel}`,
+      `DEFAULT_ORCHESTRATOR_PROVIDER=${plannerReviewerProvider}`,
+      `DEFAULT_ORCHESTRATOR_MODEL=${orchestratorModel}`,
+      // For OpenAI-compatible custom endpoint, write the alias env vars too.
+      // CUSTOM_OPENAI_* is the canonical name; DEEPSEEK_* is the alias.
+      ...(plannerReviewerProvider === "custom-openai" ? [
+        `CUSTOM_OPENAI_API_KEY=${plannerReviewerApiKey}`,
+        `CUSTOM_OPENAI_BASE_URL=${plannerReviewerBaseUrl}`,
+        `CUSTOM_OPENAI_DEFAULT_MODEL=${plannerModel}`,
+        ...(plannerReviewerKeyEnv === "DEEPSEEK_API_KEY" ? [
+          `DEEPSEEK_API_KEY=${plannerReviewerApiKey}`,
+          `DEEPSEEK_BASE_URL=${plannerReviewerBaseUrl}`,
+        ] : []),
+      ] : []),
+    ] : []),
   ];
 
   await Bun.write(`${BOT_DIR}/.env`, envLines.join("\n") + "\n");
+  // Restrict to owner-read+write only (0600) — file contains TELEGRAM_BOT_TOKEN,
+  // ANTHROPIC_API_KEY, GROQ_API_KEY, DB password, webhook secret. Bun.write
+  // honors umask which on most Linux installs leaves 0644 (world-readable).
+  try { chmodSync(`${BOT_DIR}/.env`, 0o600); } catch { /* best-effort — ignore on FS without modes */ }
   done();
+
+  } // end of `if (!skipQuestions)` — install steps below run in BOTH branches
 
   // Ensure required dirs exist with correct ownership (before Docker creates them as root)
   await run(["mkdir", "-p", `${BOT_DIR}/logs`], { silent: true });
@@ -445,6 +674,50 @@ async function setup() {
   } else {
     const migrate = await run(["bun", "memory/db.ts"]);
     migrate.ok ? done() : fail();
+  }
+
+  // Seed planner/reviewer/orchestrator model_profiles (PRD §17.5).
+  // The v22 migration already inserts default model_providers rows
+  // (Anthropic, OpenRouter, Google AI, Ollama, DeepSeek). We only add
+  // the role-specific profiles (planner-default / reviewer-default /
+  // orchestrator-default) referencing the user's chosen provider. The
+  // skip-questions branch leaves createPlannerReviewer=false → no-op.
+  if (createPlannerReviewer && plannerReviewerProvider) {
+    step("Seeding model_profiles for planner/reviewer/orchestrator");
+    const seedOk = await seedModelProfiles({
+      providerType: plannerReviewerProvider,
+      providerName: plannerReviewerProviderName,
+      providerBaseUrl: plannerReviewerBaseUrl,
+      providerKeyEnv: plannerReviewerKeyEnv,
+      plannerModel,
+      reviewerModel,
+      orchestratorModel,
+      dbUrl,
+    });
+    seedOk ? done() : fail("seed failed (non-fatal — agents will still start, profile lookup falls back to env)");
+  }
+
+  // Seed per-project coder agent_instances (PRD §17.4 — Agent Bootstrap).
+  // Conservative bootstrap: every existing project gets a `<project>:coder`
+  // instance pointing to the claude-code-default definition with
+  // desired_state='stopped'. The user starts them manually via /agents
+  // when they want — never auto-start, never restart existing sessions.
+  if (createDefaultAgents) {
+    step("Bootstrapping per-project coder agents");
+    const bootOk = await seedAgentBootstrap({ dbUrl });
+    bootOk ? done() : fail("bootstrap failed (non-fatal — register agents manually via /agents)");
+  }
+
+  // Per-project planner/reviewer/orchestrator agent_instances. Now that
+  // the standalone-llm runtime adapter exists (scripts/standalone-llm-
+  // worker.ts) and migration v29 seeds the role definitions, the wizard
+  // can safely create per-project instances. They land in
+  // desired_state='stopped' (PRD §17.4 conservative bootstrap) — operator
+  // starts them manually via `helyx agent start <project>:planner`.
+  if (createPlannerReviewer) {
+    step("Bootstrapping per-project planner/reviewer agents");
+    const ok = await seedRoleAgentBootstrap({ dbUrl });
+    ok ? done() : fail("planner/reviewer bootstrap failed (non-fatal — create manually via /agents)");
   }
 
   // Register MCP servers
@@ -581,6 +854,955 @@ Write as self-contained sentences. Good: \`"Port 3847 serves both MCP and dashbo
   console.log(`    ${c.cyan("helyx bounce")}   — restart all sessions`);
   console.log(`    ${c.cyan("helyx ps")}       — list session status`);
   console.log(`    ${c.cyan("helyx down")}     — stop all sessions\n`);
+}
+
+// --- Model profile seed (wave-4, PRD §17.5) ---
+
+/**
+ * Insert model_profiles rows for planner-default / reviewer-default /
+ * orchestrator-default, all linked to the model_providers row that matches
+ * the user-selected provider type. Idempotent — re-runs UPDATE existing
+ * rows so wizard re-runs converge to the latest collected values.
+ *
+ * Returns false on any DB error so the caller can warn but continue (the
+ * runtime LLM client falls back to env-var-driven profiles when no DB
+ * profile exists, so this seed is a convenience, not a hard requirement).
+ *
+ * Connects directly via postgres.js using the .env DATABASE_URL — does NOT
+ * import the project's `sql` singleton, since cli.ts may be invoked outside
+ * a normal bot context (e.g. from `helyx setup` with the bot not yet up).
+ */
+async function seedModelProfiles(opts: {
+  providerType: string;
+  providerName: string;
+  providerBaseUrl: string;
+  providerKeyEnv: string;
+  plannerModel: string;
+  reviewerModel: string;
+  orchestratorModel: string;
+  dbUrl: string;
+}): Promise<boolean> {
+  const postgres = (await import("postgres")).default;
+  const sql = postgres(opts.dbUrl, { max: 2, onnotice: () => {} });
+  try {
+    // Look up model_providers.id by provider_type. The v22 bootstrap inserts
+    // canonical names (Anthropic / OpenRouter / Google AI / Ollama / DeepSeek)
+    // matched on (provider_type) when there's exactly one. If multiple
+    // providers share a type (e.g. two openai-compatible custom endpoints),
+    // we prefer the one matching `name` collected from the wizard, falling
+    // back to provider_type otherwise.
+    let providerId: number | null = null;
+    const byName = (await sql`
+      SELECT id FROM model_providers WHERE name = ${opts.providerName} LIMIT 1
+    `) as { id: number }[];
+    if (byName[0]) {
+      providerId = Number(byName[0].id);
+      // Refresh base_url / api_key_env / default_model in case the user
+      // tweaked them in the wizard.
+      await sql`
+        UPDATE model_providers
+        SET base_url      = ${opts.providerBaseUrl || null},
+            api_key_env   = ${opts.providerKeyEnv || null},
+            default_model = ${opts.plannerModel},
+            updated_at    = now()
+        WHERE id = ${providerId}
+      `;
+    } else {
+      // Provider row not present — create it. Idempotent on (name).
+      const inserted = (await sql`
+        INSERT INTO model_providers (name, provider_type, base_url, api_key_env, default_model)
+        VALUES (
+          ${opts.providerName},
+          ${opts.providerType},
+          ${opts.providerBaseUrl || null},
+          ${opts.providerKeyEnv || null},
+          ${opts.plannerModel}
+        )
+        ON CONFLICT (name) DO UPDATE
+          SET provider_type = EXCLUDED.provider_type,
+              base_url      = EXCLUDED.base_url,
+              api_key_env   = EXCLUDED.api_key_env,
+              default_model = EXCLUDED.default_model,
+              updated_at    = now()
+        RETURNING id
+      `) as { id: number }[];
+      providerId = Number(inserted[0]!.id);
+    }
+
+    // Insert / update three role profiles AND link the corresponding
+    // standalone-llm agent_definitions to them. The role profiles and
+    // the role definitions share names — planner-default profile binds
+    // to planner-default definition, etc. — so a single subquery in the
+    // UPDATE handles the link.
+    for (const [profileName, model, definitionName] of [
+      ["planner-default", opts.plannerModel, "planner-default"],
+      ["reviewer-default", opts.reviewerModel, "reviewer-default"],
+      ["orchestrator-default", opts.orchestratorModel, "orchestrator-default"],
+    ] as const) {
+      const profileRow = (await sql`
+        INSERT INTO model_profiles (name, provider_id, model)
+        VALUES (${profileName}, ${providerId}, ${model})
+        ON CONFLICT (name) DO UPDATE
+          SET provider_id = EXCLUDED.provider_id,
+              model       = EXCLUDED.model,
+              updated_at  = now()
+        RETURNING id
+      `) as { id: number }[];
+      const profileIdNumeric = Number(profileRow[0]!.id);
+      // Bind the matching standalone-llm agent_definition to this profile
+      // (idempotent — if already pointed at the same id, the UPDATE is a
+      // no-op). The definitions are seeded by migration v29.
+      await sql`
+        UPDATE agent_definitions
+        SET model_profile_id = ${profileIdNumeric}, updated_at = now()
+        WHERE name = ${definitionName}
+      `;
+    }
+    return true;
+  } catch (err) {
+    console.error(c.red(`  seed error: ${err instanceof Error ? err.message : String(err)}`));
+    return false;
+  } finally {
+    await sql.end({ timeout: 2 });
+  }
+}
+
+// --- helyx agents/agent/runtime/providers/models (wave-10, PRD §17.7) ---
+//
+// Host-side CLI commands that talk to the bot's HTTP API. Each is a thin
+// fetch() wrapper — the heavy lifting (DB queries, state transitions) lives
+// behind /api/agents and friends in mcp/dashboard-api.ts.
+//
+// Auth: the bot's /api/* surface is JWT-gated, so the CLI must mint a token
+// for itself. We re-use the same signJwt path as the dashboard, with the
+// first ALLOWED_USERS telegram_id as the principal. This keeps everything
+// admin-scoped — only operators with .env access can call these commands.
+
+/**
+ * Wrap an api-backed cli command so any thrown error (HTTP 4xx/5xx,
+ * resolveAgentId not-found, network refusal) produces a clean one-line
+ * red message instead of a Bun stack trace. Exits with 1 on failure so
+ * shell scripts can detect it via $?.
+ */
+async function runApiCmd<T>(fn: () => Promise<T>): Promise<void> {
+  try {
+    await fn();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.log(c.red(`  ${msg}`));
+    process.exit(1);
+  }
+}
+
+async function readEnvFile(): Promise<Record<string, string>> {
+  const envPath = `${BOT_DIR}/.env`;
+  if (!existsSync(envPath)) {
+    console.log(c.red("  .env not found. Run 'helyx setup' first."));
+    process.exit(1);
+  }
+  const map: Record<string, string> = {};
+  for (const line of readFileSync(envPath, "utf8").split("\n")) {
+    const m = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
+    if (m) map[m[1]!] = m[2]!;
+  }
+  return map;
+}
+
+/**
+ * Build an authenticated fetch helper bound to the local bot. The token
+ * is minted once per CLI invocation; downstream callers just provide
+ * pathname + optional method/body.
+ */
+async function makeApiCall(): Promise<<T = any>(path: string, init?: { method?: string; body?: any }) => Promise<T>> {
+  const env = await readEnvFile();
+  const port = env.PORT ?? "3847";
+  const allowed = (env.ALLOWED_USERS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (allowed.length === 0) {
+    console.log(c.red("  ALLOWED_USERS not set in .env"));
+    process.exit(1);
+  }
+  const principalId = Number(allowed[0]);
+  const { signJwt } = await import("./dashboard/auth.ts");
+  const token = await signJwt({ id: principalId, first_name: "helyx-cli", username: "helyx-cli" });
+
+  return async <T = any>(path: string, init: { method?: string; body?: any } = {}): Promise<T> => {
+    const r = await fetch(`http://localhost:${port}${path}`, {
+      method: init.method ?? "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(init.body !== undefined ? { "Content-Type": "application/json" } : {}),
+      },
+      body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
+    });
+    const text = await r.text();
+    if (!r.ok) {
+      let msg = text;
+      try { msg = (JSON.parse(text) as any).error ?? text; } catch { /* keep raw */ }
+      throw new Error(`HTTP ${r.status}: ${msg}`);
+    }
+    return text ? JSON.parse(text) as T : ({} as T);
+  };
+}
+
+/**
+ * Resolve an agent reference (numeric id or name) to a numeric id by
+ * listing all instances. Names take the form `<project>:<role>` per PRD
+ * §17.4 but legacy single-word names also work (existing bootstrap).
+ */
+async function resolveAgentId(api: <T>(p: string) => Promise<T>, ref: string): Promise<number> {
+  if (/^\d+$/.test(ref)) return Number(ref);
+  const all = await api<any[]>("/api/agents");
+  const match = all.find((a) => a.name === ref);
+  if (!match) {
+    throw new Error(`agent "${ref}" not found. Available: ${all.map((a) => a.name).join(", ")}`);
+  }
+  return Number(match.id);
+}
+
+async function cmdAgents() {
+  const api = await makeApiCall();
+  const [defs, instances] = await Promise.all([
+    api<any[]>("/api/agents/definitions"),
+    api<any[]>("/api/agents"),
+  ]);
+  console.log(`\n  ${c.bold("Agent definitions")}`);
+  for (const d of defs) {
+    const caps = Array.isArray(d.capabilities) && d.capabilities.length > 0 ? d.capabilities.join(",") : "—";
+    // agentManager.listDefinitions returns camelCase (runtimeType); the
+    // raw SQL behind /api/agents (handleListAgents) returns snake_case
+    // (runtime_type). Coalesce so cli works against both.
+    const runtime = d.runtimeType ?? d.runtime_type ?? "?";
+    console.log(`    ${c.cyan(`#${d.id}`)} ${d.name}  ${c.dim(`runtime=${runtime} caps=[${caps}]`)}`);
+  }
+  console.log(`\n  ${c.bold("Agent instances")}`);
+  if (instances.length === 0) {
+    console.log(c.dim("    (none — run `helyx setup-agents` to bootstrap)"));
+  } else {
+    for (const i of instances) {
+      const tag = i.actual_state === "running"
+        ? c.green(i.actual_state)
+        : i.actual_state === "stopped"
+          ? c.dim(i.actual_state)
+          : c.yellow(i.actual_state);
+      const drift = i.desired_state !== i.actual_state && i.desired_state !== "stopped" ? c.red(`→${i.desired_state}`) : "";
+      console.log(`    ${c.cyan(`#${i.id}`)} ${i.name}  ${tag} ${drift}  ${c.dim(`def=${i.definition_name} project=${i.project_name ?? "—"}`)}`);
+    }
+  }
+  console.log();
+}
+
+async function cmdAgentCreate() {
+  const api = await makeApiCall();
+  console.log(`\n  ${c.bold("Create agent instance")}`);
+  // List definitions so the user knows what's available
+  const defs = await api<any[]>("/api/agents/definitions");
+  console.log(`  ${c.dim("Available definitions:")}`);
+  for (const d of defs) {
+    const caps = Array.isArray(d.capabilities) && d.capabilities.length > 0 ? d.capabilities.join(",") : "—";
+    console.log(`    ${c.cyan(`#${d.id}`)} ${d.name}  ${c.dim(`caps=[${caps}]`)}`);
+  }
+  console.log();
+  const definition = ask("Definition (id or name)");
+  if (!definition) {
+    console.log(c.red("  definition required"));
+    process.exit(1);
+  }
+  const name = ask("Instance name (e.g. my-project:coder)");
+  if (!name) {
+    console.log(c.red("  name required"));
+    process.exit(1);
+  }
+  const project = ask("Project (id, name, or Enter for none)");
+  const desiredState = ask("Desired state [stopped|running|paused]", "stopped");
+
+  const result = await api<any>("/api/agents", {
+    method: "POST",
+    body: {
+      definition,
+      name,
+      project: project || null,
+      desired_state: desiredState,
+    },
+  });
+  console.log(`  ${c.green("✓")} created agent #${result.id} (${result.name}, desired=${result.desired_state})`);
+}
+
+async function cmdAgentAction(action: "start" | "stop" | "restart", ref: string | undefined) {
+  if (!ref) {
+    console.log(c.red(`  Usage: helyx agent ${action} <id|name>`));
+    process.exit(1);
+  }
+  const api = await makeApiCall();
+  const id = await resolveAgentId(api, ref);
+  const result = await api<any>(`/api/agents/${id}/${action}`, { method: "POST", body: { reason: `cli ${action}` } });
+  // agentManager.setDesiredState returns camelCase (desiredState); the
+  // raw-SQL list path returns snake_case. Coalesce.
+  const desired = result.desiredState ?? result.desired_state ?? "?";
+  console.log(`  ${c.green("✓")} agent #${id} ${result.name} → desired_state=${desired}`);
+}
+
+async function cmdAgentSnapshot(ref: string | undefined) {
+  if (!ref) {
+    console.log(c.red("  Usage: helyx agent snapshot <id|name>"));
+    process.exit(1);
+  }
+  const api = await makeApiCall();
+  const id = await resolveAgentId(api, ref);
+  const inst = await api<any>(`/api/agents/${id}`);
+  if (!inst.last_snapshot) {
+    console.log(c.dim(`  No snapshot yet for #${id} (last_snapshot_at=${inst.last_snapshot_at ?? "never"})`));
+    return;
+  }
+  console.log(`\n  ${c.bold(`Snapshot ${inst.name}`)}  ${c.dim(`captured ${inst.last_snapshot_at ?? "?"}`)}`);
+  console.log(`  ${"─".repeat(60)}`);
+  console.log(inst.last_snapshot);
+}
+
+async function cmdAgentLogs(ref: string | undefined, limit = 50) {
+  if (!ref) {
+    console.log(c.red("  Usage: helyx agent logs <id|name> [limit]"));
+    process.exit(1);
+  }
+  const api = await makeApiCall();
+  const id = await resolveAgentId(api, ref);
+  const events = await api<any[]>(`/api/agents/${id}/events?limit=${limit}`);
+  console.log(`\n  ${c.bold(`Last ${events.length} events for agent #${id}`)}`);
+  for (const e of events.reverse()) {
+    const ts = new Date(e.created_at).toISOString().slice(11, 19);
+    const stateChange = e.from_state && e.to_state ? c.dim(` ${e.from_state}→${e.to_state}`) : "";
+    console.log(`    ${c.dim(ts)} ${c.cyan(e.event_type)}${stateChange}  ${e.message ?? ""}`);
+  }
+}
+
+async function cmdRuntimeStatus() {
+  const api = await makeApiCall();
+  const s = await api<any>("/api/runtime/status");
+  console.log(`\n  ${c.bold("Runtime Status")}`);
+  console.log(`    Instances: ${c.green(s.totals.running_instances)} running, ${c.dim(s.totals.stopped_instances)} stopped, ${s.totals.waiting_approval > 0 ? c.yellow(s.totals.waiting_approval + " waiting") : "0 waiting"}`);
+  if (s.totals.desired_actual_drift > 0) {
+    console.log(`    ${c.red(`drift: ${s.totals.desired_actual_drift}`)} (desired ≠ actual)`);
+  }
+  console.log(`    Tasks: ${c.dim(s.totals.pending_tasks + " pending")}, ${c.dim(s.totals.in_progress_tasks + " in progress")}, ${s.totals.failed_tasks > 0 ? c.red(s.totals.failed_tasks + " failed") : c.dim("0 failed")}`);
+  console.log(`    Drivers:`);
+  for (const [name, status] of Object.entries(s.drivers)) {
+    const tag = status === "ok" ? c.green(String(status)) : c.dim(String(status));
+    console.log(`      ${name}: ${tag}`);
+  }
+  console.log();
+}
+
+async function cmdProviders() {
+  const api = await makeApiCall();
+  const providers = await api<any[]>("/api/providers");
+  console.log(`\n  ${c.bold("Model Providers")}`);
+  for (const p of providers) {
+    const enabled = p.enabled ? c.green("on") : c.dim("off");
+    console.log(`    ${c.cyan(`#${p.id}`)} ${p.name}  ${enabled}  ${c.dim(`${p.provider_type} default=${p.default_model ?? "—"} key_env=${p.api_key_env ?? "—"}`)}`);
+  }
+  console.log();
+}
+
+async function cmdProviderTest(ref: string | undefined) {
+  if (!ref) {
+    console.log(c.red("  Usage: helyx provider test <id|name>"));
+    process.exit(1);
+  }
+  const api = await makeApiCall();
+  // Resolve name → id by listing all (small table; tens of rows max).
+  let id: number;
+  if (/^\d+$/.test(ref)) {
+    id = Number(ref);
+  } else {
+    const all = await api<any[]>("/api/providers");
+    const match = all.find((p) => p.name === ref);
+    if (!match) {
+      throw new Error(`provider "${ref}" not found. Available: ${all.map((p) => p.name).join(", ")}`);
+    }
+    id = Number(match.id);
+  }
+
+  console.log(`  ${c.dim(`probing provider #${id}…`)}`);
+  const result = await api<{ ok: boolean; provider: string; model?: string; durationMs: number; response?: string; error?: string }>(
+    `/api/providers/${id}/test`,
+    { method: "POST" },
+  );
+  if (result.ok) {
+    console.log(`  ${c.green("✓")} ${result.provider} (${result.model}) — ${result.durationMs}ms`);
+    if (result.response) console.log(c.dim(`    response: ${result.response}`));
+  } else {
+    console.log(`  ${c.red("✗")} ${result.provider} (${result.model ?? "?"}) — ${result.durationMs}ms`);
+    console.log(c.red(`    ${result.error ?? "unknown error"}`));
+    process.exit(1);
+  }
+}
+
+async function cmdModels() {
+  const api = await makeApiCall();
+  const profiles = await api<any[]>("/api/profiles");
+  console.log(`\n  ${c.bold("Model Profiles")}`);
+  for (const p of profiles) {
+    const enabled = p.enabled ? c.green("on") : c.dim("off");
+    console.log(`    ${c.cyan(`#${p.id}`)} ${p.name}  ${enabled}  ${c.dim(`${p.provider_name} → ${p.model}`)}`);
+  }
+  console.log();
+}
+
+async function cmdModelSet(agentRef: string | undefined, profileRef: string | undefined) {
+  if (!agentRef || !profileRef) {
+    console.log(c.red("  Usage: helyx model set <agent-id|name> <profile-id|name>"));
+    process.exit(1);
+  }
+  const api = await makeApiCall();
+  const agentId = await resolveAgentId(api, agentRef);
+  // profile param is sent as-is — server resolves by id-or-name.
+  const result = await api<any>(`/api/agents/${agentId}/model-profile`, {
+    method: "PATCH",
+    body: { profile: /^\d+$/.test(profileRef) ? Number(profileRef) : profileRef },
+  });
+  console.log(`  ${c.green("✓")} agent #${agentId} → model_profile_id=${result.model_profile_id} (definition #${result.definition_id})`);
+}
+
+// --- helyx setup-agents (wave-5, PRD §17.7) ---
+
+/**
+ * Re-run only the agent-runtime portion of `helyx setup`. Useful when:
+ *   - User upgrades to a release that adds new agent-runtime questions
+ *   - User wants to swap planner/reviewer provider without re-touching
+ *     Telegram/voice/TTS settings
+ *   - Operator added new projects and wants to bootstrap their agents
+ *
+ * Requires .env to exist (i.e. `helyx setup` was already run). Reads the
+ * existing values, prompts ONLY the wave-3 questions, updates the
+ * corresponding env keys in-place (preserving everything else), then runs
+ * seedModelProfiles + seedAgentBootstrap.
+ *
+ * Never overwrites secrets the user did not re-enter — when the wizard
+ * receives an empty answer for an existing key, the previous value is
+ * kept. This is the same default-honoring pattern as the ask() helper.
+ */
+async function setupAgents() {
+  console.log(`\n  ${c.bold("Helyx — Agent Setup (re-run)")}`);
+  console.log(`  ${"─".repeat(40)}\n`);
+
+  const envPath = `${BOT_DIR}/.env`;
+  if (!existsSync(envPath)) {
+    console.log(c.red("  .env not found. Run 'helyx setup' first."));
+    process.exit(1);
+  }
+
+  // Parse existing .env into a map; preserve original line order so the
+  // updated file does not reshuffle unrelated keys.
+  const envContents = readFileSync(envPath, "utf8");
+  const lines = envContents.split("\n");
+  const envMap: Record<string, string> = {};
+  for (const line of lines) {
+    const m = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
+    if (m) envMap[m[1]!] = m[2]!;
+  }
+
+  const dbUrl = envMap.DATABASE_URL;
+  if (!dbUrl) {
+    console.log(c.red("  DATABASE_URL not set in .env"));
+    process.exit(1);
+  }
+
+  // Wave-3 questions, with current .env values as defaults so re-runs
+  // can simply press Enter to keep settings unchanged.
+  const driverIdx = askChoice(
+    `Default runtime driver (current: ${envMap.DEFAULT_RUNTIME_DRIVER ?? "tmux"}):`,
+    [
+      "tmux (recommended)",
+      "pty (experimental)",
+      "docker (sandboxed)",
+    ],
+  );
+  const driver = ["tmux", "pty", "docker"][driverIdx] ?? "tmux";
+
+  const codingIdx = askChoice(
+    `Default coding runtime (current: ${envMap.DEFAULT_CODING_RUNTIME ?? "claude-code"}):`,
+    [
+      "claude-code",
+      "opencode",
+      "codex-cli",
+      "gemini-cli",
+      "None — configure later",
+    ],
+  );
+  const coding = ["claude-code", "opencode", "codex-cli", "gemini-cli", "none"][codingIdx] ?? "claude-code";
+
+  const bootIdx = askChoice("Bootstrap per-project coder agents now?", [
+    "Yes — create coder agent for every project without one",
+    "No",
+  ]);
+  const wantBootstrap = bootIdx === 0;
+
+  const apiIdx = askChoice("Configure planner / reviewer / orchestrator (API-based)?", [
+    "Yes — pick a provider",
+    "No — keep current settings",
+  ]);
+
+  // Persist the two basic agent-runtime settings.
+  const updates: Record<string, string> = {
+    DEFAULT_RUNTIME_DRIVER: driver,
+    DEFAULT_CODING_RUNTIME: coding,
+  };
+
+  let didSeedProfiles = false;
+  if (apiIdx === 0) {
+    const provIdx = askChoice("API provider:", [
+      "OpenAI-compatible (DeepSeek, etc.)",
+      "OpenRouter",
+      "Anthropic",
+      "Google AI",
+      "Ollama",
+    ]);
+    const providerType = ["custom-openai", "openrouter", "anthropic", "google-ai", "ollama"][provIdx]!;
+    const providerName = ["DeepSeek", "OpenRouter", "Anthropic", "Google AI", "Ollama"][provIdx]!;
+    const providerBaseUrl = [
+      "https://api.deepseek.com",
+      "https://openrouter.ai/api/v1",
+      "https://api.anthropic.com",
+      "https://generativelanguage.googleapis.com/v1",
+      "http://localhost:11434",
+    ][provIdx]!;
+    const providerKeyEnv = ["DEEPSEEK_API_KEY", "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_AI_API_KEY", ""][provIdx]!;
+    const apiKeyDefault = providerKeyEnv ? envMap[providerKeyEnv] ?? "" : "";
+    const apiKey = providerKeyEnv ? ask(`${providerKeyEnv} (Enter to keep existing)`, apiKeyDefault) : "";
+    const planner = ask("Planner model", envMap.DEFAULT_PLANNER_MODEL ?? "deepseek-chat");
+    const reviewer = ask("Reviewer model", envMap.DEFAULT_REVIEWER_MODEL ?? "deepseek-chat");
+    const orch = ask("Orchestrator model", envMap.DEFAULT_ORCHESTRATOR_MODEL ?? "deepseek-chat");
+
+    updates.DEFAULT_PLANNER_PROVIDER = providerType;
+    updates.DEFAULT_PLANNER_MODEL = planner;
+    updates.DEFAULT_REVIEWER_PROVIDER = providerType;
+    updates.DEFAULT_REVIEWER_MODEL = reviewer;
+    updates.DEFAULT_ORCHESTRATOR_PROVIDER = providerType;
+    updates.DEFAULT_ORCHESTRATOR_MODEL = orch;
+    if (providerKeyEnv && apiKey) updates[providerKeyEnv] = apiKey;
+    if (providerType === "custom-openai" && apiKey) {
+      updates.CUSTOM_OPENAI_API_KEY = apiKey;
+      updates.CUSTOM_OPENAI_BASE_URL = providerBaseUrl;
+      updates.CUSTOM_OPENAI_DEFAULT_MODEL = planner;
+    }
+
+    step("Seeding model_profiles");
+    didSeedProfiles = await seedModelProfiles({
+      providerType,
+      providerName,
+      providerBaseUrl,
+      providerKeyEnv,
+      plannerModel: planner,
+      reviewerModel: reviewer,
+      orchestratorModel: orch,
+      dbUrl,
+    });
+    didSeedProfiles ? done() : fail("seed failed (check DB)");
+  }
+
+  // Apply updates to .env in-place: replace existing key=value lines,
+  // append new keys at end. Preserves comment lines and blank lines.
+  const updatedKeys = new Set<string>();
+  const newLines = lines.map((line) => {
+    const m = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
+    if (m && Object.prototype.hasOwnProperty.call(updates, m[1]!)) {
+      updatedKeys.add(m[1]!);
+      return `${m[1]}=${updates[m[1]!]!}`;
+    }
+    return line;
+  });
+  for (const [k, v] of Object.entries(updates)) {
+    if (!updatedKeys.has(k)) newLines.push(`${k}=${v}`);
+  }
+  step("Updating .env");
+  await Bun.write(envPath, newLines.join("\n"));
+  // Re-apply 0600 (Bun.write resets file mode on overwrite). See full
+  // setup() for context on why .env must not be world-readable.
+  try { chmodSync(envPath, 0o600); } catch { /* best-effort */ }
+  done();
+
+  if (wantBootstrap) {
+    step("Bootstrapping per-project coder agents");
+    const ok = await seedAgentBootstrap({ dbUrl });
+    ok ? done() : fail("bootstrap failed");
+  }
+
+  console.log(`\n  ${c.green(c.bold("Agent setup complete."))}\n`);
+}
+
+// --- Agent bootstrap (wave-5, PRD §17.4) ---
+
+/**
+ * Seed per-project coder agent_instances. For every project in the
+ * `projects` table that has no default_agent_instance_id yet, insert one
+ * agent_instance row pointing at claude-code-default with desired_state
+ * 'stopped' and link it as the project's default.
+ *
+ * The "conservative" bootstrap from PRD §17.4: never auto-start, never
+ * touch existing sessions, never reassign. Idempotent on the
+ * (project_id, name) unique constraint — re-running is a no-op for
+ * already-bootstrapped projects.
+ *
+ * Also bumps claude-code-default.capabilities to ["code"] so the
+ * orchestrator's capability-based selection (handleFailure / selectAgent)
+ * can find it when reassigning.
+ *
+ * Returns false on DB error so the caller can warn but continue.
+ */
+async function seedAgentBootstrap(opts: { dbUrl: string }): Promise<boolean> {
+  const postgres = (await import("postgres")).default;
+  const sql = postgres(opts.dbUrl, { max: 2, onnotice: () => {} });
+  try {
+    // Update claude-code-default capabilities so handleFailure can match it.
+    // The migration v24 left capabilities=[] for claude-code-default; here
+    // we promote it to a "code"-capable agent so it participates in
+    // capability-based reassignment.
+    await sql`
+      UPDATE agent_definitions
+      SET capabilities = '["code"]'::jsonb, updated_at = now()
+      WHERE name = 'claude-code-default' AND capabilities = '[]'::jsonb
+    `;
+
+    // Find the claude-code-default definition id.
+    const defRows = (await sql`
+      SELECT id FROM agent_definitions WHERE name = 'claude-code-default' LIMIT 1
+    `) as { id: number }[];
+    if (!defRows[0]) {
+      console.error(c.red("  claude-code-default definition not found — skipping bootstrap"));
+      return false;
+    }
+    const definitionId = Number(defRows[0].id);
+
+    // Iterate projects without a default agent.
+    const projects = (await sql`
+      SELECT id, name FROM projects WHERE default_agent_instance_id IS NULL
+    `) as { id: number; name: string }[];
+
+    let created = 0;
+    for (const proj of projects) {
+      const instanceName = `${proj.name}:coder`;
+      // Insert with ON CONFLICT (project_id, name) — guards against re-run
+      // races where an instance was created between our SELECT and INSERT.
+      const ins = (await sql`
+        INSERT INTO agent_instances (definition_id, project_id, name, desired_state, actual_state)
+        VALUES (${definitionId}, ${proj.id}, ${instanceName}, 'stopped', 'new')
+        ON CONFLICT (project_id, name) DO NOTHING
+        RETURNING id
+      `) as { id: number }[];
+      const instanceId = ins[0]?.id;
+      if (instanceId) {
+        await sql`
+          UPDATE projects SET default_agent_instance_id = ${instanceId} WHERE id = ${proj.id}
+        `;
+        created++;
+      }
+    }
+
+    console.log(c.dim(`    ${created} new instance(s) created across ${projects.length} project(s)`));
+    return true;
+  } catch (err) {
+    console.error(c.red(`  bootstrap error: ${err instanceof Error ? err.message : String(err)}`));
+    return false;
+  } finally {
+    await sql.end({ timeout: 2 });
+  }
+}
+
+/**
+ * Per-project bootstrap for planner/reviewer/orchestrator standalone-llm
+ * agents. Mirror of seedAgentBootstrap but targets the role definitions
+ * (planner-default, reviewer-default, orchestrator-default) instead of
+ * the coder definition.
+ *
+ * Each project gets three new instances with names <project>:planner /
+ * :reviewer / :orchestrator, all desired_state='stopped'. Idempotent on
+ * the (project_id, name) unique constraint.
+ */
+async function seedRoleAgentBootstrap(opts: { dbUrl: string }): Promise<boolean> {
+  const postgres = (await import("postgres")).default;
+  const sql = postgres(opts.dbUrl, { max: 2, onnotice: () => {} });
+  try {
+    const defRows = (await sql`
+      SELECT id, name FROM agent_definitions
+      WHERE name IN ('planner-default', 'reviewer-default', 'orchestrator-default')
+        AND enabled = true
+    `) as { id: number; name: string }[];
+    if (defRows.length < 3) {
+      console.error(c.red("  one or more role definitions missing (run migrate first)"));
+      return false;
+    }
+    const defByName = new Map(defRows.map((r) => [r.name, Number(r.id)] as const));
+
+    const projects = (await sql`SELECT id, name FROM projects`) as { id: number; name: string }[];
+    let created = 0;
+    for (const proj of projects) {
+      for (const [defName, role] of [
+        ["planner-default", "planner"],
+        ["reviewer-default", "reviewer"],
+        ["orchestrator-default", "orchestrator"],
+      ] as const) {
+        const definitionId = defByName.get(defName)!;
+        const instanceName = `${proj.name}:${role}`;
+        const ins = (await sql`
+          INSERT INTO agent_instances (definition_id, project_id, name, desired_state, actual_state)
+          VALUES (${definitionId}, ${proj.id}, ${instanceName}, 'stopped', 'new')
+          ON CONFLICT (project_id, name) DO NOTHING
+          RETURNING id
+        `) as { id: number }[];
+        if (ins[0]) created++;
+      }
+    }
+    console.log(c.dim(`    ${created} new instance(s) across ${projects.length} project(s) (planner+reviewer+orchestrator)`));
+    return true;
+  } catch (err) {
+    console.error(c.red(`  bootstrap error: ${err instanceof Error ? err.message : String(err)}`));
+    return false;
+  } finally {
+    await sql.end({ timeout: 2 });
+  }
+}
+
+// --- Runtime doctor ---
+
+/**
+ * Non-destructive prerequisite check. Implements PRD §16.7 `helyx runtime
+ * doctor`: verifies that the runtime drivers and adapters this install
+ * configures (or could configure) actually have their host-side dependencies
+ * available. Never starts/stops services, never mutates files, never calls
+ * paid APIs. Result codes:
+ *   0 — all required checks PASS
+ *   1 — at least one required check FAIL
+ * Optional checks (e.g. ollama) are SKIPPED when not configured; they never
+ * fail the run.
+ */
+async function runtimeDoctor() {
+  console.log(`\n  ${c.bold("Helyx Runtime Doctor")}`);
+  console.log(`  ${"─".repeat(40)}\n`);
+
+  // Read .env to know what's actually configured. Missing .env is itself a
+  // failure mode — the install isn't ready to use.
+  const envPath = `${BOT_DIR}/.env`;
+  const envMap: Record<string, string> = {};
+  let hasEnv = existsSync(envPath);
+  if (hasEnv) {
+    for (const line of readFileSync(envPath, "utf8").split("\n")) {
+      const m = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
+      if (m) envMap[m[1]!] = m[2]!;
+    }
+  }
+
+  type Check = { name: string; result: "PASS" | "FAIL" | "SKIP"; detail: string; required: boolean };
+  const checks: Check[] = [];
+
+  // 1. .env presence — required.
+  checks.push({
+    name: ".env exists",
+    result: hasEnv ? "PASS" : "FAIL",
+    detail: hasEnv ? envPath : `missing — run "helyx setup"`,
+    required: true,
+  });
+
+  // 2. bun — required (we're literally running on it; this is mostly to
+  //    surface the version and confirm `which bun` resolves).
+  const bunWhich = await run(["which", "bun"], { silent: true });
+  const bunVer = await run(["bun", "--version"], { silent: true });
+  checks.push({
+    name: "bun installed",
+    result: bunWhich.ok && bunVer.ok ? "PASS" : "FAIL",
+    detail: bunWhich.ok ? `${bunWhich.output} (v${bunVer.output})` : "not in PATH",
+    required: true,
+  });
+
+  // 3. Docker (only required if DATABASE_URL points to docker-mapped port).
+  const useDocker = (envMap.DATABASE_URL ?? "").includes(":5433/");
+  if (useDocker) {
+    const dockerVer = await run(["docker", "--version"], { silent: true });
+    checks.push({
+      name: "docker available",
+      result: dockerVer.ok ? "PASS" : "FAIL",
+      detail: dockerVer.ok ? dockerVer.output : "not in PATH (Docker deploy requires it)",
+      required: true,
+    });
+    const composeVer = await run(["docker", "compose", "version"], { silent: true });
+    checks.push({
+      name: "docker compose v2",
+      result: composeVer.ok ? "PASS" : "FAIL",
+      detail: composeVer.ok ? composeVer.output : "v2 plugin missing",
+      required: true,
+    });
+  }
+
+  // 4. PostgreSQL reachable on the configured DATABASE_URL.
+  if (envMap.DATABASE_URL) {
+    // postgres.js URL parsing is too heavyweight to import here; do a quick
+    // tcp probe via `bash -c 'cat </dev/tcp/host/port'` portably.
+    const m = (envMap.DATABASE_URL).match(/postgres:\/\/[^@]+@([^:/]+):(\d+)\//);
+    if (m) {
+      const probe = await run(
+        ["bash", "-c", `exec 3<>/dev/tcp/${m[1]}/${m[2]} && echo ok`],
+        { silent: true },
+      );
+      checks.push({
+        name: `postgres reachable (${m[1]}:${m[2]})`,
+        result: probe.ok ? "PASS" : "FAIL",
+        detail: probe.ok ? "tcp open" : "no route — start postgres or check DATABASE_URL",
+        required: true,
+      });
+    }
+  }
+
+  // 5. tmux — required if DEFAULT_RUNTIME_DRIVER is tmux (the default).
+  const driver = envMap.DEFAULT_RUNTIME_DRIVER ?? "tmux";
+  if (driver === "tmux") {
+    const tmuxVer = await run(["tmux", "-V"], { silent: true });
+    checks.push({
+      name: "tmux installed",
+      result: tmuxVer.ok ? "PASS" : "FAIL",
+      detail: tmuxVer.ok ? tmuxVer.output : `not in PATH (DEFAULT_RUNTIME_DRIVER=tmux)`,
+      required: true,
+    });
+  } else {
+    checks.push({
+      name: `runtime driver "${driver}"`,
+      result: "SKIP",
+      detail: "non-tmux driver — no host check yet",
+      required: false,
+    });
+  }
+
+  // 6. claude-code CLI — required if DEFAULT_CODING_RUNTIME is claude-code.
+  const codingRuntime = envMap.DEFAULT_CODING_RUNTIME ?? "claude-code";
+  if (codingRuntime === "claude-code") {
+    const claudeWhich = await run(["which", "claude"], { silent: true });
+    checks.push({
+      name: "claude-code CLI installed",
+      result: claudeWhich.ok ? "PASS" : "FAIL",
+      detail: claudeWhich.ok
+        ? claudeWhich.output
+        : `not in PATH (DEFAULT_CODING_RUNTIME=claude-code) — install: npm install -g @anthropic-ai/claude-code`,
+      required: true,
+    });
+  } else if (codingRuntime === "codex-cli") {
+    const codexWhich = await run(["which", "codex"], { silent: true });
+    checks.push({
+      name: "codex CLI installed",
+      result: codexWhich.ok ? "PASS" : "FAIL",
+      detail: codexWhich.ok ? codexWhich.output : "not in PATH",
+      required: true,
+    });
+  }
+
+  // 7. Ollama — optional. Only check if URL is configured AND points
+  //    somewhere we can reach. Manual installs often skip Ollama entirely.
+  const ollamaUrl = envMap.OLLAMA_URL;
+  if (ollamaUrl) {
+    const probe = await run(
+      ["curl", "-sf", "--max-time", "3", `${ollamaUrl}/api/tags`],
+      { silent: true },
+    );
+    checks.push({
+      name: `ollama reachable (${ollamaUrl})`,
+      result: probe.ok ? "PASS" : "SKIP",
+      detail: probe.ok ? "responding" : "not running — embeddings/summarization disabled",
+      required: false,
+    });
+  }
+
+  // 8. API key presence (no network call — just env presence).
+  const keys = [
+    { env: "TELEGRAM_BOT_TOKEN", label: "Telegram token", required: true },
+    { env: "ANTHROPIC_API_KEY", label: "Anthropic key", required: false },
+    { env: "GROQ_API_KEY", label: "Groq key (voice STT)", required: false },
+  ];
+  for (const k of keys) {
+    const v = envMap[k.env] ?? "";
+    checks.push({
+      name: `${k.label} configured`,
+      result: v ? "PASS" : (k.required ? "FAIL" : "SKIP"),
+      detail: v ? `${k.env}=*** (${v.length} chars)` : `${k.env} not set`,
+      required: k.required,
+    });
+  }
+
+  // 9. Telegram token validity — actually call getMe (PRD §16.6 #4).
+  //    Skipped silently when token is missing; that's already FAIL'd above.
+  const tgToken = envMap.TELEGRAM_BOT_TOKEN;
+  if (tgToken) {
+    try {
+      const r = await fetch(`https://api.telegram.org/bot${tgToken}/getMe`, { signal: AbortSignal.timeout(5000) });
+      const j = (await r.json()) as { ok?: boolean; result?: { username?: string }; description?: string };
+      checks.push({
+        name: "Telegram token valid",
+        result: j?.ok ? "PASS" : "FAIL",
+        detail: j?.ok ? `bot @${j.result?.username ?? "?"}` : `getMe rejected: ${j?.description ?? "?"}`,
+        required: true,
+      });
+    } catch (err) {
+      checks.push({
+        name: "Telegram token valid",
+        result: "FAIL",
+        detail: `getMe call failed: ${err instanceof Error ? err.message : String(err)}`,
+        required: true,
+      });
+    }
+  }
+
+  // 10. Forum setup status (PRD §16.6 #5) — projects with topic_id NULL hint
+  //     that /forum_setup hasn't been run for them. Optional; always emits SKIP
+  //     for non-Telegram-forum installs.
+  if (tgToken) {
+    try {
+      const postgres = (await import("postgres")).default;
+      const dbUrl = envMap.DATABASE_URL;
+      if (dbUrl) {
+        const sql = postgres(dbUrl, { max: 1, onnotice: () => {}, idle_timeout: 2 });
+        try {
+          const rows = (await sql`SELECT
+            COUNT(*) FILTER (WHERE forum_topic_id IS NOT NULL)::int AS with_topic,
+            COUNT(*)::int AS total
+          FROM projects`) as { with_topic: number; total: number }[];
+          const r = rows[0]!;
+          if (r.total === 0) {
+            checks.push({ name: "Forum topics", result: "SKIP", detail: "no projects yet", required: false });
+          } else if (r.with_topic === r.total) {
+            checks.push({ name: "Forum topics", result: "PASS", detail: `${r.total}/${r.total} projects linked`, required: false });
+          } else {
+            checks.push({
+              name: "Forum topics",
+              result: "SKIP",
+              detail: `${r.with_topic}/${r.total} projects linked — run /forum_setup in Telegram for the rest`,
+              required: false,
+            });
+          }
+        } finally {
+          await sql.end({ timeout: 2 });
+        }
+      }
+    } catch {
+      // DB probe failed — already covered by the postgres-reachable check above.
+    }
+  }
+
+  // Print results.
+  for (const ck of checks) {
+    const tag = ck.result === "PASS"
+      ? c.green("PASS")
+      : ck.result === "FAIL"
+        ? c.red("FAIL")
+        : c.dim("SKIP");
+    const reqMark = ck.required ? " " : c.dim(" (optional)");
+    console.log(`  [${tag}] ${ck.name}${reqMark}`);
+    console.log(`         ${c.dim(ck.detail)}`);
+  }
+
+  const failedRequired = checks.filter((c) => c.result === "FAIL" && c.required);
+  console.log();
+  if (failedRequired.length === 0) {
+    console.log(`  ${c.green(c.bold("All required checks passed."))}\n`);
+    process.exit(0);
+  } else {
+    console.log(`  ${c.red(c.bold(`${failedRequired.length} required check(s) failed.`))} Fix the issues above and re-run.\n`);
+    process.exit(1);
+  }
 }
 
 // --- Stop hook registration ---
@@ -1542,7 +2764,7 @@ async function internalRegister() {
     const res = await fetch(`http://localhost:${port}/api/sessions/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectPath, cliType: "claude", cliConfig: {}, name }),
+      body: JSON.stringify({ projectPath, runtimeType: "claude-code", cliConfig: {}, name }),
     });
     const data = await res.json() as { ok?: boolean; sessionId?: number; name?: string; error?: string };
     if (res.ok) {
@@ -1574,8 +2796,24 @@ function help() {
 
   ${c.bold("Setup:")}
     setup           Interactive installation wizard (server)
+    setup-agents    Re-run only the agent-runtime portion of setup
+    runtime doctor  Validate prerequisites (bun, docker, pg, tmux, claude-code)
+    runtime status  Show RuntimeManager + driver health (live)
     remote          Connect laptop to a remote bot server
     mcp-register    Re-register MCP servers in Claude Code
+
+  ${c.bold("Agents (PRD §17.7):")}
+    agents              List agent definitions and instances
+    agent create        Interactive — create a new agent instance from a definition
+    agent start <ref>   Set desired_state=running for agent (id or name)
+    agent stop <ref>    Set desired_state=stopped
+    agent restart <ref> Reconcile-driven restart
+    agent snapshot <ref> Show last captured runtime snapshot
+    agent logs <ref> [n] Show last N agent_events (default 50)
+    providers           List model providers
+    provider test <ref> Validate provider credentials + endpoint reachability
+    models              List model profiles
+    model set <a> <p>   Bind agent <a> (id|name) to profile <p> (id|name)
 
   ${c.bold("Bot (Docker service):")}
     bot-start       Start bot (docker compose up -d)
@@ -1613,6 +2851,64 @@ const command = process.argv[2];
 
 switch (command) {
   case "setup":       await setup(); break;
+  case "setup-agents": await setupAgents(); break;
+  case "runtime": {
+    // Subcommands under `helyx runtime`. doctor (P0b) + status (wave-10).
+    const sub = process.argv[3];
+    if (sub === "doctor") {
+      await runtimeDoctor();
+    } else if (sub === "status") {
+      await runApiCmd(() => cmdRuntimeStatus());
+    } else {
+      console.log(c.red(`  Unknown runtime subcommand: ${sub ?? "(missing)"}`));
+      console.log(`  Available: ${c.cyan("doctor")}, ${c.cyan("status")}`);
+      process.exit(2);
+    }
+    break;
+  }
+  case "agents":    await runApiCmd(() => cmdAgents()); break;
+  case "agent": {
+    const sub = process.argv[3];
+    const ref = process.argv[4];
+    if (sub === "start")        await runApiCmd(() => cmdAgentAction("start", ref));
+    else if (sub === "stop")    await runApiCmd(() => cmdAgentAction("stop", ref));
+    else if (sub === "restart") await runApiCmd(() => cmdAgentAction("restart", ref));
+    else if (sub === "snapshot") await runApiCmd(() => cmdAgentSnapshot(ref));
+    else if (sub === "logs")     await runApiCmd(() => cmdAgentLogs(ref, Number(process.argv[5] ?? "50")));
+    else if (sub === "create")   await runApiCmd(() => cmdAgentCreate());
+    else {
+      console.log(c.red(`  Unknown agent subcommand: ${sub ?? "(missing)"}`));
+      console.log(`  Available: ${c.cyan("create")}, ${c.cyan("start")}, ${c.cyan("stop")}, ${c.cyan("restart")}, ${c.cyan("snapshot")}, ${c.cyan("logs")}`);
+      console.log(`  Usage: helyx agent <subcommand> [args]`);
+      process.exit(2);
+    }
+    break;
+  }
+  case "providers": await runApiCmd(() => cmdProviders()); break;
+  case "provider": {
+    const sub = process.argv[3];
+    const ref = process.argv[4];
+    if (sub === "test") await runApiCmd(() => cmdProviderTest(ref));
+    else {
+      console.log(c.red(`  Unknown provider subcommand: ${sub ?? "(missing)"}`));
+      console.log(`  Available: ${c.cyan("test")}`);
+      console.log(`  Usage: helyx provider test <id|name>`);
+      process.exit(2);
+    }
+    break;
+  }
+  case "models":    await runApiCmd(() => cmdModels()); break;
+  case "model": {
+    const sub = process.argv[3];
+    if (sub === "set") await runApiCmd(() => cmdModelSet(process.argv[4], process.argv[5]));
+    else {
+      console.log(c.red(`  Unknown model subcommand: ${sub ?? "(missing)"}`));
+      console.log(`  Available: ${c.cyan("set")}`);
+      console.log(`  Usage: helyx model set <agent> <profile>`);
+      process.exit(2);
+    }
+    break;
+  }
   case "remote":      await remote(); break;
   // Bot (Docker service)
   case "bot-start":   await dockerStart(); break;

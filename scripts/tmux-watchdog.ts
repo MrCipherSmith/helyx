@@ -27,6 +27,8 @@
 
 import type postgres from "postgres";
 import { escapeHtml } from "../utils/html.ts";
+import type { RuntimeDriver, RuntimeHandle } from "../runtime/types.ts";
+import { agentManager } from "../agents/agent-manager.ts";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -97,7 +99,39 @@ function stripAnsi(s: string): string {
     .replace(/[\x00-\x09\x0b-\x1f]/g, "");
 }
 
+// Module-level driver reference — set by startTmuxWatchdog when admin-daemon
+// passes its TmuxDriver instance. When non-null, capturePane / capturePaneVisible
+// route through driver.snapshot() instead of inline shell calls. When null, the
+// inline path is used (preserves backward compatibility for any caller that
+// doesn't supply a driver).
+let activeDriver: RuntimeDriver | null = null;
+
+/**
+ * Build a RuntimeHandle for a tmux window. The watchdog passes either a window
+ * name (e.g. "myproj") or a numeric/composite tmux target like "0.1" for split
+ * panes. The driver's NAME_REGEX disallows dots, so for non-name targets we
+ * fall back to inline shell capture.
+ */
+function buildHandle(windowName: string): RuntimeHandle {
+  return { driver: "tmux", tmuxSession: TMUX_SESSION, tmuxWindow: windowName };
+}
+
+/** True if the target string is a plain window name the driver will accept. */
+function isDriverCompatibleTarget(target: string): boolean {
+  return /^[A-Za-z0-9_-]+$/.test(target);
+}
+
 async function capturePane(windowName: string, numLines = 60): Promise<string[]> {
+  if (activeDriver && isDriverCompatibleTarget(windowName)) {
+    try {
+      const snap = await activeDriver.snapshot(buildHandle(windowName), { lines: numLines });
+      // Watchdog detection regexes were calibrated against ANSI-stripped text,
+      // so preserve that step here. Driver returns raw lines split by "\n".
+      return snap.lines.map(stripAnsi);
+    } catch {
+      // Fall through to inline shell on driver error — keep watchdog robust.
+    }
+  }
   const raw = await runShell(
     `tmux capture-pane -t "${TMUX_SESSION}:${windowName}" -p -S -${numLines} 2>/dev/null || true`,
   );
@@ -111,13 +145,27 @@ async function capturePane(windowName: string, numLines = 60): Promise<string[]>
  * it again from scroll-back would be a false positive.
  */
 async function capturePaneVisible(windowName: string): Promise<string[]> {
+  if (activeDriver && isDriverCompatibleTarget(windowName)) {
+    try {
+      const snap = await activeDriver.snapshot(buildHandle(windowName), { visibleOnly: true });
+      return snap.lines.map(stripAnsi);
+    } catch {
+      // Fall through to inline shell on driver error.
+    }
+  }
   const raw = await runShell(
     `tmux capture-pane -t "${TMUX_SESSION}:${windowName}" -p 2>/dev/null || true`,
   );
   return raw.split("\n").map(stripAnsi);
 }
 
-/** List windows in the bots session: [{name, index}] */
+/**
+ * List windows in the bots session: [{name, index}]
+ *
+ * TODO(phase-4): replace with `driver.listWindows()` once that method is added
+ * to RuntimeDriver. For now this stays as an inline shell call because the
+ * driver interface in `runtime/types.ts` does not expose window enumeration.
+ */
 async function listBotWindows(): Promise<Array<{ name: string; index: string }>> {
   const out = await runShell(
     `tmux list-windows -t ${TMUX_SESSION} -F "#{window_index} #{window_name}" 2>/dev/null || true`,
@@ -137,6 +185,8 @@ async function listBotWindows(): Promise<Array<{ name: string; index: string }>>
  * Returns [{target, currentPath}] where target is "windowIndex.paneIndex"
  * e.g. "0.1" for window 0, pane 1.
  * Used for split-pane mode where projects are panes, not windows.
+ *
+ * TODO(phase-4): driver does not yet expose pane enumeration; keep inline.
  */
 async function listBotPanes(): Promise<Array<{ target: string; currentPath: string }>> {
   const out = await runShell(
@@ -396,6 +446,25 @@ async function handlePermissionPrompt(
     ON CONFLICT (id) DO NOTHING
   `.catch((e) => console.error("[watchdog] perm insert:", e.message));
 
+  // Mirror state into the agent layer: any agent_instance linked to this session
+  // should now show actual_state='waiting_approval' until the prompt is resolved.
+  // This pauses the reconciler (via runtime-manager guard) so it doesn't kill the
+  // window mid-prompt while the human is responding via Telegram.
+  try {
+    const [linked] = (await sql`
+      SELECT id FROM agent_instances WHERE session_id = ${session.sessionId} LIMIT 1
+    `) as any[];
+    if (linked) {
+      await agentManager.setActualState(
+        Number(linked.id),
+        "waiting_approval",
+        "permission prompt detected by watchdog",
+      );
+    }
+  } catch (err) {
+    console.warn(`[watchdog] failed to mark agent_instance waiting_approval: ${String(err)}`);
+  }
+
   const entry: PendingPermEntry = {
     requestId,
     chatId: chat.chatId,
@@ -408,6 +477,34 @@ async function handlePermissionPrompt(
   pollPermissionResponse(sql, token, windowName, state, entry).catch((e) =>
     console.error("[watchdog] perm poll:", e.message),
   );
+}
+
+/**
+ * Clear `waiting_approval` on any agent_instance linked to this session and
+ * transition it back to 'running'. Called when the permission prompt is resolved
+ * (either via Telegram callback or in-terminal answer or timeout).
+ *
+ * Safe to call unconditionally — checks current state and only acts if the
+ * instance is still in waiting_approval.
+ */
+async function clearWaitingApprovalForSession(
+  sql: postgres.Sql,
+  sessionId: number,
+): Promise<void> {
+  try {
+    const [inst] = (await sql`
+      SELECT id, actual_state FROM agent_instances WHERE session_id = ${sessionId} LIMIT 1
+    `) as any[];
+    if (inst && inst.actual_state === "waiting_approval") {
+      await agentManager.setActualState(
+        Number(inst.id),
+        "running",
+        "permission prompt cleared",
+      );
+    }
+  } catch (err) {
+    console.warn(`[watchdog] failed to clear waiting_approval: ${String(err)}`);
+  }
 }
 
 async function pollPermissionResponse(
@@ -435,11 +532,15 @@ async function pollPermissionResponse(
     if (rows.length > 0) {
       const behavior = rows[0].response as string;
       const key = behavior === "deny" ? "3" : behavior === "always" ? "2" : "1";
+      // TODO(phase-4): route through driver.sendInput({kind:"text", text:key}).
+      // Inline for now because windowName here can be a composite "0.1" pane
+      // target which the driver's NAME_REGEX rejects.
       await runShell(`tmux send-keys -t "${TMUX_SESSION}:${windowName}" "${key}" Enter`);
       console.log(`[watchdog] ${entry.requestId}: ${behavior} → key ${key}`);
       entry.resolvedAt = Date.now();
       await sql`UPDATE permission_requests SET archived_at = NOW() WHERE id = ${entry.requestId}`.catch(() => {});
       state.pendingPermission = undefined;
+      await clearWaitingApprovalForSession(sql, state.sessionId);
       return;
     }
 
@@ -458,6 +559,7 @@ async function pollPermissionResponse(
       }
       await sql`UPDATE permission_requests SET archived_at = NOW() WHERE id = ${entry.requestId}`.catch(() => {});
       state.pendingPermission = undefined;
+      await clearWaitingApprovalForSession(sql, state.sessionId);
       return;
     }
 
@@ -466,6 +568,7 @@ async function pollPermissionResponse(
 
   // Timeout
   console.warn(`[watchdog] ${entry.requestId}: timeout, auto-denying`);
+  // TODO(phase-4): route through driver.sendInput({kind:"text", text:"3"}).
   await runShell(`tmux send-keys -t "${TMUX_SESSION}:${windowName}" "3" Enter`);
   entry.resolvedAt = Date.now();
   if (entry.telegramMsgId) {
@@ -473,6 +576,7 @@ async function pollPermissionResponse(
   }
   await sql`UPDATE permission_requests SET archived_at = NOW() WHERE id = ${entry.requestId}`.catch(() => {});
   state.pendingPermission = undefined;
+  await clearWaitingApprovalForSession(sql, state.sessionId);
 }
 
 // ---------------------------------------------------------------------------
@@ -512,7 +616,16 @@ async function fetchActiveSessions(sql: postgres.Sql): Promise<ActiveSession[]> 
 // Chars to filter from pane snapshot (spinner frames, box-drawing, etc.)
 const NOISE_RE = /^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏○◐◑◒◓●▸▹►▻◆◇■□▪▫─│╭╮╰╯┌┐└┘├┤┬┴┼\s]*$/;
 
-/** Write last N meaningful lines of the pane to sessions.pane_snapshot. */
+/** Write last N meaningful lines of the pane to sessions.pane_snapshot.
+ *
+ * Phase 4 / Wave 3 (additive): also mirrors the snapshot into
+ * `agent_instances.last_snapshot` (and bumps `last_snapshot_at`) for any
+ * agent_instance currently linked via `session_id`. The legacy
+ * `sessions.pane_snapshot` write is preserved unchanged — it is still the
+ * source of truth for live status display until the agent layer is fully
+ * reconciled. Failures on the mirror are logged and never block the legacy
+ * write path.
+ */
 async function writePaneSnapshot(sql: postgres.Sql, sessionId: number, lines: string[]): Promise<void> {
   const meaningful = lines
     .map(l => l.trim())
@@ -520,10 +633,25 @@ async function writePaneSnapshot(sql: postgres.Sql, sessionId: number, lines: st
     .slice(-6);
   if (meaningful.length === 0) return;
   const snapshot = meaningful.join("\n");
+
+  // Legacy write — DO NOT remove. Remains the source of truth for now.
   await sql`
     UPDATE sessions SET pane_snapshot = ${snapshot}, pane_snapshot_at = NOW()
     WHERE id = ${sessionId}
   `.catch(() => {});
+
+  // Additive: dual-write into the agent layer if the session is linked.
+  try {
+    const [linked] = await sql`
+      SELECT id FROM agent_instances WHERE session_id = ${sessionId} LIMIT 1
+    ` as any[];
+    const linkedId = linked?.id ? Number(linked.id) : null;
+    if (linkedId) {
+      await agentManager.updateSnapshot(linkedId, snapshot);
+    }
+  } catch (err: any) {
+    console.warn(`[watchdog] agent-layer snapshot mirror failed (non-fatal) sid=${sessionId}: ${err?.message ?? err}`);
+  }
 }
 
 async function pollWindows(
@@ -540,6 +668,10 @@ async function pollWindows(
     const visibleLines = await capturePaneVisible(win.index);
     if (detectDevChannelPrompt(visibleLines)) {
       console.log(`[watchdog] dev-channel startup prompt in "${win.name}" — auto-confirming`);
+      // TODO(phase-4): route through driver.sendInput. Target here is a numeric
+      // window index (e.g. "0"), which the driver's NAME_REGEX accepts, but the
+      // empty-text + Enter idiom isn't a clean fit for the existing action
+      // shapes. Keep inline until driver gains a dedicated "press_enter" action.
       await runShell(`tmux send-keys -t "${TMUX_SESSION}:${win.index}" "" Enter`);
     }
   }
@@ -598,6 +730,8 @@ async function pollWindows(
     const visibleLines = await capturePaneVisible(tmuxTarget);
     if (detectDevChannelPrompt(visibleLines)) {
       console.log(`[watchdog] dev-channel prompt in ${winName} — auto-confirming`);
+      // TODO(phase-4): see comment in pollWindows allWindows loop above —
+      // same idiom, same reason for staying inline.
       await runShell(`tmux send-keys -t "${TMUX_SESSION}:${tmuxTarget}" "" Enter`);
       continue;
     }
@@ -689,10 +823,28 @@ async function pollWindows(
 // Public API
 // ---------------------------------------------------------------------------
 
-/** Start the watchdog. Returns immediately; runs the poll loop as a background task. */
-export function startTmuxWatchdog(sql: postgres.Sql, token: string): void {
+/**
+ * Start the watchdog. Returns immediately; runs the poll loop as a background task.
+ *
+ * The optional `driver` parameter routes pane snapshot operations
+ * (`capturePane` / `capturePaneVisible`) through the abstract RuntimeDriver
+ * contract. When omitted, the watchdog falls back to inline `tmux capture-pane`
+ * shell calls — preserves backward compatibility for any future caller.
+ *
+ * Other tmux interactions (listBotWindows, listBotPanes, send-keys for
+ * permission responses and dev-channel auto-confirm) remain inline shell calls
+ * pending Phase 4 work — see TODO(phase-4) markers in the file.
+ */
+export function startTmuxWatchdog(
+  sql: postgres.Sql,
+  token: string,
+  driver?: RuntimeDriver,
+): void {
+  activeDriver = driver ?? null;
   const states = new Map<string, WindowState>();
-  console.log("[watchdog] started (poll interval: 5 s)");
+  console.log(
+    `[watchdog] started (poll interval: 5 s${driver ? `, driver: ${driver.name}` : ", no driver — inline shell"})`,
+  );
 
   const loop = async () => {
     while (true) {

@@ -2,6 +2,20 @@
  * Supervisor topic handlers:
  * - handleSupervisorCallback: inline button callbacks (sup:restart_session, sup:ignore)
  * - handleSupervisorMessage: text messages in supervisor topic (/status, ?, статус)
+ *
+ * ─── Phase-2-aware design note ──────────────────────────────────────────────
+ * The `restart_session` branch enqueues a `proj_start` admin_command rather
+ * than calling `RuntimeManager.getDriver("tmux").start(...)` directly
+ * (proposal P2-12 option-a). This handler runs INSIDE the bot Docker
+ * container, where the host tmux server is not reachable — TmuxDriver needs
+ * shell access to `tmux` on the host. The `admin_commands` queue is the
+ * documented host/container boundary and admin-daemon already routes
+ * `proj_start` through `tmuxDriver.start()` (see scripts/admin-daemon.ts).
+ *
+ * Direct in-process driver use will become possible in Phase 4, when
+ * `agent_instances` + the reconcile loop replace the imperative queue. Until
+ * then, the queue path IS the correct integration point — do not migrate yet.
+ * ────────────────────────────────────────────────────────────────────────────
  */
 
 import type { Context } from "grammy";

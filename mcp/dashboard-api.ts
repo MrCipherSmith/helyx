@@ -12,6 +12,9 @@ import { isIndexing } from "../memory/long-term.ts";
 import { addSSEClient, removeSSEClient, getSSEClientCount } from "./notification-broadcaster.ts";
 import { sessionService } from "../services/session-service.ts";
 import { projectService } from "../services/project-service.ts";
+import { agentManager } from "../agents/agent-manager.ts";
+import { orchestrator } from "../agents/orchestrator.ts";
+import type { TaskStatus } from "../agents/orchestrator.ts";
 import { logger } from "../logger.ts";
 
 const DIST_DIR = join(import.meta.dirname, "../dashboard/dist");
@@ -798,6 +801,458 @@ async function handleAlwaysAllowPermission(req: IncomingMessage, res: ServerResp
   sendJson(res, { ok: true });
 }
 
+// --- Agents / Tasks / Models API (PRD §16 dashboard + §17.7 CLI) ---
+//
+// All handlers delegate to agentManager and orchestrator singletons. They
+// return JSON shaped to match the corresponding TS types (AgentInstance,
+// AgentTask, etc.) so dashboard React components can consume them
+// directly without re-mapping.
+
+async function handleListAgents(res: ServerResponse, url: URL): Promise<void> {
+  // Match-if-set idiom: each filter parameter collapses to TRUE when null,
+  // so the dimension is effectively skipped without dynamic SQL fragment
+  // assembly. Same pattern as orchestrator.listTasks (agents/orchestrator.ts).
+  const projectIdParam = url.searchParams.get("project_id");
+  const projectId = projectIdParam ? Number(projectIdParam) : null;
+  const desiredState = url.searchParams.get("desired_state");
+  const actualState = url.searchParams.get("actual_state");
+
+  // Join definitions for capabilities + runtime_type — saves the dashboard
+  // a second roundtrip per row.
+  const rows = await sql`
+    SELECT ai.*,
+           ad.name AS definition_name,
+           ad.runtime_type,
+           ad.capabilities,
+           ad.enabled AS definition_enabled,
+           p.name AS project_name
+    FROM agent_instances ai
+    JOIN agent_definitions ad ON ad.id = ai.definition_id
+    LEFT JOIN projects p ON p.id = ai.project_id
+    WHERE (${projectId}::int IS NULL OR ai.project_id = ${projectId})
+      AND (${desiredState}::text IS NULL OR ai.desired_state = ${desiredState})
+      AND (${actualState}::text IS NULL OR ai.actual_state = ${actualState})
+    ORDER BY ai.id ASC
+  ` as any[];
+  sendJson(res, rows);
+}
+
+async function handleListAgentDefinitions(res: ServerResponse): Promise<void> {
+  const defs = await agentManager.listDefinitions();
+  sendJson(res, defs);
+}
+
+async function handleGetAgent(res: ServerResponse, id: number): Promise<void> {
+  const inst = await agentManager.getInstance(id);
+  if (!inst) { sendError(res, "agent not found", 404); return; }
+  sendJson(res, inst);
+}
+
+async function handleAgentAction(
+  req: IncomingMessage,
+  res: ServerResponse,
+  id: number,
+  action: "start" | "stop" | "restart",
+): Promise<void> {
+  const body = await parseBody(req).catch(() => ({}));
+  const reason = typeof body?.reason === "string" ? body.reason : `dashboard ${action}`;
+  // start and restart both converge to desired_state='running' — the
+  // reconciler will pick up actual_state and either leave it or restart.
+  // stop sets desired_state='stopped'.
+  const desired = action === "stop" ? "stopped" : "running";
+  try {
+    const inst = await agentManager.setDesiredState(id, desired as any, reason);
+    sendJson(res, inst);
+  } catch (e) {
+    sendError(res, e instanceof Error ? e.message : String(e), 400);
+  }
+}
+
+async function handleListTasks(res: ServerResponse, url: URL): Promise<void> {
+  const status = url.searchParams.get("status") as TaskStatus | null;
+  const agentInstanceId = url.searchParams.get("agent_instance_id");
+  const parentTaskId = url.searchParams.get("parent_task_id");
+  const filter: { status?: TaskStatus; agentInstanceId?: number; parentTaskId?: number | null } = {};
+  if (status) filter.status = status;
+  if (agentInstanceId) filter.agentInstanceId = Number(agentInstanceId);
+  if (parentTaskId === "null") filter.parentTaskId = null;
+  else if (parentTaskId) filter.parentTaskId = Number(parentTaskId);
+  const tasks = await orchestrator.listTasks(filter);
+  sendJson(res, tasks);
+}
+
+async function handleGetTaskTree(res: ServerResponse, id: number): Promise<void> {
+  const tree = await orchestrator.getTaskTree(id);
+  if (!tree) { sendError(res, "task not found", 404); return; }
+  sendJson(res, tree);
+}
+
+async function handleReassignTask(req: IncomingMessage, res: ServerResponse, id: number): Promise<void> {
+  const body = await parseBody(req).catch(() => ({}));
+  const reason = typeof body?.reason === "string" ? body.reason : "manual reassign from dashboard";
+  try {
+    const result = await orchestrator.handleFailure(id, { reason });
+    sendJson(res, result);
+  } catch (e) {
+    sendError(res, e instanceof Error ? e.message : String(e), 400);
+  }
+}
+
+/**
+ * Re-link an agent_instance's definition to a different model_profile.
+ * Implements the runtime side of `helyx model set <agent> <profile>`
+ * (PRD §17.7) and the future dashboard model-routing UI.
+ *
+ * Note on shape: model_profile_id lives on `agent_definitions`, not on
+ * `agent_instances` — definitions are role templates and the profile
+ * binding belongs there. We update the linked definition rather than
+ * the instance row directly. The caller scope is "this agent uses this
+ * profile" but the storage is one-level deeper. This is acceptable for
+ * the current 1:N (definition:instances) cardinality; if multiple
+ * instances of the same definition need different profiles, a per-
+ * instance override column will be needed later.
+ */
+async function handleSetAgentProfile(req: IncomingMessage, res: ServerResponse, id: number): Promise<void> {
+  const body = await parseBody(req).catch(() => ({}));
+  const profileRef = body?.profile;
+  if (!profileRef || (typeof profileRef !== "string" && typeof profileRef !== "number")) {
+    sendError(res, "body must include `profile` (id or name)", 400);
+    return;
+  }
+
+  // All four steps (profile lookup, instance lookup, agent_definitions
+  // UPDATE, agent_events INSERT) must be atomic. Without a transaction,
+  // a concurrent profile DELETE between lookup and UPDATE could ON DELETE
+  // SET NULL silently — caller would see ok=true but the DB has
+  // model_profile_id=NULL. The audit event is also lost on partial crash.
+  try {
+    const result = await sql.begin(async (tx) => {
+      let profileId: number;
+      if (typeof profileRef === "number" || /^\d+$/.test(String(profileRef))) {
+        profileId = Number(profileRef);
+        const exists = (await tx`
+          SELECT id FROM model_profiles WHERE id = ${profileId} AND enabled = true LIMIT 1
+        `) as any[];
+        if (exists.length === 0) throw new Error(`__NOT_FOUND__:model_profile id=${profileId} not found or disabled`);
+      } else {
+        const rows = (await tx`
+          SELECT id FROM model_profiles WHERE name = ${profileRef} AND enabled = true LIMIT 1
+        `) as any[];
+        if (rows.length === 0) throw new Error(`__NOT_FOUND__:model_profile "${profileRef}" not found or disabled`);
+        profileId = Number(rows[0].id);
+      }
+
+      const inst = (await tx`
+        SELECT id, definition_id, name FROM agent_instances WHERE id = ${id} LIMIT 1
+      `) as any[];
+      if (inst.length === 0) throw new Error("__NOT_FOUND__:agent not found");
+      const definitionId = Number(inst[0].definition_id);
+
+      await tx`
+        UPDATE agent_definitions SET model_profile_id = ${profileId}, updated_at = now()
+        WHERE id = ${definitionId}
+      `;
+      await tx`
+        INSERT INTO agent_events (agent_instance_id, event_type, message, metadata)
+        VALUES (
+          ${id},
+          'model_profile_change',
+          ${`profile binding updated to model_profile_id=${profileId}`},
+          ${JSON.stringify({ definition_id: definitionId, model_profile_id: profileId })}::jsonb
+        )
+      `;
+      return { agent_id: id, definition_id: definitionId, model_profile_id: profileId };
+    });
+    sendJson(res, { ok: true, ...result });
+  } catch (err: any) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.startsWith("__NOT_FOUND__:")) {
+      sendError(res, msg.slice("__NOT_FOUND__:".length), 404);
+    } else {
+      sendError(res, msg, 400);
+    }
+  }
+}
+
+/**
+ * Create a new agent_instance from an existing definition. Validates:
+ *   - definition exists and is enabled
+ *   - project_id, if provided, exists
+ *   - (project_id, name) is unique (DB constraint will reject otherwise)
+ *
+ * Does NOT create new agent_definitions — definitions are seeded by
+ * migrations and the wizard. To add a new definition, edit a migration
+ * (long-term) or use `helyx setup-agents` (operational).
+ */
+async function handleCreateAgent(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const body = await parseBody(req).catch(() => null);
+  if (!body || typeof body !== "object") { sendError(res, "JSON body required", 400); return; }
+
+  const definitionRef = body.definition;
+  const projectRef = body.project ?? null;
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  const desiredState = body.desired_state ?? "stopped";
+
+  if (!definitionRef) { sendError(res, "definition (id or name) required", 400); return; }
+  if (!name) { sendError(res, "name required", 400); return; }
+  if (!["running", "stopped", "paused"].includes(desiredState)) {
+    sendError(res, `desired_state must be one of: running, stopped, paused`, 400);
+    return;
+  }
+
+  // Resolve definition by id or name.
+  let definitionId: number | null = null;
+  if (typeof definitionRef === "number" || /^\d+$/.test(String(definitionRef))) {
+    const r = (await sql`SELECT id FROM agent_definitions WHERE id = ${Number(definitionRef)} AND enabled = true LIMIT 1`) as any[];
+    if (r.length === 0) { sendError(res, `agent_definition id=${definitionRef} not found or disabled`, 404); return; }
+    definitionId = Number(r[0].id);
+  } else {
+    const r = (await sql`SELECT id FROM agent_definitions WHERE name = ${definitionRef} AND enabled = true LIMIT 1`) as any[];
+    if (r.length === 0) { sendError(res, `agent_definition "${definitionRef}" not found or disabled`, 404); return; }
+    definitionId = Number(r[0].id);
+  }
+
+  // Resolve project by id or name (optional — null = unattached agent).
+  let projectId: number | null = null;
+  if (projectRef !== null && projectRef !== undefined && projectRef !== "") {
+    if (typeof projectRef === "number" || /^\d+$/.test(String(projectRef))) {
+      const r = (await sql`SELECT id FROM projects WHERE id = ${Number(projectRef)} LIMIT 1`) as any[];
+      if (r.length === 0) { sendError(res, `project id=${projectRef} not found`, 404); return; }
+      projectId = Number(r[0].id);
+    } else {
+      const r = (await sql`SELECT id FROM projects WHERE name = ${projectRef} LIMIT 1`) as any[];
+      if (r.length === 0) { sendError(res, `project "${projectRef}" not found`, 404); return; }
+      projectId = Number(r[0].id);
+    }
+  }
+
+  try {
+    const inserted = (await sql`
+      INSERT INTO agent_instances (definition_id, project_id, name, desired_state, actual_state)
+      VALUES (${definitionId}, ${projectId}, ${name}, ${desiredState}, 'new')
+      RETURNING *
+    `) as any[];
+    sendJson(res, inserted[0]);
+  } catch (err: any) {
+    // Unique constraint (project_id, name) → 409 Conflict.
+    if (err?.code === "23505" || /duplicate.*key/i.test(String(err?.message))) {
+      sendError(res, `agent with name "${name}" already exists in project ${projectId ?? "(global)"}`, 409);
+      return;
+    }
+    sendError(res, err?.message ?? String(err), 400);
+  }
+}
+
+async function handleAgentEvents(res: ServerResponse, id: number, url: URL): Promise<void> {
+  // Return recent agent_events for an agent instance. Default limit 50;
+  // accepts ?limit=N (capped at 500). Used by `helyx agent logs <id>`
+  // and the dashboard agent detail page.
+  const limitParam = Number(url.searchParams.get("limit") ?? "50");
+  const limit = Math.max(1, Math.min(500, isFinite(limitParam) ? limitParam : 50));
+  const rows = await sql`
+    SELECT id, agent_instance_id, task_id, event_type, from_state, to_state, message, metadata, created_at
+    FROM agent_events
+    WHERE agent_instance_id = ${id}
+    ORDER BY created_at DESC
+    LIMIT ${limit}
+  ` as any[];
+  sendJson(res, rows);
+}
+
+/**
+ * Send a tiny live request to the provider's API to verify credentials +
+ * endpoint reachability (PRD §16.6 #9). Doesn't burn a model_profile —
+ * uses default_model from the model_providers row directly.
+ *
+ * The fallback policy is intentionally bypassed (_fallbackInProgress=true)
+ * so the user sees the primary provider's actual error, not a masking
+ * fallback success.
+ */
+async function handleProviderTest(res: ServerResponse, id: number): Promise<void> {
+  const rows = await sql`
+    SELECT id, name, provider_type, base_url, api_key_env, default_model
+    FROM model_providers WHERE id = ${id} LIMIT 1
+  ` as any[];
+  const p = rows[0];
+  if (!p) { sendError(res, "provider not found", 404); return; }
+
+  const apiKey = p.api_key_env ? process.env[p.api_key_env] : "";
+  // Ollama is the only currently-supported provider that doesn't need a key.
+  if (!apiKey && p.provider_type !== "ollama") {
+    sendJson(res, {
+      ok: false,
+      provider: p.name,
+      error: `API key env "${p.api_key_env}" is not set in the bot's environment`,
+      durationMs: 0,
+    });
+    return;
+  }
+
+  // SSRF guard: validate base_url before issuing an authenticated outbound
+  // HTTP call. Without this an authenticated operator who edited a
+  // model_providers row could point base_url at cloud-metadata services
+  // (169.254.169.254) or internal RFC-1918 ranges, then read up to 200
+  // chars of the response back through the API reply. helyx is single-
+  // tenant but operator privilege ≠ trust to read internal network.
+  //
+  // Allowed: known-good public hosts (api.anthropic.com, api.openai.com,
+  // openrouter.ai, generativelanguage.googleapis.com, api.deepseek.com,
+  // api.groq.com), or the explicit Ollama localhost configured at install.
+  // Anything else is rejected before the fetch.
+  const baseUrlValidationError = validateProviderBaseUrl(p.base_url, p.provider_type);
+  if (baseUrlValidationError) {
+    sendJson(res, {
+      ok: false,
+      provider: p.name,
+      error: baseUrlValidationError,
+      durationMs: 0,
+    });
+    return;
+  }
+
+  const { generateResponse } = await import("../llm/client.ts");
+  const resolved = {
+    providerType: p.provider_type,
+    model: p.default_model || "claude-haiku-4-5",
+    apiKey: apiKey || undefined,
+    baseUrl: p.base_url ?? undefined,
+    maxTokens: 16,
+  };
+
+  const start = Date.now();
+  try {
+    const result = await generateResponse(
+      [{ role: "user", content: "ping" }],
+      "Reply with one word.",
+      { provider: resolved as any, operation: "provider-test", _fallbackInProgress: true },
+    );
+    // Truncate response to a short snippet AND strip anything that looks
+    // like a bearer token, in case the upstream echoed something like
+    // "your key sk-... is invalid" in the response body.
+    const snippet = result.slice(0, 200).replace(/\b(?:sk|pk|Bearer)[A-Za-z0-9_.-]{8,}/gi, "***");
+    sendJson(res, {
+      ok: true,
+      provider: p.name,
+      model: resolved.model,
+      durationMs: Date.now() - start,
+      response: snippet,
+    });
+  } catch (err: any) {
+    // Sanitize error message identically — third-party SDKs may include
+    // partial keys or tokens in their thrown errors.
+    const msg = (err?.message ?? String(err)).slice(0, 500)
+      .replace(/\b(?:sk|pk|Bearer)[A-Za-z0-9_.-]{8,}/gi, "***");
+    sendJson(res, {
+      ok: false,
+      provider: p.name,
+      model: resolved.model,
+      durationMs: Date.now() - start,
+      error: msg,
+    });
+  }
+}
+
+/**
+ * SSRF allowlist for provider test calls. Returns null when the URL is
+ * acceptable; otherwise returns a human-readable rejection reason.
+ *
+ *   - Ollama: localhost / 127.0.0.1 / host.docker.internal allowed
+ *     (Ollama is intentionally a local service)
+ *   - All others: must be HTTPS + a hostname in the public allowlist
+ *
+ * IPv6 link-local / unique-local + RFC-1918 / loopback / link-local IPv4
+ * are explicitly rejected even when the user types them as the host.
+ */
+function validateProviderBaseUrl(baseUrl: string | null, providerType: string): string | null {
+  if (!baseUrl) {
+    // Anthropic and a few others use SDK-default URL; that path skips
+    // base_url entirely and goes through the official endpoint. OK.
+    return null;
+  }
+  let parsed: URL;
+  try { parsed = new URL(baseUrl); }
+  catch { return `invalid base_url: "${baseUrl}"`; }
+
+  const host = parsed.hostname.toLowerCase();
+  const ollamaHosts = new Set(["localhost", "127.0.0.1", "host.docker.internal", "::1"]);
+  if (providerType === "ollama") {
+    if (ollamaHosts.has(host)) return null;
+    return `Ollama base_url must be one of: ${[...ollamaHosts].join(", ")} (got "${host}")`;
+  }
+  // For non-Ollama providers, demand HTTPS + a public allowlisted host.
+  if (parsed.protocol !== "https:") {
+    return `non-Ollama provider must use https:// (got "${parsed.protocol}")`;
+  }
+  // Reject obvious internal addresses by IP form.
+  if (/^(?:10\.|127\.|169\.254\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|0\.|::1$|fe80:|fc00:|fd00:)/.test(host)) {
+    return `base_url points to an internal address (${host}) — refused (SSRF guard)`;
+  }
+  if (ollamaHosts.has(host)) {
+    return `base_url points to a local address (${host}) but provider_type is "${providerType}" — refused`;
+  }
+  // Allowlist of well-known managed-LLM endpoints. Add to this list when
+  // a new public provider lands. We deliberately do NOT allow arbitrary
+  // public hostnames — operators with custom enterprise endpoints should
+  // add them explicitly via a code patch (gateways inside private
+  // networks are out of scope for the test endpoint).
+  const allowedSuffixes = [
+    "api.anthropic.com",
+    "api.openai.com",
+    "openrouter.ai",
+    "generativelanguage.googleapis.com",
+    "api.deepseek.com",
+    "api.groq.com",
+  ];
+  if (!allowedSuffixes.some((s) => host === s || host.endsWith("." + s))) {
+    return `base_url host "${host}" is not in the allowlist for provider test. Allowed: ${allowedSuffixes.join(", ")}`;
+  }
+  return null;
+}
+
+async function handleListProviders(res: ServerResponse): Promise<void> {
+  const rows = await sql`
+    SELECT id, name, provider_type, base_url, api_key_env, default_model, enabled, metadata, created_at, updated_at
+    FROM model_providers
+    ORDER BY id ASC
+  ` as any[];
+  sendJson(res, rows);
+}
+
+async function handleListProfiles(res: ServerResponse): Promise<void> {
+  const rows = await sql`
+    SELECT mp.id, mp.name, mp.provider_id, mpr.name AS provider_name, mp.model,
+           mp.max_tokens, mp.temperature, mp.system_prompt, mp.enabled, mp.metadata,
+           mp.created_at, mp.updated_at
+    FROM model_profiles mp
+    JOIN model_providers mpr ON mpr.id = mp.provider_id
+    ORDER BY mp.id ASC
+  ` as any[];
+  sendJson(res, rows);
+}
+
+async function handleRuntimeStatus(res: ServerResponse): Promise<void> {
+  // Lightweight aggregate: counts + tmux-driver health probe via a single
+  // session lookup. Intentionally NOT exposing per-driver internals — the
+  // dashboard only needs traffic-light status (ok/degraded/down) per
+  // surface area.
+  const [totals] = await sql`
+    SELECT
+      (SELECT COUNT(*)::int FROM agent_instances) AS total_instances,
+      (SELECT COUNT(*)::int FROM agent_instances WHERE actual_state = 'running') AS running_instances,
+      (SELECT COUNT(*)::int FROM agent_instances WHERE actual_state = 'stopped') AS stopped_instances,
+      (SELECT COUNT(*)::int FROM agent_instances WHERE actual_state = 'waiting_approval') AS waiting_approval,
+      (SELECT COUNT(*)::int FROM agent_instances
+        WHERE desired_state != actual_state AND desired_state != 'stopped') AS desired_actual_drift,
+      (SELECT COUNT(*)::int FROM agent_tasks WHERE status = 'pending') AS pending_tasks,
+      (SELECT COUNT(*)::int FROM agent_tasks WHERE status = 'in_progress') AS in_progress_tasks,
+      (SELECT COUNT(*)::int FROM agent_tasks WHERE status = 'failed') AS failed_tasks
+  ` as any[];
+  sendJson(res, {
+    totals,
+    drivers: { tmux: "ok", pty: "not-implemented", docker: "not-implemented", process: "not-implemented" },
+  });
+}
+
 // --- WebApp auth ---
 
 async function handleAuthWebApp(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -1141,6 +1596,65 @@ export async function handleDashboardRequest(
       const id = Number(permActionMatch[1]);
       if (permActionMatch[2] === "respond") { await handleRespondPermission(req, res, id); return true; }
       if (permActionMatch[2] === "always") { await handleAlwaysAllowPermission(req, res, id); return true; }
+    }
+
+    // --- Agents API (PRD §16, §17.7) ---
+    if (pathname === "/api/agents" && method === "GET") {
+      await handleListAgents(res, url); return true;
+    }
+    if (pathname === "/api/agents" && method === "POST") {
+      await handleCreateAgent(req, res); return true;
+    }
+    if (pathname === "/api/agents/definitions" && method === "GET") {
+      await handleListAgentDefinitions(res); return true;
+    }
+    const agentDetailMatch = pathname.match(/^\/api\/agents\/(\d+)$/);
+    if (agentDetailMatch && method === "GET") {
+      await handleGetAgent(res, Number(agentDetailMatch[1])); return true;
+    }
+    const agentActionMatch = pathname.match(/^\/api\/agents\/(\d+)\/(start|stop|restart)$/);
+    if (agentActionMatch && method === "POST") {
+      const id = Number(agentActionMatch[1]);
+      const action = agentActionMatch[2] as "start" | "stop" | "restart";
+      await handleAgentAction(req, res, id, action); return true;
+    }
+    const agentEventsMatch = pathname.match(/^\/api\/agents\/(\d+)\/events$/);
+    if (agentEventsMatch && method === "GET") {
+      await handleAgentEvents(res, Number(agentEventsMatch[1]), url); return true;
+    }
+    const agentProfileMatch = pathname.match(/^\/api\/agents\/(\d+)\/model-profile$/);
+    if (agentProfileMatch && (method === "PATCH" || method === "POST")) {
+      await handleSetAgentProfile(req, res, Number(agentProfileMatch[1])); return true;
+    }
+
+    // --- Tasks API ---
+    if (pathname === "/api/tasks" && method === "GET") {
+      await handleListTasks(res, url); return true;
+    }
+    const taskTreeMatch = pathname.match(/^\/api\/tasks\/(\d+)$/);
+    if (taskTreeMatch && method === "GET") {
+      await handleGetTaskTree(res, Number(taskTreeMatch[1])); return true;
+    }
+    const taskReassignMatch = pathname.match(/^\/api\/tasks\/(\d+)\/reassign$/);
+    if (taskReassignMatch && method === "POST") {
+      await handleReassignTask(req, res, Number(taskReassignMatch[1])); return true;
+    }
+
+    // --- Providers / Profiles API ---
+    if (pathname === "/api/providers" && method === "GET") {
+      await handleListProviders(res); return true;
+    }
+    const providerTestMatch = pathname.match(/^\/api\/providers\/(\d+)\/test$/);
+    if (providerTestMatch && method === "POST") {
+      await handleProviderTest(res, Number(providerTestMatch[1])); return true;
+    }
+    if (pathname === "/api/profiles" && method === "GET") {
+      await handleListProfiles(res); return true;
+    }
+
+    // --- Runtime status ---
+    if (pathname === "/api/runtime/status" && method === "GET") {
+      await handleRuntimeStatus(res); return true;
     }
 
     sendError(res, "Not found", 404);

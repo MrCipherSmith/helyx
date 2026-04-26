@@ -518,6 +518,409 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 22,
+    name: "add model_providers, model_profiles, and sessions.model_profile_id",
+    up: async (tx) => {
+      // Phase 3 scaffolding — DB-driven LLM provider routing layer.
+      // Additive only: existing env-var-driven provider detection in claude/client.ts
+      // remains the fallback when sessions.model_profile_id IS NULL.
+
+      // --- model_providers: registry of LLM provider configurations ---
+      await tx`
+        CREATE TABLE IF NOT EXISTS model_providers (
+          id            SERIAL PRIMARY KEY,
+          name          TEXT NOT NULL UNIQUE,
+          provider_type TEXT NOT NULL,
+          base_url      TEXT,
+          api_key_env   TEXT,
+          default_model TEXT,
+          enabled       BOOLEAN NOT NULL DEFAULT true,
+          metadata      JSONB NOT NULL DEFAULT '{}',
+          created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+      `;
+      await tx`CREATE INDEX IF NOT EXISTS idx_model_providers_type ON model_providers(provider_type)`;
+      await tx`CREATE INDEX IF NOT EXISTS idx_model_providers_enabled ON model_providers(enabled)`;
+
+      // --- model_profiles: named role/configuration combinations ---
+      await tx`
+        CREATE TABLE IF NOT EXISTS model_profiles (
+          id            SERIAL PRIMARY KEY,
+          name          TEXT NOT NULL UNIQUE,
+          provider_id   INTEGER NOT NULL REFERENCES model_providers(id) ON DELETE RESTRICT,
+          model         TEXT NOT NULL,
+          max_tokens    INTEGER,
+          temperature   REAL,
+          system_prompt TEXT,
+          metadata      JSONB NOT NULL DEFAULT '{}',
+          enabled       BOOLEAN NOT NULL DEFAULT true,
+          created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+      `;
+      await tx`CREATE INDEX IF NOT EXISTS idx_model_profiles_provider ON model_profiles(provider_id)`;
+      await tx`CREATE INDEX IF NOT EXISTS idx_model_profiles_enabled ON model_profiles(enabled)`;
+
+      // --- Bootstrap rows mirroring current env-var-driven providers ---
+      // These are placeholders; users edit them later via /providers command.
+      // ON CONFLICT (name) DO NOTHING keeps the migration idempotent.
+      await tx`
+        INSERT INTO model_providers (name, provider_type, base_url, api_key_env, default_model)
+        VALUES
+          ('Anthropic',  'anthropic',     NULL,                                                       'ANTHROPIC_API_KEY',  'claude-sonnet-4-6'),
+          ('OpenRouter', 'openai',        'https://openrouter.ai/api/v1',                             'OPENROUTER_API_KEY', 'qwen/qwen3-235b-a22b:free'),
+          ('Google AI',  'google-ai',     'https://generativelanguage.googleapis.com/v1beta/openai',  'GOOGLE_AI_API_KEY',  'gemma-4-31b-it'),
+          ('Ollama',     'ollama',        'http://localhost:11434',                                   NULL,                  'qwen3:8b'),
+          ('DeepSeek',   'custom-openai', 'https://api.deepseek.com',                                 'DEEPSEEK_API_KEY',    'deepseek-chat')
+        ON CONFLICT (name) DO NOTHING
+      `;
+
+      // Default profile linked to Anthropic. The runtime LLM client will fall back
+      // to env-var detection when no profile is set on the session.
+      await tx`
+        INSERT INTO model_profiles (name, provider_id, model)
+        SELECT 'default', id, COALESCE(default_model, 'claude-sonnet-4-6')
+        FROM model_providers
+        WHERE name = 'Anthropic'
+        ON CONFLICT (name) DO NOTHING
+      `;
+
+      // --- Link sessions to a model profile (nullable for backward compat) ---
+      await tx`
+        ALTER TABLE sessions
+        ADD COLUMN IF NOT EXISTS model_profile_id INTEGER
+        REFERENCES model_profiles(id) ON DELETE SET NULL
+      `;
+      await tx`CREATE INDEX IF NOT EXISTS idx_sessions_model_profile ON sessions(model_profile_id)`;
+    },
+  },
+  {
+    version: 23,
+    name: "agent_definitions, agent_instances, agent_tasks, agent_events + projects.default_agent_instance_id + bootstrap",
+    up: async (tx) => {
+      // Phase 4 Wave 1 — Agent runtime tables.
+      // Additive only: no NOT NULL on existing columns, no DROP, no RENAME.
+      // After migration, existing tmux windows continue to run unchanged.
+      // The agent_instance rows are observers (desired_state='stopped', actual_state='new'),
+      // not controllers, until someone explicitly calls setDesiredState.
+
+      // --- agent_definitions: TEMPLATE for an agent type ---
+      await tx`
+        CREATE TABLE IF NOT EXISTS agent_definitions (
+          id               SERIAL PRIMARY KEY,
+          name             TEXT NOT NULL UNIQUE,
+          description      TEXT,
+          runtime_type     TEXT NOT NULL,
+          runtime_driver   TEXT NOT NULL DEFAULT 'tmux',
+          model_profile_id INTEGER REFERENCES model_profiles(id) ON DELETE SET NULL,
+          system_prompt    TEXT,
+          capabilities     JSONB NOT NULL DEFAULT '[]'::jsonb,
+          config           JSONB NOT NULL DEFAULT '{}'::jsonb,
+          enabled          BOOLEAN NOT NULL DEFAULT true,
+          created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+      `;
+      await tx`CREATE INDEX IF NOT EXISTS idx_agent_definitions_runtime_type ON agent_definitions(runtime_type)`;
+      await tx`CREATE INDEX IF NOT EXISTS idx_agent_definitions_enabled ON agent_definitions(enabled)`;
+
+      // --- agent_instances: RUNTIME instance, with desired/actual state ---
+      // See R1 in analysis-report.md: this state machine is INTENTIONALLY separate from
+      // sessions/state-machine.ts. A running agent_instance may have zero or one active session.
+      await tx.unsafe(`
+        CREATE TABLE IF NOT EXISTS agent_instances (
+          id               SERIAL PRIMARY KEY,
+          definition_id    INTEGER NOT NULL REFERENCES agent_definitions(id) ON DELETE RESTRICT,
+          project_id       INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+          name             TEXT NOT NULL,
+          desired_state    TEXT NOT NULL DEFAULT 'stopped'
+            CHECK (desired_state IN ('running','stopped','paused')),
+          actual_state     TEXT NOT NULL DEFAULT 'new'
+            CHECK (actual_state IN ('new','starting','running','idle','busy','waiting_approval','stuck','stopping','stopped','failed')),
+          runtime_handle   JSONB NOT NULL DEFAULT '{}'::jsonb,
+          last_snapshot    TEXT,
+          last_snapshot_at TIMESTAMPTZ,
+          last_health_at   TIMESTAMPTZ,
+          restart_count    INTEGER NOT NULL DEFAULT 0,
+          last_restart_at  TIMESTAMPTZ,
+          session_id       INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
+          created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+          UNIQUE (project_id, name)
+        )
+      `);
+      await tx`CREATE INDEX IF NOT EXISTS idx_agent_instances_desired ON agent_instances(desired_state)`;
+      await tx`CREATE INDEX IF NOT EXISTS idx_agent_instances_actual ON agent_instances(actual_state)`;
+      await tx`CREATE INDEX IF NOT EXISTS idx_agent_instances_project ON agent_instances(project_id)`;
+      await tx`CREATE INDEX IF NOT EXISTS idx_agent_instances_session ON agent_instances(session_id)`;
+
+      // --- agent_tasks: work units assigned to an agent ---
+      await tx.unsafe(`
+        CREATE TABLE IF NOT EXISTS agent_tasks (
+          id                SERIAL PRIMARY KEY,
+          agent_instance_id INTEGER REFERENCES agent_instances(id) ON DELETE SET NULL,
+          parent_task_id    INTEGER REFERENCES agent_tasks(id) ON DELETE SET NULL,
+          title             TEXT NOT NULL,
+          description       TEXT,
+          status            TEXT NOT NULL DEFAULT 'pending'
+            CHECK (status IN ('pending','in_progress','blocked','review','done','cancelled','failed')),
+          payload           JSONB NOT NULL DEFAULT '{}'::jsonb,
+          result            JSONB,
+          priority          INTEGER NOT NULL DEFAULT 0,
+          created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+          started_at        TIMESTAMPTZ,
+          completed_at      TIMESTAMPTZ,
+          updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+      `);
+      await tx`CREATE INDEX IF NOT EXISTS idx_agent_tasks_agent ON agent_tasks(agent_instance_id)`;
+      await tx`CREATE INDEX IF NOT EXISTS idx_agent_tasks_status ON agent_tasks(status)`;
+      await tx`CREATE INDEX IF NOT EXISTS idx_agent_tasks_parent ON agent_tasks(parent_task_id)`;
+
+      // --- agent_events: audit trail of state transitions and actions ---
+      await tx`
+        CREATE TABLE IF NOT EXISTS agent_events (
+          id                SERIAL PRIMARY KEY,
+          agent_instance_id INTEGER REFERENCES agent_instances(id) ON DELETE CASCADE,
+          task_id           INTEGER REFERENCES agent_tasks(id) ON DELETE SET NULL,
+          event_type        TEXT NOT NULL,
+          from_state        TEXT,
+          to_state          TEXT,
+          message           TEXT,
+          metadata          JSONB NOT NULL DEFAULT '{}'::jsonb,
+          created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+      `;
+      await tx`CREATE INDEX IF NOT EXISTS idx_agent_events_agent ON agent_events(agent_instance_id)`;
+      await tx`CREATE INDEX IF NOT EXISTS idx_agent_events_task ON agent_events(task_id)`;
+      await tx`CREATE INDEX IF NOT EXISTS idx_agent_events_type ON agent_events(event_type)`;
+      await tx`CREATE INDEX IF NOT EXISTS idx_agent_events_created ON agent_events(created_at)`;
+
+      // --- projects.default_agent_instance_id: backlink to bootstrapped instance ---
+      await tx`
+        ALTER TABLE projects
+        ADD COLUMN IF NOT EXISTS default_agent_instance_id INTEGER
+        REFERENCES agent_instances(id) ON DELETE SET NULL
+      `;
+      await tx`CREATE INDEX IF NOT EXISTS idx_projects_default_agent ON projects(default_agent_instance_id)`;
+
+      // --- Bootstrap: default claude-code agent definition ---
+      await tx`
+        INSERT INTO agent_definitions (name, description, runtime_type, runtime_driver, model_profile_id)
+        SELECT 'claude-code-default',
+               'Default Claude Code agent — one per project',
+               'claude-code',
+               'tmux',
+               (SELECT id FROM model_profiles WHERE name = 'default' LIMIT 1)
+        ON CONFLICT (name) DO NOTHING
+      `;
+
+      // --- Bootstrap: one agent_instance per project ---
+      // See R4 in analysis-report.md: runtime_handle uses tmux_session_name as the window name,
+      // matching what admin-daemon.ts shell calls do today (tmux session "bots", window = project name).
+      await tx`
+        INSERT INTO agent_instances (definition_id, project_id, name, desired_state, actual_state, runtime_handle)
+        SELECT
+          (SELECT id FROM agent_definitions WHERE name = 'claude-code-default' LIMIT 1) AS definition_id,
+          p.id   AS project_id,
+          p.name AS name,
+          'stopped' AS desired_state,
+          'new'     AS actual_state,
+          jsonb_build_object(
+            'driver',      'tmux',
+            'tmuxSession', 'bots',
+            'tmuxWindow',  p.tmux_session_name
+          ) AS runtime_handle
+        FROM projects p
+        WHERE NOT EXISTS (
+          SELECT 1 FROM agent_instances ai
+          WHERE ai.project_id = p.id AND ai.name = p.name
+        )
+      `;
+
+      // --- Backlink: set projects.default_agent_instance_id to the bootstrapped instance ---
+      await tx`
+        UPDATE projects p
+        SET default_agent_instance_id = ai.id
+        FROM agent_instances ai
+        WHERE ai.project_id = p.id
+          AND ai.name = p.name
+          AND p.default_agent_instance_id IS NULL
+      `;
+    },
+  },
+  {
+    version: 24,
+    name: "phase6: register codex-cli, opencode, deepseek-cli runtimes",
+    up: async (tx) => {
+      // Phase 6 Wave 1 — register three new agent runtime types as templates.
+      // Idempotent: ON CONFLICT (name) DO NOTHING for both model_profiles and agent_definitions.
+
+      // --- DeepSeek model_profile (so deepseek-cli-default can reference it) ---
+      await tx`
+        INSERT INTO model_profiles (name, provider_id, model)
+        SELECT 'deepseek-default', pr.id, COALESCE(pr.default_model, 'deepseek-chat')
+        FROM model_providers pr
+        WHERE pr.name = 'DeepSeek'
+        ON CONFLICT (name) DO NOTHING
+      `;
+
+      // --- codex-cli-default ---
+      await tx`
+        INSERT INTO agent_definitions (name, description, runtime_type, runtime_driver, model_profile_id, capabilities, config)
+        VALUES (
+          'codex-cli-default',
+          'OpenAI Codex CLI agent (npx @openai/codex)',
+          'codex-cli',
+          'tmux',
+          NULL,
+          '["code","review"]'::jsonb,
+          '{"launcher":"npx -y @openai/codex"}'::jsonb
+        )
+        ON CONFLICT (name) DO NOTHING
+      `;
+
+      // --- opencode-default ---
+      await tx`
+        INSERT INTO agent_definitions (name, description, runtime_type, runtime_driver, model_profile_id, capabilities, config)
+        VALUES (
+          'opencode-default',
+          'opencode agent (open-source AI CLI)',
+          'opencode',
+          'tmux',
+          NULL,
+          '["code","review"]'::jsonb,
+          '{"launcher":"opencode"}'::jsonb
+        )
+        ON CONFLICT (name) DO NOTHING
+      `;
+
+      // --- deepseek-cli-default ---
+      await tx`
+        INSERT INTO agent_definitions (name, description, runtime_type, runtime_driver, model_profile_id, capabilities, config)
+        VALUES (
+          'deepseek-cli-default',
+          'DeepSeek REPL wrapper — calls DeepSeek API via Helyx llm client',
+          'deepseek-cli',
+          'tmux',
+          (SELECT id FROM model_profiles WHERE name = 'deepseek-default' LIMIT 1),
+          '["code","review","plan"]'::jsonb,
+          '{"launcher":"bun /home/altsay/bots/helyx/scripts/deepseek-repl.ts","provider":"deepseek"}'::jsonb
+        )
+        ON CONFLICT (name) DO NOTHING
+      `;
+    },
+  },
+  {
+    version: 25,
+    name: "phase6 followup: portable launcher path in deepseek-cli-default config",
+    up: async (tx) => {
+      // Migration v24 stored an absolute path /home/altsay/bots/helyx/... for the
+      // deepseek-cli-default launcher. The path is bypassed by run-cli.sh today
+      // (which resolves $HELYX_DIR dynamically) but would break if Phase 7 reads
+      // agent_definition.config.launcher to launch directly. Replace with a
+      // relative path; consumers can resolve it against the helyx repo root.
+      await tx`
+        UPDATE agent_definitions
+        SET config = jsonb_set(config, '{launcher}', '"bun scripts/deepseek-repl.ts"')
+        WHERE name = 'deepseek-cli-default'
+          AND config->>'launcher' = 'bun /home/altsay/bots/helyx/scripts/deepseek-repl.ts'
+      `;
+    },
+  },
+  {
+    version: 26,
+    name: "tech debt: add admin_commands.updated_at — fixes long-standing recovery query error",
+    up: async (tx) => {
+      // The stuck-command recovery query in scripts/admin-daemon.ts (line ~47) has
+      // been writing to admin_commands.updated_at since before the refactor, but
+      // the column never existed. Every daemon start logged a 42703 (column does
+      // not exist) error. Add the column with a sensible default and an index on
+      // (status, updated_at) matching the recovery filter.
+      await tx`ALTER TABLE admin_commands ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()`;
+      // Backfill existing rows: prefer executed_at when set, else created_at
+      await tx`
+        UPDATE admin_commands
+        SET updated_at = COALESCE(executed_at, created_at)
+        WHERE updated_at < created_at OR updated_at = created_at
+      `;
+      await tx`CREATE INDEX IF NOT EXISTS idx_admin_commands_status_updated ON admin_commands(status, updated_at)`;
+    },
+  },
+  {
+    version: 27,
+    name: "tech debt followup: properly backfill admin_commands.updated_at",
+    up: async (tx) => {
+      // Migration v26's backfill WHERE clause was logically vacuous — after
+      // ADD COLUMN ... DEFAULT now(), every existing row had updated_at >= created_at,
+      // so the v26 condition `updated_at < created_at OR = created_at` matched zero rows.
+      // Result: historical rows have updated_at = v26_migration_now instead of their
+      // real last-update time. Fix it: set updated_at = COALESCE(executed_at, created_at)
+      // for any row that still looks untouched (updated_at within 1 second of created_at
+      // would be a fresh row; otherwise it's a v26-migrated stale row).
+      //
+      // Idempotent: re-running this updates rows where updated_at = COALESCE(executed_at,
+      // created_at) — which is a no-op since SET to the same value.
+      await tx`
+        UPDATE admin_commands
+        SET updated_at = COALESCE(executed_at, created_at)
+        WHERE updated_at <> COALESCE(executed_at, created_at)
+          AND created_at < now() - interval '1 minute'
+      `;
+    },
+  },
+  {
+    version: 28,
+    name: "indexes for orchestrator handleFailure hot path",
+    up: async (tx) => {
+      // handleFailure (agents/orchestrator.ts) runs inside a FOR UPDATE
+      // transaction. Two queries inside the locked window depend on indexes
+      // that may not yet exist; without them, every failure-handle ticks
+      // against full-table scans of agent_events / agent_definitions while
+      // holding the task-row lock — bad under reconciler concurrency.
+      //
+      // 1. COUNT(*) FROM agent_events WHERE task_id = $ AND event_type = $
+      //    needs a (task_id, event_type) composite index.
+      // 2. SELECT ... FROM agent_definitions WHERE capabilities @> $::jsonb
+      //    needs a GIN index on the jsonb column for containment queries.
+      //
+      // CONCURRENTLY is unavailable inside a transaction; using plain
+      // CREATE INDEX IF NOT EXISTS instead. agent_events grows fast but
+      // agent_definitions is tiny — the brief lock during creation is fine.
+      // CREATE INDEX IF NOT EXISTS is also idempotent on re-run.
+      await tx`CREATE INDEX IF NOT EXISTS idx_agent_events_task_event ON agent_events(task_id, event_type)`;
+      await tx`CREATE INDEX IF NOT EXISTS idx_agent_definitions_capabilities ON agent_definitions USING gin(capabilities)`;
+    },
+  },
+  {
+    version: 29,
+    name: "phase12: standalone-llm agent_definitions for planner/reviewer/orchestrator",
+    up: async (tx) => {
+      // Three role-specific agent_definitions backed by the new
+      // standalone-llm runtime adapter (scripts/standalone-llm-worker.ts).
+      // model_profile_id is NULL initially; the setup wizard (or
+      // `helyx setup-agents`) populates it via seedModelProfiles() —
+      // see cli.ts which now also UPDATEs these definitions to point at
+      // the freshly-seeded role profiles.
+      await tx`
+        INSERT INTO agent_definitions
+          (name, description, runtime_type, runtime_driver, capabilities, config)
+        VALUES
+          ('planner-default',     'Planner agent — decomposes tasks into subtasks via API LLM',
+           'standalone-llm', 'tmux', '["plan"]'::jsonb,
+           '{"role": "planner"}'::jsonb),
+          ('reviewer-default',    'Reviewer agent — reviews work products via API LLM',
+           'standalone-llm', 'tmux', '["review"]'::jsonb,
+           '{"role": "reviewer"}'::jsonb),
+          ('orchestrator-default','Orchestrator agent — routes and coordinates tasks via API LLM',
+           'standalone-llm', 'tmux', '["orchestrate", "plan", "review"]'::jsonb,
+           '{"role": "orchestrator"}'::jsonb)
+        ON CONFLICT (name) DO NOTHING
+      `;
+    },
+  },
 ];
 
 // --- Public API ---

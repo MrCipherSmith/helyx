@@ -4,6 +4,7 @@ import { useState } from 'react'
 import {
   LayoutDashboard, Monitor, BarChart3, ScrollText, BookOpen, FolderOpen,
   PanelLeftClose, PanelLeft, LogOut, Languages, ChevronDown, Bot, ShieldAlert, Activity,
+  Cpu, ListChecks, Boxes,
 } from 'lucide-react'
 import { api } from '../api/client'
 import { useI18n } from '../i18n'
@@ -13,6 +14,7 @@ import {
   DropdownMenuItem, DropdownMenuSeparator, DropdownMenuLabel,
 } from '../components/ui/dropdown-menu'
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '../components/ui/tooltip'
+import { ErrorBoundary } from '../components/ErrorBoundary'
 
 export function Layout() {
   const [collapsed, setCollapsed] = useState(false)
@@ -32,6 +34,9 @@ export function Layout() {
     { to: '/', label: t('nav.overview'), icon: LayoutDashboard },
     { to: '/sessions', label: t('nav.sessions'), icon: Monitor },
     { to: '/projects', label: t('nav.projects'), icon: FolderOpen },
+    { to: '/agents', label: t('nav.agents'), icon: Cpu },
+    { to: '/tasks', label: t('nav.tasks'), icon: ListChecks },
+    { to: '/models', label: t('nav.models'), icon: Boxes },
     { to: '/permissions', label: t('nav.permissions'), icon: ShieldAlert, badge: pendingCount },
     { to: '/monitor', label: t('nav.monitor'), icon: Activity },
     { to: '/stats', label: t('nav.stats'), icon: BarChart3 },
@@ -193,10 +198,14 @@ export function Layout() {
             </div>
           </header>
 
-          {/* Page */}
+          {/* Page — ErrorBoundary scoped to the routed content keeps the
+              sidebar + header intact when a single page component throws
+              (malformed API response, unexpected null in a deep chain, etc.) */}
           <main className="flex-1 overflow-auto p-6 bg-gradient-subtle">
             <div className="max-w-7xl mx-auto animate-in">
-              <Outlet />
+              <ErrorBoundary>
+                <Outlet />
+              </ErrorBoundary>
             </div>
           </main>
         </div>

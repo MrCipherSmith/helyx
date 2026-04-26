@@ -20,6 +20,14 @@ export async function handleCallbackQuery(ctx: Context): Promise<void> {
     const { handleSetModelCallback } = await import("./commands/model.ts");
     return handleSetModelCallback(ctx, data.slice("set_model:".length));
   }
+  if (data.startsWith("set_profile:")) {
+    const { handleSetProfile } = await import("./commands/models.ts");
+    return handleSetProfile(ctx);
+  }
+  if (data.startsWith("agent:")) {
+    const { handleAgentCallback } = await import("./commands/agents.ts");
+    return handleAgentCallback(ctx);
+  }
   if (data.startsWith("rc:")) {
     const { handleRemoteControlCallback } = await import("./commands/remote-control.ts");
     return handleRemoteControlCallback(ctx);
