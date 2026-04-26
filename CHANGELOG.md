@@ -1,5 +1,88 @@
 # Changelog
 
+## v1.34.1
+
+### fix(orchestrator): CRITICAL ::jsonb cast bug + DeepSeek V4 migration (PR #9)
+
+**Two changes, one CRITICAL hotfix and one config migration.** Discovered
+end-to-end during the v1.34.0 smoke-test session.
+
+**🔥 CRITICAL — `postgres.js` strips `::jsonb` cast on parameter placeholders**
+
+`agents/orchestrator.ts` — `selectAgent` and `handleFailure` both filtered
+agent definitions by required capabilities using:
+
+```sql
+WHERE ad.capabilities @> ${requiredJson}::jsonb
+```
+
+Manually in psql this works. But `postgres.js` v3 **silently strips the
+trailing `::jsonb` cast** on a parameter placeholder. The query that ships
+to Postgres becomes `WHERE ad.capabilities @> $1` with `$1` bound as TEXT —
+`jsonb @> text` matches no rows.
+
+**Capability-based agent selection has been broken since the orchestrator
+MVP shipped (Phase 7).** The bug was masked because most installs only had
+legacy `proj_start` agents that never reached this code path. Both PR #7
+and PR #8 reviews inspected the SQL and assumed the cast worked.
+
+**Fix:** `sql.json(...)` / `tx.json(...)` — postgres.js's explicit JSONB
+binder forces the parameter type at the wire-protocol level.
+
+```diff
+- AND ad.capabilities @> ${requiredJson}::jsonb
++ AND ad.capabilities @> ${sql.json(required)}
+```
+
+Verified end-to-end with two `planner-default` agents (#12, #13) and a
+failed task assigned to #12: `POST /api/tasks/2/reassign` now returns
+`outcome:"reassigned"`, `newAgentInstanceId:13`, `attempts:1`.
+
+**Migration v31 — DeepSeek V4**
+
+DeepSeek deprecated `deepseek-chat` (V3) when shipping V4. The API now
+exposes only `deepseek-v4-flash` (small/fast) and `deepseek-v4-pro`
+(complex/reasoning). Existing `model_profiles` seeded by v22 still
+referenced `deepseek-chat`, which would silently fail on first use
+post-V4-rollout.
+
+| Profile / setting | From | To |
+|---|---|---|
+| `model_providers.DeepSeek.default_model` | `deepseek-chat` | `deepseek-v4-flash` |
+| New `deepseek-flash` profile | — | `deepseek-v4-flash` |
+| New `deepseek-pro` profile | — | `deepseek-v4-pro` |
+| `planner-default` profile | `deepseek-chat` | **`deepseek-v4-pro`** |
+| `reviewer-default` profile | `deepseek-chat` | **`deepseek-v4-pro`** |
+| `orchestrator-default` profile | `deepseek-chat` | **`deepseek-v4-pro`** |
+| `deepseek-default` profile | `deepseek-chat` | `deepseek-v4-flash` |
+
+Per-role tier rationale: planner / reviewer / orchestrator perform
+decompose / review / routing — all reasoning-heavy. Pro tier. Future
+"small task" agents (e.g. tagger, summarizer) can use the new
+general-purpose `deepseek-flash` profile via `helyx model set <agent>
+deepseek-flash`.
+
+All updates guarded by `WHERE model = 'deepseek-chat'` so re-running on a
+hand-migrated DB is a no-op.
+
+`.env.example` updated to recommend `deepseek-v4-flash` as the
+`CUSTOM_OPENAI_DEFAULT_MODEL` default with a comment explaining the
+flash/pro split.
+
+**Architectural gaps surfaced (deferred to follow-up PRs)**:
+- `tmux-driver` uses `projectName` as window name, not `instance.name` —
+  multi-instance-per-project is not actually supported by the runtime.
+- `NAME_REGEX` rejects `:` so `<project>:<role>` from PRD §17.4 is
+  incompatible with tmux. Reconciler has been silently false-positive
+  matching via substring on existing project windows.
+- `admin-daemon` reconciler doesn't auto-spawn standalone-llm workers
+  through `tmux-driver` — for the smoke test we spawned them manually.
+  These are real architectural gaps that need their own focused PR.
+
+**Verification done**: bun test 294/294 pass, type-check 22 (baseline
+unchanged), live reassign chain verified, migration v31 idempotent on
+hand-migrated DB.
+
 ## v1.34.0
 
 ### refactor: architecture cleanup — boundary fixes from the PR #7 review (PR #8)
