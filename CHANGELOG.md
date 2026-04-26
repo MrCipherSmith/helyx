@@ -1,5 +1,74 @@
 # Changelog
 
+## v1.34.0
+
+### refactor: architecture cleanup — boundary fixes from the PR #7 review (PR #8)
+
+PR #8 — 14 files, +520 / −154. Closes the architecture findings (F-005..F-008)
+and medium-severity polish (F-016..F-025) that were explicitly deferred at the
+v1.33.0 merge. **No new features, no behavior changes visible to operators** —
+purely structural improvements that pay down maintenance debt.
+
+**Boundary fixes**
+- **F-005**: `runtime/runtime-manager.ts` no longer issues raw SQL on `projects`
+  or `agent_definitions` — now goes through `projectService.get()` and
+  `agentMgr.getDefinition()`. Runtime layer is agent/project schema-agnostic.
+- **F-006**: New `AgentManager.listInstancesEnriched()` consolidates the JOIN
+  that `handleListAgents` previously duplicated. `handleCreateAgent` follow-up
+  also routed through `agentManager` + `projectService` (no more raw SQL on
+  agent_definitions / projects).
+- **F-007**: `StreamContext.taskId` / `agentInstanceId` removed in favor of an
+  `onFallbackEvent(type, metadata)` callback. LLM transport is now agent-
+  agnostic; `llm/client.ts` no longer imports `memory/db.ts` (not even via
+  lazy `import()`). New `FallbackEventType` exported.
+- **F-008**: New `runtime/supported-runtimes.ts` is the single source of truth
+  for supported runtime types. `tmux-driver.ts` and `cli.ts` wizard prompts
+  both derive from it; `gemini-cli` (which was never implemented) removed.
+  CI-enforced drift test parses `run-cli.sh` case branches and asserts
+  equality with `SUPPORTED_RUNTIMES_LIST`.
+
+**Concurrency / correctness**
+- **F-016**: documented READ COMMITTED race window in `handleFailure` — joined
+  reads on `agent_definitions` are not row-locked, so a concurrent
+  `handleSetAgentProfile` can change the candidate pool mid-tx.
+- **F-018 + H-1**: `decomposeTask` refreshes the FULL task row inside its tx
+  and returns the fresh `parentTask` (was returning a snapshot from before the
+  LLM call, which a concurrent `handleFailure` could invalidate).
+
+**Security**
+- **F-019**: `validateProjectPath` rejects `..`, `.`, AND empty path segments
+  (was just `..`). +3 unit tests covering each case.
+- **F-007 follow-up**: `sanitizeUpstreamMessage` now applied at the
+  `primaryErrorMsg` capture site in `generateResponse`, covering Anthropic SDK
+  errors that previously bypassed the `fetchOpenai` sanitize.
+- **C-1**: SIGUSR1 dedupe comment corrected — module-load semantics, not
+  EventEmitter dedup. Plus startup `logger.debug` line for Bun-issue
+  diagnostics.
+
+**Operations**
+- **F-020**: SIGUSR1 handler in `llm/client.ts` clears the `LLM_FALLBACK_PROFILE`
+  cache so an API-key rotation no longer requires a full bot restart.
+- **F-021**: `standalone-llm-worker` collapsed two queries into a single
+  `resolveAgentContext` call. JOIN now also filters `ad.enabled = true` —
+  disabled definitions correctly fail tasks instead of silently running with
+  stale config.
+- **F-025**: dashboard ModelsPage refetch failures surface to console instead
+  of fire-and-forget swallow.
+
+**Database**
+- New migration **v30**: `idx_agent_instances_project_id` for the dashboard
+  `listInstancesEnriched` filter. Without it the per-page query degraded to a
+  sequential scan as `agent_instances` grew.
+
+**Test growth**: 294 unit tests (was 289). New suite:
+- `supported-runtimes.test.ts`: 2 tests for the SoT drift check (parses
+  `run-cli.sh` and asserts case-branch equality with `SUPPORTED_RUNTIMES_LIST`).
+- 3 new tests in `runtime-driver.test.ts` covering `..`, `.`, and `//` path
+  validation.
+
+**Deferred to future releases**: §22 E2E suite, §9.3 pty-driver, §9.5
+docker-driver — same as v1.33.0; no progress this release.
+
 ## v1.33.0
 
 ### feat: agent runtime refactor — provider-agnostic agent control plane
