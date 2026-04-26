@@ -52,21 +52,44 @@ process.on("SIGINT", () => { running = false; });
  * compatibility). Returns null on hard failure (definition missing) so
  * the worker can exit cleanly.
  */
-async function resolveAgentProvider(agentId: number) {
+interface AgentContext {
+  defName: string;
+  systemPrompt: string | null;
+  provider: Awaited<ReturnType<typeof resolveProfile>>;
+}
+
+/**
+ * Single roundtrip to the DB to fetch everything processOneTask needs:
+ * the agent's definition (name + system_prompt) and the resolved
+ * provider config. F-021 from PR #7 review collapsed two separate
+ * queries into one.
+ *
+ * Returns null on hard failure (definition missing) so the worker can
+ * skip the task without crashing.
+ */
+async function resolveAgentContext(agentId: number): Promise<AgentContext | null> {
+  // `ad.enabled = true` filter (F-008-followup): if an operator disables
+  // the definition while the worker is running, processOneTask should
+  // fail the next task rather than continue silently with the disabled
+  // config. The worker exits its loop on subsequent claim failures since
+  // `failTask` correctly fires regardless.
   const rows = (await sql`
-    SELECT ad.id AS def_id, ad.name AS def_name, ad.model_profile_id
+    SELECT ad.id AS def_id, ad.name AS def_name, ad.system_prompt, ad.model_profile_id, ad.enabled
     FROM agent_instances ai
     JOIN agent_definitions ad ON ad.id = ai.definition_id
-    WHERE ai.id = ${agentId}
+    WHERE ai.id = ${agentId} AND ad.enabled = true
     LIMIT 1
-  `) as { def_id: number; def_name: string; model_profile_id: number | null }[];
+  `) as { def_id: number; def_name: string; system_prompt: string | null; model_profile_id: number | null }[];
   if (rows.length === 0) return null;
-  const profileId = rows[0]!.model_profile_id;
-  if (profileId) {
-    return await resolveProfile(profileId);
-  }
-  // No bound profile — fall back to env detection.
-  return await resolveSessionProvider(null);
+  const row = rows[0]!;
+  const provider = row.model_profile_id
+    ? await resolveProfile(row.model_profile_id)
+    : await resolveSessionProvider(null);
+  return {
+    defName: row.def_name,
+    systemPrompt: row.system_prompt,
+    provider,
+  };
 }
 
 async function setActualState(state: "running" | "idle" | "busy" | "stopping" | "failed", message?: string) {
@@ -173,22 +196,17 @@ async function failTask(taskId: number, errorMsg: string) {
 }
 
 async function processOneTask(task: { id: number; title: string; description: string | null; payload: any }) {
-  const provider = await resolveAgentProvider(agentInstanceId);
-  if (!provider) {
+  // F-021: single resolveAgentContext call replaces two separate
+  // queries — provider resolve + definition lookup — collapsed.
+  const agentCtx = await resolveAgentContext(agentInstanceId);
+  if (!agentCtx) {
     await failTask(task.id, "agent_definition lookup failed");
     return;
   }
+  const { provider, defName, systemPrompt } = agentCtx;
 
   // Build a prompt that gives the model context about its role + the task.
   // Roles are inferred from the agent definition name (planner/reviewer/orchestrator).
-  const defRows = (await sql`
-    SELECT ad.name AS def_name, ad.system_prompt
-    FROM agent_instances ai
-    JOIN agent_definitions ad ON ad.id = ai.definition_id
-    WHERE ai.id = ${agentInstanceId}
-    LIMIT 1
-  `) as { def_name: string; system_prompt: string | null }[];
-  const defName = defRows[0]?.def_name ?? "agent";
   const role = defName.includes("planner")
     ? "an implementation planner"
     : defName.includes("reviewer")
@@ -197,7 +215,7 @@ async function processOneTask(task: { id: number; title: string; description: st
         ? "a task orchestrator"
         : "an autonomous agent";
 
-  const system = defRows[0]?.system_prompt ?? `You are ${role}. You receive a task description and produce a clear, actionable response. Be concise and structured.`;
+  const system = systemPrompt ?? `You are ${role}. You receive a task description and produce a clear, actionable response. Be concise and structured.`;
 
   const userMessage = [
     `Task #${task.id}: ${task.title}`,
@@ -208,11 +226,28 @@ async function processOneTask(task: { id: number; title: string; description: st
   ].filter(Boolean).join("\n");
 
   const messages: MessageParam[] = [{ role: "user", content: userMessage }];
+  // F-007: agent_events writes go through the onFallbackEvent callback
+  // owned by this worker — the LLM client no longer knows about
+  // task_id / agent_instance_id directly.
   const ctx: StreamContext = {
     operation: `standalone-llm:${defName}`,
     provider,
-    taskId: task.id,
-    agentInstanceId,
+    onFallbackEvent: async (eventType, metadata) => {
+      try {
+        await sql`
+          INSERT INTO agent_events (agent_instance_id, task_id, event_type, message, metadata)
+          VALUES (
+            ${agentInstanceId},
+            ${task.id},
+            ${eventType},
+            ${typeof metadata.message === "string" ? metadata.message : null},
+            ${JSON.stringify(metadata)}::jsonb
+          )
+        `;
+      } catch (err) {
+        console.error("[standalone-llm-worker] onFallbackEvent insert failed:", String(err));
+      }
+    },
   };
 
   await setActualState("busy");

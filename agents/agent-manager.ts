@@ -126,6 +126,54 @@ export class AgentManager {
     return rows.map(rowToInstance);
   }
 
+  /**
+   * Enriched listing for the dashboard / CLI: returns each instance
+   * joined with its agent_definition (name, runtime_type, capabilities,
+   * enabled flag) and project (name). Saves the consumer a per-row
+   * roundtrip and keeps the schema-coupling JOIN inside this service so
+   * dashboard-api / cli.ts no longer need to issue raw SQL — F-006 from
+   * the PR #7 review.
+   *
+   * Filter semantics match `listInstances`. Returns rows in snake_case
+   * for the joined columns (definition_name, runtime_type,
+   * capabilities, definition_enabled, project_name) and nests the core
+   * AgentInstance under the same shape as listInstances.
+   */
+  async listInstancesEnriched(filter?: { projectId?: number; desiredState?: DesiredState; actualState?: ActualState }): Promise<Array<AgentInstance & {
+    definition_name: string;
+    runtime_type: string;
+    capabilities: string[];
+    definition_enabled: boolean;
+    project_name: string | null;
+  }>> {
+    const projectId = filter?.projectId ?? null;
+    const desiredState = filter?.desiredState ?? null;
+    const actualState = filter?.actualState ?? null;
+    const rows = (await sql`
+      SELECT ai.*,
+             ad.name AS definition_name,
+             ad.runtime_type,
+             ad.capabilities,
+             ad.enabled AS definition_enabled,
+             p.name AS project_name
+      FROM agent_instances ai
+      JOIN agent_definitions ad ON ad.id = ai.definition_id
+      LEFT JOIN projects p ON p.id = ai.project_id
+      WHERE (${projectId}::int IS NULL OR ai.project_id = ${projectId})
+        AND (${desiredState}::text IS NULL OR ai.desired_state = ${desiredState})
+        AND (${actualState}::text IS NULL OR ai.actual_state = ${actualState})
+      ORDER BY ai.id ASC
+    `) as any[];
+    return rows.map((r) => ({
+      ...rowToInstance(r),
+      definition_name: r.definition_name,
+      runtime_type: r.runtime_type,
+      capabilities: Array.isArray(r.capabilities) ? r.capabilities : [],
+      definition_enabled: r.definition_enabled,
+      project_name: r.project_name ?? null,
+    }));
+  }
+
   async getInstance(id: number): Promise<AgentInstance | null> {
     const [r] = await sql`SELECT * FROM agent_instances WHERE id = ${id} LIMIT 1` as any[];
     return r ? rowToInstance(r) : null;

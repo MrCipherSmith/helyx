@@ -78,32 +78,56 @@ export function _resetFallbackCacheForTests(): void {
 }
 
 /**
- * Best-effort write to agent_events for fallback traceability (PRD §11.2).
- * Lazy-imports memory/db.ts to avoid a hard dependency on the DB at module
- * load — if the import fails (e.g. running tests without a configured
- * Postgres), the write is silently skipped. agent_events is observability
- * data; failure to record must NEVER fail the actual LLM call.
+ * SIGUSR1 hook (F-020 from PR #7 review): operators rotating an API
+ * key can `kill -USR1 $PID` to clear the cached fallback provider so
+ * the next generateResponse call re-reads LLM_FALLBACK_PROFILE + the
+ * underlying DB row + env-var key. Without this hook, a key rotation
+ * required a full bot restart.
+ *
+ * Idempotent at module-load time only. Node/Bun module cache ensures
+ * `sigusr1Handler` is registered exactly once per process — NOT because
+ * EventEmitter dedupes listeners (it does not), but because module
+ * evaluation runs once per process. If you ever call `process.on(...)`
+ * with this handler from multiple sites, add a guard:
+ *   if (!process.listeners("SIGUSR1").includes(sigusr1Handler))
+ * SIGUSR1 is otherwise unused by the bot.
+ *
+ * Bun caveat (F-020 follow-up): SIGUSR1 delivery has had open issues
+ * (oven-sh/bun#21508). The startup log line below provides ops-side
+ * confirmation that the handler was registered; if rotation doesn't
+ * take effect after `kill -USR1`, the log absence is the diagnostic.
+ */
+const sigusr1Handler = () => {
+  if (cachedFallback !== undefined) {
+    cachedFallback = undefined;
+    logger.info("SIGUSR1: cleared LLM fallback cache (next call will re-resolve LLM_FALLBACK_PROFILE)");
+  }
+};
+process.on("SIGUSR1", sigusr1Handler);
+logger.debug("SIGUSR1 cache-reset handler registered (LLM fallback)");
+
+/**
+ * Best-effort dispatch of a fallback traceability event to the caller-
+ * supplied callback (PRD §11.2). The callback owns the writes — typically
+ * to agent_events with task_id / agent_instance_id context the LLM layer
+ * doesn't know about. Failures inside the callback are caught and logged
+ * but never propagate; observability must never break the LLM call.
+ *
+ * F-007: previously this function had a hard import on memory/db.ts and
+ * wrote agent_events directly, leaking agent-schema knowledge into the
+ * LLM transport. Now LLM client is agent-agnostic — only the callback
+ * shape is part of the public contract.
  */
 async function recordFallbackEvent(
-  eventType: "model_primary_failed" | "model_fallback_selected" | "model_request_completed",
+  eventType: FallbackEventType,
   ctx: StreamContext | undefined,
   metadata: Record<string, unknown>,
 ): Promise<void> {
-  if (!ctx?.taskId && !ctx?.agentInstanceId) return; // no traceability context — skip
+  if (!ctx?.onFallbackEvent) return;
   try {
-    const { sql } = await import("../memory/db.ts");
-    await sql`
-      INSERT INTO agent_events (agent_instance_id, task_id, event_type, message, metadata)
-      VALUES (
-        ${ctx.agentInstanceId ?? null},
-        ${ctx.taskId ?? null},
-        ${eventType},
-        ${typeof metadata.message === "string" ? metadata.message : null},
-        ${JSON.stringify(metadata)}::jsonb
-      )
-    `;
+    await ctx.onFallbackEvent(eventType, metadata);
   } catch (err) {
-    logger.warn({ err: String(err), eventType }, "agent_events write failed (observability-only, ignoring)");
+    logger.warn({ err: String(err), eventType }, "onFallbackEvent callback failed (observability-only, ignoring)");
   }
 }
 
@@ -457,23 +481,35 @@ export interface StreamContext {
    */
   provider?: ResolvedProvider;
   /**
-   * Internal: when set, this generateResponse call is itself a fallback
+   * Internal: marks this generateResponse call as itself a fallback
    * attempt — do not recurse into another fallback. Set by the fallback
    * dispatch logic; callers should not pass this directly.
    */
   _fallbackInProgress?: boolean;
   /**
-   * Optional task/agent context for §11.2 traceability — when set, fallback
-   * decisions are written to agent_events as model.primary_failed /
-   * model.fallback_selected / model.request_completed so an operator can
-   * reconstruct what happened on a per-task basis. Callers in the
-   * orchestrator path (decomposeTask, handleFailure) supply these; ad-hoc
-   * callers (summarizer, supervisor) leave them unset and only get
-   * api_request_stats records.
+   * Optional callback invoked when a fallback decision is made.
+   * Replaces the earlier taskId/agentInstanceId fields that coupled the
+   * LLM transport layer to the agent schema (F-007 from the PR #7
+   * review). Orchestrator and standalone-llm worker callers wire this
+   * to write `model_primary_failed` / `model_fallback_selected` /
+   * `model_request_completed` rows into agent_events with the right
+   * task_id and agent_instance_id; ad-hoc callers (summarizer,
+   * supervisor) leave it unset and only get api_request_stats records.
+   *
+   * Failures inside the callback are caught and logged but never
+   * propagate — observability must not break the primary flow.
    */
-  taskId?: number | null;
-  agentInstanceId?: number | null;
+  onFallbackEvent?: (
+    type: FallbackEventType,
+    metadata: Record<string, unknown>,
+  ) => void | Promise<void>;
 }
+
+/** Fallback event type union — exported so callers can type their callbacks. */
+export type FallbackEventType =
+  | "model_primary_failed"
+  | "model_fallback_selected"
+  | "model_request_completed";
 
 export async function* streamResponse(
   messages: MessageParam[],
@@ -623,7 +659,12 @@ export async function generateResponse(
     return r.result;
   } catch (err: any) {
     const primaryDuration = Date.now() - start;
-    const primaryErrorMsg = err?.message ?? String(err);
+    // F-007 follow-up: sanitize the error message at capture point.
+    // fetchOpenai already calls sanitizeUpstreamMessage on the body it
+    // embeds, but errors from the Anthropic SDK (and other branches of
+    // callProvider) bypass that path and would otherwise flow raw into
+    // api_request_stats.error_message and the onFallbackEvent metadata.
+    const primaryErrorMsg = sanitizeUpstreamMessage(err?.message ?? String(err));
 
     // PRD §11.2: provider failover. Only retry on classified-retryable errors;
     // skip when the caller is already running as a fallback (avoid recursion).
@@ -661,8 +702,13 @@ export async function generateResponse(
           model: fallback.model,
         });
 
-        // Re-dispatch with the fallback provider config. Mark _fallbackInProgress
-        // so this attempt cannot itself trigger another fallback.
+        // Re-dispatch via callProvider directly (NOT via generateResponse),
+        // so the inner call never goes through this fallback branch
+        // again — there is no recursion to guard against today. The
+        // `_fallbackInProgress` flag exists for *external* callers
+        // (e.g. handleProviderTest) that want to disable fallback when
+        // probing a specific provider; it is not used by this internal
+        // dispatch.
         const fbStart = Date.now();
         const fbCfg = effectiveConfig(fallback);
         try {

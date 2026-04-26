@@ -25,9 +25,20 @@ export function ModelsPage() {
     staleTime: 30_000,
   })
 
+  // F-025: surface refetch failures instead of fire-and-forget swallow.
+  // Promise.allSettled lets both refetches complete independently; any
+  // rejection is logged so devtools / operators can see it. react-query
+  // already exposes pError/prError to the render path, so this is purely
+  // diagnostic.
   const refetchAll = () => {
-    pRefetch()
-    prRefetch()
+    Promise.allSettled([pRefetch(), prRefetch()]).then((results) => {
+      for (const r of results) {
+        if (r.status === "rejected") {
+          // eslint-disable-next-line no-console
+          console.error("[ModelsPage] refetch failed", r.reason)
+        }
+      }
+    })
   }
 
   if (pLoading || prLoading) return <div className="text-gray-400">{t('common.loading')}</div>
