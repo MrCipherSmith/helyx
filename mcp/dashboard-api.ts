@@ -898,6 +898,22 @@ async function handleReassignTask(req: IncomingMessage, res: ServerResponse, id:
   }
 }
 
+async function handleAgentEvents(res: ServerResponse, id: number, url: URL): Promise<void> {
+  // Return recent agent_events for an agent instance. Default limit 50;
+  // accepts ?limit=N (capped at 500). Used by `helyx agent logs <id>`
+  // and the dashboard agent detail page.
+  const limitParam = Number(url.searchParams.get("limit") ?? "50");
+  const limit = Math.max(1, Math.min(500, isFinite(limitParam) ? limitParam : 50));
+  const rows = await sql`
+    SELECT id, agent_instance_id, task_id, event_type, from_state, to_state, message, metadata, created_at
+    FROM agent_events
+    WHERE agent_instance_id = ${id}
+    ORDER BY created_at DESC
+    LIMIT ${limit}
+  ` as any[];
+  sendJson(res, rows);
+}
+
 async function handleListProviders(res: ServerResponse): Promise<void> {
   const rows = await sql`
     SELECT id, name, provider_type, base_url, api_key_env, default_model, enabled, metadata, created_at, updated_at
@@ -1303,6 +1319,10 @@ export async function handleDashboardRequest(
       const id = Number(agentActionMatch[1]);
       const action = agentActionMatch[2] as "start" | "stop" | "restart";
       await handleAgentAction(req, res, id, action); return true;
+    }
+    const agentEventsMatch = pathname.match(/^\/api\/agents\/(\d+)\/events$/);
+    if (agentEventsMatch && method === "GET") {
+      await handleAgentEvents(res, Number(agentEventsMatch[1]), url); return true;
     }
 
     // --- Tasks API ---

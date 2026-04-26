@@ -951,6 +951,216 @@ async function seedModelProfiles(opts: {
   }
 }
 
+// --- helyx agents/agent/runtime/providers/models (wave-10, PRD §17.7) ---
+//
+// Host-side CLI commands that talk to the bot's HTTP API. Each is a thin
+// fetch() wrapper — the heavy lifting (DB queries, state transitions) lives
+// behind /api/agents and friends in mcp/dashboard-api.ts.
+//
+// Auth: the bot's /api/* surface is JWT-gated, so the CLI must mint a token
+// for itself. We re-use the same signJwt path as the dashboard, with the
+// first ALLOWED_USERS telegram_id as the principal. This keeps everything
+// admin-scoped — only operators with .env access can call these commands.
+
+/**
+ * Wrap an api-backed cli command so any thrown error (HTTP 4xx/5xx,
+ * resolveAgentId not-found, network refusal) produces a clean one-line
+ * red message instead of a Bun stack trace. Exits with 1 on failure so
+ * shell scripts can detect it via $?.
+ */
+async function runApiCmd<T>(fn: () => Promise<T>): Promise<void> {
+  try {
+    await fn();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.log(c.red(`  ${msg}`));
+    process.exit(1);
+  }
+}
+
+async function readEnvFile(): Promise<Record<string, string>> {
+  const envPath = `${BOT_DIR}/.env`;
+  if (!existsSync(envPath)) {
+    console.log(c.red("  .env not found. Run 'helyx setup' first."));
+    process.exit(1);
+  }
+  const map: Record<string, string> = {};
+  for (const line of readFileSync(envPath, "utf8").split("\n")) {
+    const m = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
+    if (m) map[m[1]!] = m[2]!;
+  }
+  return map;
+}
+
+/**
+ * Build an authenticated fetch helper bound to the local bot. The token
+ * is minted once per CLI invocation; downstream callers just provide
+ * pathname + optional method/body.
+ */
+async function makeApiCall(): Promise<<T = any>(path: string, init?: { method?: string; body?: any }) => Promise<T>> {
+  const env = await readEnvFile();
+  const port = env.PORT ?? "3847";
+  const allowed = (env.ALLOWED_USERS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (allowed.length === 0) {
+    console.log(c.red("  ALLOWED_USERS not set in .env"));
+    process.exit(1);
+  }
+  const principalId = Number(allowed[0]);
+  const { signJwt } = await import("./dashboard/auth.ts");
+  const token = await signJwt({ id: principalId, first_name: "helyx-cli", username: "helyx-cli" });
+
+  return async <T = any>(path: string, init: { method?: string; body?: any } = {}): Promise<T> => {
+    const r = await fetch(`http://localhost:${port}${path}`, {
+      method: init.method ?? "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(init.body !== undefined ? { "Content-Type": "application/json" } : {}),
+      },
+      body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
+    });
+    const text = await r.text();
+    if (!r.ok) {
+      let msg = text;
+      try { msg = (JSON.parse(text) as any).error ?? text; } catch { /* keep raw */ }
+      throw new Error(`HTTP ${r.status}: ${msg}`);
+    }
+    return text ? JSON.parse(text) as T : ({} as T);
+  };
+}
+
+/**
+ * Resolve an agent reference (numeric id or name) to a numeric id by
+ * listing all instances. Names take the form `<project>:<role>` per PRD
+ * §17.4 but legacy single-word names also work (existing bootstrap).
+ */
+async function resolveAgentId(api: <T>(p: string) => Promise<T>, ref: string): Promise<number> {
+  if (/^\d+$/.test(ref)) return Number(ref);
+  const all = await api<any[]>("/api/agents");
+  const match = all.find((a) => a.name === ref);
+  if (!match) {
+    throw new Error(`agent "${ref}" not found. Available: ${all.map((a) => a.name).join(", ")}`);
+  }
+  return Number(match.id);
+}
+
+async function cmdAgents() {
+  const api = await makeApiCall();
+  const [defs, instances] = await Promise.all([
+    api<any[]>("/api/agents/definitions"),
+    api<any[]>("/api/agents"),
+  ]);
+  console.log(`\n  ${c.bold("Agent definitions")}`);
+  for (const d of defs) {
+    const caps = Array.isArray(d.capabilities) && d.capabilities.length > 0 ? d.capabilities.join(",") : "—";
+    // agentManager.listDefinitions returns camelCase (runtimeType); the
+    // raw SQL behind /api/agents (handleListAgents) returns snake_case
+    // (runtime_type). Coalesce so cli works against both.
+    const runtime = d.runtimeType ?? d.runtime_type ?? "?";
+    console.log(`    ${c.cyan(`#${d.id}`)} ${d.name}  ${c.dim(`runtime=${runtime} caps=[${caps}]`)}`);
+  }
+  console.log(`\n  ${c.bold("Agent instances")}`);
+  if (instances.length === 0) {
+    console.log(c.dim("    (none — run `helyx setup-agents` to bootstrap)"));
+  } else {
+    for (const i of instances) {
+      const tag = i.actual_state === "running"
+        ? c.green(i.actual_state)
+        : i.actual_state === "stopped"
+          ? c.dim(i.actual_state)
+          : c.yellow(i.actual_state);
+      const drift = i.desired_state !== i.actual_state && i.desired_state !== "stopped" ? c.red(`→${i.desired_state}`) : "";
+      console.log(`    ${c.cyan(`#${i.id}`)} ${i.name}  ${tag} ${drift}  ${c.dim(`def=${i.definition_name} project=${i.project_name ?? "—"}`)}`);
+    }
+  }
+  console.log();
+}
+
+async function cmdAgentAction(action: "start" | "stop" | "restart", ref: string | undefined) {
+  if (!ref) {
+    console.log(c.red(`  Usage: helyx agent ${action} <id|name>`));
+    process.exit(1);
+  }
+  const api = await makeApiCall();
+  const id = await resolveAgentId(api, ref);
+  const result = await api<any>(`/api/agents/${id}/${action}`, { method: "POST", body: { reason: `cli ${action}` } });
+  // agentManager.setDesiredState returns camelCase (desiredState); the
+  // raw-SQL list path returns snake_case. Coalesce.
+  const desired = result.desiredState ?? result.desired_state ?? "?";
+  console.log(`  ${c.green("✓")} agent #${id} ${result.name} → desired_state=${desired}`);
+}
+
+async function cmdAgentSnapshot(ref: string | undefined) {
+  if (!ref) {
+    console.log(c.red("  Usage: helyx agent snapshot <id|name>"));
+    process.exit(1);
+  }
+  const api = await makeApiCall();
+  const id = await resolveAgentId(api, ref);
+  const inst = await api<any>(`/api/agents/${id}`);
+  if (!inst.last_snapshot) {
+    console.log(c.dim(`  No snapshot yet for #${id} (last_snapshot_at=${inst.last_snapshot_at ?? "never"})`));
+    return;
+  }
+  console.log(`\n  ${c.bold(`Snapshot ${inst.name}`)}  ${c.dim(`captured ${inst.last_snapshot_at ?? "?"}`)}`);
+  console.log(`  ${"─".repeat(60)}`);
+  console.log(inst.last_snapshot);
+}
+
+async function cmdAgentLogs(ref: string | undefined, limit = 50) {
+  if (!ref) {
+    console.log(c.red("  Usage: helyx agent logs <id|name> [limit]"));
+    process.exit(1);
+  }
+  const api = await makeApiCall();
+  const id = await resolveAgentId(api, ref);
+  const events = await api<any[]>(`/api/agents/${id}/events?limit=${limit}`);
+  console.log(`\n  ${c.bold(`Last ${events.length} events for agent #${id}`)}`);
+  for (const e of events.reverse()) {
+    const ts = new Date(e.created_at).toISOString().slice(11, 19);
+    const stateChange = e.from_state && e.to_state ? c.dim(` ${e.from_state}→${e.to_state}`) : "";
+    console.log(`    ${c.dim(ts)} ${c.cyan(e.event_type)}${stateChange}  ${e.message ?? ""}`);
+  }
+}
+
+async function cmdRuntimeStatus() {
+  const api = await makeApiCall();
+  const s = await api<any>("/api/runtime/status");
+  console.log(`\n  ${c.bold("Runtime Status")}`);
+  console.log(`    Instances: ${c.green(s.totals.running_instances)} running, ${c.dim(s.totals.stopped_instances)} stopped, ${s.totals.waiting_approval > 0 ? c.yellow(s.totals.waiting_approval + " waiting") : "0 waiting"}`);
+  if (s.totals.desired_actual_drift > 0) {
+    console.log(`    ${c.red(`drift: ${s.totals.desired_actual_drift}`)} (desired ≠ actual)`);
+  }
+  console.log(`    Tasks: ${c.dim(s.totals.pending_tasks + " pending")}, ${c.dim(s.totals.in_progress_tasks + " in progress")}, ${s.totals.failed_tasks > 0 ? c.red(s.totals.failed_tasks + " failed") : c.dim("0 failed")}`);
+  console.log(`    Drivers:`);
+  for (const [name, status] of Object.entries(s.drivers)) {
+    const tag = status === "ok" ? c.green(String(status)) : c.dim(String(status));
+    console.log(`      ${name}: ${tag}`);
+  }
+  console.log();
+}
+
+async function cmdProviders() {
+  const api = await makeApiCall();
+  const providers = await api<any[]>("/api/providers");
+  console.log(`\n  ${c.bold("Model Providers")}`);
+  for (const p of providers) {
+    const enabled = p.enabled ? c.green("on") : c.dim("off");
+    console.log(`    ${c.cyan(`#${p.id}`)} ${p.name}  ${enabled}  ${c.dim(`${p.provider_type} default=${p.default_model ?? "—"} key_env=${p.api_key_env ?? "—"}`)}`);
+  }
+  console.log();
+}
+
+async function cmdModels() {
+  const api = await makeApiCall();
+  const profiles = await api<any[]>("/api/profiles");
+  console.log(`\n  ${c.bold("Model Profiles")}`);
+  for (const p of profiles) {
+    const enabled = p.enabled ? c.green("on") : c.dim("off");
+    console.log(`    ${c.cyan(`#${p.id}`)} ${p.name}  ${enabled}  ${c.dim(`${p.provider_name} → ${p.model}`)}`);
+  }
+  console.log();
+}
+
 // --- helyx setup-agents (wave-5, PRD §17.7) ---
 
 /**
@@ -2371,8 +2581,19 @@ function help() {
     setup           Interactive installation wizard (server)
     setup-agents    Re-run only the agent-runtime portion of setup
     runtime doctor  Validate prerequisites (bun, docker, pg, tmux, claude-code)
+    runtime status  Show RuntimeManager + driver health (live)
     remote          Connect laptop to a remote bot server
     mcp-register    Re-register MCP servers in Claude Code
+
+  ${c.bold("Agents (PRD §17.7):")}
+    agents              List agent definitions and instances
+    agent start <ref>   Set desired_state=running for agent (id or name)
+    agent stop <ref>    Set desired_state=stopped
+    agent restart <ref> Reconcile-driven restart
+    agent snapshot <ref> Show last captured runtime snapshot
+    agent logs <ref> [n] Show last N agent_events (default 50)
+    providers           List model providers
+    models              List model profiles
 
   ${c.bold("Bot (Docker service):")}
     bot-start       Start bot (docker compose up -d)
@@ -2412,18 +2633,38 @@ switch (command) {
   case "setup":       await setup(); break;
   case "setup-agents": await setupAgents(); break;
   case "runtime": {
-    // Subcommands under `helyx runtime`. Currently only `doctor` (P0b);
-    // `status` and others (PRD §16.7) land in subsequent waves.
+    // Subcommands under `helyx runtime`. doctor (P0b) + status (wave-10).
     const sub = process.argv[3];
     if (sub === "doctor") {
       await runtimeDoctor();
+    } else if (sub === "status") {
+      await runApiCmd(() => cmdRuntimeStatus());
     } else {
       console.log(c.red(`  Unknown runtime subcommand: ${sub ?? "(missing)"}`));
-      console.log(`  Available: ${c.cyan("doctor")}`);
+      console.log(`  Available: ${c.cyan("doctor")}, ${c.cyan("status")}`);
       process.exit(2);
     }
     break;
   }
+  case "agents":    await runApiCmd(() => cmdAgents()); break;
+  case "agent": {
+    const sub = process.argv[3];
+    const ref = process.argv[4];
+    if (sub === "start")        await runApiCmd(() => cmdAgentAction("start", ref));
+    else if (sub === "stop")    await runApiCmd(() => cmdAgentAction("stop", ref));
+    else if (sub === "restart") await runApiCmd(() => cmdAgentAction("restart", ref));
+    else if (sub === "snapshot") await runApiCmd(() => cmdAgentSnapshot(ref));
+    else if (sub === "logs")     await runApiCmd(() => cmdAgentLogs(ref, Number(process.argv[5] ?? "50")));
+    else {
+      console.log(c.red(`  Unknown agent subcommand: ${sub ?? "(missing)"}`));
+      console.log(`  Available: ${c.cyan("start")}, ${c.cyan("stop")}, ${c.cyan("restart")}, ${c.cyan("snapshot")}, ${c.cyan("logs")}`);
+      console.log(`  Usage: helyx agent <subcommand> <id|name>`);
+      process.exit(2);
+    }
+    break;
+  }
+  case "providers": await runApiCmd(() => cmdProviders()); break;
+  case "models":    await runApiCmd(() => cmdModels()); break;
   case "remote":      await remote(); break;
   // Bot (Docker service)
   case "bot-start":   await dockerStart(); break;
