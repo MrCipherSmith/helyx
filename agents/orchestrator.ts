@@ -144,45 +144,55 @@ Rules:
 
   // ---------- Task CRUD ----------
 
-  async createTask(input: CreateTaskInput): Promise<AgentTask> {
+  /**
+   * Insert one task row + audit event inside the caller's transaction.
+   * Used by `createTask` (own tx) and by callers that need to bundle several
+   * task creations atomically (e.g. `decomposeTask`, `addSubtasks`).
+   *
+   * Note: agent selection (`selectAgent`) uses the raw `sql` handle and is
+   * NOT part of this transaction. This is acceptable — selection is a
+   * read-only filter; worst case a concurrent agent registration isn't
+   * visible and we pick from the slightly older snapshot.
+   */
+  private async createTaskTx(tx: any, input: CreateTaskInput): Promise<AgentTask> {
     let agentInstanceId = input.agentInstanceId ?? null;
 
-    // If no explicit assignment, try to find an agent matching required capabilities
     if (agentInstanceId === null && input.requiredCapabilities && input.requiredCapabilities.length > 0) {
       const selected = await this.selectAgent(input.requiredCapabilities);
       if (selected) agentInstanceId = selected.id;
     }
 
-    return await sql.begin(async (tx) => {
-      const [r] = await tx`
-        INSERT INTO agent_tasks (agent_instance_id, parent_task_id, title, description, status, payload, priority)
+    const [r] = await tx`
+      INSERT INTO agent_tasks (agent_instance_id, parent_task_id, title, description, status, payload, priority)
+      VALUES (
+        ${agentInstanceId},
+        ${input.parentTaskId ?? null},
+        ${input.title},
+        ${input.description ?? null},
+        'pending',
+        ${JSON.stringify(input.payload ?? {})}::jsonb,
+        ${input.priority ?? 0}
+      )
+      RETURNING *
+    ` as any[];
+
+    if (agentInstanceId !== null) {
+      await tx`
+        INSERT INTO agent_events (agent_instance_id, task_id, event_type, message, metadata)
         VALUES (
           ${agentInstanceId},
-          ${input.parentTaskId ?? null},
-          ${input.title},
-          ${input.description ?? null},
-          'pending',
-          ${JSON.stringify(input.payload ?? {})}::jsonb,
-          ${input.priority ?? 0}
+          ${r.id},
+          'task_assigned',
+          ${`task #${r.id}: ${r.title}`},
+          ${JSON.stringify({ priority: r.priority, parent_task_id: r.parent_task_id })}::jsonb
         )
-        RETURNING *
-      ` as any[];
+      `;
+    }
+    return rowToTask(r);
+  }
 
-      // Audit event on the assigned agent (if any)
-      if (agentInstanceId !== null) {
-        await tx`
-          INSERT INTO agent_events (agent_instance_id, task_id, event_type, message, metadata)
-          VALUES (
-            ${agentInstanceId},
-            ${r.id},
-            'task_assigned',
-            ${`task #${r.id}: ${r.title}`},
-            ${JSON.stringify({ priority: r.priority, parent_task_id: r.parent_task_id })}::jsonb
-          )
-        `;
-      }
-      return rowToTask(r);
-    }) as AgentTask;
+  async createTask(input: CreateTaskInput): Promise<AgentTask> {
+    return (await sql.begin((tx) => this.createTaskTx(tx, input))) as AgentTask;
   }
 
   async getTask(id: number): Promise<AgentTask | null> {
@@ -368,14 +378,24 @@ Rules:
 
   // ---------- Subtask helpers ----------
 
-  /** Add multiple subtasks under a parent. Useful after manual decomposition. */
-  async addSubtasks(parentTaskId: number, subtasks: CreateTaskInput[]): Promise<AgentTask[]> {
+  /**
+   * Add multiple subtasks inside the caller's transaction. Calls
+   * `createTaskTx` for each subtask so all inserts share one transaction.
+   */
+  private async addSubtasksTx(tx: any, parentTaskId: number, subtasks: CreateTaskInput[]): Promise<AgentTask[]> {
     const results: AgentTask[] = [];
     for (const sub of subtasks) {
-      const created = await this.createTask({ ...sub, parentTaskId });
+      const created = await this.createTaskTx(tx, { ...sub, parentTaskId });
       results.push(created);
     }
     return results;
+  }
+
+  /** Add multiple subtasks under a parent. Useful after manual decomposition. */
+  async addSubtasks(parentTaskId: number, subtasks: CreateTaskInput[]): Promise<AgentTask[]> {
+    return (await sql.begin((tx) =>
+      this.addSubtasksTx(tx, parentTaskId, subtasks),
+    )) as AgentTask[];
   }
 
   // ---------- LLM-driven decomposition (Phase 9) ----------
@@ -474,24 +494,29 @@ Rules:
       requiredCapabilities: s.capabilities.length > 0 ? s.capabilities : undefined,
     }));
 
-    const created = await this.addSubtasks(taskId, subtaskInputs);
-
-    // Audit event on the parent task
-    await sql`
-      INSERT INTO agent_events (agent_instance_id, task_id, event_type, message, metadata)
-      VALUES (
-        ${task.agentInstanceId ?? null},
-        ${taskId},
-        'task_decomposed',
-        ${`Decomposed into ${created.length} subtasks via LLM (${provider.providerType}/${provider.model})`},
-        ${JSON.stringify({
-          provider_type: provider.providerType,
-          model: provider.model,
-          attempts,
-          subtask_count: created.length,
-        })}::jsonb
-      )
-    `;
+    // Atomic: subtask inserts + parent audit event share one transaction.
+    // Previously the audit event was a separate `sql` call after addSubtasks;
+    // a crash between the two would leave subtasks orphaned (no record of
+    // who decomposed them or via which model).
+    const created = (await sql.begin(async (tx) => {
+      const subs = await this.addSubtasksTx(tx, taskId, subtaskInputs);
+      await tx`
+        INSERT INTO agent_events (agent_instance_id, task_id, event_type, message, metadata)
+        VALUES (
+          ${task.agentInstanceId ?? null},
+          ${taskId},
+          'task_decomposed',
+          ${`Decomposed into ${subs.length} subtasks via LLM (${provider.providerType}/${provider.model})`},
+          ${JSON.stringify({
+            provider_type: provider.providerType,
+            model: provider.model,
+            attempts,
+            subtask_count: subs.length,
+          })}::jsonb
+        )
+      `;
+      return subs;
+    })) as AgentTask[];
 
     return {
       parentTask: task,
