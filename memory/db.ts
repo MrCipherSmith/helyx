@@ -983,6 +983,90 @@ const migrations: Migration[] = [
       `;
     },
   },
+  {
+    version: 32,
+    name: "v1.37.0: parse-back JSONB columns corrupted by stripped ::jsonb cast",
+    up: async (tx) => {
+      // Critical data fix for the v1.37.0 systemic ::jsonb cast bug.
+      // postgres.js v3 silently strips trailing `::jsonb` casts on
+      // parameter placeholders, so writes via `${JSON.stringify(x)}::jsonb`
+      // bound the value as TEXT — postgres then stored it as a JSONB
+      // **scalar string** containing the stringified JSON, instead of
+      // parsing it as a JSONB object/array.
+      //
+      // Symptoms in DB pre-fix:
+      //   jsonb_typeof(payload) = 'string'   -- wrong, should be 'object'
+      //   payload::text = '"{\"foo\":\"bar\"}"'  -- doubly-quoted
+      //
+      // For each affected column we look for rows whose top-level
+      // jsonb_typeof = 'string' AND the contained text is a valid JSON
+      // object or array literal — those are corrupted writes. Parse the
+      // contained JSON back into proper JSONB.
+      //
+      // `IS JSON` predicate (PG 16+) gates the parse so any genuine
+      // scalar-string values (e.g. `'"foo"'` written intentionally,
+      // though we have none) survive untouched. Falls back to a plain
+      // `~ '^[{[].*'` regex for older PG. We use the regex form for
+      // portability — both helyx prod (PG 15) and CI use it.
+      //
+      // Idempotent: re-running finds zero rows because the post-update
+      // jsonb_typeof is now 'object' / 'array'.
+      //
+      // Special case: `agent_instances.runtime_handle` for the bloated
+      // 240MB row is reset directly in code (not parseable — char-map
+      // chunks won't round-trip), see scripts/reset-bloated-handle.ts.
+
+      // Tables with `updated_at`: timestamp updated alongside the parse-back.
+      // agent_events and sessions have no updated_at column — emitted by
+      // the if/else below.
+      const tables: Array<{ table: string; column: string; hasUpdatedAt: boolean }> = [
+        { table: "agent_tasks",     column: "payload",        hasUpdatedAt: true  },
+        { table: "agent_tasks",     column: "result",         hasUpdatedAt: true  },
+        { table: "agent_events",    column: "metadata",       hasUpdatedAt: false },
+        { table: "agent_instances", column: "runtime_handle", hasUpdatedAt: true  },
+        { table: "sessions",        column: "metadata",       hasUpdatedAt: false },
+        { table: "sessions",        column: "cli_config",     hasUpdatedAt: false },
+      ];
+
+      for (const { table, column, hasUpdatedAt } of tables) {
+        // Only rows that look like a stringified JSON object/array.
+        // 4-byte length floor skips trivially small scalars; a stringified
+        // `"{}"` is 4 bytes ('"{}"' is exactly 4 chars) — parseable.
+        // Parseable rows must start with `"{` or `"[` after the opening
+        // quote of the JSONB scalar string.
+        //
+        // 1MB upper cap protects against the bloated runtime_handle case:
+        // re-parsing a 240MB char-map produces another 240MB JSONB object
+        // (also useless garbage). Such rows are reset to '{}' below.
+        const setClause = hasUpdatedAt
+          ? `${column} = (${column}#>>'{}')::jsonb, updated_at = now()`
+          : `${column} = (${column}#>>'{}')::jsonb`;
+        await tx.unsafe(`
+          UPDATE ${table}
+          SET ${setClause}
+          WHERE jsonb_typeof(${column}) = 'string'
+            AND length(${column}::text) BETWEEN 4 AND 1048576
+            AND (
+              ${column}::text LIKE '"{%'
+              OR ${column}::text LIKE '"[%'
+            )
+        `);
+      }
+
+      // Bloated rows (>1MB scalar strings) are unrecoverable: the content
+      // is the char-spread artifact `{"0":"{","1":"\"",...}` from
+      // accidentally spreading a string into the runtime_handle object.
+      // Round-tripping just yields the same garbage. Reset to '{}' so the
+      // reconciler can re-derive the handle on the next tick (pre-stamps
+      // tmuxWindow from inst.name).
+      await tx`
+        UPDATE agent_instances
+        SET runtime_handle = '{}'::jsonb, updated_at = now()
+        WHERE jsonb_typeof(runtime_handle) = 'string'
+          AND length(runtime_handle::text) > 1048576
+      `;
+    },
+  },
 ];
 
 // --- Public API ---

@@ -172,7 +172,7 @@ async function completeTask(taskId: number, result: string) {
     await tx`
       UPDATE agent_tasks
       SET status = 'done', completed_at = now(), updated_at = now(),
-          result = ${JSON.stringify(payload)}::jsonb
+          result = ${tx.json(payload)}
       WHERE id = ${taskId}
     `;
     await tx`
@@ -252,7 +252,7 @@ async function processOneTask(task: { id: number; title: string; description: st
             ${task.id},
             ${eventType},
             ${typeof metadata.message === "string" ? metadata.message : null},
-            ${JSON.stringify(metadata)}::jsonb
+            ${sql.json(metadata)}
           )
         `;
       } catch (err) {
