@@ -1067,6 +1067,34 @@ const migrations: Migration[] = [
       `;
     },
   },
+  {
+    version: 33,
+    name: "v1.39.0: agent_instances per-instance system_prompt + forum_topic_id",
+    up: async (tx) => {
+      // Closes two architectural gaps from the v1.38.0 review:
+      //
+      // 1. Per-instance system prompt override — currently the prompt
+      //    lives on agent_definitions and applies to every instance of
+      //    the role. Operators want to tune prompts per-instance (e.g.
+      //    a planner role specialized for the helyx project's coding
+      //    conventions vs. the same role used elsewhere). This column
+      //    is OPTIONAL — when null, the worker falls back to the
+      //    definition's system_prompt as before.
+      //
+      // 2. Explicit forum_topic_id binding — standalone-llm agents
+      //    have no implicit Telegram topic linkage (unlike claude-code
+      //    agents which inherit from their session). This column lets
+      //    operators bind an instance to a Telegram forum topic so
+      //    task results can be auto-routed there.
+      //
+      // Both fields nullable / no default → safe additive change.
+      await tx`
+        ALTER TABLE agent_instances
+        ADD COLUMN IF NOT EXISTS system_prompt_override TEXT,
+        ADD COLUMN IF NOT EXISTS forum_topic_id BIGINT
+      `;
+    },
+  },
 ];
 
 // --- Public API ---

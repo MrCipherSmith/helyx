@@ -1,5 +1,73 @@
 # Changelog
 
+## v1.39.0
+
+### feat: per-instance system prompt + project context injection + topic routing
+
+Closes the four context gaps surfaced after v1.38.0 (per-instance prompts,
+topic binding, project context for standalone-llm, result routing).
+
+**Migration v33** — adds two columns to `agent_instances`:
+- `system_prompt_override TEXT` — when non-null, takes precedence over
+  the definition's `system_prompt`. Lets operators specialize a shared
+  role (e.g. one planner tuned for helyx, another for a different
+  project) without cloning the whole definition.
+- `forum_topic_id BIGINT` — Telegram forum topic this instance is bound
+  to. When set, task results are auto-posted there.
+
+**`agents/agent-manager.ts`**:
+- `AgentInstance` interface adds `systemPromptOverride` and `forumTopicId`.
+- `createInstance` accepts both as optional inputs.
+
+**`scripts/standalone-llm-worker.ts`** (Gap 1 + Gap 3 + Gap 4):
+- `resolveAgentContext` returns `system_prompt_override` when set,
+  falling back to `system_prompt` from the definition.
+- After resolving the agent context, the worker calls
+  `buildProjectContext` and appends the rendered block to the system
+  prompt. Falls back silently when the agent has no project_id or no
+  facts/messages exist.
+- After completing a task, the worker calls `routeTaskResultToTopic`
+  which posts to the bound forum topic via grammy. Failures are
+  logged, never raised — the result is already in `agent_tasks.result`.
+
+**`agents/context-injector.ts`** (new — Gap 3):
+- `buildProjectContext(agentInstanceId)` — fetches project facts
+  (`memories.type IN ('fact','decision')` filtered to `project_path`)
+  + last 20 messages. Returns null when no project bound or no
+  data exists.
+- `formatProjectContext(ctx)` — renders into a system-prompt block
+  with project header + facts + recent conversation. Honors a
+  4000-char budget; individual messages truncated to 500 chars.
+
+**`agents/result-router.ts`** (new — Gap 4):
+- `routeTaskResultToTopic({...})` — posts task result to the
+  agent's bound forum topic. Reads `bot_config.forum_chat_id` for the
+  global chat, agent's `forum_topic_id` for the thread. Uses a
+  cached grammy `Api` client built from `TELEGRAM_BOT_TOKEN`.
+- Truncates >3800 chars with a "see /task <id>" pointer.
+- Idempotent no-op when topic / chat / token is missing.
+
+**`bot/commands/agent-create.ts`**:
+- New flags: `--prompt "..."` (per-instance system override) and
+  `--topic <id>` (forum topic binding).
+- New tokenizer respects double-quoted segments so prompts can contain
+  spaces.
+- Reply now lists active overrides.
+- Strict flag validation: unknown `--flag`, `--topic` without numeric
+  id, `--prompt` without value all surface clear error messages.
+
+**Tests** (376 pass total, +18 new):
+- `tests/unit/context-injector.integration.test.ts` (7) —
+  `buildProjectContext` happy + null cases (no project / empty
+  project), filters note types, oldest-first ordering;
+  `formatProjectContext` budget enforcement and section structure.
+- `tests/unit/result-router.integration.test.ts` (5) —
+  `getForumTopicId` happy + null + non-existent paths;
+  `routeTaskResultToTopic` no-op semantics (no topic, no chat config).
+- `tests/unit/agent-create-delete.integration.test.ts` (+6) —
+  `--prompt` persists `system_prompt_override`, `--topic` persists
+  `forum_topic_id`, parse errors for malformed flags, multi-flag combo.
+
 ## v1.38.0
 
 ### feat: /agent_create + /agent_delete Telegram commands
