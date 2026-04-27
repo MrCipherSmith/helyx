@@ -28,6 +28,10 @@ export async function handleCallbackQuery(ctx: Context): Promise<void> {
     const { handleAgentCallback } = await import("./commands/agents.ts");
     return handleAgentCallback(ctx);
   }
+  if (data.startsWith("agent_delete:")) {
+    const { handleAgentDeleteCallback } = await import("./commands/agent-create.ts");
+    return handleAgentDeleteCallback(ctx);
+  }
   if (data.startsWith("rc:")) {
     const { handleRemoteControlCallback } = await import("./commands/remote-control.ts");
     return handleRemoteControlCallback(ctx);

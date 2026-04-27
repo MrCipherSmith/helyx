@@ -1,5 +1,48 @@
 # Changelog
 
+## v1.38.0
+
+### feat: /agent_create + /agent_delete Telegram commands
+
+Closes the gap surfaced after v1.37.0: previously agent_instances could
+only be created via direct SQL or DB migrations. The bot listed,
+started, and stopped them but had no creation flow.
+
+**`/agent_create <name> <definition> [project] [--stopped]`**:
+- Validates: definition exists AND `enabled=true`; project (if given)
+  exists; `(project_id, name)` is unique (DB UNIQUE plus a pre-flight
+  check for clearer error messaging).
+- Defaults `desired_state='running'` so the reconciler picks it up
+  within ~5 s. `--stopped` flag creates an inert instance.
+- Emits `agent_events` row with `event_type='instance_created'`,
+  `source=telegram`, plus the resolved definition + project names.
+
+**`/agent_delete <id>`**:
+- Two-step flow: confirmation message with inline ✅/❌ buttons.
+- On confirm: sets `desired=stopped`, polls `actual_state` for up to
+  30 s waiting for the reconciler to tear down the runtime, then
+  `DELETE`s the row.
+- FK behavior: tasks become unassigned (`agent_instance_id = NULL`);
+  events purged via `ON DELETE CASCADE`.
+- Surfaces a warning if the reconciler does not settle within the
+  budget — orphan tmux windows can be cleaned up via `/tmux_kill`.
+
+**`agents/agent-manager.ts`**:
+- New `deleteInstance(id): Promise<boolean>` method. Pure SQL DELETE —
+  callers are responsible for stopping the runtime first. Idempotent.
+
+**Tests** (`tests/unit/agent-create-delete.integration.test.ts`) — 14
+integration tests:
+- `deleteInstance` happy path + idempotent missing-id.
+- `/agent_create` arg validation (missing args, unknown definition,
+  unknown project), happy path (default running, `--stopped` flag),
+  duplicate-name uniqueness, `instance_created` event metadata stored
+  as JSONB object (regression guard for the v1.37.0 fix).
+- `/agent_delete` arg validation, confirmation-prompt structure with
+  inline keyboard.
+
+358 unit tests pass total.
+
 ## v1.37.0
 
 ### fix: systemic ::jsonb cast bug across 14 call sites + data migration (CRITICAL)

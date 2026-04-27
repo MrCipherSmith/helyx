@@ -285,6 +285,28 @@ export class AgentManager {
     `;
   }
 
+  /**
+   * Delete an agent_instance row. Caller is responsible for stopping the
+   * instance first (set desired_state='stopped', wait for actual_state to
+   * settle) — this method does not interact with the runtime driver and
+   * will leave orphan tmux windows / processes if invoked on a running
+   * instance.
+   *
+   * FK behavior:
+   *  - agent_tasks.agent_instance_id ON DELETE SET NULL — tasks survive,
+   *    become unassigned. Caller should reassign or cancel beforehand.
+   *  - agent_events.agent_instance_id ON DELETE CASCADE — events purged.
+   *  - sessions.id linkage cleared via ON DELETE SET NULL.
+   *
+   * Idempotent: deleting a non-existent id returns false without throwing.
+   */
+  async deleteInstance(id: number): Promise<boolean> {
+    const result = (await sql`
+      DELETE FROM agent_instances WHERE id = ${id}
+    `) as unknown as { count: number };
+    return Number(result?.count ?? 0) > 0;
+  }
+
   /** Update runtime_handle (driver may add fields after start). */
   async updateRuntimeHandle(id: number, handle: Record<string, unknown>): Promise<void> {
     await sql`
