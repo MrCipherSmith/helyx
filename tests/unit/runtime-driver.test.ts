@@ -396,6 +396,80 @@ describe("TmuxDriver", () => {
       expect(sendKeys).toContain("TOKEN='boom \\$(rm -rf /) \\`id\\`'");
     });
 
+    test("HELYX_SYSTEM_PROMPT env var threads through to launcher (Pattern C)", async () => {
+      // v1.41.0: tmux-driver propagates HELYX_SYSTEM_PROMPT just like
+      // any other env var — single-quoted POSIX assignment. run-cli.sh
+      // then picks it up to wire --append-system-prompt for claude-code.
+      // This test only verifies the driver-layer plumbing; the
+      // run-cli.sh wrapping is validated by integration in production.
+      const { runShell, calls } = makeMockShell(
+        new Map([
+          ["has-session", { exitCode: 0 }],
+          ["new-window", { exitCode: 0, stdout: "1" }],
+        ]),
+      );
+      const driver = makeDriver(runShell);
+      const promptText = "You are a security reviewer. Focus on auth and crypto.";
+      await driver.start(
+        { driver: "tmux" },
+        {
+          projectPath: "/p",
+          projectName: "helyx",
+          instanceName: "helyx:secrev",
+          runtimeType: "claude-code",
+          env: {
+            AGENT_INSTANCE_ID: "42",
+            HELYX_SYSTEM_PROMPT: promptText,
+          },
+        },
+      );
+      const sendKeys = calls.find((c) => c.includes("send-keys"));
+      expect(sendKeys).toContain("AGENT_INSTANCE_ID='42'");
+      expect(sendKeys).toContain(`HELYX_SYSTEM_PROMPT='${promptText}'`);
+    });
+
+    test("HELYX_SYSTEM_PROMPT with multi-line content survives single-quote escape", async () => {
+      // Realistic SKILL.md prompts span dozens of lines with newlines,
+      // dollar signs, backticks. They must land verbatim into the env
+      // var so claude-code's --append-system-prompt sees the original
+      // content. Single-quoted POSIX literal handles all of these
+      // EXCEPT a literal single quote (escaped as `'\''`).
+      const { runShell, calls } = makeMockShell(
+        new Map([
+          ["has-session", { exitCode: 0 }],
+          ["new-window", { exitCode: 0, stdout: "1" }],
+        ]),
+      );
+      const driver = makeDriver(runShell);
+      const multiline = `You are a code reviewer.
+
+Phases:
+1. INSPECT — read the diff via $(git diff main...HEAD).
+2. REPORT — use \`severity\` tags.
+
+Constraints: don't \\modify\\ files.`;
+      await driver.start(
+        { driver: "tmux" },
+        {
+          projectPath: "/p",
+          projectName: "helyx",
+          instanceName: "helyx:r",
+          runtimeType: "claude-code",
+          env: { HELYX_SYSTEM_PROMPT: multiline },
+        },
+      );
+      const sendKeys = calls.find((c) => c.includes("send-keys"));
+      // The whole prompt body must be present, single-quoted. We
+      // assert on a few invariant fragments to avoid a brittle exact
+      // match (whitespace handling can vary across the escape layer).
+      expect(sendKeys).toContain("HELYX_SYSTEM_PROMPT='");
+      expect(sendKeys).toContain("Phases:");
+      expect(sendKeys).toContain("INSPECT");
+      // No shell expansion inside single-quotes — $(...) and `...`
+      // land as literal text, not subshell invocations.
+      expect(sendKeys).toContain("\\$(git diff");
+    });
+
     test("env var value containing single quote is properly escaped", async () => {
       const { runShell, calls } = makeMockShell(
         new Map([

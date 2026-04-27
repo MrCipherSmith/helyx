@@ -81,6 +81,59 @@ describe("seed skills (migration v34) — agent_definitions present", () => {
   });
 });
 
+// v36 — claude-code execution-capable definitions
+const EXPECTED_CC_DEFS = [
+  "task-implementer",
+  "code-verifier",
+  "tests-creator",
+  "commit",
+  "pr-create",
+] as const;
+
+describe("seed claude-code execution agents (migration v36) — definitions present", () => {
+  test.skipIf(!HAS_DB)("all 5 claude-code execution definitions exist", async () => {
+    const { sql } = await import("../../memory/db.ts");
+    const rows = (await sql`
+      SELECT name, enabled, runtime_type, capabilities,
+             length(coalesce(system_prompt, '')) AS prompt_len
+      FROM agent_definitions
+      WHERE name IN ${sql(EXPECTED_CC_DEFS as unknown as string[])}
+      ORDER BY name
+    `) as any[];
+
+    expect(rows.length).toBe(EXPECTED_CC_DEFS.length);
+    for (const r of rows) {
+      expect(r.enabled).toBe(true);
+      expect(r.runtime_type).toBe("claude-code");
+      // Prompts are 1100-1400 chars after distillation. Reject
+      // anything truncated below 600 (would mean migration corruption).
+      expect(Number(r.prompt_len)).toBeGreaterThan(600);
+      expect(Array.isArray(r.capabilities)).toBe(true);
+      expect(r.capabilities.length).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  test.skipIf(!HAS_DB)("task-implementer carries 'implement' capability for orchestrator routing", async () => {
+    const { sql } = await import("../../memory/db.ts");
+    const [row] = (await sql`
+      SELECT capabilities FROM agent_definitions WHERE name = 'task-implementer'
+    `) as any[];
+    expect(row).toBeDefined();
+    // Job-orchestrator's plan output uses "code" or "implement" tags
+    // for IMPLEMENT subtasks. selectAgent must find task-implementer
+    // when either is requested.
+    expect(row.capabilities).toContain("code");
+  });
+
+  test.skipIf(!HAS_DB)("code-verifier carries 'verify' capability", async () => {
+    const { sql } = await import("../../memory/db.ts");
+    const [row] = (await sql`
+      SELECT capabilities FROM agent_definitions WHERE name = 'code-verifier'
+    `) as any[];
+    expect(row.capabilities).toContain("verify");
+  });
+});
+
 describe("seed orchestrators (migration v35) — agent_definitions present", () => {
   test.skipIf(!HAS_DB)("all 4 orchestrator definitions exist with 'orchestrate' capability", async () => {
     const { sql } = await import("../../memory/db.ts");
