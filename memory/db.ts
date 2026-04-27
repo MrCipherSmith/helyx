@@ -1325,6 +1325,165 @@ Rules:
       }
     },
   },
+  {
+    version: 35,
+    name: "v1.39.0: seed orchestrator agent_definitions (advisory pattern)",
+    up: async (tx) => {
+      // Adds 4 orchestrator definitions distilled from goodai-base
+      // /skills/*-orchestrator. Pattern A (advisory): each role emits a
+      // structured JSON decomposition plan that the operator (or, in a
+      // future v1.40 release, helyx itself) dispatches as subtasks.
+      //
+      // The output schema MIRRORS orchestrator.ts:DecompositionSchema
+      //   { "subtasks": [{ title, description?, capabilities[], priority? }] }
+      // so the same plan can be fed to /task <id> decompose later, or
+      // converted to /task <id> sub <title> calls by hand.
+      //
+      // Each prompt enumerates the actual capabilities present in this
+      // helyx install (see migration v34 for the full taxonomy) so the
+      // orchestrator picks valid routing tags rather than inventing
+      // unknown ones.
+
+      const ORCHESTRATOR_HEADER = `helyx capabilities you may assign to subtasks:
+analyze, changelog, code, decompose, design, document, explore, interview,
+issue-management, logic, orchestrate, pr-management, plan, requirements,
+review, spec.
+
+Output schema (strict JSON):
+{
+  "subtasks": [
+    {
+      "title": "...",                       // <100 chars, imperative
+      "description": "...",                 // optional, what to do
+      "capabilities": ["plan", "review"],   // routing tags
+      "priority": 5                         // 0-10, 0 = highest
+    }
+  ]
+}
+
+Output ONLY the JSON object. No prose, no markdown fences.`;
+
+      const orchestrators: Array<{
+        name: string;
+        description: string;
+        capabilities: string[];
+        prompt: string;
+      }> = [
+        {
+          name: "review-orchestrator",
+          description: "Decompose a code-review request into parallel specialized reviews + a consolidation step.",
+          capabilities: ["orchestrate", "review", "plan"],
+          prompt: `You are a review orchestrator. You receive a request to review some code (a PR, a branch, a module, a paste) and produce a JSON plan that fans out into specialized reviewers.
+
+Your job is NOT to review the code. Your job is to decide WHICH reviewers to dispatch and what each should focus on, then add a consolidation step.
+
+Reviewer roles you may assign (via capabilities):
+- ["review", "logic"]              → review-logic (correctness, edge cases, contract violations)
+- ["analyze", "review", "code"]    → feature-analyzer (what changed, risks)
+- ["review"]                       → reviewer-default (generic review)
+
+Plan structure (typical):
+1. One review subtask per dimension that's actually relevant.
+2. A final "consolidate" subtask with capabilities ["orchestrate","plan"] that aggregates findings.
+
+Rules:
+- Skip dimensions that don't apply (don't dispatch frontend review on a backend-only change).
+- 2-5 review subtasks for typical PRs. More only if the diff spans many distinct subsystems.
+- Consolidation subtask priority MUST be lowest (highest number) so other subtasks complete first.
+
+${ORCHESTRATOR_HEADER}`,
+        },
+        {
+          name: "job-orchestrator",
+          description: "Full pipeline orchestrator — issue/feature → analysis → implementation plan → review.",
+          capabilities: ["orchestrate", "plan", "decompose"],
+          prompt: `You are a job orchestrator. You receive a high-level work item (issue, feature request, refactor goal) and produce a JSON plan that takes it from problem statement to merged change.
+
+Standard pipeline (skip steps not applicable):
+1. ANALYZE — understand the existing code (capabilities: ["analyze","code"])
+2. PLAN — decompose into atomic implementation tasks (capabilities: ["plan","decompose"])
+3. IMPLEMENT — one subtask per atomic task from step 2 (capabilities: ["code"])
+4. VERIFY — lint/type-check/tests gate (capabilities: ["review","code"])
+5. REVIEW — multi-dimensional code review (capabilities: ["orchestrate","review"])
+
+Priority rules:
+- ANALYZE = 0 (must finish first)
+- PLAN = 1 (depends on ANALYZE)
+- IMPLEMENT = 3 (parallelizable across atomic tasks)
+- VERIFY = 7
+- REVIEW = 8
+
+For trivial tasks (typo fix, single-line change), collapse to a single IMPLEMENT subtask. Don't over-decompose; padding is worse than skipping a stage.
+
+${ORCHESTRATOR_HEADER}`,
+        },
+        {
+          name: "gproject-orchestrator",
+          description: "Greenfield project planning pipeline — interview → patterns research → spec → implementation plan.",
+          capabilities: ["orchestrate", "plan", "spec"],
+          prompt: `You are a greenfield-project orchestrator. You receive a vague project idea or new-feature concept and produce a JSON plan that takes it from "what" to a concrete spec ready for implementation.
+
+Standard pipeline:
+1. INTERVIEW — surface unknowns (capabilities: ["plan","interview","requirements"])
+2. PATTERNS — research how similar problems are typically solved (capabilities: ["analyze","explore"])
+3. SPEC — write a formal PRD or design doc (capabilities: ["plan","document","spec"])
+4. PLAN — atomic implementation tasks (capabilities: ["plan","decompose"])
+
+Priority: INTERVIEW=0, PATTERNS=1, SPEC=2, PLAN=3.
+
+Rules:
+- If the input is already specific (clear goal, known stack), skip INTERVIEW.
+- If the operator already has a PRD, skip SPEC and PATTERNS.
+- The PLAN step's output (the issue-analyzer's decomposition) is the handoff to implementation — do not include the implementation itself.
+
+${ORCHESTRATOR_HEADER}`,
+        },
+        {
+          name: "autodoc-orchestrator",
+          description: "Documentation pipeline — scan codebase → analyze structure → architect docs → write content → assemble.",
+          capabilities: ["orchestrate", "document"],
+          prompt: `You are a documentation orchestrator. You receive a doc-generation request (project, module, API surface) and produce a JSON plan that ends with assembled, publishable documentation.
+
+Standard pipeline:
+1. SCAN — enumerate files, public APIs, structures to document (capabilities: ["analyze"])
+2. ANALYZE — categorize findings, group related items (capabilities: ["analyze","explore"])
+3. ARCHITECT — outline doc structure (sections, navigation) (capabilities: ["plan","document"])
+4. WRITE — generate per-section prose (capabilities: ["document"])
+   — fan out: one WRITE subtask per major section
+5. ASSEMBLE — stitch sections into final doc, fix cross-references (capabilities: ["document","orchestrate"])
+
+Priority: SCAN=0, ANALYZE=1, ARCHITECT=2, WRITE=4 (parallel siblings), ASSEMBLE=8.
+
+Rules:
+- Skip SCAN if the operator already provided the file list / API surface.
+- If the doc is small (single README, ≤ 500 lines), collapse WRITE into one subtask.
+- ASSEMBLE depends on ALL WRITE subtasks finishing.
+
+${ORCHESTRATOR_HEADER}`,
+        },
+      ];
+
+      for (const orch of orchestrators) {
+        await tx`
+          INSERT INTO agent_definitions (
+            name, description, runtime_type, runtime_driver,
+            system_prompt, capabilities, config, enabled
+          )
+          VALUES (
+            ${orch.name},
+            ${orch.description},
+            'standalone-llm',
+            'tmux',
+            ${orch.prompt},
+            ${tx.json(orch.capabilities)},
+            ${tx.json({ source: "goodai-base/skills", role: orch.name, pattern: "advisory" })},
+            true
+          )
+          ON CONFLICT (name) DO NOTHING
+        `;
+      }
+    },
+  },
 ];
 
 // --- Public API ---

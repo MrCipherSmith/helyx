@@ -2,6 +2,38 @@
 
 ## v1.39.0
 
+### feat: orchestrator agent_definitions (advisory pattern)
+
+Migration v35 seeds 4 orchestrator definitions distilled from
+goodai-base/skills/*-orchestrator. Each emits a structured JSON
+decomposition plan that mirrors `orchestrator.ts:DecompositionSchema`,
+so the same plan can be fed to `/task <id> decompose` later, or
+converted to `/task <id> sub <title>` calls by hand.
+
+- `review-orchestrator` — multi-dimensional code review fan-out + consolidation
+- `job-orchestrator` — full pipeline (analyze → plan → implement → verify → review)
+- `gproject-orchestrator` — greenfield planning (interview → patterns → spec → plan)
+- `autodoc-orchestrator` — documentation pipeline (scan → analyze → architect → write → assemble)
+
+All four carry the `orchestrate` capability tag, plus role-specific
+tags (`review`, `decompose`, `spec`, `document`). Prompts enumerate
+the actual helyx capability taxonomy so plans pick valid routing tags.
+
+**Pattern A (advisory)**: operator dispatches subtasks manually.
+Working today with no code changes.
+
+**Pattern B (auto-dispatch)**: deferred to v1.40 — worker detects
+JSON decomposition output from orchestrate-capable agents and creates
+subtasks via `orchestrator.createTask` automatically.
+
+**Pattern C (claude-code MCP)**: deferred until claude-code system
+prompt forwarding lands.
+
+`tests/unit/seed-skills.integration.test.ts` (+2 tests) — verifies
+all 4 orchestrator seeds present with the `orchestrate` capability
+and reference the strict JSON schema in their prompts (so Pattern B
+parser can rely on uniform output shape).
+
 ### feat: skill-based agent_definitions seeded from goodai-base + /agents_catalog
 
 Closes the "no easy way to add agents to a project" gap. Previously
