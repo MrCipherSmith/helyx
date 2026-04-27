@@ -1,5 +1,79 @@
 # Changelog
 
+## v1.41.0
+
+### feat: Claude Code system prompt forwarding (Pattern C) + 5 execution-capable templates
+
+Closes the deferred Pattern C path from v1.39.0. Specialized claude-code
+agents are now possible — same `claude-code` runtime, but with a focused
+role primer appended to the session system prompt via
+`--append-system-prompt`. Unlocks the goodai-base execution-capable
+skills (task-implementer, code-verifier, tests-creator, commit,
+pr-create) as native helyx templates.
+
+**Pattern C wiring**:
+
+- `runtime/runtime-manager.ts` resolves the effective system prompt:
+  `inst.systemPromptOverride ?? def.systemPrompt`. Forwards it as
+  `HELYX_SYSTEM_PROMPT` env var to `driver.start`.
+- `scripts/run-cli.sh` (claude-code branch) checks for
+  `HELYX_SYSTEM_PROMPT` and, if set, wraps the launcher command with
+  `--append-system-prompt $escaped_prompt`. Uses `printf %q` for
+  shell-safe quoting so multi-line prompts with `$`/`` ` ``/`'` survive.
+- Other runtimes (codex-cli, opencode, deepseek-cli) ignore the env
+  var — no change for them.
+
+**Migration v36** — seeds 5 claude-code execution-capable definitions:
+
+- `task-implementer` (`code, implement, test`) — implements a single
+  atomic decomposed task end-to-end (research → plan → code → verify).
+- `code-verifier` (`test, verify, lint`) — runs the full quality gate
+  and produces a structured pass/fail report.
+- `tests-creator` (`test, code`) — generates focused unit/integration
+  tests matching the project's existing patterns.
+- `commit` (`code, commit, git`) — Conventional Commits author
+  with WHY-focused body and safe staging.
+- `pr-create` (`pr-management, git`) — pushes branch + opens a PR
+  with auto-derived summary and test plan.
+
+Each prompt is a 1100-1400 char distillation; operators wanting the
+full SKILL.md body can copy from `goodai-base/skills/<name>/SKILL.md`
+and pass via `/agent_create ... --prompt "<paste>"`.
+
+**Synergy with v1.40.0 auto-dispatch**: a `job-orchestrator` plan now
+fans out into REAL execution-capable claude-code agents:
+
+```
+/agent_create helyx:job job-orchestrator helyx
+/agent_create helyx:impl task-implementer helyx
+/agent_create helyx:check code-verifier helyx
+/agent_create helyx:committer commit helyx
+
+/orchestrate "Add /agent_definition_create command"
+  → job-orchestrator emits 5-subtask plan
+  → auto-dispatcher creates subtasks; selectAgent routes by capability
+  → task-implementer (claude-code) implements code
+  → code-verifier (claude-code) runs lint/types/tests
+  → commit (claude-code) creates the commit
+  → fan-out happens autonomously, with file/Bash access
+```
+
+**Tests** (+7):
+- `runtime-driver.test.ts`: HELYX_SYSTEM_PROMPT threads through env
+  layer; multi-line prompt with `$()`/`` ` `` survives single-quote
+  escape (no shell expansion).
+- `seed-skills.integration.test.ts`: all 5 claude-code seeds present
+  with non-trivial prompts; task-implementer carries `code`
+  capability (so orchestrator's IMPLEMENT subtasks route here);
+  code-verifier carries `verify`.
+
+396/396 unit tests pass.
+
+**Pattern C limits**: `--append-system-prompt` extends but does not
+replace the claude-code base prompt. The skill prompt steers behavior
+on top of claude's defaults — operators get full claude-code tools
+(Read/Edit/Bash/MCP) plus the role primer, not a sandboxed subset.
+
 ## v1.40.0
 
 ### feat: orchestrator auto-dispatch (Pattern B) — fan-out becomes automatic

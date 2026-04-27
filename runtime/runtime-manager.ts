@@ -251,10 +251,20 @@ export class RuntimeManager {
         // getDefinition returns the camelCase mapping (runtimeType) — same
         // as listDefinitions. This replaces a raw SQL query that
         // previously knew about agent_definitions schema directly.
+        //
+        // Also resolves the effective system prompt:
+        //   instance.systemPromptOverride (v33+) ?? definition.systemPrompt
+        // Forwarded to the launcher via HELYX_SYSTEM_PROMPT env var. The
+        // run-cli.sh wrapper picks it up and:
+        //   - claude-code: appends via --append-system-prompt
+        //   - standalone-llm: worker reads via resolveAgentContext (already done)
+        //   - other CLIs: ignored (no harm).
         let runtimeType: string | undefined;
+        let effectiveSystemPrompt: string | null = null;
         try {
           const def = await agentMgr.getDefinition(inst.definitionId);
           runtimeType = def?.runtimeType;
+          effectiveSystemPrompt = inst.systemPromptOverride ?? def?.systemPrompt ?? null;
         } catch (err) {
           logger.warn(
             { instanceId: inst.id, definitionId: inst.definitionId, err: String(err) },
@@ -273,12 +283,21 @@ export class RuntimeManager {
           //   2. standalone-llm worker receives AGENT_INSTANCE_ID via
           //      env (worker exits 2 without it). Other runtimes that
           //      don't read this env ignore it — harmless.
+          // Build env map. HELYX_SYSTEM_PROMPT only included when present —
+          // omitting the key keeps the launcher's "no override" branch
+          // cleanly distinguishable from "empty override".
+          const launchEnv: Record<string, string> = {
+            AGENT_INSTANCE_ID: String(inst.id),
+          };
+          if (effectiveSystemPrompt && effectiveSystemPrompt.trim().length > 0) {
+            launchEnv.HELYX_SYSTEM_PROMPT = effectiveSystemPrompt;
+          }
           const updatedHandle = await driver.start(handle, {
             projectPath,
             projectName,
             runtimeType,
             instanceName: inst.name,
-            env: { AGENT_INSTANCE_ID: String(inst.id) },
+            env: launchEnv,
           });
           await agentMgr.updateRuntimeHandle(inst.id, updatedHandle);
           // Don't immediately mark as running — let next tick verify via health

@@ -60,7 +60,26 @@ fi
 # needs_claude_confirm: whether to spawn the "Enter to confirm" watcher (Claude only).
 case "$RUNTIME_TYPE" in
   claude-code)
-    launcher_cmd='CHANNEL_SOURCE=remote claude --dangerously-load-development-channels server:helyx-channel'
+    # Pattern C (v1.41.0): when HELYX_SYSTEM_PROMPT env var is set, append it
+    # to the claude-code session via --append-system-prompt. The driver
+    # populates HELYX_SYSTEM_PROMPT from agent_definitions.system_prompt
+    # (or instance.system_prompt_override when present). Lets operators
+    # spawn specialized claude-code agents — e.g. helyx:reviewer-security
+    # backed by the same claude-code-default definition but primed with
+    # a security-focused prompt — without cloning the definition.
+    #
+    # Quoting: bash $'...' interpolation handles newlines / special chars
+    # in HELYX_SYSTEM_PROMPT safely. We pass it as a single argv element
+    # so claude-code treats the whole prompt as one --append-system-prompt
+    # value, not split on spaces.
+    if [ -n "$HELYX_SYSTEM_PROMPT" ]; then
+      # Use printf %q for shell-safe quoting — exactly one arg passed.
+      escaped_prompt=$(printf '%q' "$HELYX_SYSTEM_PROMPT")
+      launcher_cmd="CHANNEL_SOURCE=remote claude --dangerously-load-development-channels server:helyx-channel --append-system-prompt $escaped_prompt"
+      echo "[run-cli] Appending system prompt (${#HELYX_SYSTEM_PROMPT} chars) to claude-code session"
+    else
+      launcher_cmd='CHANNEL_SOURCE=remote claude --dangerously-load-development-channels server:helyx-channel'
+    fi
     needs_claude_confirm=1
     ;;
   codex-cli)
