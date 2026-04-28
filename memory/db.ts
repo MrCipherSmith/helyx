@@ -572,7 +572,51 @@ const migrations: Migration[] = [
 
 // --- Public API ---
 
+/**
+ * Validate the migrations registry. Catches mistakes that would otherwise
+ * cause confusing runtime behavior: duplicate version numbers (only one
+ * gets recorded in schema_versions, the other never runs), non-monotonic
+ * ordering (a v22 placed after v25 still runs in array order, but the
+ * version-comparison logic in `pending = filter(version > current)`
+ * relies on max-version semantics — a v22 added back to the bottom of
+ * the array would be skipped on any DB whose schema_versions already has
+ * a higher version applied).
+ *
+ * Throws on the first violation rather than logging — migrations are
+ * critical-path on startup; failing loud beats failing quietly.
+ *
+ * Cheap: O(N) scan over a 22-element array, runs once per process start.
+ */
+function validateMigrationRegistry(): void {
+  const versions = migrations.map((m) => m.version);
+  // Duplicate detection
+  const seen = new Set<number>();
+  for (const v of versions) {
+    if (seen.has(v)) {
+      throw new Error(`[db] duplicate migration version: v${v}. Each migration must use a unique version number.`);
+    }
+    seen.add(v);
+  }
+  // Monotonic ordering — strict ascending in array
+  for (let i = 1; i < versions.length; i++) {
+    if (versions[i]! <= versions[i - 1]!) {
+      throw new Error(
+        `[db] non-monotonic migration order at index ${i}: v${versions[i]} follows v${versions[i - 1]}. ` +
+          `Migrations must be ordered strictly ascending by version.`,
+      );
+    }
+  }
+  // Sanity: integer versions only — fractional versions break the
+  // `version > current` filter when MAX(schema_versions.version) is INT.
+  for (const v of versions) {
+    if (!Number.isInteger(v) || v < 1) {
+      throw new Error(`[db] invalid migration version: v${v}. Must be a positive integer.`);
+    }
+  }
+}
+
 export async function migrate() {
+  validateMigrationRegistry();
   await ensureVersionTable();
   const current = await getCurrentVersion();
 
