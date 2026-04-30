@@ -172,7 +172,7 @@ function registerTools(server: McpServer, bot: Bot | null, getClientId?: () => s
 
   server.tool(
     "skill_view",
-    "Load a skill and return its content with inline shell tokens expanded. Use this when you need to read a Hermes-style skill file that contains dynamic context via !`cmd` syntax.",
+    "Load a skill and return its content with inline shell tokens expanded. Use this when you need to read a skill file that contains dynamic context via !`cmd` syntax.",
     {
       name: z.string().describe("Skill name (kebab-case, e.g. 'git-state')"),
     },

@@ -1,8 +1,8 @@
-# PRD: Hermes Skills Toolkit — Overview
+# PRD: Skills Toolkit — Overview
 
 ## 1. Overview
 
-Three skill-system improvements inspired by [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent), adapted to helyx's Bun-MCP-bridge architecture (where Claude Code remains the agent runtime). Sequenced as a roadmap with strict dependencies: **A → C → B**.
+Three skill-system improvements adapted to helyx's Bun-MCP-bridge architecture (where Claude Code remains the agent runtime). Sequenced as a roadmap with strict dependencies: **A → C → B**.
 
 | Phase | Feature | Why now |
 |---|---|---|
@@ -25,11 +25,11 @@ This toolkit adds a thin helyx-side preprocessor + skill registry, layered atop 
 
 ## 3. Problem Statement
 
-1. **Static skills require live data via tool calls.** A `/git-state` skill today must instruct the LLM to run `Bash("git status")` — a full round-trip, ~150 tokens, ~500ms. Hermes lets skills inject that output at load time via `` !`cmd` `` syntax.
+1. **Static skills require live data via tool calls.** A `/git-state` skill today must instruct the LLM to run `Bash("git status")` — a full round-trip, ~150 tokens, ~500ms. Inline shell expansion lets skills inject that output at load time via `` !`cmd` `` syntax.
 
-2. **Successful workflows are forgotten.** When the agent stitches together a multi-step solution (debug + fix + test + commit), that workflow disappears with the conversation. Next time, it's rediscovered. Hermes' agent-created skills capture these as reusable SKILL.md files.
+2. **Successful workflows are forgotten.** When the agent stitches together a multi-step solution (debug + fix + test + commit), that workflow disappears with the conversation. Next time, it's rediscovered. the agent-created skills capture these as reusable SKILL.md files.
 
-3. **Accumulated skills go uncurated.** Without periodic review, agent-created skills duplicate each other, never archive when stale, and never consolidate near-duplicates. Hermes' curator (auxiliary-LLM, idle-triggered) fixes this.
+3. **Accumulated skills go uncurated.** Without periodic review, agent-created skills duplicate each other, never archive when stale, and never consolidate near-duplicates. the curator (auxiliary-LLM, idle-triggered) fixes this.
 
 ## 4. Goals
 
@@ -42,10 +42,10 @@ This toolkit adds a thin helyx-side preprocessor + skill registry, layered atop 
 ## 5. Non-Goals
 
 - **NG1** — rewrite Claude Code's skill loader. We LAYER on top via MCP, never replace.
-- **NG2** — support Hermes' multi-platform gateway (Discord/Slack/WhatsApp). Telegram-only stays.
-- **NG3** — replicate Hermes' multi-LLM provider switching at session level. Claude Code remains the primary runtime.
+- **NG2** — support the multi-platform gateway (Discord/Slack/WhatsApp). Telegram-only stays.
+- **NG3** — replicate the multi-LLM provider switching at session level. Claude Code remains the primary runtime.
 - **NG4** — implement RL/Atropos training pipelines.
-- **NG5** — auto-DELETE skills. Curator only archives — matches Hermes' "never delete" invariant.
+- **NG5** — auto-DELETE skills. Curator only archives — matches the "never delete" invariant.
 - **NG6** — share agent-created skills across users. Per-installation only for v1.
 
 ## 6. Functional Requirements (top-level)
@@ -81,13 +81,13 @@ Per-feature FRs live in the deep-dive PRDs.
 - Curator MUST run as cron job triggered by helyx admin-daemon, not by Claude Code
 
 **Design**:
-- Match Hermes' validation rules: name ≤64 chars, description ≤1024 chars, body ≤100k chars
+- Match the validation rules: name ≤64 chars, description ≤1024 chars, body ≤100k chars
 - Match goodai-base convention: description starts with "Use when"
-- Hermes-specific extensions (`` !`cmd` ``, `related_skills` graph) are ADDITIVE — absent tokens = same behavior as today
+- Inline-shell extensions (`` !`cmd` ``, `related_skills` graph) are ADDITIVE — absent tokens = same behavior as today
 
 ## 9. Edge Cases
 
-- **Hermes-style skill loaded by non-Hermes-aware client** (e.g. Cursor): gracefully degrades — `` !`cmd` `` text passes through verbatim, becomes unrendered markdown
+- **standard skill loaded by non-compatible client** (e.g. Cursor): gracefully degrades — `` !`cmd` `` text passes through verbatim, becomes unrendered markdown
 - **Agent generates skill exceeding 100k char limit**: rejected with diagnostic, retried with truncation prompt
 - **Curator's aux-LLM unavailable** (DeepSeek down + Ollama not running): run skips with logged warning, retries next schedule
 - **Two concurrent autonomous skill creations for similar workflows**: postgres unique constraint on `(name)` prevents duplicates; second creator gets EXISTS error and exits
@@ -97,12 +97,12 @@ Per-feature FRs live in the deep-dive PRDs.
 ## 10. Acceptance Criteria (Gherkin)
 
 ```gherkin
-Feature: Hermes Skills Toolkit — Overall Rollout
+Feature: Skills Toolkit — Overall Rollout
 
   Scenario: Phase A merged independently
-    Given main branch with no Hermes features
+    Given main branch with no Skills Toolkit features
     When PR for inline-shell-expansion is merged
-    Then helyx serves Hermes-style skills with `!`cmd`` expanded
+    Then helyx serves standard skills with `!`cmd`` expanded
     And goodai-base skills continue to load unchanged
     And no postgres schema migration ran
     And no aux-LLM was invoked
@@ -139,7 +139,7 @@ Feature: Hermes Skills Toolkit — Overall Rollout
 1. **Smoke after each PR**: 1 RU + 1 EN message in Telegram, 1 voice message → existing TTS/ASR still works
 2. **goodai-base regression**: load 3 random goodai-base skills (`/feature-analyzer`, `/review-orchestrator`, `/job-orchestrator`) → render correctly, no hangs, no exceptions
 3. **Cost monitoring**: postgres `aux_llm_invocations` table after each curator run
-4. **Weekly health panel**: dashboard `Hermes Toolkit Health` shows skill_preprocess_count, agent_created_skills_count, curator_run_count, errors_count
+4. **Weekly health panel**: dashboard `Skills Toolkit Health` shows skill_preprocess_count, agent_created_skills_count, curator_run_count, errors_count
 
 **Rollback test**: in staging, after deploying all three phases, run `git revert` of each in reverse order — verify clean state and goodai-base regression-free.
 

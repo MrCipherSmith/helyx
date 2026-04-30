@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-Add a helyx-side preprocessing step that expands `` !`cmd` `` tokens in SKILL.md bodies into the stdout of the executed command, before the rendered text reaches the LLM. Mirrors `agent/skill_preprocessing.py::expand_inline_shell` from Hermes-Agent.
+Add a helyx-side preprocessing step that expands `` !`cmd` `` tokens in SKILL.md bodies into the stdout of the executed command, before the rendered text reaches the LLM. Mirrors `agent/skill_preprocessing.py::expand_inline_shell` from 
 
 ## 2. Context
 
@@ -22,7 +22,7 @@ The native Claude Code loader is NOT modified — we expose a parallel path via 
 
 Skills today inject only static markdown. Any dynamic context — git status, environment state, file listing — requires the LLM to make a tool call (`Bash`, `Read`, `Grep`). That's an extra round-trip: ~150 tokens for the call + ~500ms latency per dependency.
 
-Hermes solves this by running shell commands at skill load time and embedding their output directly into the rendered body. A `/git-state` skill goes from "tell the LLM to run git status" to "here's git status, draw conclusions".
+Inline expansion solves this by running shell commands at skill load time and embedding their output directly into the rendered body. A `/git-state` skill goes from "tell the LLM to run git status" to "here's git status, draw conclusions".
 
 ## 4. Goals
 
@@ -33,14 +33,14 @@ Hermes solves this by running shell commands at skill load time and embedding th
 
 ## 5. Non-Goals
 
-- Support Hermes' template vars (`${HERMES_SKILL_DIR}` / `${HERMES_SESSION_ID}`) — separate ticket if/when needed
+- Support the template vars (`${SKILL_DIR}` / `${SESSION_ID}`) — separate ticket if/when needed
 - Intercept Claude Code's native skill loading — we add a parallel MCP tool, native loader stays untouched
 - Execute commands as anyone other than the helyx container's `bun` user
-- Support multi-line shell commands — one-liners only, matches Hermes regex behavior
+- Support multi-line shell commands — one-liners only, matches the same single-line behavior
 
 ## 6. Functional Requirements
 
-- **FR-A-1** — Preprocessor SHALL match the regex `` !`([^`\n]+)` `` (single-line backtick-bounded). Same as Hermes' `_INLINE_SHELL_RE`.
+- **FR-A-1** — Preprocessor SHALL match the regex `` !`([^`\n]+)` `` (single-line backtick-bounded). Same as the `_INLINE_SHELL_RE`.
 - **FR-A-2** — For each match, preprocessor SHALL execute the captured command via `Bun.spawn(['bash', '-c', cmd])` with `cwd=process.cwd()` (the active working directory of the host-side channel.ts process), `timeout=5000ms` (configurable via env), `stdout=pipe`, `stderr=pipe`.
 - **FR-A-3** — Command stdout SHALL replace the entire `` !`...` `` token in the rendered body.
 - **FR-A-4** — If command exits non-zero, replacement string SHALL be `[inline-shell error: <stderr first 500 chars>]`.
@@ -77,7 +77,7 @@ Hermes solves this by running shell commands at skill load time and embedding th
 ## 9. Edge Cases
 
 - **Skill body has unclosed backtick** (`` `!`malformed `` ): regex requires balanced backticks; unclosed token left verbatim
-- **Command output contains `` !`...` `` syntax itself**: preprocessor runs ONCE — nested tokens NOT recursively expanded (matches Hermes)
+- **Command output contains `` !`...` `` syntax itself**: preprocessor runs ONCE — nested tokens NOT recursively expanded (matches the reference single-line behavior)
 - **Command produces binary output**: stdout buffered as utf-8 with replacement char for invalid bytes
 - **Skill missing on disk**: skill_view returns `{ error: 'skill not found', name }` JSON
 - **Skill body already contains rendered shell output (idempotency)**: preprocessor only matches `` !`...` `` regex — already-rendered text isn't re-processed
@@ -163,13 +163,13 @@ Feature: Phase A — Inline Shell Expansion
 - `mcp/skill-view-tool.ts` — exports `registerSkillViewTool` (~50 LOC)
 - `tests/unit/skill-preprocessor.test.ts` (~200 LOC, 12 cases)
 - `tests/unit/mcp-skill-view.test.ts` (~80 LOC, 5 cases)
-- `migrations/v39_hermes_create_skill_preprocess_log.sql` (~20 LOC)
+- `migrations/v23_skills_create_skill_preprocess_log.sql` (~20 LOC)
 
 **Files to modify**:
 - `mcp/server.ts` — register `skill_view` tool schema
 - `mcp/tools.ts` — add `skill_view` to tool list
 - `channel/tools.ts` — add `skill_view` dispatch case
-- `memory/db.ts` — register migration `v39_hermes_create_skill_preprocess_log`
+- `memory/db.ts` — register migration `v23_skills_create_skill_preprocess_log`
 - `CHANGELOG.md` — entry under v1.33.0
 - `package.json` — bump to 1.33.0
 
@@ -208,7 +208,7 @@ Diff summary:
 **Postgres migration**:
 
 ```sql
--- v39_hermes_create_skill_preprocess_log.sql
+-- v23_skills_create_skill_preprocess_log.sql
 CREATE TABLE skill_preprocess_log (
   id BIGSERIAL PRIMARY KEY,
   skill_name TEXT NOT NULL,

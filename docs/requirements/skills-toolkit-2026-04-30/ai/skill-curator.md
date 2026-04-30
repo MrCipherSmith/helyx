@@ -2,11 +2,11 @@
 
 ```yaml
 prd:
-  id: hermes-skill-curator
-  parent: hermes-skills-toolkit
+  id: skills-curator
+  parent: skills-toolkit
   phase: B
   date: 2026-04-30
-  depends_on: [hermes-autonomous-skill-creator, hermes-autonomous-skill-creator-callbacks]  # agent_created_skills table + bot/callbacks.ts handler framework
+  depends_on: [skills-autonomous-creator, skills-autonomous-creator-callbacks]  # agent_created_skills table + bot/callbacks.ts handler framework
   blocks: []
   feature_flag: none
 ```
@@ -15,7 +15,7 @@ prd:
 
 Background cron job that periodically reviews `agent_created_skills` and applies lifecycle transitions: pin frequently-used, archive stale, consolidate near-duplicates, patch low-quality skills. Uses aux-LLM (separate from main session) to keep prompt cache isolated.
 
-Mirrors `agent/curator.py` from Hermes-Agent: idle-triggered, archives never deletes, only touches `is_agent_created` skills.
+idle-triggered, archives never deletes, only touches `is_agent_created` skills.
 
 ## 2. Context
 
@@ -67,7 +67,7 @@ goals:
   - id: G-B-2
     statement: "curator NEVER touches user-created skills (is_agent_created=false in v1: all skills in goodai-base/, ~/.claude/skills/<not under agent-created/>) — by table scope, only agent_created_skills considered"
   - id: G-B-3
-    statement: "curator NEVER deletes — only archives (matches Hermes invariant)"
+    statement: "curator NEVER deletes — only archives (never-delete invariant)"
   - id: G-B-4
     statement: "pinned skills bypass all auto-transitions"
   - id: G-B-5
@@ -102,7 +102,7 @@ fr:
   - id: FR-B-4
     text: "aux-LLM response SHALL list proposed actions per skill: { name, action, reason }; action ∈ {pin, archive, consolidate_with, patch, no_action}"
   - id: FR-B-5
-    text: "curator SHALL auto-apply 'pin' (low risk) and 'archive' (Hermes invariant) actions"
+    text: "curator SHALL auto-apply 'pin' (low risk) and 'archive' (never-delete invariant) actions"
   - id: FR-B-6
     text: "curator SHALL queue 'consolidate_with' and 'patch' as Telegram messages with [Approve] [Skip] inline buttons; user has 24h to respond before action expires"
   - id: FR-B-7
@@ -290,7 +290,7 @@ files_to_create:
       ~ 100 LOC (format Telegram summary)
   - prompts/skill-curation.md:
       ~ 100 lines, system prompt for aux-LLM
-  - migrations/v42_hermes_create_curator_runs.sql:
+  - migrations/v26_skills_create_curator_runs.sql:
       ~ 25 LOC
   - tests/unit/curator.test.ts (~ 350 LOC, 12 cases)
   - tests/unit/curator-integration.test.ts (~ 200 LOC, 4 cases)
@@ -302,7 +302,7 @@ files_to_modify:
   - bot/callbacks.ts: handlers for curator [Approve] / [Skip] inline buttons
   - dashboard/api: new endpoint /api/curator-runs (history view)
   - dashboard/webapp: new page with curator run history + skills lifecycle distribution
-  - memory/db.ts: register migration v42_hermes_create_curator_runs
+  - memory/db.ts: register migration v26_skills_create_curator_runs
   - CHANGELOG.md: entry under v1.35.0
   - package.json: bump to 1.35.0
   - .env.example: HELYX_CURATOR_CRON, HELYX_CURATOR_PAUSED, HELYX_CURATOR_ARCHIVE_AFTER_DAYS, HELYX_CURATOR_PIN_USE_COUNT

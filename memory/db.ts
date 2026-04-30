@@ -586,13 +586,12 @@ const migrations: Migration[] = [
     },
   },
   {
-    // Hermes Skills Toolkit Phase A migration. PRD numbering convention is
-    // v39..v42 — local registry is sequential, so the numbers diverge but the
-    // schemas match. CREATE statements are IF NOT EXISTS and each migration
-    // has a `down` block, so `git revert` of the PR drops the table cleanly
-    // per acceptance criteria.
+    // Skills Toolkit Phase A migration.
+    // CREATE statements are IF NOT EXISTS and each migration has a `down`
+    // block, so `git revert` of the PR drops the tables cleanly per
+    // acceptance criteria.
     version: 23,
-    name: "hermes: skill_preprocess_log table",
+    name: "skills:skill_preprocess_log table",
     up: async (tx) => {
       await tx`
         CREATE TABLE IF NOT EXISTS skill_preprocess_log (
@@ -613,7 +612,7 @@ const migrations: Migration[] = [
   },
   {
     version: 24,
-    name: "hermes: agent_created_skills table",
+    name: "skills:agent_created_skills table",
     up: async (tx) => {
       await tx`
         CREATE TABLE IF NOT EXISTS agent_created_skills (
@@ -645,7 +644,7 @@ const migrations: Migration[] = [
   },
   {
     version: 25,
-    name: "hermes: aux_llm_invocations table",
+    name: "skills:aux_llm_invocations table",
     up: async (tx) => {
       await tx`
         CREATE TABLE IF NOT EXISTS aux_llm_invocations (
@@ -672,7 +671,7 @@ const migrations: Migration[] = [
   },
   {
     version: 26,
-    name: "hermes: curator_runs table",
+    name: "skills:curator_runs table",
     up: async (tx) => {
       await tx`
         CREATE TABLE IF NOT EXISTS curator_runs (
@@ -699,7 +698,7 @@ const migrations: Migration[] = [
   },
   {
     version: 27,
-    name: "hermes: curator_pending_actions table — human-approval queue (FR-B-6)",
+    name: "skills:curator_pending_actions table — human-approval queue (FR-B-6)",
     up: async (tx) => {
       // Phase B's risky actions (consolidate, patch) are queued here pending
       // user [Approve]/[Skip] in Telegram. Rows expire 24h after creation —

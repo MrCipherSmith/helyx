@@ -4,7 +4,7 @@
 
 Background cron job that periodically reviews `agent_created_skills` and applies lifecycle transitions: pin frequently-used, archive stale, consolidate near-duplicates, patch low-quality skills. Uses aux-LLM (separate from main session) to keep prompt cache isolated.
 
-Mirrors `agent/curator.py` from Hermes-Agent: idle-triggered, archives never deletes, only touches `is_agent_created` skills.
+idle-triggered, archives never deletes, only touches `is_agent_created` skills.
 
 ## 2. Context
 
@@ -39,13 +39,13 @@ Once Phase C ships, agent-created skills accumulate. Without periodic review:
 - Near-duplicates pile up (e.g. `/git-state`, `/git-status-snapshot`)
 - Low-quality skills go unnoticed until they fail in use
 
-Hermes' curator solves this with a weekly aux-LLM-driven pass that proposes pin/archive/consolidate/patch and applies safe actions automatically while gating risky ones behind human approval.
+the curator solves this with a weekly aux-LLM-driven pass that proposes pin/archive/consolidate/patch and applies safe actions automatically while gating risky ones behind human approval.
 
 ## 4. Goals
 
 - **G-B-1** — weekly cron runs the curator on all agent-created skills
 - **G-B-2** — curator NEVER touches user-created skills (by table scope: only `agent_created_skills` queried)
-- **G-B-3** — curator NEVER deletes — only archives (matches Hermes invariant)
+- **G-B-3** — curator NEVER deletes — only archives (never-delete invariant)
 - **G-B-4** — pinned skills bypass all auto-transitions
 - **G-B-5** — auto-applied: pin, archive (low risk). Confirmation-required: consolidate, patch (touches body)
 - **G-B-6** — curator uses aux-LLM, NOT main session — billing isolation verifiable
@@ -65,7 +65,7 @@ Hermes' curator solves this with a weekly aux-LLM-driven pass that proposes pin/
 - **FR-B-2** — Curator SHALL select all rows from `agent_created_skills` WHERE `status='active' AND pinned=false`
 - **FR-B-3** — Curator SHALL build a single aux-LLM prompt with all skill names + descriptions + use_count + last_used_at; max 200 skills per run (chunked if more)
 - **FR-B-4** — Aux-LLM response SHALL list proposed actions: `{ name, action, reason }`; action ∈ `{pin, archive, consolidate_with, patch, no_action}`
-- **FR-B-5** — Curator SHALL auto-apply 'pin' (low risk) and 'archive' (Hermes invariant) actions
+- **FR-B-5** — Curator SHALL auto-apply 'pin' (low risk) and 'archive' (never-delete invariant) actions
 - **FR-B-6** — Curator SHALL queue 'consolidate_with' and 'patch' as Telegram messages with [Approve] [Skip] buttons; user has 24h before action expires
 - **FR-B-7** — Auto-archive criterion: `last_used_at` older than 90 days (configurable)
 - **FR-B-8** — Auto-pin criterion: `use_count > 10` AND `last_used_at` within 14 days
@@ -219,7 +219,7 @@ Feature: Phase B — Skill Curator
 - `utils/curator/apply-actions.ts` (~150 LOC, auto-apply pin/archive, queue consolidate/patch)
 - `utils/curator/summary-report.ts` (~100 LOC, format Telegram summary)
 - `prompts/skill-curation.md` (~100 lines, system prompt for aux-LLM)
-- `migrations/v42_hermes_create_curator_runs.sql` (~25 LOC)
+- `migrations/v26_skills_create_curator_runs.sql` (~25 LOC)
 - `tests/unit/curator.test.ts` (~350 LOC, 12 cases)
 - `tests/unit/curator-integration.test.ts` (~200 LOC, 4 cases)
 
@@ -231,7 +231,7 @@ Feature: Phase B — Skill Curator
 - `bot/callbacks.ts` — handlers for curator [Approve] / [Skip] inline buttons
 - `dashboard/api` — new endpoint `/api/curator-runs` (history view)
 - `dashboard/webapp` — new page with curator run history + skills lifecycle distribution
-- `memory/db.ts` — register migration `v42_hermes_create_curator_runs`
+- `memory/db.ts` — register migration `v26_skills_create_curator_runs`
 - `CHANGELOG.md` — entry under v1.35.0
 - `package.json` — bump to 1.35.0
 - `.env.example` — `HELYX_CURATOR_CRON`, `HELYX_CURATOR_PAUSED`, `HELYX_CURATOR_ARCHIVE_AFTER_DAYS`, `HELYX_CURATOR_PIN_USE_COUNT`
@@ -239,7 +239,7 @@ Feature: Phase B — Skill Curator
 **Postgres schema**:
 
 ```sql
--- v42_hermes_create_curator_runs.sql
+-- v26_skills_create_curator_runs.sql
 CREATE TABLE curator_runs (
   id BIGSERIAL PRIMARY KEY,
   started_at TIMESTAMPTZ NOT NULL DEFAULT now(),

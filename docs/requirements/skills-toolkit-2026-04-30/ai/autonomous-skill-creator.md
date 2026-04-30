@@ -2,12 +2,12 @@
 
 ```yaml
 prd:
-  id: hermes-autonomous-skill-creator
-  parent: hermes-skills-toolkit
+  id: skills-autonomous-creator
+  parent: skills-toolkit
   phase: C
   date: 2026-04-30
-  depends_on: [hermes-inline-shell]
-  blocks: [hermes-skill-curator]
+  depends_on: [skills-inline-shell]
+  blocks: [skills-curator]
   feature_flag: none
 ```
 
@@ -75,7 +75,7 @@ goals:
 non_goals:
   - "automatic SKILL.md improvement post-creation — that's Phase B (curator)"
   - "share agent-created skills across users — single installation only"
-  - "support frontmatter beyond Hermes-spec subset (name, description, version, author, license, metadata.helyx.{tags,related_skills})"
+  - "support frontmatter beyond minimal subset (name, description, version, author, license, metadata.helyx.{tags,related_skills})"
   - "version-control skills via git inside helyx — they live in postgres only"
   - "fully auto-create without user gate in v1 — opt-in to auto-approval is post-launch tuning"
 ```
@@ -93,7 +93,7 @@ fr:
   - id: FR-C-4
     text: "validator SHALL enforce: name regex `^[a-z][a-z0-9-]{0,63}$`, description ≤1024 chars, body ≤100000 chars, frontmatter parseable as YAML mapping"
   - id: FR-C-5
-    text: "validator SHALL enforce description starts with 'Use when' (matches goodai-base / Hermes convention)"
+    text: "validator SHALL enforce description starts with 'Use when' (matches goodai-base convention)"
   - id: FR-C-6
     text: "on first `skill_view` for an agent-created skill, helyx SHALL write body to ~/.claude/skills/agent-created/<name>/SKILL.md via atomic temp+rename; subsequent reads verify file length matches body length — if mismatch, force-rewrite"
   - id: FR-C-7
@@ -267,9 +267,9 @@ files_to_create:
       ~ 150 LOC (propose_skill, save_skill, list_agent_skills handlers)
   - prompts/skill-distillation.md:
       ~ 60 lines, system prompt for aux-LLM
-  - migrations/v40_hermes_create_agent_created_skills.sql:
+  - migrations/v24_skills_create_agent_created_skills.sql:
       ~ 40 LOC
-  - migrations/v41_hermes_create_aux_llm_invocations.sql:
+  - migrations/v25_skills_create_aux_llm_invocations.sql:
       ~ 25 LOC
   - tests/unit/skill-distiller.test.ts (~ 250 LOC, 8 cases)
   - tests/unit/agent-skill-store.test.ts (~ 200 LOC, 10 cases)
@@ -281,7 +281,7 @@ files_to_modify:
   - bot/callbacks.ts: add handlers for Save/Reject/Edit-name inline buttons
   - dashboard/api: new endpoint /api/agent-skills (GET list)
   - dashboard/webapp: new page or table for agent-created skills
-  - memory/db.ts: register migrations v40_hermes, v41_hermes
+  - memory/db.ts: register migrations v24_skills, v25_skills
   - CHANGELOG.md: entry under v1.34.0
   - package.json: bump to 1.34.0
   - .env.example: HELYX_AUX_LLM_PROVIDER, HELYX_AUX_LLM_MODEL

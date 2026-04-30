@@ -2,7 +2,7 @@
 
 ## v1.35.0
 
-### feat: Hermes Skills Toolkit — Phase B / Skill Curator (#33)
+### feat: Skills Toolkit — Phase B / Skill Curator (#33)
 
 Weekly cron job that reviews `agent_created_skills` and applies lifecycle
 transitions: auto-pin frequently-used, auto-archive stale, queue
@@ -26,7 +26,7 @@ main session so the Anthropic prompt cache stays untouched.
 
 ## v1.34.0
 
-### feat: Hermes Skills Toolkit — Phase C / Autonomous Skill Creator (#32)
+### feat: Skills Toolkit — Phase C / Autonomous Skill Creator (#32)
 
 After a multi-step success, the agent can distill the workflow into a
 reusable SKILL.md via aux-LLM (DeepSeek default; Ollama / OpenRouter
@@ -50,11 +50,11 @@ native loader can find it.
 
 ## v1.33.0
 
-### feat: Hermes Skills Toolkit — Phase A / Inline Shell Expansion (#29)
+### feat: Skills Toolkit — Phase A / Inline Shell Expansion (#29)
 
 Skills can now embed `!\`cmd\`` tokens that resolve to shell output at
 load time, eliminating one tool-call round-trip per dynamic dependency.
-A new `skill_view` MCP tool loads Hermes-style skills with inline shell
+A new `skill_view` MCP tool loads skills with inline shell
 expansion, falling back to the native loader for skills without tokens.
 
 - New module: `utils/skill-preprocessor.ts` — regex match + spawn +

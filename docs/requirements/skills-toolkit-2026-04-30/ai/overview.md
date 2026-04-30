@@ -1,8 +1,8 @@
-# PRD (AI-readable): Hermes Skills Toolkit — Overview
+# PRD (AI-readable): Skills Toolkit — Overview
 
 ```yaml
 prd:
-  id: hermes-skills-toolkit
+  id: skills-toolkit
   date: 2026-04-30
   type: overview
   scope:
@@ -23,7 +23,7 @@ prd:
 
 ## 1. Overview
 
-Three Hermes-Agent-inspired features, sequenced as a roadmap. Layer atop helyx's Claude-Code-MCP architecture without replacing the agent runtime.
+Three skill primitives borrowed from prior art, sequenced as a roadmap. Layer atop helyx's Claude-Code-MCP architecture without replacing the agent runtime.
 
 ## 2. Context
 
@@ -81,10 +81,10 @@ goals:
 ```yaml
 non_goals:
   - "rewrite Claude Code's skill loader — we LAYER on top via MCP, never replace"
-  - "support Hermes' full multi-platform gateway (Discord/Slack/WhatsApp) — Telegram-only stays"
-  - "replicate Hermes' multi-LLM provider switching at session level — Claude Code stays the primary runtime"
+  - "support the full multi-platform gateway (Discord/Slack/WhatsApp) — Telegram-only stays"
+  - "replicate the multi-LLM provider switching at session level — Claude Code stays the primary runtime"
   - "implement RL/Atropos training pipelines — out of scope"
-  - "auto-DELETE skills (curator only archives, never deletes — same invariant as Hermes)"
+  - "auto-DELETE skills (curator only archives, never deletes — same invariant as inline-shell)"
   - "share agent-created skills across users — per-installation only for v1"
 ```
 
@@ -110,7 +110,7 @@ Per-feature FRs live in the deep-dive PRDs.
 nfr:
   - id: NFR-Compat
     text: "zero changes to goodai-base SKILL.md files — they remain valid input"
-    verify: "rg '!\\x60' in /home/altsay/goodai-base/skills/*/SKILL.md returns no Hermes-style tokens; goodai skills load unchanged"
+    verify: "rg '!\\x60' in /home/altsay/goodai-base/skills/*/SKILL.md returns no standard tokens; goodai skills load unchanged"
   - id: NFR-Cost
     text: "aux-LLM cost SHALL stay under $0.50/month/user at 10 curator runs/month with average prompt size ≤8 KB"
     verify: "logged token counts × DeepSeek pricing in postgres `aux_llm_invocations` table"
@@ -139,16 +139,16 @@ constraints:
     - "agent-created skills MUST live in postgres for queryability + audit; on-disk SKILL.md is generated on demand for Claude Code consumption"
     - "curator MUST run as cron job triggered by helyx admin-daemon, not by Claude Code"
   design:
-    - "match Hermes' validation rules: name ≤64 chars, description ≤1024 chars, body ≤100k chars"
+    - "match the validation rules: name ≤64 chars, description ≤1024 chars, body ≤100k chars"
     - "match goodai-base convention: description starts with 'Use when'"
-    - "Hermes-specific extensions (`!`cmd``, related_skills graph) are ADDITIVE — absent tokens = same behavior as today"
+    - "Inline-shell extensions (`!`cmd``, related_skills graph) are ADDITIVE — absent tokens = same behavior as today"
 ```
 
 ## 9. Edge Cases
 
 ```yaml
 edge_cases:
-  - "Hermes-style skill loaded by non-Hermes-aware client (e.g. Cursor): gracefully degrades — `!`cmd`` text passes through verbatim, becomes unrendered markdown"
+  - "standard skill loaded by non-compatible client (e.g. Cursor): gracefully degrades — `!`cmd`` text passes through verbatim, becomes unrendered markdown"
   - "agent generates skill that exceeds 100k char limit: rejected with diagnostic, retried with truncation"
   - "curator's aux-LLM unavailable (DeepSeek down + Ollama not running): curator run skips with logged warning, retries on next schedule"
   - "two concurrent autonomous skill creations for similar workflows: postgres unique constraint on `(name)` prevents duplicates; second creator gets EXISTS error and exits"
@@ -159,12 +159,12 @@ edge_cases:
 ## 10. Acceptance Criteria (Gherkin)
 
 ```gherkin
-Feature: Hermes Skills Toolkit — Overview Acceptance
+Feature: Skills Toolkit — Overview Acceptance
 
   Scenario: Phase A merged independently
-    Given main branch with no Hermes features
+    Given main branch with no Skills Toolkit features
     When PR for inline-shell-expansion is merged
-    Then helyx serves Hermes-style skills with `!`cmd`` expanded
+    Then helyx serves standard skills with `!`cmd`` expanded
     And goodai-base skills continue to load unchanged
     And no postgres schema migration ran
     And no aux-LLM was invoked
@@ -188,7 +188,7 @@ Feature: Hermes Skills Toolkit — Overview Acceptance
     Given all three phases are in production
     When `git revert` is applied to all three PRs in reverse order (B then C then A)
     And helyx is redeployed
-    Then helyx behaves exactly as today (pre-Hermes)
+    Then helyx behaves exactly as today (pre-toolkit)
     And `agent_created_skills` table is dropped via migration down
     And no orphaned data remains
 
@@ -209,7 +209,7 @@ verification:
     - "smoke after each PR: 1 RU + 1 EN message in Telegram, 1 voice message → existing TTS/ASR still works"
     - "load 3 random goodai-base skills (`/feature-analyzer`, `/review-orchestrator`, `/job-orchestrator`) → render correctly, no hangs, no exceptions"
     - "monitor postgres `aux_llm_invocations` table after each curator run for cost/latency"
-    - "weekly review: dashboard panel `Hermes Toolkit Health` shows: skill_preprocess_count, agent_created_skills_count, curator_run_count, errors_count"
+    - "weekly review: dashboard panel `Skills Toolkit Health` shows: skill_preprocess_count, agent_created_skills_count, curator_run_count, errors_count"
   rollback_test:
     - "in staging, after deploying all three phases, run `git revert` of each in reverse order — verify clean state and goodai-base regression-free"
 ```

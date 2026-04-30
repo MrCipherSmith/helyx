@@ -1,4 +1,4 @@
-// Hermes Skills Toolkit — Phase A: inline shell preprocessor.
+// Skills Toolkit — Phase A: inline shell preprocessor.
 //
 // Security:
 // - shell exec runs in helyx host process; PRD treats SKILL.md authors as trusted,

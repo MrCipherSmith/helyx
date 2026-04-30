@@ -1,8 +1,8 @@
-# PRD: Hermes Skills Toolkit — Overview
+# PRD: Skills Toolkit — Overview
 
 ## 1. Обзор
 
-Три улучшения системы скиллов, вдохновлённые [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent) и адаптированные под архитектуру helyx (Bun-MCP-мост, Claude Code как agent runtime). Реализуются последовательно по roadmap'у с жёсткими зависимостями: **A → C → B**.
+Три улучшения системы скиллов, вдохновлённые [](https://github.com/) и адаптированные под архитектуру helyx (Bun-MCP-мост, Claude Code как agent runtime). Реализуются последовательно по roadmap'у с жёсткими зависимостями: **A → C → B**.
 
 | Фаза | Фича | Зачем именно сейчас |
 |---|---|---|
@@ -25,11 +25,11 @@ helyx сегодня НЕ трогает скиллы — Claude Code загру
 
 ## 3. Постановка проблемы
 
-1. **Статичные скиллы требуют live-данных через tool-calls.** Скилл `/git-state` сегодня инструктирует LLM выполнить `Bash("git status")` — полный round-trip, ~150 токенов, ~500мс. Hermes позволяет инжектить этот вывод на этапе загрузки скилла через синтаксис `` !`cmd` ``.
+1. **Статичные скиллы требуют live-данных через tool-calls.** Скилл `/git-state` сегодня инструктирует LLM выполнить `Bash("git status")` — полный round-trip, ~150 токенов, ~500мс. inline-shell позволяет инжектить этот вывод на этапе загрузки скилла через синтаксис `` !`cmd` ``.
 
-2. **Успешные workflow забываются.** Когда агент собирает многошаговое решение (debug + fix + test + commit), этот workflow исчезает вместе с разговором. В следующий раз он переоткрывается с нуля. Hermes-овские agent-created скиллы захватывают такие паттерны как переиспользуемые SKILL.md.
+2. **Успешные workflow забываются.** Когда агент собирает многошаговое решение (debug + fix + test + commit), этот workflow исчезает вместе с разговором. В следующий раз он переоткрывается с нуля. agent-created agent-created скиллы захватывают такие паттерны как переиспользуемые SKILL.md.
 
-3. **Накопленные скиллы не курируются.** Без периодического обзора agent-created скиллы дублируются, никогда не архивируются при простое, не сливаются почти-одинаковые. Hermes-овский куратор (auxiliary-LLM, idle-triggered) решает это.
+3. **Накопленные скиллы не курируются.** Без периодического обзора agent-created скиллы дублируются, никогда не архивируются при простое, не сливаются почти-одинаковые. aux-LLM куратор (auxiliary-LLM, idle-triggered) решает это.
 
 ## 4. Цели
 
@@ -42,10 +42,10 @@ helyx сегодня НЕ трогает скиллы — Claude Code загру
 ## 5. Чего НЕ делаем
 
 - **NG1** — переписывать skill-loader Claude Code. Мы НАСЛАИВАЕМСЯ через MCP, не заменяем.
-- **NG2** — поддерживать multi-platform gateway Hermes (Discord/Slack/WhatsApp). Telegram-only остаётся.
-- **NG3** — реплицировать переключение LLM-провайдеров Hermes на уровне сессии. Claude Code остаётся первичным runtime'ом.
+- **NG2** — поддерживать multi-platform gateway (Discord/Slack/WhatsApp). Telegram-only остаётся.
+- **NG3** — реплицировать per-session переключение LLM-провайдеров на уровне сессии. Claude Code остаётся первичным runtime'ом.
 - **NG4** — реализовывать RL/Atropos training pipelines.
-- **NG5** — авто-УДАЛЯТЬ скиллы. Куратор только архивирует — соблюдаем инвариант Hermes "никогда не удалять".
+- **NG5** — авто-УДАЛЯТЬ скиллы. Куратор только архивирует — соблюдаем never-delete-инвариант "никогда не удалять".
 - **NG6** — шарить agent-created скиллы между пользователями. Per-installation в v1.
 
 ## 6. Функциональные требования (верхний уровень)
@@ -81,13 +81,13 @@ Per-feature FR'ы — в детальных PRD.
 - Куратор ЗАПУСКАЕТСЯ как cron job через helyx admin-daemon, не через Claude Code
 
 **Дизайн**:
-- Соответствие правилам валидации Hermes: name ≤64 chars, description ≤1024 chars, body ≤100k chars
+- Соответствие правилам валидации: name ≤64 chars, description ≤1024 chars, body ≤100k chars
 - Соответствие конвенции goodai-base: description начинается с "Use when"
-- Hermes-специфичные расширения (`` !`cmd` ``, граф `related_skills`) — АДДИТИВНЫ: отсутствие токенов = поведение как сегодня
+- inline-shell расширения (`` !`cmd` ``, граф `related_skills`) — АДДИТИВНЫ: отсутствие токенов = поведение как сегодня
 
 ## 9. Edge cases
 
-- **Hermes-style скилл загружается non-Hermes-aware клиентом** (например Cursor): graceful degradation — текст `` !`cmd` `` проходит verbatim, превращается в неразрендеренный markdown
+- **standard скилл загружается non-compatible клиентом** (например Cursor): graceful degradation — текст `` !`cmd` `` проходит verbatim, превращается в неразрендеренный markdown
 - **Агент генерирует скилл, превышающий лимит 100k chars**: отклоняется с диагностикой, retry с truncation-промптом
 - **Aux-LLM куратора недоступен** (DeepSeek down + Ollama не запущен): запуск пропускается с warning-логом, retry на следующем расписании
 - **Два конкурентных автономных создания скиллов для похожих workflow**: unique constraint на `(name)` в postgres предотвращает дубликаты; второй creator получает EXISTS-ошибку и завершается
@@ -97,12 +97,12 @@ Per-feature FR'ы — в детальных PRD.
 ## 10. Критерии приёмки (Gherkin)
 
 ```gherkin
-Функция: Hermes Skills Toolkit — общий rollout
+Функция: Skills Toolkit — общий rollout
 
   Сценарий: Фаза A смерджена независимо
-    Допустим main без Hermes-фич
+    Допустим main без фич
     Когда PR inline-shell-expansion смерджен
-    Тогда helyx обслуживает Hermes-style скиллы с раскрытым `!`cmd``
+    Тогда helyx обслуживает standard скиллы с раскрытым `!`cmd``
     И goodai-base скиллы продолжают загружаться без изменений
     И никаких postgres schema-миграций не запускалось
     И aux-LLM не вызывался
@@ -139,7 +139,7 @@ Per-feature FR'ы — в детальных PRD.
 1. **Smoke после каждого PR**: 1 RU + 1 EN сообщение в Telegram, 1 голосовое → существующий TTS/ASR продолжает работать
 2. **goodai-base регрессия**: загрузить 3 случайных goodai-base скилла (`/feature-analyzer`, `/review-orchestrator`, `/job-orchestrator`) → рендерятся корректно, без зависаний и исключений
 3. **Cost мониторинг**: таблица postgres `aux_llm_invocations` после каждого запуска куратора
-4. **Еженедельный health panel**: dashboard `Hermes Toolkit Health` показывает skill_preprocess_count, agent_created_skills_count, curator_run_count, errors_count
+4. **Еженедельный health panel**: dashboard `Skills Toolkit Health` показывает skill_preprocess_count, agent_created_skills_count, curator_run_count, errors_count
 
 **Rollback тест**: в staging, после деплоя всех трёх фаз, прогнать `git revert` каждой в обратном порядке → проверить чистое состояние и отсутствие goodai-base регрессий.
 

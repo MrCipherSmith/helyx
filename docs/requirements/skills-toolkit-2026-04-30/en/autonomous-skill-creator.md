@@ -4,7 +4,7 @@
 
 After a successful multi-step task, helyx offers (or autonomously decides) to distill the workflow into a reusable SKILL.md and persist it as an `agent-created` skill. Skill metadata lives in postgres (`agent_created_skills` table); SKILL.md body is regenerated on demand for Claude Code consumption.
 
-Mirrors Hermes' `tools/skill_manager_tool.py::skill_manage(action='create')` + autonomous learning loop, adapted to helyx's Claude-Code-MCP architecture.
+Mirrors the `tools/skill_manager_tool.py::skill_manage(action='create')` + autonomous learning loop, adapted to helyx's Claude-Code-MCP architecture.
 
 ## 2. Context
 
@@ -32,7 +32,7 @@ Mirrors Hermes' `tools/skill_manager_tool.py::skill_manage(action='create')` + a
 
 Today, when the agent solves a complex problem (debug postgres.js v3 jsonb cast, or set up forum topic routing), the workflow disappears with the conversation. Next time the same class of issue arises, it gets re-investigated from scratch — wasted tokens, wasted user time.
 
-Hermes solves this with `is_agent_created` skills + a distillation step. We adapt: helyx maintains a postgres-backed registry of agent-created skills, with a Telegram approval flow gating the human-in-the-loop transition from "proposed" to "active".
+We solve this with `agent_created_skills` + a distillation step. We adapt: helyx maintains a postgres-backed registry of agent-created skills, with a Telegram approval flow gating the human-in-the-loop transition from "proposed" to "active".
 
 ## 4. Goals
 
@@ -46,7 +46,7 @@ Hermes solves this with `is_agent_created` skills + a distillation step. We adap
 
 - Automatic skill improvement post-creation — that's Phase B (curator)
 - Sharing agent-created skills across users — single installation only for v1
-- Frontmatter beyond Hermes-spec subset (name, description, version, author, license, metadata.helyx.{tags,related_skills})
+- Frontmatter beyond minimal subset (name, description, version, author, license, metadata.helyx.{tags,related_skills})
 - Version-control skills via git inside helyx — they live in postgres only
 - Fully auto-create without user gate in v1 — heuristic auto-approval is post-launch tuning
 
@@ -56,7 +56,7 @@ Hermes solves this with `is_agent_created` skills + a distillation step. We adap
 - **FR-C-2** — MCP tool `save_skill` SHALL accept `{ skill_id, approved: bool }` and finalize (status='active') or reject (status='rejected')
 - **FR-C-3** — MCP tool `list_agent_skills` SHALL return `Array<{ name, description, status, use_count, last_used_at, created_at }>`
 - **FR-C-4** — Validator SHALL enforce: name regex `^[a-z][a-z0-9-]{0,63}$`, description ≤1024 chars, body ≤100000 chars, frontmatter parseable as YAML mapping
-- **FR-C-5** — Validator SHALL enforce description starts with "Use when" (matches goodai-base / Hermes convention)
+- **FR-C-5** — Validator SHALL enforce description starts with "Use when" (matches goodai-base convention)
 - **FR-C-6** — On first `skill_view` for an agent-created skill, helyx SHALL write body to `~/.claude/skills/agent-created/<name>/SKILL.md` so Claude Code can also load it natively. Write is atomic: `tempFile + rename`. On subsequent reads, verify file length matches body length; if mismatch, force-rewrite.
 - **FR-C-7** — Every `skill_view` call for an agent-created skill SHALL increment `use_count` by 1 and set `last_used_at=now()` in the `agent_created_skills` table. This provides the data the curator (Phase B) uses for auto-pin and auto-archive decisions.
 - **FR-C-8** — Unique constraint `(name)` SHALL prevent duplicates; collision returns `{ success: false, errors: ['name already exists'] }`
@@ -196,8 +196,8 @@ Feature: Phase C — Autonomous Skill Creator
 - `utils/skill-validator.ts` (~120 LOC, frontmatter + body checks)
 - `mcp/agent-skill-tools.ts` (~150 LOC, propose/save/list handlers)
 - `prompts/skill-distillation.md` (~60 lines, system prompt for aux-LLM)
-- `migrations/v40_hermes_create_agent_created_skills.sql` (~40 LOC)
-- `migrations/v41_hermes_create_aux_llm_invocations.sql` (~25 LOC)
+- `migrations/v24_skills_create_agent_created_skills.sql` (~40 LOC)
+- `migrations/v25_skills_create_aux_llm_invocations.sql` (~25 LOC)
 - `tests/unit/skill-distiller.test.ts` (~250 LOC, 8 cases)
 - `tests/unit/agent-skill-store.test.ts` (~200 LOC, 10 cases)
 - `tests/unit/aux-llm-client.test.ts` (~180 LOC, 6 cases)
@@ -209,7 +209,7 @@ Feature: Phase C — Autonomous Skill Creator
 - `bot/callbacks.ts` — handlers for Save/Reject/Edit-name inline buttons
 - `dashboard/api` — new endpoint `/api/agent-skills` (GET list)
 - `dashboard/webapp` — new page or table for agent-created skills
-- `memory/db.ts` — register migrations `v40_hermes_create_agent_created_skills`, `v41_hermes_create_aux_llm_invocations`
+- `memory/db.ts` — register migrations `v24_skills_create_agent_created_skills`, `v25_skills_create_aux_llm_invocations`
 - `CHANGELOG.md` — entry under v1.34.0
 - `package.json` — bump to 1.34.0
 - `.env.example` — `HELYX_AUX_LLM_PROVIDER`, `HELYX_AUX_LLM_MODEL`
@@ -217,7 +217,7 @@ Feature: Phase C — Autonomous Skill Creator
 **Postgres schema**:
 
 ```sql
--- v40_hermes_create_agent_created_skills.sql
+-- v24_skills_create_agent_created_skills.sql
 CREATE TABLE agent_created_skills (
   id BIGSERIAL PRIMARY KEY,
   name TEXT NOT NULL UNIQUE,
@@ -241,7 +241,7 @@ CREATE INDEX agent_created_skills_status_used_at_idx
 CREATE INDEX agent_created_skills_source_session_idx
   ON agent_created_skills (source_session_id);
 
--- v41_hermes_create_aux_llm_invocations.sql
+-- v25_skills_create_aux_llm_invocations.sql
 CREATE TABLE aux_llm_invocations (
   id BIGSERIAL PRIMARY KEY,
   purpose TEXT NOT NULL,         -- skill_distillation | skill_curation | …

@@ -2,8 +2,8 @@
 
 ```yaml
 prd:
-  id: hermes-inline-shell
-  parent: hermes-skills-toolkit
+  id: skills-inline-shell
+  parent: skills-toolkit
   phase: A
   date: 2026-04-30
   blocks: [autonomous-skill-creator, skill-curator]
@@ -12,7 +12,7 @@ prd:
 
 ## 1. Overview
 
-Add a helyx-side preprocessing step that expands `` !`cmd` `` tokens in SKILL.md bodies into the stdout of the executed command, before the rendered text reaches the LLM. Mirrors `agent/skill_preprocessing.py::expand_inline_shell` from Hermes.
+Add a helyx-side preprocessing step that expands `` !`cmd` `` tokens in SKILL.md bodies into the stdout of the executed command, before the rendered text reaches the LLM. 
 
 ## 2. Context
 
@@ -66,10 +66,10 @@ goals:
 
 ```yaml
 non_goals:
-  - "support Hermes' template vars `${HERMES_SKILL_DIR}` / `${HERMES_SESSION_ID}` — separate ticket if/when needed"
+  - "support the template vars `${SKILL_DIR}` / `${SESSION_ID}` — separate ticket if/when needed"
   - "intercept Claude Code's NATIVE skill loading — we add a parallel MCP tool, native loader stays untouched"
   - "execute commands as anyone other than the helyx container's bun user"
-  - "support multi-line shell commands (one-liners only — matches Hermes)"
+  - "support multi-line shell commands (one-liners only — matches the reference single-line behavior)"
 ```
 
 ## 6. Functional Requirements
@@ -78,7 +78,7 @@ non_goals:
 fr:
   - id: FR-A-1
     text: "preprocessor SHALL match the regex `!`([^`\\n]+)`` (single-line backtick-bounded)"
-    rationale: "exact same regex as Hermes' `_INLINE_SHELL_RE`"
+    rationale: "exact same regex as the `_INLINE_SHELL_RE`"
   - id: FR-A-2
     text: "for each match, preprocessor SHALL execute the captured command via `bun spawn` with: `cwd=process.cwd()` (host-side working directory), `timeout=5000ms` (configurable), `stdout=pipe`, `stderr=pipe`"
   - id: FR-A-3
@@ -124,7 +124,7 @@ constraints:
   - "MUST use Bun.spawn(['bash', '-c', cmd]) with command from SKILL.md only — skill author is trusted; log every invocation to skill_preprocess_log per FR-A-10"
   - "MUST pass an explicit env allowlist (PATH, HOME, LANG, …) to Bun.spawn so process.env is NOT inherited and `!`echo \\$DEEPSEEK_API_KEY`` cannot leak secrets"
   - "MUST NOT change existing channel/tools.ts dispatch behavior for non-skill-related tools"
-  - "MUST add a postgres migration (PRD-canonical name v39_hermes_create_skill_preprocess_log; local registry uses sequential v23 — both schemas match)"
+  - "MUST add a postgres migration (migration name v23_skills_create_skill_preprocess_log; local registry uses sequential v23 — both schemas match)"
 ```
 
 ## 9. Edge Cases
@@ -134,7 +134,7 @@ edge_cases:
   - case: "skill body has ``!`malformed`` (unclosed backtick)"
     handling: "regex requires balanced backticks; unclosed token left verbatim"
   - case: "command output contains `!`...`` syntax itself"
-    handling: "preprocessor runs ONCE — nested tokens NOT recursively expanded (matches Hermes)"
+    handling: "preprocessor runs ONCE — nested tokens NOT recursively expanded (matches the reference single-line behavior)"
   - case: "command produces binary output"
     handling: "stdout buffered as utf-8 with replacement char for invalid bytes"
   - case: "skill missing on disk"
@@ -193,7 +193,7 @@ Feature: Phase A — Inline Shell Expansion
     Then the returned body is byte-identical to a `cat ~/.claude/skills/feature-analyzer/SKILL.md` of the body section
 
   Scenario: Postgres schema migration applied
-    Given migration v39_hermes_create_skill_preprocess_log.sql is in registry
+    Given migration v23_skills_create_skill_preprocess_log.sql is in registry
     When helyx-bot starts
     Then table skill_preprocess_log exists with columns: id, skill_name, started_at, duration_ms, shell_count, errors_count
     And no other table is altered
@@ -242,7 +242,7 @@ files_to_create:
       ~ 200 LOC, 12 cases
   - tests/unit/mcp-skill-view.test.ts:
       ~ 80 LOC, 5 cases
-  - migrations/v39_hermes_create_skill_preprocess_log.sql:
+  - migrations/v23_skills_create_skill_preprocess_log.sql:
       ~ 20 LOC
 files_to_modify:
   - mcp/server.ts: register skill_view tool schema
@@ -284,7 +284,7 @@ demo_skill:
 
 ```yaml
 postgres_migration:
-  file: migrations/v39_hermes_create_skill_preprocess_log.sql
+  file: migrations/v23_skills_create_skill_preprocess_log.sql
   sql: |
     CREATE TABLE skill_preprocess_log (
       id BIGSERIAL PRIMARY KEY,

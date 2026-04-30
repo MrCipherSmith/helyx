@@ -206,7 +206,7 @@ export function registerTools(
       },
       {
         name: "skill_view",
-        description: "Load a skill and return its content with inline shell tokens expanded. Use this when you need to read a Hermes-style skill file that contains dynamic context via !`cmd` syntax.",
+        description: "Load a skill and return its content with inline shell tokens expanded. Use this when you need to read a skill file that contains dynamic context via !`cmd` syntax.",
         inputSchema: {
           type: "object",
           properties: {
