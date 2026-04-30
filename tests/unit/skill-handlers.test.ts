@@ -1,17 +1,28 @@
-// Tests for the shared skill_view handler — Phase A scope:
-// B-06 (path traversal), FR-A-10 fast-path log policy.
+// Tests for the shared skill_view handler — Phase C extends Phase A's tests:
+// B-06 (path traversal), FR-A-10 fast-path log, FR-C-6 lazy on-disk write,
+// FR-C-7 use_count increment.
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { handleSkillView } from "../../utils/skill-handlers.ts";
 
 class FakeSql {
+  pgRows: Array<{ name: string; description: string; body: string }> = [];
+  updateCount = 0;
   logRows: Array<{ skill_name: string; shell_count: number; errors_count: number }> = [];
 
   call = (strings: TemplateStringsArray, ...values: unknown[]): Promise<unknown[]> & { catch: any } => {
     const sqlText = strings.join("?");
+    if (sqlText.includes("FROM agent_created_skills")) {
+      const name = values[0] as string;
+      const p = Promise.resolve(this.pgRows.filter((r) => r.name === name)) as Promise<unknown[]> & { catch: any };
+      return p;
+    }
+    if (sqlText.includes("UPDATE agent_created_skills")) {
+      this.updateCount++;
+    }
     if (sqlText.includes("INSERT INTO skill_preprocess_log")) {
       this.logRows.push({
         skill_name: values[0] as string,
@@ -52,6 +63,7 @@ describe("handleSkillView — name validation (B-06)", () => {
     const fake = new FakeSql();
     const result = await handleSkillView("../../etc/passwd", makeSqlContext(fake));
     expect(JSON.parse(result).error).toBe("invalid skill name");
+    expect(fake.pgRows.length).toBe(0);
   });
 
   test("rejects uppercase / underscore", async () => {
@@ -94,5 +106,34 @@ describe("handleSkillView — fast-path log policy (FR-A-10)", () => {
     expect(JSON.parse(result).body).toContain("hello");
     expect(fake.logRows.length).toBe(1);
     expect(fake.logRows[0].shell_count).toBe(1);
+  });
+});
+
+describe("handleSkillView — agent-created skill on-disk write (FR-C-6)", () => {
+  test("writes SKILL.md atomically on first read, increments use_count", async () => {
+    const fake = new FakeSql();
+    fake.pgRows.push({
+      name: "agent-x",
+      description: "Use when test",
+      body: "# agent body, no tokens",
+    });
+
+    const result = await handleSkillView("agent-x", makeSqlContext(fake));
+    expect(JSON.parse(result).name).toBe("agent-x");
+    expect(fake.updateCount).toBe(1); // FR-C-7
+
+    // FR-C-6: file materialized under agent-created/<name>/SKILL.md
+    const filePath = join(testDir, "agent-created", "agent-x", "SKILL.md");
+    const fileStat = await stat(filePath);
+    expect(fileStat.size).toBeGreaterThan(0);
+    const content = await Bun.file(filePath).text();
+    expect(content).toBe("# agent body, no tokens");
+  });
+
+  test("does not log preprocess row when agent body has no tokens (FR-A-10)", async () => {
+    const fake = new FakeSql();
+    fake.pgRows.push({ name: "agent-y", description: "Use when test", body: "no tokens here" });
+    await handleSkillView("agent-y", makeSqlContext(fake));
+    expect(fake.logRows.length).toBe(0);
   });
 });

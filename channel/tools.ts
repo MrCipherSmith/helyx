@@ -14,6 +14,8 @@ import { channelLogger } from "../logger.ts";
 import { scanProjectKnowledge } from "../memory/project-scanner.ts";
 import { CONFIG } from "../config.ts";
 import { handleSkillView } from "../utils/skill-handlers.ts";
+import { distillSkill, listAgentSkills, approveSkill, rejectSkill, validateSkillInput } from "../utils/skill-distiller.ts";
+import { sendSkillApprovalMessage } from "../utils/skill-approval.ts";
 
 export interface ToolContext {
   sql: postgres.Sql;
@@ -211,6 +213,35 @@ export function registerTools(
           },
           required: ["name"],
         },
+      },
+      {
+        name: "propose_skill",
+        description: "Propose a new agent-created skill from session transcript",
+        inputSchema: {
+          type: "object",
+          properties: {
+            name: { type: "string", description: "Suggested skill name (kebab-case)" },
+            transcript: { type: "string", description: "Session transcript for distillation" },
+          },
+          required: ["transcript"],
+        },
+      },
+      {
+        name: "save_skill",
+        description: "Approve or reject a proposed skill",
+        inputSchema: {
+          type: "object",
+          properties: {
+            skill_id: { type: "number", description: "Skill ID" },
+            approved: { type: "boolean", description: "Approve or reject" },
+          },
+          required: ["skill_id", "approved"],
+        },
+      },
+      {
+        name: "list_agent_skills",
+        description: "List all active agent-created skills",
+        inputSchema: { type: "object", properties: {} },
       },
     ],
   }));
@@ -563,6 +594,74 @@ export function registerTools(
 
       case "skill_view": {
         return text(await handleSkillView(args!.name, { sql: ctx.sql }));
+      }
+
+      case "propose_skill": {
+        const sessionId = ctx.sessionId() ?? 0;
+        const chatId = String(args!.chat_id ?? "cli");
+        const transcript = String(args!.transcript ?? "");
+        const topicId = ctx.forumTopicId?.() ?? undefined;
+
+        const explicitName = args!.name ? String(args!.name) : "";
+        const explicitDesc = args!.description ? String(args!.description) : "";
+        const explicitBody = args!.body ? String(args!.body) : "";
+
+        if (explicitName && explicitDesc && explicitBody) {
+          const validation = validateSkillInput(explicitName, explicitDesc, explicitBody);
+          if (!validation.valid) {
+            return text(JSON.stringify({ success: false, errors: validation.errors.map((e) => e.message) }));
+          }
+          try {
+            const [row] = await ctx.sql`INSERT INTO agent_created_skills (name, description, body, status, source_session_id, source_chat_id) VALUES (${explicitName}, ${explicitDesc}, ${explicitBody}, 'proposed', ${sessionId}, ${chatId}) RETURNING id`;
+            const warnings = validation.warnings.map((w) => w.message);
+            await sendSkillApprovalMessage({
+              skillId: row.id,
+              name: explicitName,
+              description: explicitDesc,
+              body: explicitBody,
+              warnings,
+              chatId,
+              topicId: topicId ?? undefined,
+            });
+            return text(JSON.stringify({ success: true, skill_id: row.id, name: explicitName, warnings }));
+          } catch (err) {
+            return text(JSON.stringify({ success: false, errors: [err instanceof Error ? err.message : String(err)] }));
+          }
+        }
+
+        if (!transcript) return text("transcript is required");
+        const result = await distillSkill(sessionId, chatId, transcript);
+        if (result.success && result.skillId !== undefined) {
+          await sendSkillApprovalMessage({
+            skillId: result.skillId,
+            name: result.name!,
+            description: result.description!,
+            body: result.body!,
+            warnings: result.warnings,
+            chatId,
+            topicId: topicId ?? undefined,
+          });
+        }
+        return text(JSON.stringify(result));
+      }
+
+      case "save_skill": {
+        const skillId = Number(args!.skill_id);
+        const approved = Boolean(args!.approved);
+
+        if (approved) {
+          const ok = await approveSkill(skillId);
+          return text(JSON.stringify({ success: ok, action: "approved" }));
+        } else {
+          const ok = await rejectSkill(skillId);
+          return text(JSON.stringify({ success: ok, action: "rejected" }));
+        }
+      }
+
+      case "list_agent_skills": {
+        const rows = await listAgentSkills();
+        const formatted = rows.map((r) => `${r.name}: ${r.description} (${r.status})`).join("\n");
+        return text(formatted || "No active skills");
       }
 
       default:

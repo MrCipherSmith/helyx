@@ -3,10 +3,11 @@ import { sessionManager } from "../sessions/manager.ts";
 import { sql } from "../memory/db.ts";
 import { appendLog } from "../utils/stats.ts";
 import { readSkills, readCommands, toolIcon } from "../utils/tools-reader.ts";
-import { setPendingTool } from "./handlers.ts";
+import { setPendingTool, setPendingInput } from "./handlers.ts";
 import { enqueueToolCommand } from "./text-handler.ts";
 import { doSwitch } from "./commands/session.ts";
 import { permissionService } from "../services/permission-service.ts";
+import { approveSkill, rejectSkill } from "../utils/skill-distiller.ts";
 import { logger } from "../logger.ts";
 
 export async function handleCallbackQuery(ctx: Context): Promise<void> {
@@ -15,6 +16,14 @@ export async function handleCallbackQuery(ctx: Context): Promise<void> {
 
   if (data.startsWith("perm:")) return handlePermissionCallback(ctx);
   if (data.startsWith("switch:")) return handleSwitchCallback(ctx);
+  // FR-C-10: agent-created skill approval. `skill:save:` / `skill:reject:` /
+  // `skill:editname:` use the same `skill:` prefix as the existing tool
+  // launcher, so they must be routed FIRST by their action subkey.
+  if (
+    data.startsWith("skill:save:") ||
+    data.startsWith("skill:reject:") ||
+    data.startsWith("skill:editname:")
+  ) return handleSkillApprovalCallback(ctx);
   if (data.startsWith("skill:") || data.startsWith("cmd:")) return handleToolCallback(ctx);
   if (data.startsWith("set_model:")) {
     const { handleSetModelCallback } = await import("./commands/model.ts");
@@ -50,6 +59,73 @@ export async function handleCallbackQuery(ctx: Context): Promise<void> {
     return handleSupervisorCallback(ctx);
   }
   await ctx.answerCallbackQuery({ text: "Unknown action" });
+}
+
+// FR-C-10: handle [Save] / [Reject] / [Edit name…] inline buttons on the
+// agent-created skill approval message.
+async function handleSkillApprovalCallback(ctx: Context): Promise<void> {
+  const data = ctx.callbackQuery?.data ?? "";
+  const parts = data.split(":");
+  const action = parts[1]; // 'save' | 'reject' | 'editname'
+  const skillId = Number(parts[2]);
+  if (!Number.isFinite(skillId) || skillId <= 0) {
+    await ctx.answerCallbackQuery({ text: "Invalid skill id" });
+    return;
+  }
+
+  const rows = await sql`SELECT name, status FROM agent_created_skills WHERE id = ${skillId}`;
+  if (rows.length === 0) {
+    await ctx.answerCallbackQuery({ text: "Skill not found" });
+    return;
+  }
+  const skill = rows[0] as { name: string; status: string };
+  if (skill.status !== "proposed") {
+    await ctx.answerCallbackQuery({ text: `Already ${skill.status}` });
+    return;
+  }
+
+  if (action === "save") {
+    const ok = await approveSkill(skillId);
+    if (ok) {
+      await ctx.answerCallbackQuery({ text: `Saved: ${skill.name}` });
+      await ctx.editMessageReplyMarkup({ reply_markup: { inline_keyboard: [] } }).catch(() => {});
+      await ctx.reply(`✅ Skill <code>${skill.name}</code> saved.`, { parse_mode: "HTML" });
+    } else {
+      await ctx.answerCallbackQuery({ text: "Save failed" });
+    }
+  } else if (action === "reject") {
+    const ok = await rejectSkill(skillId);
+    if (ok) {
+      await ctx.answerCallbackQuery({ text: "Rejected" });
+      await ctx.editMessageReplyMarkup({ reply_markup: { inline_keyboard: [] } }).catch(() => {});
+      await ctx.reply(`❌ Skill <code>${skill.name}</code> rejected.`, { parse_mode: "HTML" });
+    } else {
+      await ctx.answerCallbackQuery({ text: "Reject failed" });
+    }
+  } else if (action === "editname") {
+    const chatIdStr = String(ctx.chat?.id ?? "");
+    setPendingInput(chatIdStr, async (textCtx) => {
+      const newName = (textCtx.message?.text ?? "").trim();
+      if (!/^[a-z][a-z0-9-]{0,63}$/.test(newName)) {
+        await textCtx.reply("Invalid name — must be kebab-case, 1-64 chars, lowercase + digits + hyphens.");
+        return;
+      }
+      try {
+        await sql`UPDATE agent_created_skills SET name = ${newName} WHERE id = ${skillId} AND status = 'proposed'`;
+        await textCtx.reply(`✏️ Renamed to <code>${newName}</code>.`, { parse_mode: "HTML" });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        await textCtx.reply(`Rename failed: ${msg}`);
+      }
+    }, 5 * 60_000);
+    await ctx.answerCallbackQuery();
+    await ctx.reply(
+      `✏️ Send the new kebab-case name for skill <code>${skill.name}</code> (id=${skillId}):`,
+      { parse_mode: "HTML" },
+    );
+  } else {
+    await ctx.answerCallbackQuery({ text: "Unknown action" });
+  }
 }
 
 async function handleToolCallback(ctx: Context): Promise<void> {
