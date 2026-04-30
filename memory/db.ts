@@ -590,7 +590,7 @@ const migrations: Migration[] = [
     // CREATE statements are IF NOT EXISTS and each migration has a `down`
     // block, so `git revert` of the PR drops the tables cleanly per
     // acceptance criteria.
-    version: 23,
+    version: 39,
     name: "skills:skill_preprocess_log table",
     up: async (tx) => {
       await tx`
@@ -611,7 +611,7 @@ const migrations: Migration[] = [
     },
   },
   {
-    version: 24,
+    version: 40,
     name: "skills:agent_created_skills table",
     up: async (tx) => {
       await tx`
@@ -643,7 +643,7 @@ const migrations: Migration[] = [
     },
   },
   {
-    version: 25,
+    version: 41,
     name: "skills:aux_llm_invocations table",
     up: async (tx) => {
       await tx`
@@ -670,7 +670,7 @@ const migrations: Migration[] = [
     },
   },
   {
-    version: 26,
+    version: 42,
     name: "skills:curator_runs table",
     up: async (tx) => {
       await tx`
@@ -697,7 +697,7 @@ const migrations: Migration[] = [
     },
   },
   {
-    version: 27,
+    version: 43,
     name: "skills:curator_pending_actions table — human-approval queue (FR-B-6)",
     up: async (tx) => {
       // Phase B's risky actions (consolidate, patch) are queued here pending
