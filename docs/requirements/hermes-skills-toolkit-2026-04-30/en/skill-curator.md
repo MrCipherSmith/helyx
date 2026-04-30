@@ -20,6 +20,7 @@ Mirrors `agent/curator.py` from Hermes-Agent: idle-triggered, archives never del
 **Source data**:
 - `agent_created_skills` table from Phase C (only `status='active' AND pinned=false`)
 - Cost log: `aux_llm_invocations` table from Phase C
+- Telegram approval handlers: reuses Phase C's `bot/callbacks.ts` framework for [Approve]/[Skip] inline buttons
 
 **Isolation**:
 - aux-LLM client is the same as Phase C distiller (DeepSeek default, Ollama fallback)
@@ -91,7 +92,10 @@ Hermes' curator solves this with a weekly aux-LLM-driven pass that proposes pin/
 - Postgres: 1 new table `curator_runs`, no schema changes to `agent_created_skills`
 
 **Architectural**:
-- Curator MUST run inside helyx-bot container (not on Claude Code subprocess)
+- Curator MUST run on the host inside `scripts/admin-daemon.ts` (the same process boundary as `channel.ts` per `architecture_channel_subprocess_on_host.md`), not inside the Docker container or Claude Code subprocess. The admin-daemon owns the cron schedule; reasons:
+  - Filesystem writes to `~/.claude/skills/agent-created/` (Phase C lazy materialization) target the host's home directory, which Claude Code reads natively
+  - Curator must remain alive across Docker restarts of helyx services
+  - Anthropic prompt cache for the main session lives in helyx-bot container processes — running the curator on the host guarantees it cannot accidentally reuse those connections
 - Curator MUST use aux-LLM client, never main Claude API
 - Actions MUST be deterministically derived from aux-LLM response (no fuzzy logic)
 - Actions touching body (patch, consolidate) MUST log before/after diff to `aux_llm_invocations.related_id` chain
@@ -215,7 +219,7 @@ Feature: Phase B — Skill Curator
 - `utils/curator/apply-actions.ts` (~150 LOC, auto-apply pin/archive, queue consolidate/patch)
 - `utils/curator/summary-report.ts` (~100 LOC, format Telegram summary)
 - `prompts/skill-curation.md` (~100 lines, system prompt for aux-LLM)
-- `migrations/v42_create_curator_runs.sql` (~25 LOC)
+- `migrations/v42_hermes_create_curator_runs.sql` (~25 LOC)
 - `tests/unit/curator.test.ts` (~350 LOC, 12 cases)
 - `tests/unit/curator-integration.test.ts` (~200 LOC, 4 cases)
 
@@ -227,7 +231,7 @@ Feature: Phase B — Skill Curator
 - `bot/callbacks.ts` — handlers for curator [Approve] / [Skip] inline buttons
 - `dashboard/api` — new endpoint `/api/curator-runs` (history view)
 - `dashboard/webapp` — new page with curator run history + skills lifecycle distribution
-- `memory/db.ts` — register migration v42
+- `memory/db.ts` — register migration `v42_hermes_create_curator_runs`
 - `CHANGELOG.md` — entry under v1.35.0
 - `package.json` — bump to 1.35.0
 - `.env.example` — `HELYX_CURATOR_CRON`, `HELYX_CURATOR_PAUSED`, `HELYX_CURATOR_ARCHIVE_AFTER_DAYS`, `HELYX_CURATOR_PIN_USE_COUNT`
@@ -235,7 +239,7 @@ Feature: Phase B — Skill Curator
 **Postgres schema**:
 
 ```sql
--- v42_create_curator_runs.sql
+-- v42_hermes_create_curator_runs.sql
 CREATE TABLE curator_runs (
   id BIGSERIAL PRIMARY KEY,
   started_at TIMESTAMPTZ NOT NULL DEFAULT now(),

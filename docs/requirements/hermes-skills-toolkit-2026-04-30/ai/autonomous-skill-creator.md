@@ -95,14 +95,16 @@ fr:
   - id: FR-C-5
     text: "validator SHALL enforce description starts with 'Use when' (matches goodai-base / Hermes convention)"
   - id: FR-C-6
-    text: "on first `skill_view` for an agent-created skill, helyx SHALL write body to ~/.claude/skills/agent-created/<name>/SKILL.md so Claude Code can also load it natively"
+    text: "on first `skill_view` for an agent-created skill, helyx SHALL write body to ~/.claude/skills/agent-created/<name>/SKILL.md via atomic temp+rename; subsequent reads verify file length matches body length — if mismatch, force-rewrite"
   - id: FR-C-7
-    text: "unique constraint `(name)` SHALL prevent duplicates; collision returns `{ success: false, errors: ['name already exists'] }`"
+    text: "every `skill_view` call for an agent-created skill SHALL increment `use_count` by 1 and set `last_used_at=now()` in the `agent_created_skills` table (feeds curator auto-pin/auto-archive)"
   - id: FR-C-8
-    text: "distillation aux-LLM call SHALL log to `aux_llm_invocations` table: model, tokens_in, tokens_out, cost_usd, duration_ms, purpose='skill_distillation'"
+    text: "unique constraint `(name)` SHALL prevent duplicates; collision returns `{ success: false, errors: ['name already exists'] }`"
   - id: FR-C-9
-    text: "Telegram approval message SHALL include inline keyboard: [Save] [Reject] [Edit name…] (callback_data routes through bot/callbacks.ts)"
+    text: "distillation aux-LLM call SHALL log to `aux_llm_invocations` table: model, tokens_in, tokens_out, cost_usd, duration_ms, purpose='skill_distillation'"
   - id: FR-C-10
+    text: "Telegram approval message SHALL include inline keyboard: [Save] [Reject] [Edit name…] (callback_data routes through bot/callbacks.ts)"
+  - id: FR-C-11
     text: "every state transition (proposed → active / rejected / archived) SHALL be timestamped in `agent_created_skills`"
 ```
 
@@ -265,9 +267,9 @@ files_to_create:
       ~ 150 LOC (propose_skill, save_skill, list_agent_skills handlers)
   - prompts/skill-distillation.md:
       ~ 60 lines, system prompt for aux-LLM
-  - migrations/v40_create_agent_created_skills.sql:
+  - migrations/v40_hermes_create_agent_created_skills.sql:
       ~ 40 LOC
-  - migrations/v41_create_aux_llm_invocations.sql:
+  - migrations/v41_hermes_create_aux_llm_invocations.sql:
       ~ 25 LOC
   - tests/unit/skill-distiller.test.ts (~ 250 LOC, 8 cases)
   - tests/unit/agent-skill-store.test.ts (~ 200 LOC, 10 cases)
@@ -279,7 +281,7 @@ files_to_modify:
   - bot/callbacks.ts: add handlers for Save/Reject/Edit-name inline buttons
   - dashboard/api: new endpoint /api/agent-skills (GET list)
   - dashboard/webapp: new page or table for agent-created skills
-  - memory/db.ts: register migrations v40, v41
+  - memory/db.ts: register migrations v40_hermes, v41_hermes
   - CHANGELOG.md: entry under v1.34.0
   - package.json: bump to 1.34.0
   - .env.example: HELYX_AUX_LLM_PROVIDER, HELYX_AUX_LLM_MODEL
@@ -297,7 +299,7 @@ postgres_schema:
       - source_session_id BIGINT
       - source_chat_id TEXT
       - tags TEXT[] DEFAULT ARRAY[]::TEXT[]
-      - related_skills TEXT[] DEFAULT ARRAY[]::TEXT[]
+      - related_skills TEXT[] DEFAULT ARRAY[]::TEXT[]  # populated by Phase B curator during consolidate
       - use_count INTEGER NOT NULL DEFAULT 0
       - last_used_at TIMESTAMPTZ
       - pinned BOOLEAN NOT NULL DEFAULT false

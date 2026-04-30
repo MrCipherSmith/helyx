@@ -80,7 +80,7 @@ fr:
     text: "preprocessor SHALL match the regex `!`([^`\\n]+)`` (single-line backtick-bounded)"
     rationale: "exact same regex as Hermes' `_INLINE_SHELL_RE`"
   - id: FR-A-2
-    text: "for each match, preprocessor SHALL execute the captured command via `bun spawn` with: `cwd=skillDir`, `timeout=5000ms` (configurable), `stdout=pipe`, `stderr=pipe`"
+    text: "for each match, preprocessor SHALL execute the captured command via `bun spawn` with: `cwd=process.cwd()` (host-side working directory), `timeout=5000ms` (configurable), `stdout=pipe`, `stderr=pipe`"
   - id: FR-A-3
     text: "command stdout SHALL replace the entire `!`...`` token in the rendered body"
   - id: FR-A-4
@@ -119,11 +119,12 @@ nfr:
 
 ```yaml
 constraints:
-  - "MUST run inside helyx-bot container (postgres + cron access)"
-  - "MUST NOT execute as root (current container runs as `bun` user — keep that)"
-  - "MUST NOT shell-out to system shell with user-controlled string — use `Bun.spawn(['bash', '-c', cmd])` with command from SKILL.md only (skill author is trusted, but log everything)"
+  - "preprocessor runs wherever the skill_view MCP handler runs — channel/tools.ts on the host AND mcp/tools.ts inside Claude Code subprocess; both delegate to utils/skill-handlers.ts::handleSkillView so spawn semantics, env allowlist, timeout, and output cap are identical"
+  - "MUST NOT execute as root: host process runs as the user that started channel.ts, Docker process runs as the `bun` user"
+  - "MUST use Bun.spawn(['bash', '-c', cmd]) with command from SKILL.md only — skill author is trusted; log every invocation to skill_preprocess_log per FR-A-10"
+  - "MUST pass an explicit env allowlist (PATH, HOME, LANG, …) to Bun.spawn so process.env is NOT inherited and `!`echo \\$DEEPSEEK_API_KEY`` cannot leak secrets"
   - "MUST NOT change existing channel/tools.ts dispatch behavior for non-skill-related tools"
-  - "MUST add a postgres migration `vNN_create_skill_preprocess_log.sql`"
+  - "MUST add a postgres migration (PRD-canonical name v39_hermes_create_skill_preprocess_log; local registry uses sequential v23 — both schemas match)"
 ```
 
 ## 9. Edge Cases
@@ -143,7 +144,7 @@ edge_cases:
   - case: "concurrent skill_view requests for same skill"
     handling: "no per-skill lock — each invocation runs commands fresh; commands MUST be idempotent (skill author's contract, documented)"
   - case: "command needs PATH adjustments"
-    handling: "run with `process.env` (full inheritance) — command can `cd` or set vars itself in the body"
+    handling: "run with `process.env` (full inheritance) — command can `cd` or set vars itself in the body; default cwd is process.cwd() of host-side channel.ts process"
 ```
 
 ## 10. Acceptance Criteria (Gherkin)
@@ -192,7 +193,7 @@ Feature: Phase A — Inline Shell Expansion
     Then the returned body is byte-identical to a `cat ~/.claude/skills/feature-analyzer/SKILL.md` of the body section
 
   Scenario: Postgres schema migration applied
-    Given migration v39_create_skill_preprocess_log.sql is in registry
+    Given migration v39_hermes_create_skill_preprocess_log.sql is in registry
     When helyx-bot starts
     Then table skill_preprocess_log exists with columns: id, skill_name, started_at, duration_ms, shell_count, errors_count
     And no other table is altered
@@ -241,7 +242,7 @@ files_to_create:
       ~ 200 LOC, 12 cases
   - tests/unit/mcp-skill-view.test.ts:
       ~ 80 LOC, 5 cases
-  - migrations/v39_create_skill_preprocess_log.sql:
+  - migrations/v39_hermes_create_skill_preprocess_log.sql:
       ~ 20 LOC
 files_to_modify:
   - mcp/server.ts: register skill_view tool schema
@@ -283,7 +284,7 @@ demo_skill:
 
 ```yaml
 postgres_migration:
-  file: migrations/v39_create_skill_preprocess_log.sql
+  file: migrations/v39_hermes_create_skill_preprocess_log.sql
   sql: |
     CREATE TABLE skill_preprocess_log (
       id BIGSERIAL PRIMARY KEY,

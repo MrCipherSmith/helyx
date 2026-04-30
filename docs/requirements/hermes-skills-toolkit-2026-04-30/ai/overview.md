@@ -110,13 +110,13 @@ Per-feature FRs live in the deep-dive PRDs.
 nfr:
   - id: NFR-Compat
     text: "zero changes to goodai-base SKILL.md files — they remain valid input"
-    verify: "grep `!` in /home/altsay/goodai-base/skills/*/SKILL.md returns no Hermes-style tokens; goodai skills load unchanged"
+    verify: "rg '!\\x60' in /home/altsay/goodai-base/skills/*/SKILL.md returns no Hermes-style tokens; goodai skills load unchanged"
   - id: NFR-Cost
     text: "aux-LLM cost SHALL stay under $0.50/month/user at 10 curator runs/month with average prompt size ≤8 KB"
     verify: "logged token counts × DeepSeek pricing in postgres `aux_llm_invocations` table"
   - id: NFR-Latency
     text: "feature A preprocessor SHALL add ≤200ms median latency per skill load (excluding shell-cmd execution time itself)"
-    verify: "p50 from `tts_skill_load_ms` perf log on staging"
+    verify: "p50 from `preprocessor_duration_ms` perf log on staging"
   - id: NFR-Isolation
     text: "feature B SHALL use a dedicated aux-LLM client; main Claude Code session prompt cache SHALL NOT be affected"
     verify: "Anthropic billing dashboard shows curator events on separate API key OR DeepSeek/Ollama (not Claude)"
@@ -151,7 +151,7 @@ edge_cases:
   - "Hermes-style skill loaded by non-Hermes-aware client (e.g. Cursor): gracefully degrades — `!`cmd`` text passes through verbatim, becomes unrendered markdown"
   - "agent generates skill that exceeds 100k char limit: rejected with diagnostic, retried with truncation"
   - "curator's aux-LLM unavailable (DeepSeek down + Ollama not running): curator run skips with logged warning, retries on next schedule"
-  - "two concurrent autonomous skill creations for similar workflows: postgres unique constraint on `(name, owner)` prevents duplicates; second creator gets EXISTS error and exits"
+  - "two concurrent autonomous skill creations for similar workflows: postgres unique constraint on `(name)` prevents duplicates; second creator gets EXISTS error and exits"
   - "user manually edits a skill marked is_agent_created=true: pin it (curator never touches pinned), or transfer ownership to user"
   - "circular `related_skills` reference: detect on insert via DFS, reject with diagnostic"
 ```
@@ -222,17 +222,17 @@ roadmap:
     pr: "feat: inline shell expansion in skill preprocessor"
     eta: "1-2 days"
     blocks: [phase_C]
-    file_count: ~3 (preprocessor.ts, tests, 1 demo skill)
+    file_count: ~7 (preprocessor.ts, mcp-tool, demo-skill, 2×tests, migration)
   phase_C:
     pr: "feat: autonomous skill creation after complex tasks"
     eta: "3-5 days"
     blocks: [phase_B]
     depends_on: [phase_A]
-    file_count: ~6 (creator.ts, prompt-template.ts, postgres-migration, mcp-tool, tests, docs)
+    file_count: ~12 (distiller.ts, validator.ts, mcp-tools, prompt-template, 2×migrations, 3×tests)
   phase_B:
     pr: "feat: background skill curator"
     eta: "5-7 days"
     depends_on: [phase_C]
-    file_count: ~7 (curator.ts, aux-llm-client.ts, scheduler integration, postgres-migration, dashboard panel, tests, docs)
+    file_count: ~11 (curator+4-submodules, prompt, migration, 2×tests)
 total_eta: "9-14 days, single developer"
 ```

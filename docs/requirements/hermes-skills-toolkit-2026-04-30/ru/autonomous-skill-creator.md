@@ -57,11 +57,12 @@ Hermes решает это через `is_agent_created` скиллы + дист
 - **FR-C-3** — MCP-tool `list_agent_skills` ВОЗВРАЩАЕТ `Array<{ name, description, status, use_count, last_used_at, created_at }>`
 - **FR-C-4** — Validator ПРИНУЖДАЕТ: name regex `^[a-z][a-z0-9-]{0,63}$`, description ≤1024 chars, body ≤100000 chars, frontmatter parseable как YAML mapping
 - **FR-C-5** — Validator ПРИНУЖДАЕТ description начинается с "Use when" (соответствие goodai-base / Hermes конвенции)
-- **FR-C-6** — На первом `skill_view` для agent-created скилла helyx ПИШЕТ body в `~/.claude/skills/agent-created/<name>/SKILL.md` чтобы Claude Code мог загружать нативно
-- **FR-C-7** — Unique constraint `(name)` ПРЕДОТВРАЩАЕТ дубликаты; коллизия возвращает `{ success: false, errors: ['name already exists'] }`
-- **FR-C-8** — Distillation aux-LLM call ЛОГИРУЕТСЯ в `aux_llm_invocations`: model, tokens_in, tokens_out, cost_usd, duration_ms, purpose='skill_distillation'
-- **FR-C-9** — Telegram approval message СОДЕРЖИТ inline keyboard: [Save] [Reject] [Edit name…] (callbacks через `bot/callbacks.ts`)
-- **FR-C-10** — Каждый state transition (proposed → active / rejected / archived) ПРОСТАВЛЯЕТ timestamp в `agent_created_skills`
+- **FR-C-6** — На первом `skill_view` для agent-created скилла helyx ПИШЕТ body в `~/.claude/skills/agent-created/<name>/SKILL.md` через атомарный temp+rename; при последующих чтениях сверяет длину файла с длиной body; при несовпадении — принудительно перезаписывает.
+- **FR-C-7** — Каждый вызов `skill_view` для agent-created скилла ИНКРЕМЕНТИРУЕТ `use_count` на 1 и обновляет `last_used_at=now()` в таблице `agent_created_skills` — эти данные куратор (фаза B) использует для auto-pin и auto-archive.
+- **FR-C-8** — Unique constraint `(name)` ПРЕДОТВРАЩАЕТ дубликаты; коллизия возвращает `{ success: false, errors: ['name already exists'] }`
+- **FR-C-9** — Distillation aux-LLM call ЛОГИРУЕТСЯ в `aux_llm_invocations`: model, tokens_in, tokens_out, cost_usd, duration_ms, purpose='skill_distillation'
+- **FR-C-10** — Telegram approval message СОДЕРЖИТ inline keyboard: [Save] [Reject] [Edit name…] (callbacks через `bot/callbacks.ts`)
+- **FR-C-11** — Каждый state transition (proposed → active / rejected / archived) ПРОСТАВЛЯЕТ timestamp в `agent_created_skills`
 
 ## 7. Нефункциональные требования
 
@@ -195,8 +196,8 @@ Hermes решает это через `is_agent_created` скиллы + дист
 - `utils/skill-validator.ts` (~120 LOC, frontmatter + body checks)
 - `mcp/agent-skill-tools.ts` (~150 LOC, propose/save/list handlers)
 - `prompts/skill-distillation.md` (~60 lines, system prompt для aux-LLM)
-- `migrations/v40_create_agent_created_skills.sql` (~40 LOC)
-- `migrations/v41_create_aux_llm_invocations.sql` (~25 LOC)
+- `migrations/v40_hermes_create_agent_created_skills.sql` (~40 LOC)
+- `migrations/v41_hermes_create_aux_llm_invocations.sql` (~25 LOC)
 - `tests/unit/skill-distiller.test.ts` (~250 LOC, 8 cases)
 - `tests/unit/agent-skill-store.test.ts` (~200 LOC, 10 cases)
 - `tests/unit/aux-llm-client.test.ts` (~180 LOC, 6 cases)
@@ -208,7 +209,7 @@ Hermes решает это через `is_agent_created` скиллы + дист
 - `bot/callbacks.ts` — обработчики Save/Reject/Edit-name inline-кнопок
 - `dashboard/api` — новый endpoint `/api/agent-skills` (GET list)
 - `dashboard/webapp` — новая страница или таблица для agent-created скиллов
-- `memory/db.ts` — регистрация миграций v40, v41
+- `memory/db.ts` — регистрация миграций `v40_hermes_create_agent_created_skills`, `v41_hermes_create_aux_llm_invocations`
 - `CHANGELOG.md` — запись под v1.34.0
 - `package.json` — bump до 1.34.0
 - `.env.example` — `HELYX_AUX_LLM_PROVIDER`, `HELYX_AUX_LLM_MODEL`
@@ -216,7 +217,7 @@ Hermes решает это через `is_agent_created` скиллы + дист
 **Postgres-схема**:
 
 ```sql
--- v40_create_agent_created_skills.sql
+-- v40_hermes_create_agent_created_skills.sql
 CREATE TABLE agent_created_skills (
   id BIGSERIAL PRIMARY KEY,
   name TEXT NOT NULL UNIQUE,
@@ -226,7 +227,7 @@ CREATE TABLE agent_created_skills (
   source_session_id BIGINT,
   source_chat_id TEXT,
   tags TEXT[] DEFAULT ARRAY[]::TEXT[],
-  related_skills TEXT[] DEFAULT ARRAY[]::TEXT[],
+  related_skills TEXT[] DEFAULT ARRAY[]::TEXT[],  -- заполняется куратором фазы B при consolidate
   use_count INTEGER NOT NULL DEFAULT 0,
   last_used_at TIMESTAMPTZ,
   pinned BOOLEAN NOT NULL DEFAULT false,
@@ -240,7 +241,7 @@ CREATE INDEX agent_created_skills_status_used_at_idx
 CREATE INDEX agent_created_skills_source_session_idx
   ON agent_created_skills (source_session_id);
 
--- v41_create_aux_llm_invocations.sql
+-- v41_hermes_create_aux_llm_invocations.sql
 CREATE TABLE aux_llm_invocations (
   id BIGSERIAL PRIMARY KEY,
   purpose TEXT NOT NULL,

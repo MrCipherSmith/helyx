@@ -20,6 +20,7 @@
 **Source data**:
 - Таблица `agent_created_skills` из фазы C (только `status='active' AND pinned=false`)
 - Cost log: таблица `aux_llm_invocations` из фазы C
+- Telegram approval handlers: переиспользует инфраструктуру `bot/callbacks.ts` фазы C для кнопок [Approve]/[Skip]
 
 **Изоляция**:
 - aux-LLM client тот же что у фазы C (DeepSeek default, Ollama fallback)
@@ -91,7 +92,10 @@
 - Postgres: 1 новая таблица `curator_runs`, никаких schema-изменений в `agent_created_skills`
 
 **Архитектурные**:
-- Куратор ДОЛЖЕН работать внутри helyx-bot контейнера (не на Claude Code subprocess)
+- Куратор ДОЛЖЕН работать на хосте внутри `scripts/admin-daemon.ts` (тот же process boundary, что и `channel.ts` — см. `architecture_channel_subprocess_on_host.md`), не внутри Docker-контейнера и не на Claude Code subprocess. admin-daemon владеет cron-расписанием. Причины:
+  - Записи в `~/.claude/skills/agent-created/` (Phase C lazy materialization) попадают в home-директорию хоста, откуда их нативно читает Claude Code
+  - Куратор должен оставаться живым через рестарты Docker-сервисов helyx
+  - Anthropic prompt cache main-сессии живёт в процессах helyx-bot контейнера — запуск куратора на хосте гарантирует, что он не переиспользует эти соединения случайно
 - Куратор ДОЛЖЕН использовать aux-LLM client, никогда main Claude API
 - Действия ДОЛЖНЫ детерминированно выводиться из aux-LLM response (никакой fuzzy logic)
 - Действия, трогающие body (patch, consolidate), ДОЛЖНЫ логировать before/after diff в `aux_llm_invocations.related_id` chain
@@ -215,7 +219,7 @@
 - `utils/curator/apply-actions.ts` (~150 LOC, auto-apply pin/archive, queue consolidate/patch)
 - `utils/curator/summary-report.ts` (~100 LOC, format Telegram summary)
 - `prompts/skill-curation.md` (~100 lines, system prompt для aux-LLM)
-- `migrations/v42_create_curator_runs.sql` (~25 LOC)
+- `migrations/v42_hermes_create_curator_runs.sql` (~25 LOC)
 - `tests/unit/curator.test.ts` (~350 LOC, 12 cases)
 - `tests/unit/curator-integration.test.ts` (~200 LOC, 4 cases)
 
@@ -227,7 +231,7 @@
 - `bot/callbacks.ts` — обработчики curator [Approve] / [Skip] inline-кнопок
 - `dashboard/api` — новый endpoint `/api/curator-runs` (history view)
 - `dashboard/webapp` — новая страница с curator run history + skills lifecycle distribution
-- `memory/db.ts` — регистрация миграции v42
+- `memory/db.ts` — регистрация миграции `v42_hermes_create_curator_runs`
 - `CHANGELOG.md` — запись под v1.35.0
 - `package.json` — bump до 1.35.0
 - `.env.example` — `HELYX_CURATOR_CRON`, `HELYX_CURATOR_PAUSED`, `HELYX_CURATOR_ARCHIVE_AFTER_DAYS`, `HELYX_CURATOR_PIN_USE_COUNT`
@@ -235,7 +239,7 @@
 **Postgres-схема**:
 
 ```sql
--- v42_create_curator_runs.sql
+-- v42_hermes_create_curator_runs.sql
 CREATE TABLE curator_runs (
   id BIGSERIAL PRIMARY KEY,
   started_at TIMESTAMPTZ NOT NULL DEFAULT now(),

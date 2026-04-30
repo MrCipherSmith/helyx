@@ -6,7 +6,7 @@ prd:
   parent: hermes-skills-toolkit
   phase: B
   date: 2026-04-30
-  depends_on: [hermes-autonomous-skill-creator]
+  depends_on: [hermes-autonomous-skill-creator, hermes-autonomous-skill-creator-callbacks]  # agent_created_skills table + bot/callbacks.ts handler framework
   blocks: []
   feature_flag: none
 ```
@@ -144,7 +144,8 @@ constraints:
     - "aux-LLM: reuse Phase C client (openai-compatible)"
     - "postgres: 1 new table `curator_runs`, no schema changes to agent_created_skills"
   architectural:
-    - "curator MUST run inside helyx-bot container (not on Claude Code subprocess)"
+    - "curator MUST run on the host inside scripts/admin-daemon.ts (same process boundary as channel.ts per architecture_channel_subprocess_on_host.md), not inside the Docker container or Claude Code subprocess; admin-daemon owns the cron schedule"
+    - "rationale: agent-created/ filesystem writes target the host's home directory; curator must outlive Docker restarts; prompt cache isolation is automatic when running on the host"
     - "curator MUST use aux-LLM client, never main Claude API"
     - "actions MUST be deterministically derived from aux-LLM response (no fuzzy logic)"
     - "actions touching body (patch, consolidate) MUST log before/after diff to `aux_llm_invocations.related_id` chain"
@@ -289,7 +290,7 @@ files_to_create:
       ~ 100 LOC (format Telegram summary)
   - prompts/skill-curation.md:
       ~ 100 lines, system prompt for aux-LLM
-  - migrations/v42_create_curator_runs.sql:
+  - migrations/v42_hermes_create_curator_runs.sql:
       ~ 25 LOC
   - tests/unit/curator.test.ts (~ 350 LOC, 12 cases)
   - tests/unit/curator-integration.test.ts (~ 200 LOC, 4 cases)
@@ -301,7 +302,7 @@ files_to_modify:
   - bot/callbacks.ts: handlers for curator [Approve] / [Skip] inline buttons
   - dashboard/api: new endpoint /api/curator-runs (history view)
   - dashboard/webapp: new page with curator run history + skills lifecycle distribution
-  - memory/db.ts: register migration v42
+  - memory/db.ts: register migration v42_hermes_create_curator_runs
   - CHANGELOG.md: entry under v1.35.0
   - package.json: bump to 1.35.0
   - .env.example: HELYX_CURATOR_CRON, HELYX_CURATOR_PAUSED, HELYX_CURATOR_ARCHIVE_AFTER_DAYS, HELYX_CURATOR_PIN_USE_COUNT

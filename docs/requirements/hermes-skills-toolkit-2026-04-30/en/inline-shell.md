@@ -41,7 +41,7 @@ Hermes solves this by running shell commands at skill load time and embedding th
 ## 6. Functional Requirements
 
 - **FR-A-1** — Preprocessor SHALL match the regex `` !`([^`\n]+)` `` (single-line backtick-bounded). Same as Hermes' `_INLINE_SHELL_RE`.
-- **FR-A-2** — For each match, preprocessor SHALL execute the captured command via `Bun.spawn(['bash', '-c', cmd])` with `cwd=skillDir`, `timeout=5000ms` (configurable via env), `stdout=pipe`, `stderr=pipe`.
+- **FR-A-2** — For each match, preprocessor SHALL execute the captured command via `Bun.spawn(['bash', '-c', cmd])` with `cwd=process.cwd()` (the active working directory of the host-side channel.ts process), `timeout=5000ms` (configurable via env), `stdout=pipe`, `stderr=pipe`.
 - **FR-A-3** — Command stdout SHALL replace the entire `` !`...` `` token in the rendered body.
 - **FR-A-4** — If command exits non-zero, replacement string SHALL be `[inline-shell error: <stderr first 500 chars>]`.
 - **FR-A-5** — If command exceeds timeout, replacement string SHALL be `[inline-shell timeout after Ns: <command>]`.
@@ -64,10 +64,11 @@ Hermes solves this by running shell commands at skill load time and embedding th
 ## 8. Constraints
 
 **Technical**:
-- MUST run inside helyx-bot container (postgres + cron access)
-- MUST NOT execute as root (current container runs as `bun` user — keep that)
-- MUST use `Bun.spawn(['bash', '-c', cmd])` with command from SKILL.md only (skill author is trusted, but log everything)
-- MUST add a postgres migration (versioned alongside existing `memory/db.ts` registry)
+- The preprocessor SHALL execute wherever the `skill_view` MCP handler runs — `channel/tools.ts` on the host AND `mcp/tools.ts` inside the Claude Code subprocess. Both dispatch sites delegate to the shared `utils/skill-handlers.ts::handleSkillView`, so the spawn semantics, env allowlist, timeout, and output cap are identical.
+- MUST NOT execute as root. Host process runs as the user that started `channel.ts`; Docker process runs as the `bun` user.
+- MUST use `Bun.spawn(['bash', '-c', cmd])` with command text from SKILL.md only (skill author is trusted; log every invocation to `skill_preprocess_log` per FR-A-10)
+- MUST pass an explicit env allowlist to `Bun.spawn` (e.g. PATH/HOME/LANG only) — process.env is NOT inherited, so a malicious or LLM-distilled `` !`echo $DEEPSEEK_API_KEY` `` cannot leak secrets
+- MUST add a postgres migration (versioned alongside existing `memory/db.ts` registry; see FR-A-10 / NFR-Observability)
 
 **Architectural**:
 - MUST NOT change existing `channel/tools.ts` dispatch behavior for non-skill-related tools
@@ -81,7 +82,7 @@ Hermes solves this by running shell commands at skill load time and embedding th
 - **Skill missing on disk**: skill_view returns `{ error: 'skill not found', name }` JSON
 - **Skill body already contains rendered shell output (idempotency)**: preprocessor only matches `` !`...` `` regex — already-rendered text isn't re-processed
 - **Concurrent skill_view requests for same skill**: no per-skill lock — each invocation runs commands fresh; commands MUST be idempotent (skill author's contract, documented)
-- **Command needs PATH adjustments**: run with `process.env` (full inheritance) — command can `cd` or set vars itself in the body
+- **Command needs PATH adjustments**: run with `process.env` (full inheritance) — command can `cd` or set vars itself in the body; the default `cwd` is `process.cwd()` of the host-side channel.ts process, so commands like `git status` resolve against the user's project directory
 
 ## 10. Acceptance Criteria (Gherkin)
 
@@ -162,13 +163,13 @@ Feature: Phase A — Inline Shell Expansion
 - `mcp/skill-view-tool.ts` — exports `registerSkillViewTool` (~50 LOC)
 - `tests/unit/skill-preprocessor.test.ts` (~200 LOC, 12 cases)
 - `tests/unit/mcp-skill-view.test.ts` (~80 LOC, 5 cases)
-- `migrations/v39_create_skill_preprocess_log.sql` (~20 LOC)
+- `migrations/v39_hermes_create_skill_preprocess_log.sql` (~20 LOC)
 
 **Files to modify**:
 - `mcp/server.ts` — register `skill_view` tool schema
 - `mcp/tools.ts` — add `skill_view` to tool list
 - `channel/tools.ts` — add `skill_view` dispatch case
-- `memory/db.ts` — register migration v39
+- `memory/db.ts` — register migration `v39_hermes_create_skill_preprocess_log`
 - `CHANGELOG.md` — entry under v1.33.0
 - `package.json` — bump to 1.33.0
 
@@ -207,7 +208,7 @@ Diff summary:
 **Postgres migration**:
 
 ```sql
--- v39_create_skill_preprocess_log.sql
+-- v39_hermes_create_skill_preprocess_log.sql
 CREATE TABLE skill_preprocess_log (
   id BIGSERIAL PRIMARY KEY,
   skill_name TEXT NOT NULL,

@@ -61,9 +61,9 @@ Per-feature FR'ы — в детальных PRD.
 
 | ID | Требование | Верификация |
 |---|---|---|
-| **NFR-Compat** | Ноль изменений в SKILL.md goodai-base; они остаются валидным input | grep `!\`` в goodai-base скиллах не находит совпадений; загруженные скиллы не меняются по числу токенов |
+| **NFR-Compat** | Ноль изменений в SKILL.md goodai-base; они остаются валидным input | `rg '!\x60'` в goodai-base скиллах не находит совпадений; загруженные скиллы не меняются по числу токенов |
 | **NFR-Cost** | Aux-LLM <$0.50/мес/пользователь при 10 запусках куратора/мес, средний промпт ≤8 KB | Залогированные токены × DeepSeek pricing в postgres-таблице `aux_llm_invocations` |
-| **NFR-Latency** | Препроцессор фичи A добавляет ≤200мс медианной задержки на загрузку скилла (исключая время выполнения самой shell-команды) | p50 из perf-лога `tts_skill_load_ms` на staging |
+| **NFR-Latency** | Препроцессор фичи A добавляет ≤200мс медианной задержки на загрузку скилла (исключая время выполнения самой shell-команды) | p50 из perf-лога `preprocessor_duration_ms` на staging |
 | **NFR-Isolation** | Фича B использует выделенный aux-LLM client; prompt cache основной сессии не затрагивается | Anthropic billing dashboard показывает curator events на отдельном API key ИЛИ DeepSeek/Ollama (не Claude) |
 | **NFR-Observability** | Каждый запуск препроцессора, создание скилла, запуск куратора — логируется в postgres + structured logs | Таблицы: `skill_preprocess_log`, `agent_created_skills` (audit columns), `curator_runs` |
 
@@ -90,7 +90,7 @@ Per-feature FR'ы — в детальных PRD.
 - **Hermes-style скилл загружается non-Hermes-aware клиентом** (например Cursor): graceful degradation — текст `` !`cmd` `` проходит verbatim, превращается в неразрендеренный markdown
 - **Агент генерирует скилл, превышающий лимит 100k chars**: отклоняется с диагностикой, retry с truncation-промптом
 - **Aux-LLM куратора недоступен** (DeepSeek down + Ollama не запущен): запуск пропускается с warning-логом, retry на следующем расписании
-- **Два конкурентных автономных создания скиллов для похожих workflow**: unique constraint на `(name, owner)` в postgres предотвращает дубликаты; второй creator получает EXISTS-ошибку и завершается
+- **Два конкурентных автономных создания скиллов для похожих workflow**: unique constraint на `(name)` в postgres предотвращает дубликаты; второй creator получает EXISTS-ошибку и завершается
 - **Пользователь руками правит скилл с `is_agent_created=true`**: запиннить (куратор не трогает pinned) или transfer ownership к пользователю
 - **Циклическая `related_skills`-ссылка**: детектится при insert через DFS, отклоняется с диагностикой
 
@@ -147,9 +147,9 @@ Per-feature FR'ы — в детальных PRD.
 
 | Фаза | Заголовок PR | ETA | Блокирует | Зависит от | Файлы |
 |---|---|---|---|---|---|
-| A | feat: inline shell expansion in skill preprocessor | 1-2 дня | C | — | ~3 (preprocessor, тесты, демо-скилл) |
-| C | feat: autonomous skill creation after complex tasks | 3-5 дней | B | A | ~6 (creator, prompt template, migration, MCP tool, тесты, docs) |
-| B | feat: background skill curator | 5-7 дней | — | C | ~7 (curator, aux-llm-client, scheduler, migration, dashboard panel, тесты, docs) |
+| A | feat: inline shell expansion in skill preprocessor | 1-2 дня | C | — | ~7 (preprocessor, MCP tool, демо-скилл, 2×тесты, migration) |
+| C | feat: autonomous skill creation after complex tasks | 3-5 дней | B | A | ~12 (distiller, validator, MCP tools, prompt, 2×migrations, 3×тесты) |
+| B | feat: background skill curator | 5-7 дней | — | C | ~11 (curator+4 sub-modules, prompt, migration, 2×тесты) |
 
 **Общий ETA**: 9-14 дней, один разработчик.
 

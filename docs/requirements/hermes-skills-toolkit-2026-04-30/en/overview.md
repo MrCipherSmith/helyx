@@ -61,9 +61,9 @@ Per-feature FRs live in the deep-dive PRDs.
 
 | ID | Requirement | Verification |
 |---|---|---|
-| **NFR-Compat** | Zero changes to goodai-base SKILL.md files; they remain valid input | grep `!\`` in goodai-base skills returns no matches; loaded skills unchanged in token count |
+| **NFR-Compat** | Zero changes to goodai-base SKILL.md files; they remain valid input | `rg '!\x60'` in goodai-base skills returns no matches; loaded skills unchanged in token count |
 | **NFR-Cost** | Aux-LLM cost <$0.50/month/user at 10 curator runs/month, average prompt ≤8 KB | Logged token counts × DeepSeek pricing in `aux_llm_invocations` postgres table |
-| **NFR-Latency** | Feature A preprocessor adds ≤200ms median latency per skill load (excluding shell-cmd execution itself) | p50 from `tts_skill_load_ms` perf log on staging |
+| **NFR-Latency** | Feature A preprocessor adds ≤200ms median latency per skill load (excluding shell-cmd execution itself) | p50 from `preprocessor_duration_ms` perf log on staging |
 | **NFR-Isolation** | Feature B uses dedicated aux-LLM client; main session prompt cache unaffected | Anthropic billing shows curator events on separate API key OR DeepSeek/Ollama (not Claude) |
 | **NFR-Observability** | Every preprocessor invocation, skill creation, curator run logged to postgres + structured logs | Tables: `skill_preprocess_log`, `agent_created_skills` (audit), `curator_runs` |
 
@@ -90,7 +90,7 @@ Per-feature FRs live in the deep-dive PRDs.
 - **Hermes-style skill loaded by non-Hermes-aware client** (e.g. Cursor): gracefully degrades — `` !`cmd` `` text passes through verbatim, becomes unrendered markdown
 - **Agent generates skill exceeding 100k char limit**: rejected with diagnostic, retried with truncation prompt
 - **Curator's aux-LLM unavailable** (DeepSeek down + Ollama not running): run skips with logged warning, retries next schedule
-- **Two concurrent autonomous skill creations for similar workflows**: postgres unique constraint on `(name, owner)` prevents duplicates; second creator gets EXISTS error and exits
+- **Two concurrent autonomous skill creations for similar workflows**: postgres unique constraint on `(name)` prevents duplicates; second creator gets EXISTS error and exits
 - **User manually edits a skill marked `is_agent_created=true`**: pin it (curator never touches pinned), or transfer ownership to user
 - **Circular `related_skills` reference**: detect on insert via DFS, reject with diagnostic
 
@@ -147,9 +147,9 @@ Feature: Hermes Skills Toolkit — Overall Rollout
 
 | Phase | PR title | ETA | Blocks | Depends on | Files |
 |---|---|---|---|---|---|
-| A | feat: inline shell expansion in skill preprocessor | 1-2 days | C | — | ~3 (preprocessor, tests, demo skill) |
-| C | feat: autonomous skill creation after complex tasks | 3-5 days | B | A | ~6 (creator, prompt template, migration, MCP tool, tests, docs) |
-| B | feat: background skill curator | 5-7 days | — | C | ~7 (curator, aux-llm-client, scheduler, migration, dashboard panel, tests, docs) |
+| A | feat: inline shell expansion in skill preprocessor | 1-2 days | C | — | ~7 (preprocessor, MCP tool, demo skill, 2×tests, migration) |
+| C | feat: autonomous skill creation after complex tasks | 3-5 days | B | A | ~12 (distiller, validator, MCP tools, prompt, 2×migrations, 3×tests) |
+| B | feat: background skill curator | 5-7 days | — | C | ~11 (curator+4 sub-modules, prompt, migration, 2×tests) |
 
 **Total ETA**: 9-14 days, single developer.
 
