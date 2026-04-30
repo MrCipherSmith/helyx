@@ -616,7 +616,7 @@ const migrations: Migration[] = [
     name: "hermes: agent_created_skills table",
     up: async (tx) => {
       await tx`
-        CREATE TABLE agent_created_skills (
+        CREATE TABLE IF NOT EXISTS agent_created_skills (
           id BIGSERIAL PRIMARY KEY,
           name TEXT NOT NULL UNIQUE,
           description TEXT NOT NULL,
@@ -635,9 +635,12 @@ const migrations: Migration[] = [
           archived_at TIMESTAMPTZ
         )
       `;
-      await tx`CREATE INDEX agent_created_skills_name_idx ON agent_created_skills (name)`;
-      await tx`CREATE INDEX agent_created_skills_status_last_used_idx ON agent_created_skills (status, last_used_at DESC)`;
-      await tx`CREATE INDEX agent_created_skills_session_idx ON agent_created_skills (source_session_id)`;
+      await tx`CREATE INDEX IF NOT EXISTS agent_created_skills_name_idx ON agent_created_skills (name)`;
+      await tx`CREATE INDEX IF NOT EXISTS agent_created_skills_status_last_used_idx ON agent_created_skills (status, last_used_at DESC)`;
+      await tx`CREATE INDEX IF NOT EXISTS agent_created_skills_session_idx ON agent_created_skills (source_session_id)`;
+    },
+    down: async (tx) => {
+      await tx`DROP TABLE IF EXISTS agent_created_skills`;
     },
   },
   {
@@ -645,7 +648,7 @@ const migrations: Migration[] = [
     name: "hermes: aux_llm_invocations table",
     up: async (tx) => {
       await tx`
-        CREATE TABLE aux_llm_invocations (
+        CREATE TABLE IF NOT EXISTS aux_llm_invocations (
           id BIGSERIAL PRIMARY KEY,
           purpose TEXT NOT NULL,
           provider TEXT NOT NULL,
@@ -660,8 +663,11 @@ const migrations: Migration[] = [
           created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         )
       `;
-      await tx`CREATE INDEX aux_llm_invocations_created_at_idx ON aux_llm_invocations (created_at DESC)`;
-      await tx`CREATE INDEX aux_llm_invocations_purpose_idx ON aux_llm_invocations (purpose)`;
+      await tx`CREATE INDEX IF NOT EXISTS aux_llm_invocations_created_at_idx ON aux_llm_invocations (created_at DESC)`;
+      await tx`CREATE INDEX IF NOT EXISTS aux_llm_invocations_purpose_idx ON aux_llm_invocations (purpose)`;
+    },
+    down: async (tx) => {
+      await tx`DROP TABLE IF EXISTS aux_llm_invocations`;
     },
   },
 ];

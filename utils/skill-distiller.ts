@@ -1,11 +1,18 @@
+import { resolve } from "node:path";
 import { sql } from "../memory/db.ts";
-import { callAuxLlm, type AuxLlmResponse } from "./aux-llm-client.ts";
+import { callAuxLlm } from "./aux-llm-client.ts";
 
 const NAME_RE = /^[a-z][a-z0-9-]{0,63}$/;
 const MAX_DESCRIPTION = 1024;
 const MAX_BODY = 100000;
+const SHELL_TOKEN_RE = /!`[^`\n]+`/;
 
 export interface ValidationError {
+  field: string;
+  message: string;
+}
+
+export interface ValidationWarning {
   field: string;
   message: string;
 }
@@ -13,6 +20,7 @@ export interface ValidationError {
 export interface ValidationResult {
   valid: boolean;
   errors: ValidationError[];
+  warnings: ValidationWarning[];
 }
 
 export function validateSkillInput(
@@ -21,6 +29,7 @@ export function validateSkillInput(
   body: string,
 ): ValidationResult {
   const errors: ValidationError[] = [];
+  const warnings: ValidationWarning[] = [];
 
   if (!NAME_RE.test(name)) {
     errors.push({ field: "name", message: "name must be kebab-case, 1-64 chars, lowercase + digits + hyphens only" });
@@ -38,68 +47,46 @@ export function validateSkillInput(
     errors.push({ field: "body", message: `body too long (max ${MAX_BODY} chars)` });
   }
 
-  try {
-    if (body.startsWith("---")) {
-      const end = body.indexOf("\n---", 3);
-      if (end > 0) {
-        const fmText = body.slice(4, end);
-        for (const line of fmText.split("\n")) {
-          const colon = line.indexOf(":");
-          if (colon === -1) continue;
-          const key = line.slice(0, colon).trim();
-          if (!fmText.split("\n").some((l) => l.startsWith(key + ":"))) {
-            // Basic YAML check - if parse fails, will catch when testing valid frontmatter
-          }
-        }
+  // Frontmatter sanity: if it opens with ---, require a closing --- and at
+  // least one key-value line. Anything tighter than this is left to YAML
+  // parsers downstream — Bun has no built-in YAML parser and we don't want a
+  // dep just for validation.
+  if (body.startsWith("---")) {
+    const end = body.indexOf("\n---", 3);
+    if (end <= 0) {
+      errors.push({ field: "body", message: "frontmatter is missing closing ---" });
+    } else {
+      const fmText = body.slice(4, end);
+      const hasAnyKey = fmText.split("\n").some((line) => /^[A-Za-z_][\w-]*\s*:/.test(line));
+      if (!hasAnyKey) {
+        errors.push({ field: "body", message: "frontmatter has no key:value pairs" });
       }
     }
-  } catch {
-    errors.push({ field: "body", message: "frontmatter must be valid YAML" });
   }
 
-  return { valid: errors.length === 0, errors };
+  // M-08: warn (don't block) when LLM-generated body contains `!`...`` shell
+  // tokens. The Telegram approval message surfaces these warnings so the
+  // user sees the shell content before clicking [Save].
+  if (SHELL_TOKEN_RE.test(body)) {
+    warnings.push({
+      field: "body",
+      message: "body contains inline shell tokens (!`cmd`) — review carefully before approval",
+    });
+  }
+
+  return { valid: errors.length === 0, errors, warnings };
 }
 
-const DISTILLATION_PROMPT = `You are skill-distillation aux. Given a session transcript ending with a successful
-multi-step task, produce a SKILL.md that captures the workflow as a reusable
-procedure. Required output schema:
-
----
-name: <kebab-case, ≤64 chars, regex ^[a-z][a-z0-9-]{0,63}$>
-description: "Use when <one-line trigger>. <one-line behavior>."  # ≤1024 chars
-version: 1.0.0
-author: helyx
-license: MIT
-metadata:
-  helyx:
-    tags: [<tag1>, <tag2>]
-    related_skills: []
----
-
-# <Title>
-
-## Overview
-<2-3 sentences>
-
-## When to Use
-- <trigger 1>
-- <trigger 2>
-
-## Steps
-1. <action with concrete commands; use !\`cmd\` for dynamic context>
-2. ...
-
-## Common Pitfalls
-- <pitfall>: <fix>
-
-## Verification Checklist
-- [ ] <check>
-
-Constraints:
-- description MUST start with "Use when"
-- body ≤100000 chars
-- Use !\`cmd\` syntax for any dynamic git / fs / env state
-- Generic enough to apply to similar future tasks, specific enough to be useful`;
+// Prompt lives in prompts/skill-distillation.md so it can be tuned without a
+// code change. Resolved against this file's directory so the path is stable
+// across cwd changes.
+let cachedDistillationPrompt: string | undefined;
+async function getDistillationPrompt(): Promise<string> {
+  if (cachedDistillationPrompt !== undefined) return cachedDistillationPrompt;
+  const path = resolve(import.meta.dir, "../prompts/skill-distillation.md");
+  cachedDistillationPrompt = await Bun.file(path).text();
+  return cachedDistillationPrompt;
+}
 
 export interface DistillResult {
   success: boolean;
@@ -107,6 +94,7 @@ export interface DistillResult {
   description?: string;
   body?: string;
   skillId?: number;
+  warnings?: string[];
   error?: string;
 }
 
@@ -119,7 +107,12 @@ export async function distillSkill(
     ? "[…earlier truncated…]\n" + transcript.slice(-16000)
     : transcript;
 
-  const llmResult = await callAuxLlm(DISTILLATION_PROMPT, `Transcript:\n${truncated}`, "skill_distillation");
+  const systemPrompt = await getDistillationPrompt();
+  const llmResult = await callAuxLlm(
+    systemPrompt,
+    `Transcript:\n${truncated}`,
+    "skill_distillation",
+  );
 
   if (!("content" in llmResult)) {
     return { success: false, error: llmResult.error };
@@ -134,7 +127,11 @@ export async function distillSkill(
   }
 
   const name = nameMatch[1]!;
-  const description = descMatch[1]!.trim();
+  // m-03: strip surrounding quotes — the prompt schema asks for
+  // `description: "Use when …"`, which the LLM faithfully reproduces.
+  // Without stripping, validateSkillInput's `startsWith("Use when")` check
+  // fails on the literal `"` character.
+  const description = descMatch[1]!.trim().replace(/^["']|["']$/g, "");
   const body = content;
 
   const validation = validateSkillInput(name, description, body);
@@ -148,7 +145,14 @@ export async function distillSkill(
       VALUES (${name}, ${description}, ${body}, 'proposed', ${sessionId}, ${chatId})
       RETURNING id
     `;
-    return { success: true, name, description, body, skillId: row.id };
+    return {
+      success: true,
+      name,
+      description,
+      body,
+      skillId: row.id,
+      warnings: validation.warnings.map((w) => w.message),
+    };
   } catch (err) {
     if (err instanceof Error && err.message.includes("unique")) {
       return { success: false, error: "name already exists" };
