@@ -1,5 +1,46 @@
 # Changelog
 
+## v1.32.6
+
+### chore: remove kesha-voice-kit, simplify TTS/ASR chains
+
+Kesha-voice-kit removed entirely. Real-world latency on x64 CPU was
+30–60s per request even after v1.5 (Vosk-TTS) — Yandex SpeechKit
+(2-4s for paragraph-length input) covers Russian, Piper/Kokoro cover
+English, Groq covers ASR. Kesha was redundant in practice and
+held the docker image at +1 GB for baked TTS models.
+
+**TTS chain after**:
+- Russian (auto): Yandex → Piper → Groq
+- English (auto): Piper → Kokoro → Groq
+
+**ASR chain after**: Groq → local Whisper (HTTP fallback)
+
+**Changes**:
+- `utils/tts.ts`: removed `synthesizeKesha`, `synthesizeCurrentOnly`,
+  kesha branches in auto-mode dispatch.
+- `utils/transcribe.ts`: removed `transcribeKesha`,
+  `ensureKeshaModels`, kesha fallback branch.
+- `utils/benchmark.ts`: deleted (was kesha-vs-current comparison).
+- `bot/media.ts`, `channel/tools.ts`: removed benchmark wiring.
+- `config.ts`, `.env.example`: removed `KESHA_*` env vars.
+- `Dockerfile`: removed kesha-engine binary download (24 MB) +
+  `kesha install` model bake (~990 MB) + `espeak-ng` dep.
+- `docker-compose.yml`: removed `KESHA_BIN` env.
+- `README.md`: provider chains simplified, env-vars table trimmed.
+- `docs/requirements/kesha-voice-kit-2026-04-19/`: PRD deleted
+  (preserved in git history at commit `8ce06d5`).
+
+**Migration**: nothing to do for users with `KESHA_TTS_ENABLED=false`
+(default). Users who had it on: voice quality is unchanged — Yandex
+serves Russian, Piper/Kokoro serve English, both already in chain.
+
+**Image size**: docker image drops by ~1 GB (~990 MB models +
+24 MB binary + ~30 MB espeak-ng).
+
+**Reversible**: `git revert <sha>` restores everything; the kesha
+PRD lives at `8ce06d5^:docs/requirements/kesha-voice-kit-2026-04-19/`.
+
 ## v1.32.4
 
 ### feat: kesha-voice-kit v1.5 compatibility (Vosk-TTS for Russian)

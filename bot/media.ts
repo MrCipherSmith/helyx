@@ -7,12 +7,6 @@ import { routeMessage } from "../sessions/router.ts";
 import { downloadFile, toHostPath } from "../utils/files.ts";
 import { transcribe } from "../utils/transcribe.ts";
 import { CONFIG } from "../config.ts";
-import {
-  runAsrBenchmark,
-  appendBenchmarkLog,
-  formatBenchmarkReport,
-  type AsrBenchResult,
-} from "../utils/benchmark.ts";
 import { touchIdleTimer } from "../memory/summarizer.ts";
 import { sql } from "../memory/db.ts";
 import { logger } from "../logger.ts";
@@ -24,18 +18,6 @@ import { replyInThread } from "./format.ts";
 import { enqueueForTopic, topicQueueKey, getQueueDepth } from "./topic-queue.ts";
 
 const IMAGE_INLINE_MAX_BYTES = 5 * 1024 * 1024; // 5 MB — include base64 inline
-
-function sendAsrBenchReport(
-  bot: import("grammy").Bot,
-  chatId: number,
-  asr: AsrBenchResult[],
-  threadId?: number | null,
-  audioDurationSec?: number,
-): void {
-  const report = formatBenchmarkReport(asr, [], audioDurationSec);
-  const opts = threadId ? { message_thread_id: threadId, parse_mode: "HTML" as const } : { parse_mode: "HTML" as const };
-  bot.api.sendMessage(chatId, report, opts).catch(() => {});
-}
 
 /** Deliver a downloaded file to Claude (cli queue or standalone LLM). */
 async function deliverMedia(
@@ -316,20 +298,12 @@ export async function handleVoice(ctx: Context): Promise<void> {
       }
 
       let text: string | null;
-      let asrBenchResults: Awaited<ReturnType<typeof runAsrBenchmark>> | undefined;
       try {
-        if (CONFIG.KESHA_BENCHMARK) {
-          // Benchmark: run current (groq→whisper) and kesha pipelines once each in parallel.
-          // Use the current pipeline's text for the actual response — no duplicate API calls.
-          asrBenchResults = await runAsrBenchmark(fileData, "voice.ogg", voice.mime_type ?? "audio/ogg");
-          text = asrBenchResults.find(r => r.provider === "groq→whisper")?.text ?? null;
-        } else {
-          text = await transcribe(fileData, "voice.ogg", voice.mime_type ?? "audio/ogg", {
-            sessionId: route.sessionId,
-            chatId,
-            audioDurationSec: voice.duration,
-          });
-        }
+        text = await transcribe(fileData, "voice.ogg", voice.mime_type ?? "audio/ogg", {
+          sessionId: route.sessionId,
+          chatId,
+          audioDurationSec: voice.duration,
+        });
       } finally {
         progressCancelled = true;
         if (progressTimer) clearInterval(progressTimer);
@@ -392,19 +366,6 @@ export async function handleVoice(ctx: Context): Promise<void> {
           touchIdleTimer(route.sessionId, chatId, route.projectPath);
         } else {
           appendLog(route.sessionId, chatId, "voice", `no handler for mode=${route.mode}`, "warn");
-        }
-
-        // Fire-and-forget ASR benchmark report
-        if (CONFIG.KESHA_BENCHMARK && asrBenchResults) {
-          appendBenchmarkLog({
-            ts: new Date().toISOString(),
-            audioDurationSec: voice.duration,
-            sessionId: route.sessionId,
-            chatId,
-            asr: asrBenchResults,
-            tts: [],
-          });
-          sendAsrBenchReport(bot, ctx.chat!.id, asrBenchResults, isForumMessage ? forumTopicId : null, voice.duration);
         }
       } else {
         appendLog(route.sessionId, chatId, "voice", "transcription failed", "error");
