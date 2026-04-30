@@ -9,6 +9,7 @@ import { scanProjectKnowledge } from "../memory/project-scanner.ts";
 import { maybeAttachVoice } from "../utils/tts.ts";
 import { handleSkillView } from "../utils/skill-handlers.ts";
 import { distillSkill, listAgentSkills, approveSkill, rejectSkill, validateSkillInput } from "../utils/skill-distiller.ts";
+import { sendSkillApprovalMessage } from "../utils/skill-approval.ts";
 
 // Tool definitions for MCP registration
 export const TOOL_DEFINITIONS = [
@@ -513,26 +514,45 @@ export async function executeTool(
       }
       const chatId = String(args.chat_id ?? "cli");
       const transcript = String(args.transcript ?? "");
-      if (!transcript) return text("transcript is required");
 
-      const name = args.name ? String(args.name) : "";
-      const description = args.description ? String(args.description) : "";
-      const body = args.body ? String(args.body) : "";
+      const explicitName = args.name ? String(args.name) : "";
+      const explicitDesc = args.description ? String(args.description) : "";
+      const explicitBody = args.body ? String(args.body) : "";
 
-      if (name && description && body) {
-        const validation = validateSkillInput(name, description, body);
+      if (explicitName && explicitDesc && explicitBody) {
+        const validation = validateSkillInput(explicitName, explicitDesc, explicitBody);
         if (!validation.valid) {
           return text(JSON.stringify({ success: false, errors: validation.errors.map((e) => e.message) }));
         }
         try {
-          const [row] = await sql`INSERT INTO agent_created_skills (name, description, body, status, source_session_id, source_chat_id) VALUES (${name}, ${description}, ${body}, 'proposed', ${sessionId}, ${chatId}) RETURNING id`;
-          return text(JSON.stringify({ success: true, skill_id: row.id, name }));
+          const [row] = await sql`INSERT INTO agent_created_skills (name, description, body, status, source_session_id, source_chat_id) VALUES (${explicitName}, ${explicitDesc}, ${explicitBody}, 'proposed', ${sessionId}, ${chatId}) RETURNING id`;
+          const warnings = validation.warnings.map((w) => w.message);
+          await sendSkillApprovalMessage({
+            skillId: row.id,
+            name: explicitName,
+            description: explicitDesc,
+            body: explicitBody,
+            warnings,
+            chatId,
+          });
+          return text(JSON.stringify({ success: true, skill_id: row.id, name: explicitName, warnings }));
         } catch (err) {
           return text(JSON.stringify({ success: false, errors: [err instanceof Error ? err.message : String(err)] }));
         }
       }
 
+      if (!transcript) return text("transcript is required");
       const result = await distillSkill(sessionId, chatId, transcript);
+      if (result.success && result.skillId !== undefined) {
+        await sendSkillApprovalMessage({
+          skillId: result.skillId,
+          name: result.name!,
+          description: result.description!,
+          body: result.body!,
+          warnings: result.warnings,
+          chatId,
+        });
+      }
       return text(JSON.stringify(result));
     }
 
