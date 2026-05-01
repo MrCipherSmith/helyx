@@ -586,6 +586,9 @@ const migrations: Migration[] = [
     },
   },
   {
+    // Gap v23–v38: reserved for Skills Toolkit migrations that ship with an
+    // external module and are inserted programmatically at runtime. These
+    // version numbers must never be reused for ad-hoc schema changes here.
     // Skills Toolkit Phase A migration.
     // CREATE statements are IF NOT EXISTS and each migration has a `down`
     // block, so `git revert` of the PR drops the tables cleanly per

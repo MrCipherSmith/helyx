@@ -521,7 +521,10 @@ export function startMcpHttpServer(bot: Bot | null): ReturnType<typeof createSer
       return;
     }
 
-    // MCP endpoint restricted to local/Docker network
+    // MCP endpoint: loopback + Docker bridge only — no JWT.
+    // Intentional: Claude Code CLI connects from localhost or the Docker bridge
+    // (172.16–31.x.x). External JWT auth would break CLI auto-connect. If the
+    // port is ever exposed beyond localhost, add token auth here.
     if (!isLocalRequest(req)) {
       res.writeHead(403);
       res.end("Forbidden");

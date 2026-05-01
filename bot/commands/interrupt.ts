@@ -16,7 +16,12 @@ export async function handleInterrupt(ctx: Context): Promise<void> {
   const chatId = String(ctx.chat!.id);
   const threadId = ctx.message?.message_thread_id ?? (ctx.callbackQuery?.message as any)?.message_thread_id;
   const forumChatId = await getForumChatId();
-  const isForumTopic = forumChatId !== null && chatId === forumChatId && !!threadId && threadId > 1;
+  const isForumGroup = forumChatId !== null && chatId === forumChatId && !!threadId;
+  if (isForumGroup && threadId === 1) {
+    await ctx.reply("Use a project topic to interrupt its session.");
+    return;
+  }
+  const isForumTopic = isForumGroup && threadId > 1;
 
   let project: string | null = null;
 

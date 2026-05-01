@@ -268,8 +268,12 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
       case "bounce": {
         // Restart all tmux bot sessions (down + up). Spawned detached so the
         // daemon itself survives the kill-session that tears down its own window.
+        // Paths are double-quoted to handle spaces; single-quote delimiters are
+        // avoided since BOT_DIR/CLI come from import.meta.dir and are safe but
+        // defensive quoting prevents breakage if ever deployed to unusual paths.
+        const bunBin = "/home/altsay/.bun/bin/bun";
         await runShell(
-          `nohup bash -c '(sleep 2; cd ${BOT_DIR}; /home/altsay/.bun/bin/bun ${CLI} bounce) >> /tmp/helyx-bounce.log 2>&1' &`
+          `nohup bash -c "(sleep 2; cd \\"${BOT_DIR}\\"; \\"${bunBin}\\" \\"${CLI}\\" bounce) >> /tmp/helyx-bounce.log 2>&1" &`
         );
         result = { ok: true, output: "bounce scheduled (log: /tmp/helyx-bounce.log)" };
         break;
@@ -388,23 +392,27 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
   console.log(`[admin-daemon] ${result.ok ? "✓" : "✗"} ${row.command}: ${result.output.slice(0, 100)}`);
 }
 
-// Main polling loop
+// Main polling loop — dequeue one command at a time to guarantee order.
+// The FOR UPDATE SKIP LOCKED pick-one pattern avoids concurrent execution
+// of dependent commands (e.g. tmux_stop immediately followed by tmux_start).
 while (true) {
   try {
+    let row: any = null;
     await sql.begin(async (tx) => {
       const rows = await tx`
         SELECT id, command, payload FROM admin_commands
         WHERE status = 'pending'
         ORDER BY created_at
-        LIMIT 5
+        LIMIT 1
         FOR UPDATE SKIP LOCKED
       `;
-      for (const row of rows) {
+      if (rows.length > 0) {
+        row = rows[0];
         await tx`UPDATE admin_commands SET status = 'processing' WHERE id = ${row.id}`;
-        // Process outside the transaction to avoid long lock holds
-        setImmediate(() => processCommand(row as any));
       }
     });
+    // Process after transaction commits so the lock is released before execution
+    if (row) await processCommand(row as any);
   } catch (err: any) {
     console.error("[admin-daemon] poll error:", err?.message);
     await Bun.sleep(5000);

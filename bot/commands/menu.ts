@@ -25,6 +25,7 @@ interface Group {
   label: string;
   topicOnly?: boolean;   // show only in topic context
   dmOnly?: boolean;      // show only in DM context
+  adminOnly?: boolean;   // hide when TELEGRAM_CHAT_ID not set or user is not admin
   commands: CommandDef[];
 }
 
@@ -71,6 +72,7 @@ const GROUPS: Group[] = [
   {
     id: "system",
     label: "🖥 System",
+    adminOnly: true,
     commands: [
       { name: "system",         label: "🖥 Control" },
       { name: "monitor",        label: "📊 Monitor" },
@@ -126,24 +128,31 @@ const GROUPS: Group[] = [
 
 const GROUP_MAP = new Map(GROUPS.map((g) => [g.id, g]));
 
-// ── Topic detection ────────────────────────────────────────────────────────
+// ── Topic + admin detection ────────────────────────────────────────────────
 
 async function isForumTopic(ctx: Context): Promise<boolean> {
   const chatId = String(ctx.chat?.id ?? "");
   const threadId = ctx.message?.message_thread_id
     ?? (ctx.callbackQuery?.message as any)?.message_thread_id;
-  if (!threadId || threadId <= 1) return false;
+  if (!threadId || threadId < 2) return false;
   const forumChatId = await getForumChatId();
   return forumChatId !== null && chatId === forumChatId;
 }
 
+function isAdminCtx(ctx: Context): boolean {
+  const adminChatId = process.env.TELEGRAM_CHAT_ID;
+  if (!adminChatId) return false;
+  return String(ctx.chat?.id) === adminChatId;
+}
+
 // ── Keyboards ──────────────────────────────────────────────────────────────
 
-function groupsKeyboard(isTopic: boolean): InlineKeyboard {
+function groupsKeyboard(isTopic: boolean, isAdmin: boolean): InlineKeyboard {
   const kb = new InlineKeyboard();
   const visible = GROUPS.filter((g) => {
     if (isTopic && g.dmOnly) return false;
     if (!isTopic && g.topicOnly) return false;
+    if (g.adminOnly && !isAdmin) return false;
     return true;
   });
   visible.forEach((g, i) => {
@@ -170,7 +179,7 @@ function commandsKeyboard(group: Group): InlineKeyboard {
 
 export async function handleMenu(ctx: Context): Promise<void> {
   const topic = await isForumTopic(ctx);
-  await ctx.reply("Choose a category:", { reply_markup: groupsKeyboard(topic) });
+  await ctx.reply("Choose a category:", { reply_markup: groupsKeyboard(topic, isAdminCtx(ctx)) });
 }
 
 function ignoreNotModified(err: unknown): void {
@@ -185,7 +194,7 @@ export async function handleMenuCallback(ctx: Context): Promise<void> {
   if (rest === "home") {
     const topic = await isForumTopic(ctx);
     await ctx.answerCallbackQuery();
-    await ctx.editMessageText("Choose a category:", { reply_markup: groupsKeyboard(topic) }).catch(ignoreNotModified);
+    await ctx.editMessageText("Choose a category:", { reply_markup: groupsKeyboard(topic, isAdminCtx(ctx)) }).catch(ignoreNotModified);
     return;
   }
 
@@ -202,7 +211,11 @@ export async function handleMenuCallback(ctx: Context): Promise<void> {
     const cmdName = rest.slice(2);
     await ctx.answerCallbackQuery({ text: `/${cmdName}` });
     await ctx.deleteMessage().catch(() => {});
-    await dispatch(ctx, cmdName);
+    try {
+      await dispatch(ctx, cmdName);
+    } catch (err) {
+      await ctx.reply(`⚠️ /${cmdName} failed: ${(err as Error).message}`).catch(() => {});
+    }
     return;
   }
 

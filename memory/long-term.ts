@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { sql } from "./db.ts";
-import { embed, embedSafe } from "./embeddings.ts";
+import { embedSafe } from "./embeddings.ts";
 import { CONFIG } from "../config.ts";
 
 const anthropic = new Anthropic({ apiKey: CONFIG.ANTHROPIC_API_KEY });
@@ -26,7 +26,9 @@ export interface Memory {
 export async function remember(memory: Memory): Promise<Memory> {
   _indexingCount++;
   const embedding = await embedSafe(memory.content).finally(() => { _indexingCount--; });
-  const embeddingStr = embedding ? `[${embedding.join(",")}]` : null;
+  const embeddingFrag = embedding
+    ? sql`${`[${embedding.join(",")}]`}::vector`
+    : sql`NULL`;
 
   const [row] = await sql`
     INSERT INTO memories (source, session_id, project_path, chat_id, type, content, tags, embedding)
@@ -38,7 +40,7 @@ export async function remember(memory: Memory): Promise<Memory> {
       ${memory.type},
       ${memory.content},
       ${memory.tags ?? []},
-      ${embeddingStr}::vector
+      ${embeddingFrag}
     )
     RETURNING id, created_at, updated_at
   `;
@@ -57,24 +59,38 @@ export async function recall(
   } = {},
 ): Promise<Memory[]> {
   const { limit = 5, projectPath, sessionId, type, tags } = options;
-  const queryEmbedding = await embed(query);
-  const embeddingStr = `[${queryEmbedding.join(",")}]`;
+  const queryEmbedding = await embedSafe(query);
 
   // Prefer project_path filter; fall back to sessionId for backwards compat
-  const rows = await sql`
-    SELECT
-      id, source, session_id, project_path, chat_id, type, content, tags,
-      created_at, updated_at,
-      embedding <=> ${embeddingStr}::vector AS distance
-    FROM memories
-    WHERE 1=1
-      AND archived_at IS NULL
-      ${projectPath ? sql`AND (project_path = ${projectPath} OR project_path IS NULL)` : sessionId !== undefined ? sql`AND (session_id = ${sessionId} OR session_id IS NULL)` : sql``}
-      ${type ? sql`AND type = ${type}` : sql``}
-      ${tags && tags.length > 0 ? sql`AND tags && ${tags}` : sql``}
-    ORDER BY embedding <=> ${embeddingStr}::vector
-    LIMIT ${limit}
-  `;
+  const rows = queryEmbedding
+    ? await sql`
+        SELECT
+          id, source, session_id, project_path, chat_id, type, content, tags,
+          created_at, updated_at,
+          embedding <=> ${`[${queryEmbedding.join(",")}]`}::vector AS distance
+        FROM memories
+        WHERE 1=1
+          AND archived_at IS NULL
+          ${projectPath ? sql`AND (project_path = ${projectPath} OR project_path IS NULL)` : sessionId !== undefined ? sql`AND (session_id = ${sessionId} OR session_id IS NULL)` : sql``}
+          ${type ? sql`AND type = ${type}` : sql``}
+          ${tags && tags.length > 0 ? sql`AND tags && ${tags}` : sql``}
+        ORDER BY embedding <=> ${`[${queryEmbedding.join(",")}]`}::vector
+        LIMIT ${limit}
+      `
+    : await sql`
+        SELECT
+          id, source, session_id, project_path, chat_id, type, content, tags,
+          created_at, updated_at,
+          NULL AS distance
+        FROM memories
+        WHERE 1=1
+          AND archived_at IS NULL
+          ${projectPath ? sql`AND (project_path = ${projectPath} OR project_path IS NULL)` : sessionId !== undefined ? sql`AND (session_id = ${sessionId} OR session_id IS NULL)` : sql``}
+          ${type ? sql`AND type = ${type}` : sql``}
+          ${tags && tags.length > 0 ? sql`AND tags && ${tags}` : sql``}
+        ORDER BY created_at DESC
+        LIMIT ${limit}
+      `;
 
   return rows.map((r) => ({
     id: r.id,
@@ -88,7 +104,7 @@ export async function recall(
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     archivedAt: r.archived_at,
-    distance: r.distance,
+    distance: r.distance ?? undefined,
   }));
 }
 
@@ -212,11 +228,13 @@ export async function rememberSmart(memory: Memory): Promise<ReconcileResult> {
         return { action: "added", id: saved.id!, content: saved.content };
       }
       const newEmb = await embedSafe(decision.content);
-      const newEmbStr = newEmb ? `[${newEmb.join(",")}]` : null;
+      const newEmbFrag = newEmb
+        ? sql`${`[${newEmb.join(",")}]`}::vector`
+        : sql`NULL`;
       await sql`
         UPDATE memories
         SET content = ${decision.content},
-            embedding = ${newEmbStr}::vector,
+            embedding = ${newEmbFrag},
             updated_at = now()
         WHERE id = ${decision.id}
       `;

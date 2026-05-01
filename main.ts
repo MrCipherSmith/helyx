@@ -53,20 +53,7 @@ async function main() {
   // 5. Start cleanup timer
   const cleanupTimer = startCleanupTimer();
 
-  // 6. Start Telegram transport
-  if (CONFIG.TELEGRAM_TRANSPORT === "webhook") {
-    try {
-      await bot.api.setWebhook(CONFIG.TELEGRAM_WEBHOOK_URL, {
-        secret_token: CONFIG.TELEGRAM_WEBHOOK_SECRET || undefined,
-        allowed_updates: ["message", "callback_query", "poll_answer"],
-      });
-      console.log(`[main] webhook registered at ${CONFIG.TELEGRAM_WEBHOOK_URL}`);
-    } catch (err: any) {
-      console.warn(`[main] setWebhook failed (${err?.message}) — continuing anyway, will retry on next restart`);
-    }
-    await bot.init();
-    console.log(`[main] bot @${bot.botInfo.username} is running (webhook)`);
-    // Private chats: session navigation + top tools
+  async function registerBotCommands() {
     await bot.api.setMyCommands([
       { command: "menu",      description: "All commands grouped by category" },
       { command: "projects",  description: "List projects (Start/Stop)" },
@@ -81,22 +68,40 @@ async function main() {
       { command: "system",    description: "System control (start/stop/bounce/restart)" },
       { command: "help",      description: "Help" },
     ], { scope: { type: "all_private_chats" } }).catch((err) => console.error("[main] failed to set private commands:", err));
-    // Group chats / forum topics: topic-scoped commands only, no session switching
     await bot.api.setMyCommands([
-      { command: "menu",         description: "All commands" },
-      { command: "interrupt",    description: "Interrupt current Claude session" },
-      { command: "project_facts",description: "Show project knowledge facts" },
-      { command: "project_scan", description: "Scan project for knowledge" },
-      { command: "remember",     description: "Save to memory" },
-      { command: "recall",       description: "Search memory" },
-      { command: "system",       description: "System control" },
-      { command: "status",       description: "Bot health" },
-      { command: "help",         description: "Help" },
+      { command: "menu",          description: "All commands" },
+      { command: "interrupt",     description: "Interrupt current Claude session" },
+      { command: "project_facts", description: "Show project knowledge facts" },
+      { command: "project_scan",  description: "Scan project for knowledge" },
+      { command: "remember",      description: "Save to memory" },
+      { command: "recall",        description: "Search memory" },
+      { command: "system",        description: "System control" },
+      { command: "status",        description: "Bot health" },
+      { command: "help",          description: "Help" },
     ], { scope: { type: "all_group_chats" } }).catch((err) => console.error("[main] failed to set group commands:", err));
+  }
+
+  // 6. Start Telegram transport
+  if (CONFIG.TELEGRAM_TRANSPORT === "webhook") {
+    try {
+      await bot.api.setWebhook(CONFIG.TELEGRAM_WEBHOOK_URL, {
+        secret_token: CONFIG.TELEGRAM_WEBHOOK_SECRET || undefined,
+        allowed_updates: ["message", "callback_query", "poll_answer"],
+      });
+      console.log(`[main] webhook registered at ${CONFIG.TELEGRAM_WEBHOOK_URL}`);
+    } catch (err: any) {
+      console.warn(`[main] setWebhook failed (${err?.message}) — continuing anyway, will retry on next restart`);
+    }
+    await bot.init();
+    console.log(`[main] bot @${bot.botInfo.username} is running (webhook)`);
+    await registerBotCommands();
   } else {
     console.log("[main] starting Telegram polling...");
     bot.start({
-      onStart: () => console.log(`[main] bot @${bot.botInfo.username} is running (polling)`),
+      onStart: async () => {
+        console.log(`[main] bot @${bot.botInfo.username} is running (polling)`);
+        await registerBotCommands();
+      },
     });
   }
 

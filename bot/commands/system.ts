@@ -8,8 +8,9 @@ import { InlineKeyboard } from "grammy";
 import { sql } from "../../memory/db.ts";
 
 function isAdmin(ctx: Context): boolean {
-  const adminChatId = String(process.env.TELEGRAM_CHAT_ID ?? "");
-  return !adminChatId || String(ctx.chat?.id) === adminChatId;
+  const adminChatId = process.env.TELEGRAM_CHAT_ID;
+  if (!adminChatId) return false; // fail closed — no config, no access
+  return String(ctx.chat?.id) === adminChatId;
 }
 
 async function systemStatus(): Promise<{ lines: string[]; running: boolean; pendingCmd?: string }> {

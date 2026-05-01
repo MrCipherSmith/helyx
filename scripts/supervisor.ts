@@ -588,6 +588,12 @@ async function updateProcessHealth(sql: postgres.Sql): Promise<void> {
 }
 
 // --- Idle session auto-compact ---
+// This is distinct from the on-disconnect summarization in mcp/server.ts:
+// that fires when a Claude Code client drops its MCP connection (threshold: none,
+// triggers immediately). This idle-compact fires periodically (every 30 min)
+// for sessions that have been silent longer than IDLE_COMPACT_MIN minutes.
+// The two can both touch the same session, but since they write summaries
+// and then clear messages, the second run simply finds no messages to summarize.
 
 /**
  * Finds active sessions idle > IDLE_COMPACT_MIN minutes with >= 10 messages,
