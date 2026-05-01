@@ -40,18 +40,33 @@ export async function handleStart(ctx: Context): Promise<void> {
 }
 
 export async function handleHelp(ctx: Context): Promise<void> {
-  await ctx.reply(
-    "I work in two modes:\n\n" +
-      "*Standalone* — I respond via Claude API\n" +
-      "*CLI session* — I forward messages to Claude Code\n\n" +
-      "Memory:\n" +
-      "• Short\\-term: last 20 messages\n" +
-      "• Long\\-term: semantic search through history\n\n" +
-      "Sessions: /sessions, /switch, /session\n" +
-      "Memory: /remember, /recall, /memories, /forget\n" +
-      "Utilities: /clear, /status",
-    { parse_mode: "MarkdownV2" },
-  );
+  const text =
+    "<b>Helyx — Claude Code bridge</b>\n" +
+    "Routes Telegram messages to Claude Code CLI sessions, with persistent memory and a forum-per-project layout.\n\n" +
+    "<b>Sessions</b>\n" +
+    "/sessions — list · /switch [id] — switch with context briefing\n" +
+    "/session — current · /standalone — Claude API mode\n" +
+    "/resume — resume with last briefing · /model — change model\n" +
+    "/rename — rename · /cleanup — drop inactive · /clear — clear context · /summarize — summarize\n\n" +
+    "<b>Memory</b>\n" +
+    "/remember /recall /memories /forget\n" +
+    "/memory_export /memory_import\n\n" +
+    "<b>Monitoring</b>\n" +
+    "/status — health · /stats — API tokens · /logs — session logs\n" +
+    "/pending — pending permissions · /permission_stats · /session_export\n\n" +
+    "<b>Knowledge base (goodai-base)</b>\n" +
+    "/skills /rules /commands /hooks /tools\n\n" +
+    "<b>Codex</b>\n" +
+    "/codex_setup /codex_status /codex_review\n\n" +
+    "<b>Remote / projects</b>\n" +
+    "/interrupt — send Escape · /monitor — dashboard\n" +
+    "/remote_control — tmux bots · /projects — start/stop\n" +
+    "/project_add /project_facts /project_scan\n\n" +
+    "<b>Forum</b>\n" +
+    "/forum_setup /forum_sync /forum_clean /forum_hub\n" +
+    "/topic_rename /topic_close /topic_reopen\n\n" +
+    "<i>New here? Run /quickstart.</i>";
+  await ctx.reply(text, { parse_mode: "HTML" });
 }
 
 export async function handleSessions(ctx: Context): Promise<void> {

@@ -77,6 +77,7 @@ import { handleProjectFacts, handleProjectScan } from "./commands/project-facts.
 import { handleMemoryExport, handleMemoryImport } from "./commands/memory-export.ts";
 import { handleForumSetup, handleForumSync, handleForumClean, handleTopicRename, handleTopicClose, handleTopicReopen, handleForumHub } from "./commands/forum.ts";
 import { handleQuickstart } from "./commands/quickstart.ts";
+import { handleSystem } from "./commands/system.ts";
 import { handleResume } from "./commands/resume.ts";
 import { handleCodexSetup, handleCodexStatus, handleCodexReview } from "./commands/codex.ts";
 import { handleVoice, handlePhoto, handleDocument, handleVideo, handleVideoNote, handleSticker } from "./media.ts";
@@ -137,6 +138,9 @@ export function registerHandlers(b: Bot): void {
   b.command("codex_setup", handleCodexSetup);
   b.command("codex_status", handleCodexStatus);
   b.command("codex_review", handleCodexReview);
+
+  // System control
+  b.command("system", handleSystem);
 
   // Remote control & project management
   b.command("interrupt", handleInterrupt);

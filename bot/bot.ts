@@ -26,6 +26,8 @@ export function createBot(): Bot {
     { command: "switch", description: "Switch session (with context)" },
     { command: "session", description: "Current session" },
     { command: "standalone", description: "Standalone mode" },
+    { command: "resume", description: "Resume session with last context briefing" },
+    { command: "model", description: "Switch Claude model in active session" },
     { command: "pending", description: "Pending CLI permissions" },
     { command: "permission_stats", description: "Permission history analytics" },
     // Memory
@@ -43,8 +45,14 @@ export function createBot(): Bot {
     // Knowledge base
     { command: "skills", description: "Skills from goodai-base" },
     { command: "rules", description: "Rules from goodai-base" },
+    { command: "commands", description: "Slash-commands from goodai-base" },
+    { command: "hooks", description: "Configured hooks" },
     { command: "tools", description: "MCP tools" },
+    // Codex
+    { command: "codex_setup", description: "Authenticate Codex (device login)" },
+    { command: "codex_review", description: "Run Codex code review on current branch" },
     // Remote control
+    { command: "system", description: "System control (start/stop/bounce/restart)" },
     { command: "interrupt", description: "Interrupt running Claude session (send Escape)" },
     { command: "monitor", description: "Process dashboard (daemon, Docker, sessions)" },
     { command: "remote_control", description: "tmux bots status (Kill/Start)" },
@@ -66,6 +74,7 @@ export function createBot(): Bot {
     { command: "rename", description: "Rename session" },
     { command: "cleanup", description: "Clean up inactive sessions" },
     // Help
+    { command: "quickstart", description: "Quick start guide" },
     { command: "help", description: "Help" },
   ]).catch((err) => logger.error({ err }, "failed to set bot commands"));
 

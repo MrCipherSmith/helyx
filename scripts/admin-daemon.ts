@@ -265,6 +265,23 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
         break;
       }
 
+      case "bounce": {
+        // Restart all tmux bot sessions (down + up). Spawned detached so the
+        // daemon itself survives the kill-session that tears down its own window.
+        await runShell(
+          `nohup bash -c '(sleep 2; cd ${BOT_DIR}; /home/altsay/.bun/bin/bun ${CLI} bounce) >> /tmp/helyx-bounce.log 2>&1' &`
+        );
+        result = { ok: true, output: "bounce scheduled (log: /tmp/helyx-bounce.log)" };
+        break;
+      }
+
+      case "channel_kill": {
+        // Kill all channel.ts MCP subprocesses so Claude Code respawns them with fresh code.
+        const killResult = await runShell(`pkill -f "bun.*helyx/channel\\.ts" 2>&1 || true`);
+        result = { ok: true, output: killResult.output || "channel processes killed" };
+        break;
+      }
+
       case "docker_restart": {
         const { container } = payload as { container: string };
         if (!container) { result = { ok: false, output: "missing container" }; break; }

@@ -124,6 +124,22 @@ export class StatusManager {
   constructor(private ctx: StatusContext) {}
 
   /**
+   * Telegram chat_ids that currently have an open status message — i.e. Claude
+   * is mid-turn for them. The poller uses this to defer delivery of the next
+   * user message until the current turn finishes, so each user message gets its
+   * own status / turn cycle instead of being injected mid-flight.
+   *
+   * In forum mode the StatusState stores the forum chat_id (not the per-topic
+   * key), which already matches what `message_queue.chat_id` holds — the bot
+   * always inserts the parent chat_id, regardless of topic.
+   */
+  getBusyChats(): Set<string> {
+    const out = new Set<string>();
+    for (const state of this.activeStatus.values()) out.add(state.chatId);
+    return out;
+  }
+
+  /**
    * Arm a response guard for a chat. If Claude doesn't call `reply` within
    * RESPONSE_GUARD_MS, sends a fallback "no response" message to the user.
    * Automatically disarmed when deleteStatusMessage is called.
@@ -397,6 +413,14 @@ export class StatusManager {
     this.activeStatus.delete(key);
     this.ctx.sql`DELETE FROM active_status_messages WHERE key = ${key}`.catch(() => {});
     this.stopTypingForChat(chatId);
+
+    // Wake the poller immediately — a deferred user message for this chat may
+    // be waiting in message_queue, and we want zero perceived gap between the
+    // ✅ closing of this status and the new "+ Догнал" status of the next turn.
+    const sessionId = this.ctx.sessionId();
+    if (sessionId !== null) {
+      this.ctx.sql`SELECT pg_notify(${`message_queue_${sessionId}`}, '')`.catch(() => {});
+    }
 
     // Delete the diff companion message if one was sent during this session
     const diffExtra = state.threadId ? { message_thread_id: state.threadId } : {};

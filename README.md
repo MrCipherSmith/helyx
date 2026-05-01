@@ -514,6 +514,7 @@ Connect:
 | `/projects` | List projects with status and Start/Stop buttons (launches tmux window via admin-daemon) |
 | `/project_add` | Add project to persistent registry, auto-creates forum topic |
 | `/interrupt` | Interrupt running Claude session — sends Escape; if multiple sessions active, shows picker |
+| `/system` | System control panel — Start/Stop sessions, Bounce (full restart), Restart bot container, Kill channel MCP processes |
 | `/remote_control` | tmux bots status with Kill/Start/Refresh controls |
 | **Memory** | |
 | `/remember [text]` | Save to long-term memory (bound to session) |

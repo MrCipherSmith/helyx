@@ -25,6 +25,13 @@ export class MessageQueuePoller {
   private polling = true;
   private wakeResolve: (() => void) | null = null;
   private listenSql: import("postgres").default | null = null;
+  /**
+   * Chats whose pending message was skipped because Claude was mid-turn.
+   * Drained when the chat becomes free and we deliver the deferred row —
+   * the first delivery for such a chat gets a "+ Догнал ещё один вопрос"
+   * status prefix so the user sees a clean turn boundary.
+   */
+  private deferredChats = new Set<string>();
 
   constructor(
     private ctx: PollerContext,
@@ -81,18 +88,58 @@ export class MessageQueuePoller {
         // Without this, two pollers evaluating the subquery at the same MVCC snapshot
         // could both get the same ID, then both UPDATE it (outer WHERE re-checks id only,
         // not delivered=false), causing duplicate deliveries.
-        const rows = await this.ctx.sql`
-          UPDATE message_queue
-          SET delivered = true
-          WHERE id IN (
-            SELECT id FROM message_queue
+        // chat_id != ALL(busyChats): defer delivery for chats with an open status —
+        // the next user message stays delivered=false until the current turn ends, so
+        // each turn gets its own status/typing cycle instead of being merged inline.
+        const busyChats = Array.from(this.status.getBusyChats());
+        if (busyChats.length > 0) {
+          // Track which busy chats have at least one pending message so we can
+          // mark the first delivery as "carried over" once the chat frees up.
+          const pending = await this.ctx.sql`
+            SELECT DISTINCT chat_id FROM message_queue
             WHERE session_id = ${sid} AND delivered = false
-            ORDER BY created_at
-            LIMIT 10
-            FOR UPDATE SKIP LOCKED
-          )
-          RETURNING id, chat_id, from_user, content, message_id, created_at, attachments
-        `;
+              AND chat_id = ANY(${busyChats})
+          `;
+          for (const r of pending) this.deferredChats.add(r.chat_id);
+        }
+        const rows = busyChats.length === 0
+          ? await this.ctx.sql`
+              UPDATE message_queue
+              SET delivered = true
+              WHERE id IN (
+                SELECT id FROM message_queue
+                WHERE session_id = ${sid} AND delivered = false
+                ORDER BY created_at
+                LIMIT 10
+                FOR UPDATE SKIP LOCKED
+              )
+              RETURNING id, chat_id, from_user, content, message_id, created_at, attachments
+            `
+          : await this.ctx.sql`
+              UPDATE message_queue
+              SET delivered = true
+              WHERE id IN (
+                SELECT id FROM message_queue
+                WHERE session_id = ${sid} AND delivered = false
+                  AND chat_id != ALL(${busyChats})
+                ORDER BY created_at
+                LIMIT 10
+                FOR UPDATE SKIP LOCKED
+              )
+              RETURNING id, chat_id, from_user, content, message_id, created_at, attachments
+            `;
+
+        // For batches of rows from the same chat, the FIRST row's status creation
+        // sets the stage; subsequent edits in the batch would overwrite it. Mark the
+        // whole batch as carried-over (per chat) so all sendStatusMessage calls in
+        // this iteration agree on the prefix.
+        const carriedOverChats = new Set<string>();
+        for (const row of rows) {
+          if (this.deferredChats.has(row.chat_id)) {
+            carriedOverChats.add(row.chat_id);
+            this.deferredChats.delete(row.chat_id);
+          }
+        }
 
         for (const row of rows) {
           const tDequeue = Date.now();
@@ -136,7 +183,10 @@ export class MessageQueuePoller {
           // 2. Create status message (awaited) — monitor MUST start after this so
           //    updateStatus() finds an active state and doesn't silently drop updates
           this.status.startTypingForChat(row.chat_id);
-          await this.status.sendStatusMessage(row.chat_id, "Thinking...");
+          const stage = carriedOverChats.has(row.chat_id)
+            ? "➕ Догнал ещё один вопрос"
+            : "Thinking...";
+          await this.status.sendStatusMessage(row.chat_id, stage);
 
           // 3. Start progress monitor — status is now registered, updates will land
           this.status.startProgressMonitorForChat(row.chat_id).catch(() => {});
