@@ -4,16 +4,23 @@ import { sessionManager } from "../../sessions/manager.ts";
 import { routeMessage } from "../../sessions/router.ts";
 import { CONFIG } from "../../config.ts";
 
+const FALLBACK_MODELS: { id: string; display_name: string }[] = [
+  { id: "claude-opus-4-7",           display_name: "Claude Opus 4.7" },
+  { id: "claude-sonnet-4-6",         display_name: "Claude Sonnet 4.6" },
+  { id: "claude-haiku-4-5-20251001", display_name: "Claude Haiku 4.5" },
+];
+
 async function fetchAvailableModels(): Promise<{ id: string; display_name: string }[]> {
+  if (!CONFIG.ANTHROPIC_API_KEY) return FALLBACK_MODELS;
   const res = await fetch("https://api.anthropic.com/v1/models", {
     headers: {
       "x-api-key": CONFIG.ANTHROPIC_API_KEY,
       "anthropic-version": "2023-06-01",
     },
   });
-  if (!res.ok) throw new Error(`API ${res.status}`);
+  if (!res.ok) return FALLBACK_MODELS;
   const json = await res.json() as { data: { id: string; display_name: string }[] };
-  return json.data;
+  return json.data.length > 0 ? json.data : FALLBACK_MODELS;
 }
 
 /**
@@ -36,18 +43,7 @@ export async function handleModel(ctx: Context): Promise<void> {
 
   const currentModel = (route.cliConfig as any).model ?? "default";
 
-  let models: { id: string; display_name: string }[];
-  try {
-    models = await fetchAvailableModels();
-  } catch {
-    await ctx.reply("Failed to fetch model list from Anthropic API.");
-    return;
-  }
-
-  if (models.length === 0) {
-    await ctx.reply("No models returned from Anthropic API.");
-    return;
-  }
+  const models = await fetchAvailableModels();
 
   const keyboard = new InlineKeyboard();
   for (const m of models) {
