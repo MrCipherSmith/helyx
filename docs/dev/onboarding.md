@@ -4,7 +4,7 @@
 
 Helyx is a Telegram bot that acts as a remote control panel for [Claude Code](https://docs.anthropic.com/claude/docs/claude-code) CLI sessions. It bridges your Telegram account to one or more long-running Claude Code processes on a host machine, letting you send messages, approve tool permissions, receive voice replies, and manage AI coding sessions entirely from Telegram. The system is built on Bun + TypeScript, uses PostgreSQL as its durable message bus, and implements the Model Context Protocol (MCP) on both sides of Claude Code simultaneously.
 
-For a deeper look at how the components fit together, see [architecture.md](../artifacts/architecture.md).
+For a deeper look at how the components fit together, see [architecture.md](architecture.md).
 
 ---
 
@@ -45,23 +45,81 @@ cd dashboard && bun install && cd ..
 
 ### 2. Run the Interactive Setup Wizard
 
-The easiest way to configure Helyx is the built-in wizard. It writes a `.env` file, registers the MCP servers in Claude Code, and optionally installs the systemd service.
+The easiest way to configure Helyx is the built-in wizard. Run it from the repository root:
 
 ```bash
 bun cli.ts setup
 ```
 
-The wizard asks for:
-- Deployment type (Docker recommended)
-- Telegram Bot Token and your Telegram user ID
-- LLM provider for standalone mode (Anthropic / Google AI / OpenRouter / Ollama)
-- Telegram transport (polling or webhook)
-- Voice transcription key (Groq, optional)
-- TTS provider (Piper / Yandex / Kokoro / auto)
-- PostgreSQL password
-- Bot port (default `3847`)
+The wizard walks through 7 sections of questions, then automatically performs all installation steps. You can always re-run it to reconfigure; it overwrites `.env` but never deletes existing data.
 
-After it completes, your `.env` is ready and the MCP servers are registered in `~/.claude/settings.json`.
+#### Questions
+
+**1. Deployment type**
+- `Docker` (recommended) — PostgreSQL is included in Docker Compose; the bot container is built and started automatically.
+- `Manual` — assumes you have PostgreSQL and Ollama already running; only writes `.env` and runs migrations.
+
+**2. Telegram**
+- Bot Token from [@BotFather](https://t.me/BotFather) — required.
+- Your Telegram User ID — required. Send `/start` to [@userinfobot](https://t.me/userinfobot) to find it. This value is set as `ALLOWED_USERS`.
+
+**3. LLM Provider** (used in standalone mode and for internal summarization)
+- `Anthropic` — asks for API key; sets `CLAUDE_MODEL=claude-sonnet-4-20250514`.
+- `Google AI` — asks for API key and model (default: `gemma-4-31b-it`).
+- `OpenRouter` — asks for API key and model (default: `qwen/qwen3-235b-a22b:free`).
+- `Ollama` — asks for chat model name (default: `qwen3:8b`); no API key required.
+
+**3b. Ollama for embeddings and summarization**
+
+The wizard auto-detects Ollama at `localhost:11434`. If found, it offers to configure:
+- Embedding model (default: `nomic-embed-text`) — powers semantic memory search (`recall`).
+- Summarization model (default: `gemma4:e4b`) — used for session summaries and skill curation.
+
+If Ollama is not detected, memory is stored without embeddings (no semantic search, data is preserved).
+
+**4. Telegram transport**
+- `Polling` (default) — works everywhere, no public URL needed.
+- `Webhook` — requires a public HTTPS URL. The wizard explains Cloudflare Tunnel setup and generates a random webhook secret.
+
+**5. Voice transcription**
+- Groq API Key (optional, free tier at [console.groq.com](https://console.groq.com)) — enables fast cloud-based Whisper transcription. If skipped, the bot falls back to a local Whisper container (requires separate setup).
+
+**6. TTS provider** (voice replies from Claude)
+
+| Option | Notes |
+|--------|-------|
+| `auto` (default) | Tries Piper → Yandex → Groq in order |
+| `Piper` | Local offline TTS. Multi-select voice catalog: EN, RU, DE, ES, FR voices. Can download models during setup. |
+| `Yandex SpeechKit` | Cloud TTS, best Russian quality. Asks for API key, Folder ID, voice (alena/filipp/jane/omazh/zahar), language. |
+| `Kokoro` | Local offline, English. Asks for precision (q8/q4/fp16/fp32) and voice name. |
+| `OpenAI TTS` | Multilingual. Asks for OpenAI API key. |
+| `Groq Orpheus` | English only. Reuses the Groq key from step 5. |
+| `Disable TTS` | Bot replies as text only. |
+
+**7. Database and server**
+- PostgreSQL password (default: `helyx_secret`).
+- Bot port (default: `3847`).
+
+---
+
+#### What the wizard does after the questions
+
+The wizard performs these steps automatically — you can watch the output:
+
+1. **Creates `.env`** — writes all configuration including LLM keys, TTS settings, database URL, Ollama config, and host paths.
+2. **Creates required directories** — `logs/` and `downloads/` (Docker creates them as `root:root` if absent, causing permission errors).
+3. **Runs `bun install`** — installs all dependencies.
+4. **Starts Docker services** (`docker compose up -d --build`) — builds the bot image and starts `helyx-bot` + `helyx-postgres`. Waits up to 30 seconds for PostgreSQL to be healthy.
+5. **Runs database migrations** — in Docker mode, verifies the bot is healthy at `/health`; in manual mode, runs `bun memory/db.ts` directly.
+6. **Registers MCP servers** in Claude Code (`~/.claude/settings.json`):
+   - `helyx` — HTTP transport at `http://localhost:{port}/mcp`
+   - `helyx-channel` — stdio transport, `bun /path/to/channel.ts`, with `DATABASE_URL` and `TELEGRAM_BOT_TOKEN` injected as env
+7. **Creates `~/.claude/CLAUDE.md`** — global instructions for Claude Code: when to call `update_status`, `recall`, `remember`, and `search_project_context`. Skipped if the file already exists.
+8. **Registers Stop hook** — installs a Claude Code Stop hook (`save-session-facts.sh`) that auto-extracts facts at session end.
+9. **Installs systemd service** (`helyx@USER`) — copies `scripts/helyx.service` to `/etc/systemd/system/` and enables it. Requires `sudo`; if unavailable, prints the manual commands.
+10. **Registers projects** (optional) — asks for project directory paths to register now. You can skip and add them later with `helyx add /path/to/project`.
+
+After completion, start your tmux sessions with `helyx up`.
 
 ### 3. Manual .env Configuration (alternative to the wizard)
 
