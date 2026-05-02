@@ -462,7 +462,7 @@ task actually starts.
 
 ### fix(tmux-watchdog): auto-confirm dev-channel prompt in ALL windows, not just active sessions
 
-Root cause of the "altsay stuck at Enter to confirm" deadlock: `pollWindows()` only
+Root cause of the "stuck at Enter to confirm" deadlock: `pollWindows()` only
 checked windows with active sessions, but a session can only become active *after*
 the startup prompt is confirmed — a circular dependency. Fix adds a global window
 scan at the top of each poll cycle that sends Enter to any window showing the

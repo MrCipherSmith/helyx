@@ -271,7 +271,7 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
         // Paths are double-quoted to handle spaces; single-quote delimiters are
         // avoided since BOT_DIR/CLI come from import.meta.dir and are safe but
         // defensive quoting prevents breakage if ever deployed to unusual paths.
-        const bunBin = "/home/altsay/.bun/bin/bun";
+        const bunBin = Bun.which("bun") ?? process.execPath;
         await runShell(
           `nohup bash -c "(sleep 2; cd \\"${BOT_DIR}\\"; \\"${bunBin}\\" \\"${CLI}\\" bounce) >> /tmp/helyx-bounce.log 2>&1" &`
         );

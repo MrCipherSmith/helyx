@@ -487,7 +487,7 @@ Features:
 
 ```bash
 # Clone
-git clone https://github.com/MrCipherSmith/multiclaude-tg-bot.git ~/bots/helyx
+git clone https://github.com/MrCipherSmith/helyx.git ~/bots/helyx
 cd ~/bots/helyx
 
 # Configure

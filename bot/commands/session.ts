@@ -27,8 +27,8 @@ export async function handleStart(ctx: Context): Promise<void> {
       "/logs [id] — session logs\n" +
       "/pending — pending permissions\n" +
       "/tools — MCP tools\n" +
-      "/skills — skills from goodai-base\n" +
-      "/rules — rules from goodai-base\n" +
+      "/skills — skills from your knowledge base\n" +
+      "/rules — rules from your knowledge base\n" +
       "/remote_control — tmux status & control\n" +
       "/projects — manage projects\n" +
       "/project_add — add a project\n" +
@@ -54,7 +54,7 @@ export async function handleHelp(ctx: Context): Promise<void> {
     "<b>Monitoring</b>\n" +
     "/status — health · /stats — API tokens · /logs — session logs\n" +
     "/pending — pending permissions · /permission_stats · /session_export\n\n" +
-    "<b>Knowledge base (goodai-base)</b>\n" +
+    "<b>Knowledge base</b>\n" +
     "/skills /rules /commands /hooks /tools\n\n" +
     "<b>Codex</b>\n" +
     "/codex_setup /codex_status /codex_review\n\n" +

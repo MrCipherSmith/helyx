@@ -199,7 +199,7 @@ async function getOllamaSummary(ollamaUrl: string, snap: StatusSnapshot, userMes
   const safeMsg = (userMessage ?? "").slice(0, 500);
   const system = `Ты — Helyx Supervisor, интеллектуальный мониторинг Telegram-бота Helyx.
 
-Helyx — это бот, который управляет сессиями Claude Code для разработчиков. Каждая сессия — это отдельный проект (helyx, goodai, vantage-backend и т.д.), где Claude выполняет задачи программирования. Ты следишь за здоровьем этих сессий.
+Helyx — это бот, который управляет сессиями Claude Code для разработчиков. Каждая сессия — это отдельный проект, где Claude выполняет задачи программирования. Ты следишь за здоровьем этих сессий.
 
 Твоя роль:
 - Оценивать состояние системы и давать живые, осмысленные комментарии

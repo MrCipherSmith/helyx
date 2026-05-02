@@ -25,7 +25,7 @@ interface ExportManifest {
 /**
  * /memory_export — export all active memories as a JSON file.
  * Usage: /memory_export [project_path]
- * Example: /memory_export /home/altsay/bots/helyx
+ * Example: /memory_export /home/user/bots/myproject
  */
 export async function handleMemoryExport(ctx: Context): Promise<void> {
   const text = ctx.message?.text ?? "";
