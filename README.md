@@ -446,13 +446,20 @@ PostgreSQL password [helyx_secret]:
 Bot port [3847]:
 ```
 
-Press Enter to accept defaults. The wizard then:
+Press Enter to accept defaults. The wizard then runs automatically:
+
 1. Creates `.env` with all settings
-2. Installs dependencies
-3. Starts Docker containers (PostgreSQL + bot)
-4. Runs database migrations
-5. Registers MCP servers in Claude Code
-6. Sets up global `CLAUDE.md`
+2. Creates `logs/` and `downloads/` directories (prevents Docker permission errors)
+3. Runs `bun install`
+4. Starts Docker containers (`docker compose up -d --build`) and waits for PostgreSQL to be healthy
+5. Runs database migrations (or verifies bot health in Docker mode)
+6. Registers both MCP servers in Claude Code (`~/.claude/settings.json`) — `helyx` (HTTP) and `helyx-channel` (stdio)
+7. Creates `~/.claude/CLAUDE.md` with memory and status-update instructions for Claude Code (skipped if already exists)
+8. Registers a Stop hook (`save-session-facts.sh`) for automatic fact extraction at session end
+9. Installs `helyx@USER` systemd service for auto-start on boot (requires `sudo`; prints manual command if unavailable)
+10. Optionally registers project directories — or skip and add later with `helyx add /path/to/project`
+
+For the full wizard reference (all TTS options, Piper voice catalog, Yandex/Kokoro configuration, webhook setup) see [docs/dev/onboarding.md](docs/dev/onboarding.md#2-run-the-interactive-setup-wizard).
 
 ### Usage Scenarios
 
