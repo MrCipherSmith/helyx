@@ -1,6 +1,6 @@
 # Helyx — Architecture
 
-**Version:** 1.46.0
+**Version:** 1.47.0
 
 ---
 

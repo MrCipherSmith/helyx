@@ -1,6 +1,6 @@
 # Helyx — AI-Readable Machine Specification
 
-**Version:** 1.14.0 | **Updated:** 2026-04-09
+**Version:** 1.15.0 | **Updated:** 2026-05-02
 
 This document is optimized for AI agents (Claude instances) that need to understand the system to implement features, debug issues, or review PRs without reading all source files. Use dense, precise language. Verify against actual source if spec conflicts with code — code wins.
 
@@ -14,6 +14,8 @@ LAYER 0 — Telegram
   Entry: bot/bot.ts → bot/handlers.ts → bot/text-handler.ts
   Media: bot/media.ts (voice→Groq transcription; photo/doc→download+attachments JSONB in message_queue)
   Callbacks: bot/callbacks.ts (permission inline buttons)
+  Menu: bot/commands/menu.ts (two-level inline navigator)
+  Forum routing: messages in forum topics routed to project session via forum_topic_id
 
 LAYER 1 — Session Router
   sessions/router.ts → routeMessage(chatId) → { mode: "cli"|"standalone"|"disconnected", sessionId }
@@ -49,6 +51,18 @@ LAYER 6 — Dashboard
   Frontend: dashboard/src/ (React + Tailwind, Vite build)
   WebApp: dashboard/webapp/src/ (Telegram Mini App, Vite build)
   Auth: dashboard/auth.ts (Bearer token, shared secret)
+
+LAYER 7 — Host Daemons (all run on host, not in Docker)
+  admin-daemon: scripts/admin-daemon.ts — drains admin_commands table; executes tmux/Docker ops
+  tmux-watchdog: scripts/tmux-watchdog.ts — captures pane output every 5s; detects stalls/crashes
+  supervisor: scripts/supervisor.ts — 5 independent loops: heartbeat checks, stuck queue alerts,
+    voice cleanup, status broadcast, idle auto-compact
+
+LAYER 8 — Skills Toolkit
+  Proposal flow: Claude Code calls propose_skill MCP tool → bot sends approval inline button
+  Approval: user taps → skill saved to agent_skills table + on-disk SKILL.md
+  Curator: weekly agent run (curator_run) pins active skills, archives stale ones
+  Loading: list_agent_skills MCP tool loads approved skills into Claude Code context
 ```
 
 ---
@@ -79,7 +93,7 @@ LAYER 6 — Dashboard
   - `pollMessageQueue(sessionId)` → SELECT from message_queue WHERE delivered=false
   - `deliverMessage(msg)` → MCP notification `notifications/claude/channel`
   - `summarizeWork(sessionId)` → POST /api/sessions/:id/summarize-work on exit
-- **Invariants**: holds `pg_advisory_lock(sessionId)` while running; heartbeat every 5min; marks delivered=true before ack
+- **Invariants**: holds lease via `lease_owner`/`lease_expires_at` TTL columns (not pg_advisory_lock); heartbeat every 5min refreshes lease; detects lease theft at heartbeat and self-terminates; marks delivered=true before ack
 
 ### `mcp/server.ts`
 - **Input**: HTTP requests on PORT/mcp, mcp-session-id header
@@ -164,10 +178,11 @@ Chat-to-session mapping:
   - Changed by: /switch, /add, /project_add, /standalone commands
   - NULL → standalone mode
 
-Advisory lock:
-  - channel.ts holds pg_advisory_lock(sessionId) while connected
-  - Prevents two channel.ts from managing same session
-  - Auto-released on connection drop
+Lease ownership:
+  - channel.ts holds lease via lease_owner + lease_expires_at TTL columns
+  - Prevents two channel.ts from managing same session (auto-expires on crash)
+  - admin-daemon can steal lease intentionally during bounce recovery
+  - channel.ts detects theft at next heartbeat and self-terminates gracefully
 ```
 
 ---
@@ -235,6 +250,47 @@ search_project_context
   params: query(str), projectPath?(str), limit?(int, default 5)
   behavior: recall filtered to type IN ('project_context', 'summary')
   returns: formatted context list
+
+scan_project_knowledge
+  params: projectPath?(str)
+  behavior: scan project files → extract facts → remember() each as type='fact'
+  scoping: project_path
+  returns: text("Scanned N facts")
+
+skill_view
+  params: skill_name(str)
+  behavior: read SKILL.md file for named skill from skills directory
+  returns: skill content as text
+
+propose_skill
+  params: name(str), content(str), description?(str)
+  behavior: INSERT skill_proposals → bot sends approval inline button to admin
+  returns: text("Skill proposed: {name}")
+
+save_skill
+  params: name(str), content(str), description?(str)
+  behavior: INSERT agent_skills + write SKILL.md to disk (bypasses approval gate)
+  returns: text("Skill saved: {name}")
+
+list_agent_skills
+  params: (none)
+  behavior: SELECT FROM agent_skills WHERE status='approved' ORDER BY name
+  returns: formatted list of skills with name + description
+
+curator_run
+  params: (none)
+  behavior: trigger weekly curator agent; evaluates all skills; pins active, archives stale
+  returns: text("Curator started")
+
+curator_status
+  params: (none)
+  behavior: SELECT last curator_runs row; return status + summary
+  returns: text with last run time, result, skills pinned/archived
+
+send_poll
+  params: chat_id(str|int), question(str), options(str[])
+  behavior: POST telegram/sendPoll
+  returns: text("Poll sent")
 
 update_status  [stdio only — channel adapter]
   params: status(str), chatId(str), diff?(str)

@@ -1,7 +1,7 @@
 # Helyx — Full Specification
 
-**Specification Version:** 1.14.0  
-**Last Updated:** April 9, 2026
+**Specification Version:** 1.15.0  
+**Last Updated:** May 2, 2026
 
 ---
 
@@ -368,33 +368,54 @@ Features:
 |---------|----------|-------------|
 | `/start` | Sessions | Welcome message and quick help |
 | `/help` | Sessions | Show available commands |
+| `/quickstart` | Sessions | 6-step onboarding guide (forum → project → Claude Code) |
 | `/sessions` | Sessions | List all sessions (🟢 active / ⚪ inactive / 💀 terminated) |
 | `/switch [id]` | Sessions | Switch session with context briefing |
+| `/resume` | Sessions | Resume session with last briefing |
 | `/standalone` | Sessions | Switch to standalone mode |
 | `/session` | Sessions | Show current session info |
 | `/rename <id> <name>` | Sessions | Rename a session |
 | `/remove <id>` | Sessions | Delete session and all data |
 | `/cleanup` | Sessions | Remove terminated and orphaned sessions |
-| `/projects` | Projects | List projects with Start/Stop buttons |
-| `/project_add` | Projects | Register new project; creates remote session |
-| `/remote_control` | Projects | Tmux bots status with Kill/Start/Refresh |
-| `/add` | Sessions | Register project as Claude Code session |
+| `/clear` | Memory | Clear current session context (short-term) |
+| `/summarize` | Memory | Force conversation summarization |
 | `/model` | Config | Select Claude model (opus/sonnet/haiku) |
+| `/menu` | Navigation | Two-level inline command navigator (group → commands → run) |
+| `/system` | Admin | Admin control panel: Start/Stop sessions, Bounce, Kill channel (admin only) |
+| `/interrupt` | Control | Send Escape to Claude Code session bound to current topic/DM |
+| `/monitor` | Monitoring | Live dashboard link and system status |
 | `/remember [text]` | Memory | Save to long-term memory (smart reconciliation) |
 | `/recall [query]` | Memory | Semantic search through memory |
 | `/memories` | Memory | List recent memories with type/tag filters |
 | `/forget [id]` | Memory | Delete a memory |
-| `/summarize` | Memory | Force conversation summarization |
-| `/clear` | Memory | Clear current session context (short-term) |
+| `/memory_export [path]` | Memory | Export memories as JSON file |
+| `/memory_import` | Memory | Import memories from exported JSON file |
 | `/stats` | Monitoring | API usage, tokens, transcriptions |
 | `/logs [id]` | Monitoring | Request logs for session |
 | `/status` | Monitoring | Bot health: DB, Ollama, session counts |
 | `/pending` | Monitoring | Pending CLI permission requests |
+| `/permission_stats` | Monitoring | Permission approval statistics |
+| `/session_export` | Monitoring | Export session data |
 | `/tools` | Knowledge | List available MCP tools |
 | `/skills` | Knowledge | Skills catalog from `~/.claude/skills/` |
+| `/rules` | Knowledge | Coding rules from knowledge base |
 | `/commands` | Knowledge | Custom commands from `~/.claude/commands/` |
 | `/hooks` | Knowledge | Configured Hookify rules |
-| `/rules` | Knowledge | Coding rules from knowledge base |
+| `/projects` | Projects | List projects with Start/Stop buttons |
+| `/project_add` | Projects | Register new project; creates remote session and forum topic |
+| `/project_facts` | Projects | Show knowledge base facts for current project |
+| `/project_scan` | Projects | Scan project directory and save facts to memory |
+| `/remote_control` | Projects | Tmux bots status with Kill/Start/Refresh |
+| `/codex_setup` | Codex | Authenticate OpenAI Codex CLI for code review |
+| `/codex_status` | Codex | Check Codex login status |
+| `/codex_review [prompt]` | Codex | Run Codex AI code review from Telegram |
+| `/forum_setup` | Forum | Initialize forum supergroup for the bot |
+| `/forum_sync` | Forum | Sync project list with forum topics |
+| `/forum_clean` | Forum | Remove orphaned forum topics |
+| `/forum_hub` | Forum | Show Dev Hub mini app button |
+| `/topic_rename` | Forum | Rename the current forum topic |
+| `/topic_close` | Forum | Close (archive) the current forum topic |
+| `/topic_reopen` | Forum | Reopen a closed forum topic |
 
 ---
 
@@ -409,10 +430,18 @@ Features:
 | `reply` | HTTP + stdio | `chat_id`, `text`, `parse_mode?` | Send message to Telegram chat |
 | `react` | HTTP + stdio | `chat_id`, `message_id`, `emoji` | Set emoji reaction on Telegram message |
 | `edit_message` | HTTP + stdio | `chat_id`, `message_id`, `text`, `parse_mode?` | Edit a previously sent bot message |
+| `send_poll` | HTTP + stdio | `chat_id`, `question`, `options` | Send a Telegram poll |
 | `list_sessions` | HTTP + stdio | (none) | List all sessions with status |
-| `session_info` | HTTP + stdio | `session_id` | Get detailed session info |
+| `session_info` | HTTP + stdio | `session_id?` | Get detailed session info |
 | `set_session_name` | HTTP + stdio | `name`, `project_path?` | Register or adopt session at CLI startup |
 | `search_project_context` | HTTP + stdio | `query`, `project_path?`, `limit?` | Semantic search over project context + work summaries |
+| `scan_project_knowledge` | HTTP + stdio | `project_path?` | Scan project files and extract facts into memory |
+| `skill_view` | HTTP + stdio | `skill_name` | View a skill from the knowledge base |
+| `propose_skill` | HTTP + stdio | `name`, `content`, `description?` | Propose a new reusable skill for human approval |
+| `save_skill` | HTTP + stdio | `name`, `content`, `description?` | Save an approved skill directly |
+| `list_agent_skills` | HTTP + stdio | (none) | List all approved skills available for use |
+| `curator_run` | HTTP + stdio | (none) | Trigger the weekly skills curator agent manually |
+| `curator_status` | HTTP + stdio | (none) | Get the status of the last curator run |
 | `update_status` | stdio only | `status`, `chatId`, `diff?` | Update live status message in Telegram (auto-deleted on `reply`) |
 
 ---
@@ -424,6 +453,9 @@ Features:
 | Variable | Default | Required | Description |
 |----------|---------|----------|-------------|
 | `TELEGRAM_BOT_TOKEN` | — | **YES** | Bot token from @BotFather |
+| `TELEGRAM_CHAT_ID` | `""` | NO | Admin user/chat ID; enables `/system` command and isAdmin() checks |
+| `TELEGRAM_FORUM_CHAT_ID` | `""` | NO | Forum supergroup ID; enables per-topic routing when set |
+| `SUPERVISOR_TOPIC_ID` | `""` | NO | Forum topic ID for supervisor alerts and status |
 | `ALLOWED_USERS` | `""` | NO | Comma-separated Telegram user IDs; empty = open (warning logged) |
 | `ANTHROPIC_API_KEY` | `""` | For Anthropic | Claude API key |
 | `CLAUDE_MODEL` | `claude-sonnet-4-20250514` | NO | Claude model for standalone mode |
@@ -598,7 +630,7 @@ Idle Timer (15 min)
 
 ## 10. Implementation Notes
 
-1. **Advisory Lock**: `pg_advisory_lock(session_id)` held by channel.ts while connected — prevents two instances from managing the same session.
+1. **Lease-based session ownership**: `channel.ts` acquires a lease via `lease_owner` + `lease_expires_at` TTL columns (not `pg_advisory_lock`). The lease auto-expires without explicit release on crash. `admin-daemon` can intentionally steal the lease during bounce recovery; `channel.ts` detects theft at the next heartbeat and self-terminates.
 
 2. **Heartbeat**: channel.ts updates `last_active` every 5 minutes to prevent stale session detection during long tasks.
 
