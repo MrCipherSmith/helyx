@@ -117,6 +117,9 @@ export class StatusManager {
   private responseGuards = new Map<string, ReturnType<typeof setTimeout>>();
   /** Tracks the single "diff" companion message per status session — edited in-place on repeat calls. */
   private diffMessages = new Map<string, number>(); // key → Telegram message_id
+  /** Last timestamp the tmux monitor reported activity — tracked even without an active status
+   *  so schedulePostReplyCheck can detect if Claude is still working after an early reply. */
+  private lastMonitorActivity = new Map<string, number>();
   private readonly TYPING_TIMEOUT_MS = 30_000;
   private readonly RESPONSE_GUARD_MS = 5 * 60_000; // 5 min
 
@@ -223,6 +226,41 @@ export class StatusManager {
     const key = this.stateKey(chatId);
     if (!this.responseGuards.has(key)) return; // not armed — nothing to reset
     this.armResponseGuard(chatId); // rearm with a fresh timeout
+  }
+
+  /**
+   * Schedule a check N ms after reply() to detect multi-step tasks.
+   *
+   * When Claude sends an early "Запускаю..." reply and then continues working
+   * (runs a subagent, long bash command, etc.), the monitor keeps running but
+   * the status message and guard were already torn down by reply().
+   *
+   * After delayMs, we check lastMonitorActivity: if tmux was active recently
+   * → Claude is still working → create a continuation status + re-arm guard.
+   * If tmux is silent → Claude truly finished, leave everything cleaned up.
+   */
+  schedulePostReplyCheck(chatId: string, delayMs = 20_000): void {
+    const key = this.stateKey(chatId);
+    setTimeout(async () => {
+      // If the user already sent a new message, the poller created a fresh status — skip.
+      if (this.activeStatus.has(key)) return;
+
+      const lastActivity = this.lastMonitorActivity.get(key) ?? 0;
+      const silentMs = Date.now() - lastActivity;
+
+      // Two tmux poll cycles (30s) — if active within that window, Claude is still working.
+      if (silentMs < 30_000) {
+        channelLogger.info({ chatId, silentMs }, "post-reply: Claude still active, creating continuation status");
+        await this.sendStatusMessage(chatId, "🔄 Working on follow-up...");
+        this.armResponseGuard(chatId);
+        this.startProgressMonitorForChat(chatId).catch(() => {});
+      } else {
+        // Truly idle after reply — stop the monitor and clean up activity tracking.
+        this.stopProgressMonitorForChat(chatId);
+        this.lastMonitorActivity.delete(key);
+        channelLogger.debug({ chatId, silentMs }, "post-reply: Claude idle, cleanup done");
+      }
+    }, delayMs);
   }
 
   /**
@@ -363,11 +401,13 @@ export class StatusManager {
   async updateStatus(chatId: string, stage: string): Promise<void> {
     const key = this.stateKey(chatId);
     this.accumulateStats(key, stage);
+    // Always record monitor activity time — even without an active status message.
+    // This lets schedulePostReplyCheck detect if Claude is still working after an early reply.
+    this.lastMonitorActivity.set(key, Date.now());
     const state = this.activeStatus.get(key);
     if (!state) {
-      // No active status — poller always creates one before sending the notification,
-      // so this can only happen in a race (in-flight callback after deleteStatusMessage).
-      // Do NOT create a new orphan message here.
+      // No active status — monitor keeps running (post-reply continuation tracking).
+      // Do NOT create a new orphan status message here.
       return;
     }
     // Activity observed — Claude is alive, reset the response guard so it does not

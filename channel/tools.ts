@@ -286,7 +286,9 @@ export function registerTools(
         const chatId = String(args!.chat_id);
         channelLogger.info({ phase: "tools", step: "reply-called", chatId, t: Date.now() }, "perf");
         status.stopTypingForChat(chatId);
-        status.stopProgressMonitorForChat(chatId);
+        // Do NOT stop the progress monitor here — Claude may send an early acknowledgment
+        // reply ("Запускаю...") and then continue working. schedulePostReplyCheck will
+        // stop the monitor after 20s if Claude turns out to be truly idle.
 
         const token = ctx.token();
         if (!token) {
@@ -374,6 +376,9 @@ export function registerTools(
         // Delete status non-blocking — don't await, avoids holding up reply return when
         // Telegram rate-limits editMessageText (can block for 60+ seconds otherwise).
         status.deleteStatusMessage(chatId).catch((err) => channelLogger.warn({ err }, "deleteStatusMessage failed"));
+        // After 20s, check if Claude is still active (e.g. sent an early "Запускаю..." reply
+        // and is now running a subagent). If so, create a continuation status + re-arm guard.
+        status.schedulePostReplyCheck(chatId, 20_000);
         // Fire-and-forget TTS voice attachment (forced if user sent voice, otherwise ≥300 chars)
         maybeAttachVoiceRaw(token, chatId, replyText, forumTopicId ?? null, ctx.forceVoice?.() ?? false);
         if (sessionId) {
