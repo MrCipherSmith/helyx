@@ -180,8 +180,9 @@ export class MessageQueuePoller {
           }
           this.touchIdleTimer();
 
-          // 2. Create status message (awaited) — monitor MUST start after this so
-          //    updateStatus() finds an active state and doesn't silently drop updates
+          // 2. Reset any leftover status from a previous turn, then create a fresh
+          //    one for this request — ensures each user message gets its own message
+          await this.status.deleteStatusMessage(row.chat_id);
           this.status.startTypingForChat(row.chat_id);
           const stage = carriedOverChats.has(row.chat_id)
             ? "➕ Догнал ещё один вопрос"

@@ -36,7 +36,6 @@ interface StatusState {
   paneSnapshot: string | null;
   paneSnapshotAt: number | null;
   timer: ReturnType<typeof setInterval> | null;
-  paneTimer: ReturnType<typeof setInterval> | null;
   dbHeartbeatTimer: ReturnType<typeof setInterval> | null;
   spinnerFrame: number;
   lastUpdateAt: number;
@@ -273,13 +272,14 @@ export class StatusManager {
         paneSnapshot: null,
         paneSnapshotAt: null,
         timer: null,
-        paneTimer: null,
         dbHeartbeatTimer: null,
         spinnerFrame: 0,
         lastUpdateAt: Date.now(),
       };
-      state.timer = setInterval(() => this.editStatusMessage(state), 1000);
-      state.paneTimer = setInterval(() => this.refreshPaneSnapshot(state).catch(() => {}), 10_000);
+      state.timer = setInterval(async () => {
+        await this.refreshPaneSnapshot(state).catch(() => {});
+        await this.editStatusMessage(state);
+      }, 15_000);
       state.dbHeartbeatTimer = setInterval(() => this.heartbeatStatusMessage(key), 30_000);
       this.activeStatus.set(key, state);
       this.persistStatusMessage(key, state).catch(() => {});
@@ -408,7 +408,6 @@ export class StatusManager {
     const statusLifeMs = tDelete - state.startedAt;
     channelLogger.info({ phase: "status", step: "deleting", chatId, statusLifeMs, messageId: state.messageId }, "perf");
     if (state.timer) clearInterval(state.timer);
-    if (state.paneTimer) clearInterval(state.paneTimer);
     if (state.dbHeartbeatTimer) clearInterval(state.dbHeartbeatTimer);
     this.activeStatus.delete(key);
     this.ctx.sql`DELETE FROM active_status_messages WHERE key = ${key}`.catch(() => {});
