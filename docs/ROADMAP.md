@@ -14,7 +14,15 @@
 
 ## ✅ Implemented
 
-### v1.48.0 (Latest) — Status Intelligence + Photo Tool
+### v1.49.0 (Latest) — Supervisor Overhaul
+
+- **Smart status broadcast** — edits message in-place (silent) when healthy; delete+send (notification) only when stuck queue or 🔴 docker container detected
+- **Stuck queue auto-recovery** — `checkStuckQueue` now triggers `proj_start` automatically before alerting user; manual buttons appear only if auto-recovery fails
+- **`/supervisor` command** — on-demand status from anywhere, not just the supervisor topic
+- **Acknowledge button** — "🔕 Тишина 30м" on all alerts; stores ack in `admin_commands`, supervisor checks DB each loop and stays silent during the window
+- **Escalation improvement** — after 30 min of repeated failures: kills hung channel processes (`pkill bun channel.ts`) before `proj_start`; adds "🚀 Bounce бот" button on failure
+
+### v1.48.0 — Status Intelligence + Photo Tool
 
 - **`send_photo` MCP tool** — new tool on both stdio and HTTP transports; supports public URL and local file via multipart upload; forum topic routing in stdio transport
 - **Smart response guard** — 3-state Claude activity detection: silent re-arm (< 90s), soft note (long thinking), alert + delete status (stuck); replaces single generic "no reply" message
