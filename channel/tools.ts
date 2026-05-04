@@ -17,6 +17,7 @@ import { handleSkillView } from "../utils/skill-handlers.ts";
 import { distillSkill, listAgentSkills, approveSkill, rejectSkill, validateSkillInput } from "../utils/skill-distiller.ts";
 import { sendSkillApprovalMessage } from "../utils/skill-approval.ts";
 import { runCurator, getCuratorRuns } from "../utils/curator.ts";
+import { validateReplyGate } from "../orchestrator/gate.ts";
 
 export interface ToolContext {
   sql: postgres.Sql;
@@ -285,7 +286,6 @@ export function registerTools(
       case "reply": {
         const chatId = String(args!.chat_id);
         channelLogger.info({ phase: "tools", step: "reply-called", chatId, t: Date.now() }, "perf");
-        status.stopTypingForChat(chatId);
         // Do NOT stop the progress monitor here — Claude may send an early acknowledgment
         // reply ("Запускаю...") and then continue working. schedulePostReplyCheck will
         // stop the monitor after 20s if Claude turns out to be truly idle.
@@ -316,6 +316,45 @@ export function registerTools(
           activeSessionId = activeCheck[0]?.active_session_id ?? null;
         }
         const isActiveDm = isForumReply || activeSessionId === null || activeSessionId === sessionId;
+
+        const replyGate = await validateReplyGate({
+          sql: ctx.sql,
+          sessionId,
+          chatId,
+          projectPath: ctx.projectPath,
+          text: String(args!.text),
+        });
+
+        if (replyGate.kind === "config_error") {
+          channelLogger.warn({ error: replyGate.message, projectPath: ctx.projectPath }, "state matrix load failed");
+          await status.updateStatus(chatId, "State Matrix configuration error");
+          await sendTelegramMessage(
+            token,
+            isForumReply ? forumChatId! : chatId,
+            "⚠️ State Matrix configuration is invalid. Fix <code>.matrix.json</code> before this response can be sent.",
+            { parse_mode: "HTML", ...forumExtra },
+          );
+          return text("State Matrix configuration is invalid. Reply was not sent.");
+        }
+
+        if (replyGate.kind === "exhausted") {
+          await status.updateStatus(chatId, `State Matrix failed after ${replyGate.attempt}/${replyGate.maxAttempts} attempts`);
+          await sendTelegramMessage(
+            token,
+            isForumReply ? forumChatId! : chatId,
+            "⚠️ Не удалось привести ответ к State Matrix после нескольких попыток. Уточните задачу или правила матрицы.",
+            { parse_mode: "HTML", ...forumExtra },
+          );
+          status.deleteStatusMessage(chatId).catch(() => {});
+          return text("State Matrix validation failed after max correction attempts. Reply was not sent.");
+        }
+
+        if (replyGate.kind === "blocked") {
+          await status.updateStatus(chatId, `State Matrix violation, correcting attempt ${replyGate.attempt}/${replyGate.maxAttempts}`);
+          return text(replyGate.correction);
+        }
+
+        status.stopTypingForChat(chatId);
 
         // Buffer reply to DB before sending — lets the bot retry if Telegram is temporarily down
         let pendingReplyId: number | null = null;
