@@ -241,24 +241,43 @@ export class StatusManager {
    */
   schedulePostReplyCheck(chatId: string, delayMs = 20_000): void {
     const key = this.stateKey(chatId);
+    const repliedAt = Date.now();
     setTimeout(async () => {
       // If the user already sent a new message, the poller created a fresh status — skip.
       if (this.activeStatus.has(key)) return;
 
-      const lastActivity = this.lastMonitorActivity.get(key) ?? 0;
-      const silentMs = Date.now() - lastActivity;
+      // Don't create a continuation status if the user already has messages waiting —
+      // the poller will deliver them immediately now that the status is gone.
+      const sessionId = this.ctx.sessionId();
+      if (sessionId !== null) {
+        const pending = await this.ctx.sql`
+          SELECT 1 FROM message_queue
+          WHERE session_id = ${sessionId} AND chat_id = ${chatId} AND delivered = false
+          LIMIT 1
+        `.catch(() => []);
+        if (pending.length > 0) {
+          channelLogger.debug({ chatId }, "post-reply: pending user messages found, skipping continuation status");
+          this.stopProgressMonitorForChat(chatId);
+          this.lastMonitorActivity.delete(key);
+          return;
+        }
+      }
 
-      // Two tmux poll cycles (30s) — if active within that window, Claude is still working.
-      if (silentMs < 30_000) {
-        channelLogger.info({ chatId, silentMs }, "post-reply: Claude still active, creating continuation status");
+      // Only count tmux activity that happened AFTER the reply was sent.
+      // Activity before reply() is stale — it belongs to the completed turn.
+      const lastActivity = this.lastMonitorActivity.get(key) ?? 0;
+      const hasPostReplyActivity = lastActivity > repliedAt;
+
+      if (hasPostReplyActivity) {
+        channelLogger.info({ chatId, lastActivity, repliedAt }, "post-reply: Claude still active, creating continuation status");
         await this.sendStatusMessage(chatId, "🔄 Working on follow-up...");
         this.armResponseGuard(chatId);
         this.startProgressMonitorForChat(chatId).catch(() => {});
       } else {
-        // Truly idle after reply — stop the monitor and clean up activity tracking.
+        // No tmux activity after reply — Claude truly finished.
         this.stopProgressMonitorForChat(chatId);
         this.lastMonitorActivity.delete(key);
-        channelLogger.debug({ chatId, silentMs }, "post-reply: Claude idle, cleanup done");
+        channelLogger.debug({ chatId }, "post-reply: no post-reply activity, cleanup done");
       }
     }, delayMs);
   }
