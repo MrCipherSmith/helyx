@@ -14,7 +14,7 @@ import { sendTelegramMessage, deleteTelegramMessage, editTelegramMessage } from 
 import { channelLogger } from "../logger.ts";
 import { escapeHtml } from "../utils/html.ts";
 import { buildCorrectionPrompt, loadStateMatrix, validateMatrixArtifact, type StateMatrix } from "../orchestrator/matrix.ts";
-import { enqueueCorrection, getOrCreateRun, markRunStatus, recordValidationFailure } from "../orchestrator/store.ts";
+import { getOrCreateRun, markRunStatus, recordValidationFailure } from "../orchestrator/store.ts";
 
 export interface PermissionContext {
   sql: postgres.Sql;
@@ -187,7 +187,18 @@ export class PermissionHandler {
             maxAttempts,
             artifactType: "tool_request",
           });
-          await enqueueCorrection({ sql: this.ctx.sql, sessionId, chatId, content: correction, run: failedRun });
+          await this.ctx.mcp.notification({
+            method: "notifications/claude/channel",
+            params: {
+              content: correction,
+              meta: {
+                chat_id: chatId,
+                user: "helyx-orchestrator",
+                message_id: failedRun ? `matrix:${failedRun.id}:${attempt}` : `matrix:${Date.now()}`,
+                ts: new Date().toISOString(),
+              },
+            },
+          });
         }
 
         await this.ctx.mcp.notification({

@@ -17,8 +17,7 @@ import { handleSkillView } from "../utils/skill-handlers.ts";
 import { distillSkill, listAgentSkills, approveSkill, rejectSkill, validateSkillInput } from "../utils/skill-distiller.ts";
 import { sendSkillApprovalMessage } from "../utils/skill-approval.ts";
 import { runCurator, getCuratorRuns } from "../utils/curator.ts";
-import { buildCorrectionPrompt, loadStateMatrix, validateMatrixArtifact, type StateMatrix } from "../orchestrator/matrix.ts";
-import { getOrCreateRun, markRunStatus, recordValidationFailure } from "../orchestrator/store.ts";
+import { validateReplyGate } from "../orchestrator/gate.ts";
 
 export interface ToolContext {
   sql: postgres.Sql;
@@ -318,11 +317,16 @@ export function registerTools(
         }
         const isActiveDm = isForumReply || activeSessionId === null || activeSessionId === sessionId;
 
-        let matrix: StateMatrix | null = null;
-        try {
-          matrix = await loadStateMatrix(ctx.projectPath);
-        } catch (err) {
-          channelLogger.warn({ err, projectPath: ctx.projectPath }, "state matrix load failed");
+        const replyGate = await validateReplyGate({
+          sql: ctx.sql,
+          sessionId,
+          chatId,
+          projectPath: ctx.projectPath,
+          text: String(args!.text),
+        });
+
+        if (replyGate.kind === "config_error") {
+          channelLogger.warn({ error: replyGate.message, projectPath: ctx.projectPath }, "state matrix load failed");
           await status.updateStatus(chatId, "State Matrix configuration error");
           await sendTelegramMessage(
             token,
@@ -333,56 +337,21 @@ export function registerTools(
           return text("State Matrix configuration is invalid. Reply was not sent.");
         }
 
-        if (matrix && matrix.mode !== "disabled") {
-          const validation = validateMatrixArtifact({
-            type: "reply",
-            text: String(args!.text),
-            sessionId,
-            chatId,
-            projectPath: ctx.projectPath,
-          }, matrix);
+        if (replyGate.kind === "exhausted") {
+          await status.updateStatus(chatId, `State Matrix failed after ${replyGate.attempt}/${replyGate.maxAttempts} attempts`);
+          await sendTelegramMessage(
+            token,
+            isForumReply ? forumChatId! : chatId,
+            "⚠️ Не удалось привести ответ к State Matrix после нескольких попыток. Уточните задачу или правила матрицы.",
+            { parse_mode: "HTML", ...forumExtra },
+          );
+          status.deleteStatusMessage(chatId).catch(() => {});
+          return text("State Matrix validation failed after max correction attempts. Reply was not sent.");
+        }
 
-          const run = await getOrCreateRun({
-            sql: ctx.sql,
-            sessionId,
-            chatId,
-            projectPath: ctx.projectPath,
-            artifactType: "reply",
-            matrix,
-          });
-
-          if (!validation.isValid && matrix.mode === "warn") {
-            channelLogger.warn({ violations: validation.violations, matrix: matrix.path }, "state matrix reply warning");
-            await markRunStatus({ sql: ctx.sql, run, status: "valid", phase: "warn" });
-          } else if (!validation.isValid) {
-            const failedRun = await recordValidationFailure({ sql: ctx.sql, run, validation });
-            const attempt = failedRun?.attempt ?? 1;
-            const maxAttempts = failedRun?.maxAttempts ?? matrix.maxCorrectionAttempts;
-
-            if (attempt >= maxAttempts) {
-              await markRunStatus({ sql: ctx.sql, run: failedRun, status: "failed", phase: "exhausted" });
-              await status.updateStatus(chatId, `State Matrix failed after ${attempt}/${maxAttempts} attempts`);
-              await sendTelegramMessage(
-                token,
-                isForumReply ? forumChatId! : chatId,
-                "⚠️ Не удалось привести ответ к State Matrix после нескольких попыток. Уточните задачу или правила матрицы.",
-                { parse_mode: "HTML", ...forumExtra },
-              );
-              status.deleteStatusMessage(chatId).catch(() => {});
-              return text("State Matrix validation failed after max correction attempts. Reply was not sent.");
-            }
-
-            await status.updateStatus(chatId, `State Matrix violation, correcting attempt ${attempt}/${maxAttempts}`);
-            const correction = buildCorrectionPrompt({
-              validation,
-              attempt,
-              maxAttempts,
-              artifactType: "reply",
-            });
-            return text(correction);
-          } else {
-            await markRunStatus({ sql: ctx.sql, run, status: "valid", phase: "reply_valid" });
-          }
+        if (replyGate.kind === "blocked") {
+          await status.updateStatus(chatId, `State Matrix violation, correcting attempt ${replyGate.attempt}/${replyGate.maxAttempts}`);
+          return text(replyGate.correction);
         }
 
         status.stopTypingForChat(chatId);

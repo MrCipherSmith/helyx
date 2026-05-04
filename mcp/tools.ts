@@ -11,6 +11,7 @@ import { handleSkillView } from "../utils/skill-handlers.ts";
 import { distillSkill, listAgentSkills, approveSkill, rejectSkill, validateSkillInput } from "../utils/skill-distiller.ts";
 import { sendSkillApprovalMessage } from "../utils/skill-approval.ts";
 import { runCurator, getCuratorRuns } from "../utils/curator.ts";
+import { validateReplyGate } from "../orchestrator/gate.ts";
 
 // Tool definitions for MCP registration
 export const TOOL_DEFINITIONS = [
@@ -381,16 +382,37 @@ export async function executeTool(
 
       // Look up forum_topic_id for this session's project so the reply goes to the right thread
       let forumTopicId: number | null = null;
+      let sessionId: number | null = null;
+      let projectPath: string | null = null;
       if (clientId) {
         const sid = sessionManager.getSessionIdByClient(clientId);
         if (sid !== undefined) {
+          sessionId = sid;
           const sess = await sessionManager.get(sid);
           if (sess?.projectPath) {
-            const { sql } = await import("../memory/db.ts");
             const rows = await sql`SELECT forum_topic_id FROM projects WHERE path = ${sess.projectPath}`;
             forumTopicId = rows[0]?.forum_topic_id ?? null;
+            projectPath = sess.projectPath;
           }
         }
+      }
+
+      const replyGate = await validateReplyGate({
+        sql,
+        sessionId,
+        chatId: String(args.chat_id),
+        projectPath,
+        text: replyText,
+      });
+
+      if (replyGate.kind === "config_error") {
+        return text("State Matrix configuration is invalid. Reply was not sent.");
+      }
+      if (replyGate.kind === "exhausted") {
+        return text("State Matrix validation failed after max correction attempts. Reply was not sent.");
+      }
+      if (replyGate.kind === "blocked") {
+        return text(replyGate.correction);
       }
 
       const extra: Record<string, unknown> = { parse_mode: args.parse_mode as any };
