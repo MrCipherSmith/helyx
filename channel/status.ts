@@ -337,6 +337,8 @@ export class StatusManager {
 
     if (existing) {
       existing.stage = `${prefix}${stage}`;
+      existing.startedAt = Date.now();
+      existing.lastUpdateAt = Date.now();
       await this.editStatusMessage(existing);
       return null;
     }
@@ -569,7 +571,9 @@ export class StatusManager {
            NOW(), NOW(), ${this.ctx.projectName}, ${sessionId})
         ON CONFLICT (key) DO UPDATE SET
           message_id = EXCLUDED.message_id,
-          updated_at = NOW()
+          started_at = NOW(),
+          updated_at = NOW(),
+          session_id = EXCLUDED.session_id
       `;
     } catch (err) {
       channelLogger.warn({ err }, "persistStatusMessage: DB error");
