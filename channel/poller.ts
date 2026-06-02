@@ -9,6 +9,19 @@ import type { SkillEvaluator } from "./skill-evaluator.ts";
 import { channelLogger } from "../logger.ts";
 import { setTelegramReaction } from "./telegram.ts";
 
+/** Run a promise with a deadline. Resolves to undefined and logs a warning if ms elapses first. */
+function withDeadline<T>(p: Promise<T>, ms: number, label: string): Promise<T | undefined> {
+  return Promise.race([
+    p,
+    new Promise<undefined>(resolve =>
+      setTimeout(() => {
+        channelLogger.warn({ label, ms }, "poller: deadline exceeded, continuing");
+        resolve(undefined);
+      }, ms),
+    ),
+  ]);
+}
+
 export interface PollerContext {
   sql: postgres.Sql;
   mcp: Server;
@@ -156,20 +169,26 @@ export class MessageQueuePoller {
           const enrichedContent = `${ttsNote}${hint}${row.content}`;
           if (hint) channelLogger.debug({ hint: hint.trim() }, "skill hint injected");
 
-          // 1. Deliver to Claude immediately — don't wait for Telegram HTTP
-          this.ctx.mcp.notification({
-            method: "notifications/claude/channel",
-            params: {
-              content: enrichedContent,
-              meta: {
-                chat_id: row.chat_id,
-                user: row.from_user,
-                message_id: row.message_id || undefined,
-                ts: new Date(row.created_at).toISOString(),
-                attachments: row.attachments ?? undefined,
+          // 1. Deliver to Claude immediately — don't wait for Telegram HTTP.
+          // Capped at 5s: the SDK's internal stdout drain-wait can hang indefinitely
+          // if Claude's stdin pipe is saturated or its process is dead.
+          withDeadline(
+            this.ctx.mcp.notification({
+              method: "notifications/claude/channel",
+              params: {
+                content: enrichedContent,
+                meta: {
+                  chat_id: row.chat_id,
+                  user: row.from_user,
+                  message_id: row.message_id || undefined,
+                  ts: new Date(row.created_at).toISOString(),
+                  attachments: row.attachments ?? undefined,
+                },
               },
-            },
-          }).catch((err) => channelLogger.warn({ err }, "mcp.notification failed"));
+            }),
+            5_000,
+            "mcp.notification",
+          ).catch((err) => channelLogger.warn({ err }, "mcp.notification failed"));
           channelLogger.info({ phase: "poller", step: "notification-sent", msgId: row.id, chatId: row.chat_id, elapsedMs: Date.now() - tDequeue, totalFromQueueMs: Date.now() - new Date(row.created_at).getTime() }, "perf");
 
           // ⚡ — message taken into work by Claude Code (upgrades 👀 to ⚡)
@@ -181,13 +200,17 @@ export class MessageQueuePoller {
           this.touchIdleTimer();
 
           // 2. Reset any leftover status from a previous turn, then create a fresh
-          //    one for this request — ensures each user message gets its own message
-          await this.status.deleteStatusMessage(row.chat_id);
+          //    one for this request — ensures each user message gets its own message.
+          // Both calls are capped at 4s: Telegram HTTP retries (up to 60s total) can
+          // block the poller loop and prevent Claude's tool-call responses from being
+          // processed, causing a deadlock. If the deadline fires we log and continue —
+          // losing the status message is preferable to a hung session.
+          await withDeadline(this.status.deleteStatusMessage(row.chat_id), 4_000, "deleteStatusMessage");
           this.status.startTypingForChat(row.chat_id);
           const stage = carriedOverChats.has(row.chat_id)
             ? "➕ Догнал ещё один вопрос"
             : "Thinking...";
-          await this.status.sendStatusMessage(row.chat_id, stage);
+          await withDeadline(this.status.sendStatusMessage(row.chat_id, stage), 4_000, "sendStatusMessage");
 
           // 3. Start progress monitor — status is now registered, updates will land
           this.status.startProgressMonitorForChat(row.chat_id).catch(() => {});
