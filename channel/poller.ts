@@ -169,7 +169,27 @@ export class MessageQueuePoller {
           const enrichedContent = `${ttsNote}${hint}${row.content}`;
           if (hint) channelLogger.debug({ hint: hint.trim() }, "skill hint injected");
 
-          // 1. Deliver to Claude immediately — don't wait for Telegram HTTP.
+          // ⚡ — message taken into work by Claude Code (upgrades 👀 to ⚡)
+          const token = this.ctx.token?.();
+          const telegramMsgId = row.message_id ? Number(row.message_id) : null;
+          if (token && telegramMsgId && !isNaN(telegramMsgId)) {
+            setTelegramReaction(token, row.chat_id, telegramMsgId, "⚡").catch(() => {});
+          }
+          this.touchIdleTimer();
+
+          // 1. Create status message FIRST so it always appears before Claude's reply.
+          // Both calls are capped at 4s: Telegram HTTP retries (up to 60s total) can
+          // block the poller loop and prevent Claude's tool-call responses from being
+          // processed, causing a deadlock. If the deadline fires we log and continue —
+          // losing the status message is preferable to a hung session.
+          await withDeadline(this.status.deleteStatusMessage(row.chat_id), 4_000, "deleteStatusMessage");
+          this.status.startTypingForChat(row.chat_id);
+          const stage = carriedOverChats.has(row.chat_id)
+            ? "➕ Догнал ещё один вопрос"
+            : "Thinking...";
+          await withDeadline(this.status.sendStatusMessage(row.chat_id, stage), 4_000, "sendStatusMessage");
+
+          // 2. Deliver to Claude — status is guaranteed to exist before Claude can reply.
           // Capped at 5s: the SDK's internal stdout drain-wait can hang indefinitely
           // if Claude's stdin pipe is saturated or its process is dead.
           withDeadline(
@@ -190,27 +210,6 @@ export class MessageQueuePoller {
             "mcp.notification",
           ).catch((err) => channelLogger.warn({ err }, "mcp.notification failed"));
           channelLogger.info({ phase: "poller", step: "notification-sent", msgId: row.id, chatId: row.chat_id, elapsedMs: Date.now() - tDequeue, totalFromQueueMs: Date.now() - new Date(row.created_at).getTime() }, "perf");
-
-          // ⚡ — message taken into work by Claude Code (upgrades 👀 to ⚡)
-          const token = this.ctx.token?.();
-          const telegramMsgId = row.message_id ? Number(row.message_id) : null;
-          if (token && telegramMsgId && !isNaN(telegramMsgId)) {
-            setTelegramReaction(token, row.chat_id, telegramMsgId, "⚡").catch(() => {});
-          }
-          this.touchIdleTimer();
-
-          // 2. Reset any leftover status from a previous turn, then create a fresh
-          //    one for this request — ensures each user message gets its own message.
-          // Both calls are capped at 4s: Telegram HTTP retries (up to 60s total) can
-          // block the poller loop and prevent Claude's tool-call responses from being
-          // processed, causing a deadlock. If the deadline fires we log and continue —
-          // losing the status message is preferable to a hung session.
-          await withDeadline(this.status.deleteStatusMessage(row.chat_id), 4_000, "deleteStatusMessage");
-          this.status.startTypingForChat(row.chat_id);
-          const stage = carriedOverChats.has(row.chat_id)
-            ? "➕ Догнал ещё один вопрос"
-            : "Thinking...";
-          await withDeadline(this.status.sendStatusMessage(row.chat_id, stage), 4_000, "sendStatusMessage");
 
           // 3. Start progress monitor — status is now registered, updates will land
           this.status.startProgressMonitorForChat(row.chat_id).catch(() => {});
