@@ -180,6 +180,21 @@ export async function sendTelegramPhoto(
   return { ok: true, messageId: result?.message_id ?? null };
 }
 
+/**
+ * Telegram's GFM parser requires explicit alignment colons in table separators.
+ * Standard GFM allows |---|---| (left-align is the default), but Telegram only
+ * recognises rows that contain at least one colon, e.g. |:---|:---:|---:|.
+ * This function rewrites bare separator rows like |---|---| → |:---|:---|.
+ */
+function preprocessRichMarkdown(markdown: string): string {
+  return markdown.replace(
+    /^(\|[ \t]*:?-+:?[ \t]*)+\|[ \t]*$/gm,
+    (line) => line.replace(/\|([ \t]*)(:?)([-]+)(:?)([ \t]*)/g, (_, s1, lc, dashes, rc, s2) =>
+      `|${s1}${lc || ":"}${dashes}${rc}${s2}`
+    ),
+  );
+}
+
 export async function sendRichTelegramMessage(
   token: string,
   chatId: string,
@@ -188,7 +203,7 @@ export async function sendRichTelegramMessage(
 ): Promise<{ ok: boolean; messageId: number | null; errorBody?: string }> {
   const res = await telegramRequest(token, "sendRichMessage", {
     chat_id: Number(chatId),
-    rich_message: { markdown },
+    rich_message: { markdown: preprocessRichMarkdown(markdown) },
     ...extra,
   });
   if (!res.ok) return { ok: false, messageId: null, errorBody: res.errorBody };
@@ -206,7 +221,7 @@ export async function editRichTelegramMessage(
   return telegramRequest(token, "editMessageText", {
     chat_id: Number(chatId),
     message_id: messageId,
-    rich_message: { markdown },
+    rich_message: { markdown: preprocessRichMarkdown(markdown) },
     ...extra,
   });
 }
