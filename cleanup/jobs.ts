@@ -142,6 +142,33 @@ export const staleSessionArchival: CleanupJob = {
   },
 };
 
+/**
+ * Delete active_status_messages entries that are older than 4 hours.
+ * These are zombie records left behind when a channel.ts died without calling
+ * deleteStatusMessage — they block the message queue poller (getBusyChats()).
+ * After deletion, pg_notify wakes the affected session pollers immediately.
+ */
+export const staleStatusMessages: CleanupJob = {
+  name: "stale-status-messages",
+  async run(dryRun) {
+    const rows = await sql<{ session_id: number; chat_id: string }[]>`
+      SELECT session_id, chat_id
+      FROM active_status_messages
+      WHERE started_at < NOW() - INTERVAL '4 hours'
+    `;
+    if (dryRun) return { rowsAffected: rows.length };
+
+    for (const row of rows) {
+      await sql`
+        DELETE FROM active_status_messages
+        WHERE session_id = ${row.session_id} AND chat_id = ${row.chat_id}
+      `;
+      await sql`SELECT pg_notify(${"message_queue_" + row.session_id}, '0')`;
+    }
+    return { rowsAffected: rows.length };
+  },
+};
+
 export const ALL_JOBS: CleanupJob[] = [
   messageQueueCleanup,
   logRotation,
@@ -149,6 +176,7 @@ export const ALL_JOBS: CleanupJob[] = [
   memoryTTL,
   orphanCliSessionCleanup,
   staleSessionArchival,
+  staleStatusMessages,
 ];
 
 export interface RunAllResult {
