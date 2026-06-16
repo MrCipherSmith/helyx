@@ -117,6 +117,8 @@ export class StatusManager {
   private responseGuards = new Map<string, ReturnType<typeof setTimeout>>();
   /** Tracks the single "diff" companion message per status session — edited in-place on repeat calls. */
   private diffMessages = new Map<string, number>(); // key → Telegram message_id
+  /** Tracks the single response-guard warning message per key — edited in-place on re-arms instead of sending new messages. */
+  private guardMessages = new Map<string, { messageId: number; chatId: string; extra: Record<string, unknown> }>();
   /** Last timestamp the tmux monitor reported activity — tracked even without an active status
    *  so schedulePostReplyCheck can detect if Claude is still working after an early reply. */
   private lastMonitorActivity = new Map<string, number>();
@@ -181,20 +183,34 @@ export class StatusManager {
 
       // Case 2: last known tmux state looked active but went quiet.
       // Claude is probably in a long thinking or tool phase — not stuck yet.
+      // Edit the existing guard message in-place (silent update) to avoid spamming new messages.
       if (looksActive) {
         channelLogger.warn({ chatId, silentMs, stage: stageText }, "response guard: long thinking, re-arming");
-        await sendTelegramMessage(
-          token,
-          effectiveChatId,
-          `⏳ Claude думает уже 5+ мин. Последняя активность: ${silentStr} назад.\n/session — статус сессии`,
-          extra,
-        );
+        const guardText = `⏳ Claude думает уже 5+ мин. Последняя активность: ${silentStr} назад.\n/session — статус сессии`;
+        const existing = this.guardMessages.get(key);
+        if (existing) {
+          const edited = await editTelegramMessage(token, existing.chatId, existing.messageId, guardText, existing.extra);
+          if (!edited.ok) {
+            // Message was deleted externally — send a fresh one
+            const sent = await sendTelegramMessage(token, effectiveChatId, guardText, extra);
+            if (sent.messageId) this.guardMessages.set(key, { messageId: sent.messageId, chatId: effectiveChatId, extra });
+            else this.guardMessages.delete(key);
+          }
+        } else {
+          const sent = await sendTelegramMessage(token, effectiveChatId, guardText, extra);
+          if (sent.messageId) this.guardMessages.set(key, { messageId: sent.messageId, chatId: effectiveChatId, extra });
+        }
         this.armResponseGuard(chatId);
         return;
       }
 
       // Case 3: no recent activity and no active-looking stage — likely stuck.
       channelLogger.warn({ chatId, silentMs, stage: stageText }, "response guard: no activity, likely stuck");
+      const guardEntry = this.guardMessages.get(key);
+      if (guardEntry && token) {
+        deleteTelegramMessage(token, guardEntry.chatId, guardEntry.messageId);
+        this.guardMessages.delete(key);
+      }
       await this.deleteStatusMessage(chatId);
       await sendTelegramMessage(
         token,
@@ -213,6 +229,12 @@ export class StatusManager {
     if (timer) {
       clearTimeout(timer);
       this.responseGuards.delete(key);
+    }
+    const guardEntry = this.guardMessages.get(key);
+    if (guardEntry) {
+      const token = this.ctx.token();
+      if (token) deleteTelegramMessage(token, guardEntry.chatId, guardEntry.messageId);
+      this.guardMessages.delete(key);
     }
   }
 
