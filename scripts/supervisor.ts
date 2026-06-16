@@ -14,6 +14,7 @@
  *  3. Voice cleanup       — voice_status_messages >3 min → edit Telegram + delete
  *  4. Status broadcast    — every 5 min (delete old + send new for notification)
  *  5. Idle auto-compact   — sessions idle >IDLE_COMPACT_MIN min with ≥10 msgs → summarize + clear
+ *  6. Gemma health analyst — every 10 min, holistic snapshot → Gemma → digest if problems found
  *
  * Alerting: Telegram topic SUPERVISOR_CHAT_ID / SUPERVISOR_TOPIC_ID (from .env).
  *           If not set, alerts are logged only.
@@ -722,6 +723,218 @@ async function checkIdleSessions(sql: postgres.Sql): Promise<void> {
   }
 }
 
+// --- Loop 6: Gemma health analyst ---
+
+const GEMMA_HEALTH_DEDUP_MS = 10 * 60 * 1000; // 10 min — same key not re-alerted
+const gemmaHealthAlertedAt = new Map<string, number>();
+
+interface SystemSnapshot {
+  activeSessions: { project: string; lastActiveAgo: string }[];
+  stuckStatusMessages: { project: string; stuckMin: number }[];
+  pendingQueueItems: { project: string; oldestAgo: string }[];
+  processHealth: { name: string; status: string }[];
+  tmuxSessions: string;
+  dockerContainers: string;
+}
+
+async function collectSystemSnapshot(sql: postgres.Sql): Promise<SystemSnapshot> {
+  const [sessions, stuckStatus, pendingQueue, processes] = await Promise.all([
+    sql`
+      SELECT project, last_active,
+        EXTRACT(EPOCH FROM (NOW() - last_active))::int AS stale_sec
+      FROM sessions
+      WHERE status = 'active' AND id != 0
+      ORDER BY last_active ASC
+      LIMIT 10
+    `.catch(() => [] as any[]),
+
+    sql`
+      SELECT project_name AS project,
+        EXTRACT(EPOCH FROM (NOW() - updated_at))::int / 60 AS stuck_min
+      FROM active_status_messages
+      WHERE updated_at < NOW() - INTERVAL '5 minutes'
+      ORDER BY updated_at ASC
+      LIMIT 5
+    `.catch(() => [] as any[]),
+
+    sql`
+      SELECT s.project,
+        MIN(EXTRACT(EPOCH FROM (NOW() - mq.created_at))::int) AS oldest_sec
+      FROM message_queue mq
+      JOIN sessions s ON s.id = mq.session_id
+      WHERE mq.delivered = false
+        AND mq.created_at < NOW() - INTERVAL '2 minutes'
+      GROUP BY s.project
+      LIMIT 5
+    `.catch(() => [] as any[]),
+
+    sql`
+      SELECT name, status
+      FROM process_health
+      WHERE updated_at > NOW() - INTERVAL '5 minutes'
+      ORDER BY name
+    `.catch(() => [] as any[]),
+  ]);
+
+  // tmux sessions
+  let tmuxSessions = "unavailable";
+  try {
+    const proc = Bun.spawn(["tmux", "ls"], { stdout: "pipe", stderr: "pipe" });
+    const out = await new Response(proc.stdout).text().catch(() => "");
+    tmuxSessions = out.trim() || "no sessions";
+  } catch { /* tmux not available */ }
+
+  // Docker containers via docker CLI (supervisor runs outside Docker context)
+  let dockerContainers = "unavailable";
+  try {
+    const proc = Bun.spawn(
+      ["docker", "ps", "--format", "{{.Names}}\t{{.Status}}"],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    const out = await new Response(proc.stdout).text().catch(() => "");
+    dockerContainers = out.trim() || "no containers";
+  } catch { /* docker not available */ }
+
+  return {
+    activeSessions: (sessions as any[]).map((r) => ({
+      project: r.project as string,
+      lastActiveAgo: `${Math.round(Number(r.stale_sec) / 60)}m ago`,
+    })),
+    stuckStatusMessages: (stuckStatus as any[]).map((r) => ({
+      project: r.project as string,
+      stuckMin: Math.round(Number(r.stuck_min)),
+    })),
+    pendingQueueItems: (pendingQueue as any[]).map((r) => ({
+      project: r.project as string,
+      oldestAgo: `${Math.round(Number(r.oldest_sec) / 60)}m ago`,
+    })),
+    processHealth: (processes as any[]).map((r) => ({
+      name: r.name as string,
+      status: r.status as string,
+    })),
+    tmuxSessions,
+    dockerContainers,
+  };
+}
+
+function formatSnapshotForGemma(snap: SystemSnapshot): string {
+  const lines: string[] = ["=== Helyx system snapshot ===\n"];
+
+  lines.push(`Active sessions (${snap.activeSessions.length}):`);
+  if (snap.activeSessions.length === 0) {
+    lines.push("  none");
+  } else {
+    for (const s of snap.activeSessions) lines.push(`  ${s.project}: last active ${s.lastActiveAgo}`);
+  }
+
+  lines.push(`\nStuck status messages (spinner > 5 min):`);
+  if (snap.stuckStatusMessages.length === 0) {
+    lines.push("  none");
+  } else {
+    for (const s of snap.stuckStatusMessages) lines.push(`  ${s.project}: stuck ${s.stuckMin} min`);
+  }
+
+  lines.push(`\nPending queue items (> 2 min undelivered):`);
+  if (snap.pendingQueueItems.length === 0) {
+    lines.push("  none");
+  } else {
+    for (const s of snap.pendingQueueItems) lines.push(`  ${s.project}: oldest ${s.oldestAgo}`);
+  }
+
+  lines.push(`\nProcess health:`);
+  if (snap.processHealth.length === 0) {
+    lines.push("  no data");
+  } else {
+    for (const p of snap.processHealth) lines.push(`  ${p.name}: ${p.status}`);
+  }
+
+  lines.push(`\ntmux sessions:\n  ${snap.tmuxSessions.replace(/\n/g, "\n  ")}`);
+  lines.push(`\nDocker containers:\n  ${snap.dockerContainers.replace(/\n/g, "\n  ")}`);
+
+  return lines.join("\n");
+}
+
+async function callGemmaForHealth(snapshot: string): Promise<{ ok: boolean; digest: string }> {
+  const model = process.env.SUMMARIZE_MODEL || process.env.OLLAMA_CHAT_MODEL || "gemma4:e4b";
+  const system = "Ты — аналитик здоровья системы Helyx. Прочитай снапшот состояния. Если всё в норме — ответь только словом OK. Если есть проблемы — кратко опиши их в 2–5 пунктах на русском. Не рассуждай, не задавай вопросы, только факты об обнаруженных проблемах.";
+
+  try {
+    const res = await fetch(`${OLLAMA_URL}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model,
+        think: false,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: snapshot },
+        ],
+        stream: false,
+        options: { num_predict: 300, temperature: 0.2 },
+      }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) return { ok: true, digest: "" };
+    const data = await res.json() as { message?: { content?: string } };
+    const text = (data.message?.content ?? "")
+      .replace(/<think>[\s\S]*?<\/think>/g, "")
+      .trim();
+    if (!text || text.toUpperCase().startsWith("OK")) return { ok: true, digest: "" };
+    return { ok: false, digest: text };
+  } catch {
+    return { ok: true, digest: "" }; // Ollama unavailable — skip silently
+  }
+}
+
+async function checkGemmaHealth(sql: postgres.Sql): Promise<void> {
+  const t0 = Date.now();
+  let snapshot: SystemSnapshot;
+  try {
+    snapshot = await collectSystemSnapshot(sql);
+  } catch (err: any) {
+    console.error(`[gemma-health] snapshot collection failed: ${err?.message}`);
+    return;
+  }
+
+  const snapshotText = formatSnapshotForGemma(snapshot);
+  const result = await callGemmaForHealth(snapshotText);
+  const elapsed = Date.now() - t0;
+
+  // Update process_health regardless of result
+  const healthStatus = result.ok ? "ok" : "degraded";
+  sql`
+    INSERT INTO process_health (name, status, detail, updated_at)
+    VALUES ('gemma-health', ${healthStatus}, ${sql.json({ elapsed_ms: elapsed })}, NOW())
+    ON CONFLICT (name) DO UPDATE
+      SET status = EXCLUDED.status, detail = EXCLUDED.detail, updated_at = NOW()
+  `.catch(() => {});
+
+  if (result.ok) {
+    console.log(`[gemma-health] OK (${elapsed}ms)`);
+    return;
+  }
+
+  console.warn(`[gemma-health] issues detected (${elapsed}ms):\n${result.digest}`);
+
+  // Dedup by digest hash (simple: first 80 chars as key)
+  const dedupKey = `gemma-health:${result.digest.slice(0, 80)}`;
+  const lastAt = gemmaHealthAlertedAt.get(dedupKey) ?? 0;
+  if (Date.now() - lastAt < GEMMA_HEALTH_DEDUP_MS) {
+    console.log(`[gemma-health] deduped, skipping Telegram alert`);
+    return;
+  }
+  gemmaHealthAlertedAt.set(dedupKey, Date.now());
+
+  if (!BOT_TOKEN || !SUPERVISOR_CHAT_ID) return;
+
+  await tgPost("sendMessage", {
+    chat_id: SUPERVISOR_CHAT_ID,
+    ...(SUPERVISOR_TOPIC_ID ? { message_thread_id: SUPERVISOR_TOPIC_ID } : {}),
+    text: `🔍 <b>Gemma Health</b>\n\n${result.digest}`,
+    parse_mode: "HTML",
+  }).catch((err: any) => console.error(`[gemma-health] Telegram post failed: ${err?.message}`));
+}
+
 // --- Main entry point ---
 
 export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
@@ -787,6 +1000,15 @@ export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
   }, 30 * 60_000);
   idleTimer.unref?.();
 
+  // Loop 6: Gemma health analyst — every 10 min
+  let gemmaHealthRunning = false;
+  const gemmaHealthTimer = setInterval(() => {
+    if (gemmaHealthRunning) return;
+    gemmaHealthRunning = true;
+    checkGemmaHealth(sql).catch(() => {}).finally(() => { gemmaHealthRunning = false; });
+  }, 10 * 60_000);
+  gemmaHealthTimer.unref?.();
+
   // Run initial checks after a short delay (let admin-daemon settle first)
   setTimeout(() => {
     checkHungSessions(sql, runShell).catch(() => {});
@@ -794,7 +1016,9 @@ export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
     updateProcessHealth(sql).catch(() => {});
     // First status broadcast after 30s settle time
     setTimeout(() => sendStatusBroadcast(sql, runShell).catch(() => {}), 20_000);
+    // First Gemma health check after 2 min (give system time to stabilize)
+    setTimeout(() => checkGemmaHealth(sql).catch(() => {}), 2 * 60_000);
   }, 10_000);
 
-  console.error(`[supervisor] watchdog running (session:60s, queue:60s, voice:5min, status:5min, idle-compact:30min/${IDLE_COMPACT_MIN}min-threshold)`);
+  console.error(`[supervisor] watchdog running (session:60s, queue:60s, voice:5min, status:5min, idle-compact:30min/${IDLE_COMPACT_MIN}min-threshold, gemma-health:10min)`);
 }
