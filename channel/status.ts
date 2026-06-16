@@ -189,9 +189,10 @@ export class StatusManager {
         const guardText = `⏳ Claude думает уже 5+ мин. Последняя активность: ${silentStr} назад.\n/session — статус сессии`;
         const existing = this.guardMessages.get(key);
         if (existing) {
-          const edited = await editTelegramMessage(token, existing.chatId, existing.messageId, guardText, existing.extra);
+          // editMessageText does NOT accept message_thread_id — pass no extra to avoid 400 error
+          const edited = await editTelegramMessage(token, existing.chatId, existing.messageId, guardText);
           if (!edited.ok) {
-            // Message was deleted externally — send a fresh one
+            channelLogger.warn({ error: edited.errorBody }, "response guard: edit failed, sending fresh message");
             const sent = await sendTelegramMessage(token, effectiveChatId, guardText, extra);
             if (sent.messageId) this.guardMessages.set(key, { messageId: sent.messageId, chatId: effectiveChatId, extra });
             else this.guardMessages.delete(key);
@@ -339,7 +340,7 @@ export class StatusManager {
     return isActive ? "" : `📌 ${this.ctx.sessionName()} · `;
   }
 
-  async sendStatusMessage(chatId: string, stage: string): Promise<string | null> {
+  async sendStatusMessage(chatId: string, stage: string, replyToMsgId?: number): Promise<string | null> {
     const token = this.ctx.token();
     if (!token) {
       channelLogger.warn("sendStatusMessage: no TELEGRAM_BOT_TOKEN");
@@ -368,7 +369,11 @@ export class StatusManager {
     try {
       const t0 = Date.now();
       const initialText = formatStatusText(`${prefix}${stage}`, "0s", "", null, SPINNER_FRAMES[0]);
-      const extra: Record<string, unknown> = { parse_mode: "HTML", ...(forum?.extra ?? {}) };
+      const extra: Record<string, unknown> = {
+        parse_mode: "HTML",
+        ...(forum?.extra ?? {}),
+        ...(replyToMsgId ? { reply_parameters: { message_id: replyToMsgId } } : {}),
+      };
       const result = await sendTelegramMessage(token, effectiveChatId, initialText, extra);
       const tgRtt = Date.now() - t0;
       if (!result.ok) {

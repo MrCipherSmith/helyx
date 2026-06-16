@@ -187,7 +187,7 @@ export class MessageQueuePoller {
           const stage = carriedOverChats.has(row.chat_id)
             ? "➕ Догнал ещё один вопрос"
             : "Thinking...";
-          await withDeadline(this.status.sendStatusMessage(row.chat_id, stage), 4_000, "sendStatusMessage");
+          await withDeadline(this.status.sendStatusMessage(row.chat_id, stage, telegramMsgId ?? undefined), 4_000, "sendStatusMessage");
 
           // 2. Deliver to Claude — status is guaranteed to exist before Claude can reply.
           // Capped at 5s: the SDK's internal stdout drain-wait can hang indefinitely
