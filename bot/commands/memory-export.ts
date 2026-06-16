@@ -1,4 +1,5 @@
 import type { Context } from "grammy";
+import { InputFile } from "grammy";
 import { sql } from "../../memory/db.ts";
 import { sessionManager } from "../../sessions/manager.ts";
 import { rememberSmart } from "../../memory/long-term.ts";
@@ -80,7 +81,7 @@ export async function handleMemoryExport(ctx: Context): Promise<void> {
     : `memories-${Date.now()}.json`;
 
   await ctx.replyWithDocument(
-    { source: Buffer.from(json, "utf8"), filename },
+    new InputFile(Buffer.from(json, "utf8"), filename),
     { caption: `Exported ${rows.length} memories${projectFilter ? ` (project: ${projectFilter})` : ""}` },
   );
 }

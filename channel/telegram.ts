@@ -129,7 +129,7 @@ export async function sendTelegramPoll(
   });
   if (!res.ok) return { ok: false, errorBody: res.errorBody };
   const result = res.result as { message_id?: number; poll?: { id?: string } } | undefined;
-  return { ok: true, messageId: result?.message_id ?? null, pollId: result?.poll?.id ?? null };
+  return { ok: true, messageId: result?.message_id ?? undefined, pollId: result?.poll?.id ?? undefined };
 }
 
 export async function sendTelegramPhoto(

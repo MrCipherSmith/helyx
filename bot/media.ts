@@ -364,8 +364,6 @@ export async function handleVoice(ctx: Context): Promise<void> {
           await addMessage({ sessionId: route.sessionId, projectPath: route.projectPath, chatId, role: "assistant", content: response });
           maybeAttachVoice(bot, ctx.chat!.id, response, isForumMessage ? forumTopicId : null);
           touchIdleTimer(route.sessionId, chatId, route.projectPath);
-        } else {
-          appendLog(route.sessionId, chatId, "voice", `no handler for mode=${route.mode}`, "warn");
         }
       } else {
         appendLog(route.sessionId, chatId, "voice", "transcription failed", "error");

@@ -87,7 +87,7 @@ describe("Ollama summary contract", () => {
   test("getOllamaSummary returns empty string when Ollama is unreachable", async () => {
     // We test the *shape* of the fallback. The real function catches all errors → "".
     // Simulate by pointing at an unreachable URL.
-    const { getOllamaSummaryForTest } = await import("../../bot/commands/supervisor-actions.ts").catch(() => ({ getOllamaSummaryForTest: undefined }));
+    const { getOllamaSummaryForTest } = await import("../../bot/commands/supervisor-actions.ts").catch(() => ({ getOllamaSummaryForTest: undefined } as any));
     // If the export doesn't exist, the contract is verified by code review — skip gracefully.
     if (!getOllamaSummaryForTest) return;
     const result = await getOllamaSummaryForTest("http://localhost:1", {

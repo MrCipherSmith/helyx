@@ -1,4 +1,5 @@
 import type { Context } from "grammy";
+import { InputFile } from "grammy";
 import { sessionManager } from "../../sessions/manager.ts";
 import { sql } from "../../memory/db.ts";
 import { getApiStats, getTranscriptionStats, getMessageStats, getSessionLogs } from "../../utils/stats.ts";
@@ -489,7 +490,7 @@ export async function handleSessionExport(ctx: Context): Promise<void> {
     + (capped ? `\n⚠️ Capped at ${MAX_ROWS} rows per type` : "");
 
   await ctx.replyWithDocument(
-    { source: Buffer.from(markdown, "utf8"), filename },
+    new InputFile(Buffer.from(markdown, "utf8"), filename),
     { caption },
   );
 }

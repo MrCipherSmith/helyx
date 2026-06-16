@@ -52,9 +52,9 @@ describe("v1.32.1 jsonb cast fix", () => {
     const sql = await getSql();
     const clientId = `__test_${RUN_TAG}__`;
     const session = await sessionManager.register(
+      clientId,
       `name-${RUN_TAG}`,
       "/tmp/fake",
-      clientId,
       { from: "regression-test", marker: RUN_TAG },
       { ide: "test", session_index: 1 },
     );

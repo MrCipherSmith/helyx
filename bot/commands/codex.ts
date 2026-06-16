@@ -20,7 +20,8 @@ export async function handleCodexSetup(ctx: Context): Promise<void> {
     });
 
     // Read stdout until we get the URL and code (or timeout)
-    const reader = proc.stdout.getReader();
+    if (!proc.stdout || typeof proc.stdout === "number") throw new Error("stdout unavailable");
+    const reader = (proc.stdout as ReadableStream<Uint8Array>).getReader();
     const decoder = new TextDecoder();
     let buffer = "";
     const deadline = Date.now() + 30_000;

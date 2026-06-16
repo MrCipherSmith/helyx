@@ -1282,7 +1282,7 @@ async function connect(dir?: string) {
 async function installMcpSharedServices(): Promise<void> {
   const home = process.env.HOME ?? homedir();
   const npx = await run(["which", "npx"], { silent: true });
-  const npxBin = npx.stdout?.trim() || "/usr/bin/npx";
+  const npxBin = npx.output?.trim() || "/usr/bin/npx";
   const nodeBin = basename(dirname(npxBin));
   const nodeDir = dirname(npxBin);
 

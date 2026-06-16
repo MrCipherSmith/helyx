@@ -89,7 +89,7 @@ export async function streamToTelegram(
 
   // Keep typing indicator alive during long responses (Telegram clears it after ~5s).
   const typing = startTyping(() =>
-    bot.api.sendChatAction(Number(chatId), "typing", threadId ? { message_thread_id: threadId } : undefined),
+    async () => { await bot.api.sendChatAction(Number(chatId), "typing", threadId ? { message_thread_id: threadId } : undefined); },
   );
 
   try {

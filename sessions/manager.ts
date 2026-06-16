@@ -78,9 +78,9 @@ export class SessionManager {
         ${projectPath ?? null},
         ${clientId},
         'active',
-        ${sql.json(metadata ?? {})},
+        ${sql.json(metadata ?? {} as any)},
         'claude',
-        ${sql.json(cliConfig ?? {})}
+        ${sql.json(cliConfig ?? {} as any)}
       )
       ON CONFLICT (client_id) DO UPDATE SET
         status = 'active',
@@ -282,7 +282,7 @@ export class SessionManager {
     const rows = await sql`SELECT cli_config FROM sessions WHERE id = ${sessionId}`;
     const current = normalizeCLIConfig(rows[0]?.cli_config);
     const updated = { ...current, ...patch };
-    await sql`UPDATE sessions SET cli_config = ${sql.json(updated)} WHERE id = ${sessionId}`;
+    await sql`UPDATE sessions SET cli_config = ${sql.json(updated as any)} WHERE id = ${sessionId}`;
   }
 
   async list(includeUnnamed = false): Promise<Session[]> {

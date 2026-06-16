@@ -37,7 +37,7 @@ export interface PollerContext {
 export class MessageQueuePoller {
   private polling = true;
   private wakeResolve: (() => void) | null = null;
-  private listenSql: import("postgres").default | null = null;
+  private listenSql: postgres.Sql | null = null;
   /**
    * Chats whose pending message was skipped because Claude was mid-turn.
    * Drained when the chat becomes free and we deliver the deferred row —
