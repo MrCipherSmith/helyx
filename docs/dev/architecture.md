@@ -135,7 +135,7 @@ Claude Code's `settings.json` registers `channel.ts` as an MCP server named `hel
 
 **Secondary flow (tool calls):** Claude Code → reply, remember, recall, permissions, TTS, polls
 
-Tools exposed: `reply`, `remember`, `recall`, `forget`, `update_status`, `list_memories`, `search_project_context`, `scan_project_knowledge`, `react`, `edit_message`, `send_poll`, `skill_view`, `propose_skill`, `save_skill`, `list_agent_skills`, `curator_run`, `curator_status` (19 tools total).
+Tools exposed: `reply`, `remember`, `recall`, `forget`, `update_status`, `list_memories`, `search_project_context`, `scan_project_knowledge`, `react`, `edit_message`, `send_photo`, `send_poll`, `skill_view`, `propose_skill`, `save_skill`, `list_agent_skills`, `curator_run`, `curator_status` (18 tools total).
 
 Permission gating runs exclusively on this transport: when Claude Code is about to perform a destructive operation, it emits a `notifications/claude/channel/permission_request` notification. `PermissionHandler` intercepts it, checks auto-approve patterns, and if no match, sends an interactive Telegram message with `✅ Yes / ✅ Always / ❌ No` buttons and polls `permission_requests` at 500 ms until the user responds.
 
@@ -147,7 +147,7 @@ Claude Code's `settings.json` also registers `http://localhost:3847/mcp` as an M
 
 **Primary flow (outbound):** Claude Code tool calls → bot/DB/Telegram
 
-Tools exposed: `remember`, `recall`, `forget`, `list_memories`, `reply`, `react`, `edit_message`, `list_sessions`, `session_info`, `set_session_name`, `scan_project_knowledge`, `search_project_context`, `skill_view`, `propose_skill`, `save_skill`, `list_agent_skills`, `curator_run`, `curator_status` (18 tools total).
+Tools exposed: `remember`, `recall`, `forget`, `list_memories`, `reply`, `react`, `edit_message`, `send_photo`, `list_sessions`, `session_info`, `set_session_name`, `scan_project_knowledge`, `search_project_context`, `skill_view`, `propose_skill`, `save_skill`, `list_agent_skills`, `curator_run`, `curator_status` (19 tools total).
 
 The key session-linking tool is `set_session_name`, which Claude Code calls at startup. The `SessionManager.adoptOrRename()` method finds the `channel.ts` session for the same `project_path` and links both MCP transports to the same DB session record, so tool calls from either transport share the same session context and memory.
 
@@ -370,7 +370,7 @@ The Telegram Login Widget verification follows the official Telegram spec: the s
 - **Validation**: Zod schemas in `config.ts` (Docker-side) and `ChannelEnvSchema` in `channel/index.ts` (host-side). Both fail fast on startup if required vars are missing.
 - **Secrets**: environment variables only; `.env` file is loaded by `channel.ts` and `admin-daemon.ts` at startup, skipping keys already set in the shell environment.
 - **Per-project config**: `~/.claude/projects/<encoded-path>/settings.local.json` stores per-project auto-approve patterns. The Docker container mounts the host `~/.claude/` directory via `HOST_CLAUDE_CONFIG`.
-- **DB migrations**: `memory/db.ts` validates the migration registry for uniqueness and strictly ascending version order on every startup before applying pending migrations. Current schema version: 43.
+- **DB migrations**: `memory/db.ts` validates the migration registry for uniqueness and strictly ascending version order on every startup before applying pending migrations. Current schema version: 44.
 
 ### Error Recovery
 

@@ -204,6 +204,16 @@ Edit a previously sent bot message. Attempts HTML parse mode first; falls back t
 | `message_id` | number | Yes | Message ID to edit |
 | `text` | string | Yes | New message text |
 
+### `send_photo`
+
+Send a photo to a Telegram chat. Accepts a public image URL (Telegram downloads it directly) or an absolute local file path for locally downloaded images.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `chat_id` | string | Yes | Telegram chat ID |
+| `url` | string | Yes | Public image URL (`https://…`) or absolute local file path (`/tmp/image.jpg`) |
+| `caption` | string | No | Optional caption text (supports Markdown) |
+
 ### `send_poll`
 
 Send one or more Telegram polls to the user for multi-choice clarification. Creates a `poll_sessions` DB record; user answers are collected by the bot and returned as a follow-up message to Claude.
@@ -265,7 +275,7 @@ Get recent curator run history.
 
 The HTTP MCP server (`mcp/`) runs **inside the Docker container** on port 3847. Claude Code connects to it over `POST /mcp` (StreamableHTTP transport). Access is restricted to loopback and Docker bridge networks (`172.16.0.0/12`); no external callers can reach this surface.
 
-The tool surface is the same 16 tools as the stdio adapter, but the schemas have additional parameters available here. Key differences from the channel adapter:
+The HTTP server exposes **19 tools**. 16 are shared with the stdio adapter; the HTTP server adds `list_sessions`, `session_info`, and `set_session_name`, while the stdio adapter has `update_status` and `send_poll` instead. Schemas for the shared tools have additional parameters available here. Key differences:
 
 - `remember` accepts a `source` parameter (`telegram`, `cli`, or `api`).
 - `recall` accepts `type` and `tags` filters (not just `query` + `limit`).
@@ -333,6 +343,21 @@ The tool surface is the same 16 tools as the stdio adapter, but the schemas have
 | `message_id` | number | Yes | Message ID to edit |
 | `text` | string | Yes | New text |
 | `parse_mode` | string | No | `Markdown`, `MarkdownV2`, or `HTML` |
+
+#### `send_photo`
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `chat_id` | string | Yes | Telegram chat ID |
+| `url` | string | Yes | Public image URL (`https://…`) or absolute local file path (`/tmp/image.jpg`) |
+| `caption` | string | No | Optional caption text |
+
+#### `scan_project_knowledge`
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `project_path` | string | No | Project directory to scan; defaults to current session project path |
+| `force_rescan` | boolean | No | Archive existing project knowledge and rescan from scratch (default: false) |
 
 #### `list_sessions`
 

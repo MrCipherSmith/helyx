@@ -111,7 +111,7 @@ For media/voice changes, edit `bot/media.ts` and restart the host `channel.ts` s
 
 ### Public API / Exports
 
-No external consumers import from `channel/` — it is a self-contained process. The MCP tool surface (21 tools) is what Claude Code sees.
+No external consumers import from `channel/` — it is a self-contained process. The MCP tool surface (18 tools) is what Claude Code sees.
 
 ### Configuration
 
@@ -153,7 +153,7 @@ To add a new MCP tool: add the handler inside `channel/tools.ts` → `registerTo
 | File | Responsibility |
 |---|---|
 | `mcp/server.ts` | HTTP server factory; routing: `/mcp`, `/api/*`, static files, optional webhook |
-| `mcp/tools.ts` | Tool schema definitions (JSON Schema) + `executeTool()` dispatch for all 16 MCP tools |
+| `mcp/tools.ts` | Tool schema definitions (JSON Schema) + `executeTool()` dispatch for all 19 MCP tools |
 | `mcp/bridge.ts` | In-process registry: MCP transport UUID → McpServer; push-notification sender |
 | `mcp/dashboard-api.ts` | All REST route handlers; static file serving with cache headers and path-traversal protection |
 | `mcp/notification-broadcaster.ts` | SSE client registry; `broadcast(event, data)` to all connected dashboard tabs |
