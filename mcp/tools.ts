@@ -418,15 +418,30 @@ export async function executeTool(
         return text(`Reply blocked by State Matrix (attempt ${replyGate.attempt}/${replyGate.maxAttempts}). Correction queued.`);
       }
 
-      const extra: Record<string, unknown> = { parse_mode: args.parse_mode as any };
-      if (forumTopicId) extra.message_thread_id = forumTopicId;
+      const forumExtra = forumTopicId ? { message_thread_id: forumTopicId } : {};
 
-      const chunks = chunkText(replyText);
-      for (const chunk of chunks) {
-        await bot.api.sendMessage(chatId, chunk, extra as any);
+      // Try rich message first (Bot API 10.1 — GFM: headers, tables, lists, 32768 chars)
+      let richOk = false;
+      try {
+        await bot.api.sendRichMessage({
+          chat_id: chatId,
+          rich_message: { markdown: replyText },
+          ...forumExtra,
+        } as any);
+        richOk = true;
+      } catch {
+        // fall through to chunked HTML path
+      }
+
+      if (!richOk) {
+        const extra: Record<string, unknown> = { parse_mode: args.parse_mode as any, ...forumExtra };
+        const chunks = chunkText(replyText);
+        for (const chunk of chunks) {
+          await bot.api.sendMessage(chatId, chunk, extra as any);
+        }
       }
       maybeAttachVoice(bot, chatId, replyText, forumTopicId);
-      return text(`Sent ${chunks.length} message(s) to chat ${args.chat_id}`);
+      return text(`Sent to chat ${args.chat_id}`);
     }
 
     case "react": {

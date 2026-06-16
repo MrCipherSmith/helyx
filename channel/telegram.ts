@@ -180,6 +180,37 @@ export async function sendTelegramPhoto(
   return { ok: true, messageId: result?.message_id ?? null };
 }
 
+export async function sendRichTelegramMessage(
+  token: string,
+  chatId: string,
+  markdown: string,
+  extra?: Record<string, unknown>,
+): Promise<{ ok: boolean; messageId: number | null; errorBody?: string }> {
+  const res = await telegramRequest(token, "sendRichMessage", {
+    chat_id: Number(chatId),
+    rich_message: { markdown },
+    ...extra,
+  });
+  if (!res.ok) return { ok: false, messageId: null, errorBody: res.errorBody };
+  const result = res.result as { message_id?: number } | undefined;
+  return { ok: true, messageId: result?.message_id ?? null };
+}
+
+export async function editRichTelegramMessage(
+  token: string,
+  chatId: string,
+  messageId: number,
+  markdown: string,
+  extra?: Record<string, unknown>,
+): Promise<{ ok: boolean; errorBody?: string }> {
+  return telegramRequest(token, "editMessageText", {
+    chat_id: Number(chatId),
+    message_id: messageId,
+    rich_message: { markdown },
+    ...extra,
+  });
+}
+
 export async function setTelegramReaction(
   token: string,
   chatId: string,

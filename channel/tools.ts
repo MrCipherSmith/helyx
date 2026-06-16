@@ -8,7 +8,7 @@ import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { markdownToTelegramHtml } from "../bot/format.ts";
 import type { StatusManager } from "./status.ts";
-import { sendTelegramMessage, setTelegramReaction, editTelegramMessage, sendTelegramPoll, deleteTelegramMessage, sendTelegramPhoto } from "./telegram.ts";
+import { sendTelegramMessage, sendRichTelegramMessage, setTelegramReaction, editTelegramMessage, editRichTelegramMessage, sendTelegramPoll, deleteTelegramMessage, sendTelegramPhoto } from "./telegram.ts";
 import { maybeAttachVoiceRaw, shouldSendVoice } from "../utils/tts.ts";
 import { channelLogger } from "../logger.ts";
 import { scanProjectKnowledge } from "../memory/project-scanner.ts";
@@ -384,30 +384,41 @@ export function registerTools(
         }
 
         channelLogger.info({ chatId, preview: replyText.slice(0, 50) }, "sending reply");
-        const htmlText = markdownToTelegramHtml(replyText);
 
         const replyMarkup = (!isActiveDm && sessionId)
           ? { inline_keyboard: [[{ text: "↩️ Switch and reply", callback_data: `switch:${sessionId}` }]] }
           : undefined;
 
-        let res = await sendTelegramMessage(token, chatId, htmlText, {
-          parse_mode: "HTML",
+        const commonExtra = {
           ...forumExtra,
           ...(replyMarkup && { reply_markup: replyMarkup }),
-        });
+        };
+
+        // Try rich message first (Bot API 10.1 — GFM: headers, tables, lists, 32768 chars)
+        let res = await sendRichTelegramMessage(token, chatId, replyText, commonExtra);
 
         if (!res.ok) {
-          if (res.errorBody?.includes("can't parse entities")) {
-            res = await sendTelegramMessage(token, chatId, replyText, { ...forumExtra, ...(replyMarkup && { reply_markup: replyMarkup }) });
-            if (!res.ok) {
-              channelLogger.warn({ error: res.errorBody }, "reply: Telegram API error (fallback)");
+          // Fallback to HTML
+          channelLogger.info({ error: res.errorBody }, "reply: rich failed, falling back to HTML");
+          const htmlText = markdownToTelegramHtml(replyText);
+          res = await sendTelegramMessage(token, chatId, htmlText, {
+            parse_mode: "HTML",
+            ...commonExtra,
+          });
+          if (!res.ok) {
+            if (res.errorBody?.includes("can't parse entities")) {
+              // Fallback to plain text
+              res = await sendTelegramMessage(token, chatId, replyText, commonExtra);
+              if (!res.ok) {
+                channelLogger.warn({ error: res.errorBody }, "reply: Telegram API error (plain fallback)");
+                status.deleteStatusMessage(chatId).catch(() => {});
+                return text(`Telegram API error`);
+              }
+            } else {
+              channelLogger.warn({ error: res.errorBody }, "reply: Telegram API error");
               status.deleteStatusMessage(chatId).catch(() => {});
               return text(`Telegram API error`);
             }
-          } else {
-            channelLogger.warn({ error: res.errorBody }, "reply: Telegram API error");
-            status.deleteStatusMessage(chatId).catch(() => {});
-            return text(`Telegram API error`);
           }
         }
 
@@ -469,14 +480,18 @@ export function registerTools(
       case "edit_message": {
         const token = ctx.token();
         if (!token) return text("TELEGRAM_BOT_TOKEN not set");
-        const htmlText = markdownToTelegramHtml(String(args!.text));
-        // Try HTML first, fall back to plain text if entity parse fails
-        const htmlResult = await editTelegramMessage(token, String(args!.chat_id), Number(args!.message_id), htmlText, { parse_mode: "HTML" });
-        if (!htmlResult.ok && htmlResult.errorBody?.includes("can't parse entities")) {
-          await editTelegramMessage(token, String(args!.chat_id), Number(args!.message_id), String(args!.text));
-        } else if (!htmlResult.ok) {
-          channelLogger.warn({ error: htmlResult.errorBody }, "edit_message: Telegram API error");
-          return text(`Telegram API error: ${htmlResult.errorBody}`);
+        // Try rich edit first (Bot API 10.1 — GFM support)
+        const richResult = await editRichTelegramMessage(token, String(args!.chat_id), Number(args!.message_id), String(args!.text));
+        if (!richResult.ok) {
+          channelLogger.info({ error: richResult.errorBody }, "edit_message: rich failed, falling back to HTML");
+          const htmlText = markdownToTelegramHtml(String(args!.text));
+          const htmlResult = await editTelegramMessage(token, String(args!.chat_id), Number(args!.message_id), htmlText, { parse_mode: "HTML" });
+          if (!htmlResult.ok && htmlResult.errorBody?.includes("can't parse entities")) {
+            await editTelegramMessage(token, String(args!.chat_id), Number(args!.message_id), String(args!.text));
+          } else if (!htmlResult.ok) {
+            channelLogger.warn({ error: htmlResult.errorBody }, "edit_message: Telegram API error");
+            return text(`Telegram API error: ${htmlResult.errorBody}`);
+          }
         }
         return text(`Message ${args!.message_id} updated`);
       }
