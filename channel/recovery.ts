@@ -6,7 +6,7 @@
  */
 
 import type postgres from "postgres";
-import { editTelegramMessage, sendTelegramMessage } from "./telegram.ts";
+import { editTelegramMessage, sendTelegramMessage, sendRichTelegramMessage } from "./telegram.ts";
 import { markdownToTelegramHtml } from "../bot/format.ts";
 import { channelLogger } from "../logger.ts";
 
@@ -104,14 +104,18 @@ export async function deliverPendingReplies(sql: postgres.Sql, token: string): P
     channelLogger.info({ count: rows.length }, "delivering pending replies");
 
     for (const row of rows) {
-      const htmlText = markdownToTelegramHtml(String(row.text));
       const extra: Record<string, unknown> = {};
       if (row.thread_id) extra.message_thread_id = row.thread_id;
 
-      // Try HTML, fall back to plain text
-      let res = await sendTelegramMessage(token, row.chat_id, htmlText, { parse_mode: "HTML", ...extra });
-      if (!res.ok && res.errorBody?.includes("can't parse entities")) {
-        res = await sendTelegramMessage(token, row.chat_id, String(row.text), extra);
+      // Try rich → HTML → plain (same chain as reply tool)
+      let res = await sendRichTelegramMessage(token, row.chat_id, String(row.text), extra);
+      if (!res.ok) {
+        channelLogger.info({ error: res.errorBody }, "pending reply: rich failed, trying HTML");
+        const htmlText = markdownToTelegramHtml(String(row.text));
+        res = await sendTelegramMessage(token, row.chat_id, htmlText, { parse_mode: "HTML", ...extra });
+        if (!res.ok && res.errorBody?.includes("can't parse entities")) {
+          res = await sendTelegramMessage(token, row.chat_id, String(row.text), extra);
+        }
       }
 
       if (res.ok) {

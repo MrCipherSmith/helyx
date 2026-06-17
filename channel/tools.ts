@@ -443,7 +443,8 @@ export function registerTools(
         if (!token) return text("TELEGRAM_BOT_TOKEN not set");
         const chatId = String(args!.chat_id);
         const photoUrl = String(args!.url);
-        const caption = args!.caption ? String(args!.caption) : undefined;
+        const captionRaw = args!.caption ? String(args!.caption) : undefined;
+        const captionHtml = captionRaw ? markdownToTelegramHtml(captionRaw) : undefined;
 
         const forumChatId = ctx.forumChatId?.();
         let forumTopicId: number | null = null;
@@ -452,8 +453,9 @@ export function registerTools(
           forumTopicId = rows[0]?.forum_topic_id ?? null;
         }
         const forumExtra = forumTopicId ? { message_thread_id: forumTopicId } : {};
+        const captionExtra = captionHtml ? { parse_mode: "HTML" } : {};
 
-        const photoRes = await sendTelegramPhoto(token, chatId, photoUrl, caption, forumExtra);
+        const photoRes = await sendTelegramPhoto(token, chatId, photoUrl, captionHtml ?? captionRaw, { ...forumExtra, ...captionExtra });
         if (!photoRes.ok) {
           channelLogger.warn({ error: photoRes.errorBody }, "send_photo: Telegram API error");
           return text(`send_photo failed: ${photoRes.errorBody}`);
