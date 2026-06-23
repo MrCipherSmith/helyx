@@ -832,12 +832,12 @@ async function checkUnansweredMessages(sql: postgres.Sql): Promise<void> {
       }
       unansweredAlertedAt.set(dedupKey, Date.now());
 
-      // ⚠️ — set warning reaction on the original Telegram message so user sees it's lost
+      // 🔥 — set warning reaction on the original Telegram message so user sees it's lost
       if (telegramMsgId && BOT_TOKEN) {
         await tgPost("setMessageReaction", {
           chat_id: chatId,
           message_id: telegramMsgId,
-          reaction: [{ type: "emoji", emoji: "⚠️" }],
+          reaction: [{ type: "emoji", emoji: "🔥" }],
           is_big: false,
         }).catch(() => {});
       }

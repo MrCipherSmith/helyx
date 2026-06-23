@@ -426,10 +426,10 @@ export function registerTools(
         }
 
         channelLogger.info({ phase: "tools", step: "reply-sent", chatId, t: Date.now() }, "perf");
-        // ✅ — Claude replied successfully (upgrades ⚡ to ✅ on the original user message)
+        // 💯 — Claude replied successfully (replaces ⚡)
         const incomingMsgId = ctx.incomingTgMsgId?.(chatId);
         if (incomingMsgId) {
-          setTelegramReaction(token, chatId, incomingMsgId, "✅").catch(() => {});
+          setTelegramReaction(token, chatId, incomingMsgId, "💯").catch(() => {});
         }
         // Delete status non-blocking — don't await, avoids holding up reply return when
         // Telegram rate-limits editMessageText (can block for 60+ seconds otherwise).

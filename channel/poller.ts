@@ -172,7 +172,7 @@ export class MessageQueuePoller {
           const enrichedContent = `${ttsNote}${hint}${row.content}`;
           if (hint) channelLogger.debug({ hint: hint.trim() }, "skill hint injected");
 
-          // ⚡ — message taken into work by Claude Code (upgrades 👀 to ⚡)
+          // ⚡ — message taken into work by Claude Code (replaces 👀)
           const token = this.ctx.token?.();
           const telegramMsgId = row.message_id ? Number(row.message_id) : null;
           if (token && telegramMsgId && !isNaN(telegramMsgId)) {
