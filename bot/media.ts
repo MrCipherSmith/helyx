@@ -347,6 +347,10 @@ export async function handleVoice(ctx: Context): Promise<void> {
             )
           `;
           appendLog(route.sessionId, chatId, "queue", "voice message queued for CLI");
+          // 👀 — same reaction the text-handler sets; voice handler path skips text-handler
+          if (ctx.message?.message_id) {
+            ctx.api.setMessageReaction(ctx.chat!.id, ctx.message.message_id, [{ type: "emoji", emoji: "👀" }]).catch(() => {});
+          }
           touchIdleTimer(route.sessionId, chatId, route.projectPath);
         } else if (route.mode === "standalone") {
           await addMessage({
