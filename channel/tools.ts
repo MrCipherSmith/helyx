@@ -34,6 +34,9 @@ export interface ToolContext {
   forumTopicId?: () => number | null;
   /** Returns true if the current message was a voice message → force TTS reply */
   forceVoice?: () => boolean;
+  /** Returns the Telegram message_id of the incoming message being processed for this chat.
+   *  Set by the poller at dequeue time; used by reply() to set ✅ reaction on success. */
+  incomingTgMsgId?: (chatId: string) => number | null;
 }
 
 async function embed(text: string, ollamaUrl: string, embeddingModel: string): Promise<number[]> {
@@ -423,6 +426,11 @@ export function registerTools(
         }
 
         channelLogger.info({ phase: "tools", step: "reply-sent", chatId, t: Date.now() }, "perf");
+        // ✅ — Claude replied successfully (upgrades ⚡ to ✅ on the original user message)
+        const incomingMsgId = ctx.incomingTgMsgId?.(chatId);
+        if (incomingMsgId) {
+          setTelegramReaction(token, chatId, incomingMsgId, "✅").catch(() => {});
+        }
         // Delete status non-blocking — don't await, avoids holding up reply return when
         // Telegram rate-limits editMessageText (can block for 60+ seconds otherwise).
         status.deleteStatusMessage(chatId).catch((err) => channelLogger.warn({ err }, "deleteStatusMessage failed"));

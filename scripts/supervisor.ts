@@ -764,7 +764,15 @@ async function checkUnansweredMessages(sql: postgres.Sql): Promise<void> {
            ORDER BY mq2.created_at DESC
            LIMIT 1),
           'user'
-        ) AS from_user
+        ) AS from_user,
+        (SELECT mq3.message_id FROM message_queue mq3
+         WHERE mq3.session_id = s.id
+           AND mq3.chat_id    = m.chat_id
+           AND mq3.delivered  = true
+           AND mq3.message_id IS NOT NULL
+         ORDER BY mq3.created_at DESC
+         LIMIT 1
+        ) AS telegram_msg_id
       FROM sessions s
       JOIN messages m ON m.session_id = s.id
       WHERE s.status = 'active'
@@ -806,13 +814,14 @@ async function checkUnansweredMessages(sql: postgres.Sql): Promise<void> {
     `.catch(() => [] as any[]);
 
     for (const row of rows as any[]) {
-      const project   = String(row.project  ?? "unknown");
-      const sessionId = Number(row.session_id);
-      const chatId    = String(row.chat_id);
-      const content   = String(row.content  ?? "");
-      const fromUser  = String(row.from_user ?? "user");
-      const ageSec    = Number(row.age_sec   ?? 0);
-      const dedupKey  = `unanswered:${sessionId}:${chatId}`;
+      const project       = String(row.project       ?? "unknown");
+      const sessionId     = Number(row.session_id);
+      const chatId        = String(row.chat_id);
+      const content       = String(row.content       ?? "");
+      const fromUser      = String(row.from_user     ?? "user");
+      const ageSec        = Number(row.age_sec       ?? 0);
+      const telegramMsgId = row.telegram_msg_id ? Number(row.telegram_msg_id) : null;
+      const dedupKey      = `unanswered:${sessionId}:${chatId}`;
 
       console.log(`[supervisor] unanswered message: ${project} chat=${chatId} age=${Math.round(ageSec / 60)}min`);
 
@@ -823,12 +832,23 @@ async function checkUnansweredMessages(sql: postgres.Sql): Promise<void> {
       }
       unansweredAlertedAt.set(dedupKey, Date.now());
 
+      // ⚠️ — set warning reaction on the original Telegram message so user sees it's lost
+      if (telegramMsgId && BOT_TOKEN) {
+        await tgPost("setMessageReaction", {
+          chat_id: chatId,
+          message_id: telegramMsgId,
+          reaction: [{ type: "emoji", emoji: "⚠️" }],
+          is_big: false,
+        }).catch(() => {});
+      }
+
       // Re-inject the lost message back into message_queue
+      // Preserve telegram_msg_id so the reply tool can set ✅ when Claude responds
       const reinjectedContent = `[♻️ Re-injected — previous response was lost during a Claude Code disconnect. Process normally.]\n${content}`;
       try {
         await sql`
-          INSERT INTO message_queue (session_id, chat_id, from_user, content, delivered)
-          VALUES (${sessionId}, ${chatId}, ${fromUser}, ${reinjectedContent}, false)
+          INSERT INTO message_queue (session_id, chat_id, from_user, content, message_id, delivered)
+          VALUES (${sessionId}, ${chatId}, ${fromUser}, ${reinjectedContent}, ${telegramMsgId ? String(telegramMsgId) : null}, false)
         `;
         console.log(`[supervisor] re-injected lost message for ${project} (chat ${chatId})`);
       } catch (insertErr: any) {

@@ -84,6 +84,10 @@ let forumTopicId: number | null = null;
 // --- Voice reply flag (set by poller, read by tools) ---
 let forceVoice = false;
 
+// --- Pending incoming Telegram message_id per chat (set by poller, read by reply tool) ---
+// Tracks which original Telegram message is being processed so reply() can set ✅ on it.
+const pendingMsgIds = new Map<string, number>();
+
 // --- Session ---
 const sessionMgr = new SessionManager({
   sql,
@@ -141,6 +145,7 @@ registerTools(
     forumChatId: () => forumChatId,
     forumTopicId: () => forumTopicId,
     forceVoice: () => forceVoice,
+    incomingTgMsgId: (chatId) => pendingMsgIds.get(chatId) ?? null,
   },
   statusMgr,
   () => sessionMgr.touchIdleTimer(triggerSummarize),
@@ -160,6 +165,10 @@ const poller = new MessageQueuePoller(
     pollIntervalMs: 500,
     databaseUrl: ENV.DATABASE_URL,
     setForceVoice: (v) => { forceVoice = v; },
+    setIncomingTgMsgId: (chatId, msgId) => {
+      if (msgId !== null) pendingMsgIds.set(chatId, msgId);
+      else pendingMsgIds.delete(chatId);
+    },
     token: () => ENV.TELEGRAM_BOT_TOKEN,
   },
   statusMgr,

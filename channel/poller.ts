@@ -32,6 +32,9 @@ export interface PollerContext {
   setForceVoice?: (v: boolean) => void;
   /** Telegram bot token — used to set ⚡ reaction when message is taken into work */
   token?: () => string | undefined;
+  /** Called with the Telegram message_id when the poller dequeues a message — lets
+   *  the reply tool know which original message to mark ✅ after Claude responds */
+  setIncomingTgMsgId?: (chatId: string, msgId: number | null) => void;
 }
 
 export class MessageQueuePoller {
@@ -175,6 +178,8 @@ export class MessageQueuePoller {
           if (token && telegramMsgId && !isNaN(telegramMsgId)) {
             setTelegramReaction(token, row.chat_id, telegramMsgId, "⚡").catch(() => {});
           }
+          // Track which Telegram message is being processed — reply tool uses this to set ✅
+          this.ctx.setIncomingTgMsgId?.(row.chat_id, telegramMsgId);
           this.touchIdleTimer();
 
           // 1. Create status message FIRST so it always appears before Claude's reply.
