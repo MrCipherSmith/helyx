@@ -53,8 +53,15 @@ const transports = new Map<string, StreamableHTTPServerTransport>();
 import { pendingExpects, pushExpect, tryAutoLink } from "./pending-expects.ts";
 
 function registerTools(server: McpServer, bot: Bot | null, getClientId?: () => string | undefined): void {
-  const exec = (name: string, args: Record<string, unknown>) =>
-    executeTool(name, { ...args, _clientId: getClientId?.() }, bot);
+  const exec = (name: string, args: Record<string, unknown>) => {
+    const clientId = getClientId?.();
+    // Retry auto-link on every tool call — catches the race where channel.ts registered
+    // its expect after the transport already initialized (startup timing gap).
+    if (clientId && sessionManager.getSessionIdByClient(clientId) === undefined) {
+      tryAutoLink(clientId).catch(() => {});
+    }
+    return executeTool(name, { ...args, _clientId: clientId }, bot);
+  };
   // Memory tools
   server.tool(
     "remember",
@@ -405,8 +412,8 @@ export function startMcpHttpServer(bot: Bot | null): ReturnType<typeof createSer
           res.end(JSON.stringify({ error: "session_id required" }));
           return;
         }
-        pushExpect(session_id);
-        console.log(`[mcp] pending expect registered: session #${session_id} (queue: ${pendingExpects.length})`);
+        await pushExpect(session_id);
+        console.log(`[mcp] pending expect registered: session #${session_id} (queue: ${pendingExpects.size})`);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true }));
       } catch (err: any) {

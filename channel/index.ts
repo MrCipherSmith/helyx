@@ -247,6 +247,16 @@ async function main() {
       shutdown().catch(() => {}).finally(() => setTimeout(() => process.exit(1), 10_000));
       return;
     }
+    // Re-register expect so a fresh one is always available (idempotent with Map-based queue).
+    // Guards against the race where the transport initialized before channel.ts had time to push
+    // the first expect, and the TTL expired before any tool call triggered a retry.
+    if (channelSource === "remote" && sessionMgr.sessionId !== null) {
+      fetch(`${ENV.BOT_API_URL}/api/sessions/expect`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionMgr.sessionId }),
+      }).catch(() => {});
+    }
     // Refresh forum topic ID — may have changed if topic was recreated or project added after startup
     if (forumChatId) {
       try {

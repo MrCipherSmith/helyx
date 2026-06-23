@@ -61,6 +61,11 @@ export class SessionManager {
     this.activeClients.delete(clientId);
   }
 
+  /** Return transport clientIds that are live but not yet linked to any DB session */
+  getUnlinkedTransports(): string[] {
+    return [...this.liveTransports].filter(id => !this.activeClients.has(id));
+  }
+
   async register(
     clientId: string,
     name?: string,
