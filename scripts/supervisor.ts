@@ -723,6 +723,134 @@ async function checkIdleSessions(sql: postgres.Sql): Promise<void> {
   }
 }
 
+// --- Loop 7: Unanswered message detector ---
+//
+// Detects messages that were pulled from message_queue (delivered=true) and sent
+// to Claude Code via MCP notification, but Claude disconnected before replying.
+// In that state the message is "gone" — delivered=true so the supervisor's stuck-queue
+// check ignores it, but there is no assistant entry in `messages`. This loop finds
+// such orphaned user messages and re-injects them so Claude can process them.
+//
+// Guards against false positives (slow-thinking Claude):
+//   1. Min age 5 min  — give Claude enough time before declaring it lost
+//   2. Max age 30 min — beyond this the conversation is too stale to re-inject
+//   3. ASM freshness  — if active_status_messages for this chat was updated in the
+//                       last 2 min, Claude is still working → skip
+//   4. No pending     — no delivered=false items in queue for this chat
+//   5. Dedup 10 min   — don't re-inject the same session+chat more than once per window
+
+const UNANSWERED_MIN_AGE_MS = 5  * 60 * 1000; // 5 min minimum wait before re-inject
+const UNANSWERED_MAX_AGE_MIN = 30;              // 30 min max lookback window
+const UNANSWERED_DEDUP_MS    = 10 * 60 * 1000; // 10 min dedup window per session+chat
+
+const unansweredAlertedAt = new Map<string, number>();
+
+async function checkUnansweredMessages(sql: postgres.Sql): Promise<void> {
+  try {
+    const rows = await sql`
+      SELECT
+        s.id          AS session_id,
+        s.project,
+        m.id          AS msg_id,
+        m.chat_id,
+        m.content,
+        m.created_at,
+        EXTRACT(EPOCH FROM (NOW() - m.created_at))::int AS age_sec,
+        COALESCE(
+          (SELECT mq2.from_user FROM message_queue mq2
+           WHERE mq2.session_id = s.id
+             AND mq2.chat_id    = m.chat_id
+             AND mq2.delivered  = true
+           ORDER BY mq2.created_at DESC
+           LIMIT 1),
+          'user'
+        ) AS from_user
+      FROM sessions s
+      JOIN messages m ON m.session_id = s.id
+      WHERE s.status = 'active'
+        AND s.id != 0
+        AND m.role = 'user'
+        -- Time window: old enough to be suspicious, not so old it's pointless
+        AND m.created_at < NOW() - (${UNANSWERED_MIN_AGE_MS / 1000} * INTERVAL '1 second')
+        AND m.created_at > NOW() - (${UNANSWERED_MAX_AGE_MIN} * INTERVAL '1 minute')
+        -- No assistant reply after this user message in the same chat
+        AND NOT EXISTS (
+          SELECT 1 FROM messages m2
+          WHERE m2.session_id = s.id
+            AND m2.chat_id    = m.chat_id
+            AND m2.role       = 'assistant'
+            AND m2.created_at > m.created_at
+        )
+        -- This IS the most recent user message in this chat (no newer one)
+        AND NOT EXISTS (
+          SELECT 1 FROM messages m3
+          WHERE m3.session_id = s.id
+            AND m3.chat_id    = m.chat_id
+            AND m3.role       = 'user'
+            AND m3.created_at > m.created_at
+        )
+        -- No pending items in queue for this session+chat
+        AND NOT EXISTS (
+          SELECT 1 FROM message_queue mq
+          WHERE mq.session_id = s.id
+            AND mq.chat_id    = m.chat_id
+            AND mq.delivered  = false
+        )
+        -- Claude is NOT actively processing this chat (ASM stale > 2 min)
+        AND NOT EXISTS (
+          SELECT 1 FROM active_status_messages asm
+          WHERE asm.session_id  = s.id
+            AND asm.chat_id     = m.chat_id
+            AND asm.updated_at  > NOW() - INTERVAL '2 minutes'
+        )
+    `.catch(() => [] as any[]);
+
+    for (const row of rows as any[]) {
+      const project   = String(row.project  ?? "unknown");
+      const sessionId = Number(row.session_id);
+      const chatId    = String(row.chat_id);
+      const content   = String(row.content  ?? "");
+      const fromUser  = String(row.from_user ?? "user");
+      const ageSec    = Number(row.age_sec   ?? 0);
+      const dedupKey  = `unanswered:${sessionId}:${chatId}`;
+
+      console.log(`[supervisor] unanswered message: ${project} chat=${chatId} age=${Math.round(ageSec / 60)}min`);
+
+      const lastAt = unansweredAlertedAt.get(dedupKey) ?? 0;
+      if (Date.now() - lastAt < UNANSWERED_DEDUP_MS) {
+        console.log(`[supervisor] unanswered deduped: ${dedupKey}`);
+        continue;
+      }
+      unansweredAlertedAt.set(dedupKey, Date.now());
+
+      // Re-inject the lost message back into message_queue
+      const reinjectedContent = `[♻️ Re-injected — previous response was lost during a Claude Code disconnect. Process normally.]\n${content}`;
+      try {
+        await sql`
+          INSERT INTO message_queue (session_id, chat_id, from_user, content, delivered)
+          VALUES (${sessionId}, ${chatId}, ${fromUser}, ${reinjectedContent}, false)
+        `;
+        console.log(`[supervisor] re-injected lost message for ${project} (chat ${chatId})`);
+      } catch (insertErr: any) {
+        console.error(`[supervisor] re-inject failed for ${project}: ${insertErr?.message}`);
+        continue;
+      }
+
+      const ageStr  = `${Math.floor(ageSec / 60)}m ${ageSec % 60}s`;
+      const preview = content.slice(0, 120) + (content.length > 120 ? "…" : "");
+      await sendAlert([
+        `♻️ <b>Supervisor: сообщение переотправлено</b>`,
+        `Проект: <code>${project}</code>`,
+        `Ждало ответа: ${ageStr}`,
+        `Сообщение: <i>${preview}</i>`,
+        `Действие: переинжектировано в очередь`,
+      ].join("\n"));
+    }
+  } catch (err: any) {
+    console.error(`[supervisor] checkUnansweredMessages error: ${err?.message}`);
+  }
+}
+
 // --- Loop 6: Gemma health analyst ---
 
 const GEMMA_HEALTH_DEDUP_MS = 10 * 60 * 1000; // 10 min — same key not re-alerted
@@ -944,11 +1072,12 @@ export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
   }
 
   // In-flight guards (prevent overlapping concurrent executions)
-  let sessionCheckRunning = false;
-  let queueCheckRunning   = false;
-  let voiceCheckRunning   = false;
-  let broadcastRunning    = false;
-  let idleCheckRunning    = false;
+  let sessionCheckRunning    = false;
+  let queueCheckRunning      = false;
+  let voiceCheckRunning      = false;
+  let broadcastRunning       = false;
+  let idleCheckRunning       = false;
+  let unansweredCheckRunning = false;
 
   // Loop 1: Session heartbeat — every 60s
   const sessionTimer = setInterval(() => {
@@ -1009,6 +1138,20 @@ export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
   }, 10 * 60_000);
   gemmaHealthTimer.unref?.();
 
+  // Loop 7: Unanswered message detector — every 2 min (offset 45s to spread DB load)
+  setTimeout(() => {
+    if (!unansweredCheckRunning) {
+      unansweredCheckRunning = true;
+      checkUnansweredMessages(sql).catch(() => {}).finally(() => { unansweredCheckRunning = false; });
+    }
+    const unansweredTimer = setInterval(() => {
+      if (unansweredCheckRunning) return;
+      unansweredCheckRunning = true;
+      checkUnansweredMessages(sql).catch(() => {}).finally(() => { unansweredCheckRunning = false; });
+    }, 2 * 60_000);
+    unansweredTimer.unref?.();
+  }, 45_000);
+
   // Run initial checks after a short delay (let admin-daemon settle first)
   setTimeout(() => {
     checkHungSessions(sql, runShell).catch(() => {});
@@ -1020,5 +1163,5 @@ export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
     setTimeout(() => checkGemmaHealth(sql).catch(() => {}), 2 * 60_000);
   }, 10_000);
 
-  console.error(`[supervisor] watchdog running (session:60s, queue:60s, voice:5min, status:5min, idle-compact:30min/${IDLE_COMPACT_MIN}min-threshold, gemma-health:10min)`);
+  console.error(`[supervisor] watchdog running (session:60s, queue:60s, voice:5min, status:5min, idle-compact:30min/${IDLE_COMPACT_MIN}min-threshold, gemma-health:10min, unanswered:2min)`);
 }
