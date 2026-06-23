@@ -238,13 +238,13 @@ async function main() {
       channelLogger.warn({ err, failCount: heartbeatFailCount }, "heartbeat: DB error renewing lease");
       if (heartbeatFailCount >= 2) {
         channelLogger.error("too many heartbeat failures — exiting to avoid zombie session");
-        shutdown();
+        shutdown().catch(() => {}).finally(() => setTimeout(() => process.exit(1), 10_000));
       }
       return;
     }
     if (!leaseHeld) {
       channelLogger.warn("lease lost on heartbeat — exiting to yield to new owner");
-      shutdown();
+      shutdown().catch(() => {}).finally(() => setTimeout(() => process.exit(1), 10_000));
       return;
     }
     // Refresh forum topic ID — may have changed if topic was recreated or project added after startup
@@ -264,21 +264,6 @@ async function main() {
     clearInterval(heartbeatTimer);
     sessionMgr.clearIdleTimer();
 
-    // Auto-summarize before disconnect — saves context for /resume in the next session
-    if (sessionMgr.sessionId !== null) {
-      try {
-        await fetch(`${ENV.BOT_API_URL}/api/summarize`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ session_id: sessionMgr.sessionId, project_path: projectPath }),
-          signal: AbortSignal.timeout(5_000),
-        });
-        channelLogger.info({ sessionId: sessionMgr.sessionId }, "auto-summarize triggered on shutdown");
-      } catch (err) {
-        channelLogger.warn({ err }, "auto-summarize request failed");
-      }
-    }
-
     await sessionMgr.markDisconnected();
     await sql.end();
     process.exit(0);
@@ -292,7 +277,12 @@ async function main() {
 
 main().catch(async (err) => {
   channelLogger.fatal({ err }, "channel fatal error");
-  await sessionMgr.markDisconnected();
-  await sql.end();
+  await Promise.race([
+    (async () => {
+      await sessionMgr.markDisconnected();
+      await sql.end();
+    })(),
+    new Promise<void>((_, reject) => setTimeout(() => reject(new Error("cleanup timeout")), 8_000)),
+  ]).catch(() => {});
   process.exit(1);
 });

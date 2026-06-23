@@ -39,6 +39,7 @@ interface StatusState {
   dbHeartbeatTimer: ReturnType<typeof setInterval> | null;
   spinnerFrame: number;
   lastUpdateAt: number;
+  editInFlight: boolean;
 }
 
 interface SessionStats {
@@ -115,6 +116,8 @@ export class StatusManager {
   private readonly typingTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private activeMonitors = new Map<string, TmuxMonitorHandle | OutputMonitorHandle>();
   private responseGuards = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly responseGuardRearmCount = new Map<string, number>();
+  private readonly postReplyCheckTimers = new Set<ReturnType<typeof setTimeout>>();
   /** Tracks the single "diff" companion message per status session — edited in-place on repeat calls. */
   private diffMessages = new Map<string, number>(); // key → Telegram message_id
   /** Tracks the single response-guard warning message per key — edited in-place on re-arms instead of sending new messages. */
@@ -171,7 +174,9 @@ export class StatusManager {
       const silentMs = Date.now() - state.lastUpdateAt;
       const silentStr = formatElapsed(silentMs);
       const stageText = state.stage ?? "";
-      const looksActive = /[·●⏳🔄⎿]/.test(stageText) || /Brewing|Thinking|Running|agents?/i.test(stageText);
+      const lastActivity = this.lastMonitorActivity.get(key) ?? 0;
+      const hadRecentMonitorActivity = (Date.now() - lastActivity) < this.RESPONSE_GUARD_MS;
+      const looksActive = hadRecentMonitorActivity || /[·●⏳🔄⎿]/.test(stageText) || /Brewing|Thinking|Running|agents?/i.test(stageText);
 
       // Case 1: tmux was active very recently — Claude is alive, just working slowly.
       // Re-arm silently so the guard keeps watching without alarming the user.
@@ -184,25 +189,32 @@ export class StatusManager {
       // Case 2: last known tmux state looked active but went quiet.
       // Claude is probably in a long thinking or tool phase — not stuck yet.
       // Edit the existing guard message in-place (silent update) to avoid spamming new messages.
+      // Cap at 6 re-arms (30 minutes total) to prevent indefinite re-arming.
       if (looksActive) {
-        channelLogger.warn({ chatId, silentMs, stage: stageText }, "response guard: long thinking, re-arming");
-        const guardText = `⏳ Claude думает уже 5+ мин. Последняя активность: ${silentStr} назад.\n/session — статус сессии`;
-        const existing = this.guardMessages.get(key);
-        if (existing) {
-          // editMessageText does NOT accept message_thread_id — pass no extra to avoid 400 error
-          const edited = await editTelegramMessage(token, existing.chatId, existing.messageId, guardText);
-          if (!edited.ok) {
-            channelLogger.warn({ error: edited.errorBody }, "response guard: edit failed, sending fresh message");
+        const count = (this.responseGuardRearmCount.get(key) ?? 0) + 1;
+        this.responseGuardRearmCount.set(key, count);
+        if (count < 6) {
+          channelLogger.warn({ chatId, silentMs, stage: stageText, rearmCount: count }, "response guard: long thinking, re-arming");
+          const guardText = `⏳ Claude думает уже 5+ мин. Последняя активность: ${silentStr} назад.\n/session — статус сессии`;
+          const existing = this.guardMessages.get(key);
+          if (existing) {
+            // editMessageText does NOT accept message_thread_id — pass no extra to avoid 400 error
+            const edited = await editTelegramMessage(token, existing.chatId, existing.messageId, guardText);
+            if (!edited.ok) {
+              channelLogger.warn({ error: edited.errorBody }, "response guard: edit failed, sending fresh message");
+              const sent = await sendTelegramMessage(token, effectiveChatId, guardText, extra);
+              if (sent.messageId) this.guardMessages.set(key, { messageId: sent.messageId, chatId: effectiveChatId, extra });
+              else this.guardMessages.delete(key);
+            }
+          } else {
             const sent = await sendTelegramMessage(token, effectiveChatId, guardText, extra);
             if (sent.messageId) this.guardMessages.set(key, { messageId: sent.messageId, chatId: effectiveChatId, extra });
-            else this.guardMessages.delete(key);
           }
-        } else {
-          const sent = await sendTelegramMessage(token, effectiveChatId, guardText, extra);
-          if (sent.messageId) this.guardMessages.set(key, { messageId: sent.messageId, chatId: effectiveChatId, extra });
+          this.armResponseGuard(chatId);
+          return;
         }
-        this.armResponseGuard(chatId);
-        return;
+        // count >= 6: fall through to Case 3 (stuck cleanup) regardless of looksActive
+        channelLogger.warn({ chatId, silentMs, stage: stageText, rearmCount: count }, "response guard: rearm cap reached, treating as stuck");
       }
 
       // Case 3: no recent activity and no active-looking stage — likely stuck.
@@ -231,6 +243,7 @@ export class StatusManager {
       clearTimeout(timer);
       this.responseGuards.delete(key);
     }
+    this.responseGuardRearmCount.delete(key);
     const guardEntry = this.guardMessages.get(key);
     if (guardEntry) {
       const token = this.ctx.token();
@@ -265,7 +278,8 @@ export class StatusManager {
   schedulePostReplyCheck(chatId: string, delayMs = 20_000): void {
     const key = this.stateKey(chatId);
     const repliedAt = Date.now();
-    setTimeout(async () => {
+    const t = setTimeout(async () => {
+      this.postReplyCheckTimers.delete(t);
       // If the user already sent a new message, the poller created a fresh status — skip.
       if (this.activeStatus.has(key)) return;
 
@@ -303,6 +317,7 @@ export class StatusManager {
         channelLogger.debug({ chatId }, "post-reply: no post-reply activity, cleanup done");
       }
     }, delayMs);
+    this.postReplyCheckTimers.add(t);
   }
 
   /**
@@ -393,12 +408,25 @@ export class StatusManager {
         dbHeartbeatTimer: null,
         spinnerFrame: 0,
         lastUpdateAt: Date.now(),
+        editInFlight: false,
       };
       state.timer = setInterval(async () => {
-        await this.refreshPaneSnapshot(state).catch(() => {});
-        await this.editStatusMessage(state);
+        if (state.editInFlight) return;
+        state.editInFlight = true;
+        try {
+          await this.refreshPaneSnapshot(state).catch(() => {});
+          await this.editStatusMessage(state);
+        } finally {
+          state.editInFlight = false;
+        }
       }, 15_000);
-      state.dbHeartbeatTimer = setInterval(() => this.heartbeatStatusMessage(key), 30_000);
+      state.dbHeartbeatTimer = setInterval(() => {
+        const staleSec = (Date.now() - state.lastUpdateAt) / 1000;
+        if (staleSec < 90) {
+          this.heartbeatStatusMessage(key);
+        }
+        // If staleSec >= 90, don't heartbeat — let supervisor detect the stale row
+      }, 30_000);
       this.activeStatus.set(key, state);
       this.persistStatusMessage(key, state).catch(() => {});
       channelLogger.info({ phase: "status", step: "created", chatId: effectiveChatId, messageId: state.messageId, tgRttMs: tgRtt }, "perf");
@@ -703,5 +731,10 @@ export class StatusManager {
     } catch (err) {
       channelLogger.warn({ err }, "failed to record cli usage stats");
     }
+  }
+
+  destroy(): void {
+    for (const t of this.postReplyCheckTimers) clearTimeout(t);
+    this.postReplyCheckTimers.clear();
   }
 }
