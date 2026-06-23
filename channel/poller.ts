@@ -40,6 +40,7 @@ export interface PollerContext {
 export class MessageQueuePoller {
   private polling = true;
   private wakeResolve: (() => void) | null = null;
+  private waitTimer: ReturnType<typeof setTimeout> | null = null;
   private listenSql: postgres.Sql | null = null;
   /**
    * Chats whose pending message was skipped because Claude was mid-turn.
@@ -61,9 +62,21 @@ export class MessageQueuePoller {
     if (sessionId === null) return;
     try {
       const { default: postgres } = await import("postgres");
-      this.listenSql = postgres(this.ctx.databaseUrl, { max: 1 });
+      this.listenSql = postgres(this.ctx.databaseUrl, {
+        max: 1,
+        onclose: () => {
+          if (this.polling) {
+            channelLogger.warn("LISTEN connection closed — reconnecting in 5s");
+            this.listenSql = null;
+            setTimeout(() => {
+              if (this.polling) this.setupListenNotify().catch(() => {});
+            }, 5_000);
+          }
+        },
+      });
       const listenSql = this.listenSql;
       await listenSql.listen(`message_queue_${sessionId}`, () => {
+        if (this.waitTimer) { clearTimeout(this.waitTimer); this.waitTimer = null; }
         if (this.wakeResolve) { this.wakeResolve(); this.wakeResolve = null; }
       });
       channelLogger.info({ sessionId }, "LISTEN/NOTIFY active");
@@ -75,12 +88,17 @@ export class MessageQueuePoller {
   private waitForWakeOrTimeout(): Promise<void> {
     return new Promise((resolve) => {
       this.wakeResolve = resolve;
-      setTimeout(() => { this.wakeResolve = null; resolve(); }, this.ctx.pollIntervalMs);
+      this.waitTimer = setTimeout(() => {
+        this.waitTimer = null;
+        this.wakeResolve = null;
+        resolve();
+      }, this.ctx.pollIntervalMs);
     });
   }
 
   stop(): void {
     this.polling = false;
+    if (this.waitTimer) { clearTimeout(this.waitTimer); this.waitTimer = null; }
     if (this.wakeResolve) { this.wakeResolve(); this.wakeResolve = null; }
     this.listenSql?.end().catch(() => {});
     this.listenSql = null;
@@ -197,23 +215,30 @@ export class MessageQueuePoller {
           // 2. Deliver to Claude — status is guaranteed to exist before Claude can reply.
           // Capped at 5s: the SDK's internal stdout drain-wait can hang indefinitely
           // if Claude's stdin pipe is saturated or its process is dead.
-          withDeadline(
-            this.ctx.mcp.notification({
-              method: "notifications/claude/channel",
-              params: {
-                content: enrichedContent,
-                meta: {
-                  chat_id: row.chat_id,
-                  user: row.from_user,
-                  message_id: row.message_id || undefined,
-                  ts: new Date(row.created_at).toISOString(),
-                  attachments: row.attachments ?? undefined,
-                },
+          const notificationPromise = this.ctx.mcp.notification({
+            method: "notifications/claude/channel",
+            params: {
+              content: enrichedContent,
+              meta: {
+                chat_id: row.chat_id,
+                user: row.from_user,
+                message_id: row.message_id || undefined,
+                ts: new Date(row.created_at).toISOString(),
+                attachments: row.attachments ?? undefined,
               },
-            }),
-            5_000,
-            "mcp.notification",
-          ).catch((err) => channelLogger.warn({ err }, "mcp.notification failed"));
+            },
+          });
+
+          withDeadline(notificationPromise, 5_000, "mcp.notification")
+            .then((result) => {
+              if (result === undefined) {
+                // Deadline fired — notification may not have reached Claude
+                // Reset delivered=false so the stuck-queue detector can catch it
+                channelLogger.warn({ msgId: row.id, chatId: row.chat_id }, "mcp.notification deadline exceeded — resetting delivered=false");
+                this.ctx.sql`UPDATE message_queue SET delivered = false WHERE id = ${row.id}`.catch(() => {});
+              }
+            })
+            .catch((err) => channelLogger.warn({ err }, "mcp.notification failed"));
           channelLogger.info({ phase: "poller", step: "notification-sent", msgId: row.id, chatId: row.chat_id, elapsedMs: Date.now() - tDequeue, totalFromQueueMs: Date.now() - new Date(row.created_at).getTime() }, "perf");
 
           // 3. Start progress monitor — status is now registered, updates will land

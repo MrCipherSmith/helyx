@@ -214,6 +214,7 @@ export class SessionManager {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ session_id: this.sessionId }),
+          signal: AbortSignal.timeout(5_000),
         });
       } else {
         channelLogger.info({ sessionId: this.sessionId }, "triggering summarization");
@@ -221,6 +222,7 @@ export class SessionManager {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ session_id: this.sessionId, project_path: projectPath }),
+          signal: AbortSignal.timeout(5_000),
         });
       }
     } catch (err) {
