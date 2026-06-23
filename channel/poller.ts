@@ -9,14 +9,16 @@ import type { SkillEvaluator } from "./skill-evaluator.ts";
 import { channelLogger } from "../logger.ts";
 import { setTelegramReaction } from "./telegram.ts";
 
-/** Run a promise with a deadline. Resolves to undefined and logs a warning if ms elapses first. */
-function withDeadline<T>(p: Promise<T>, ms: number, label: string): Promise<T | undefined> {
+const DEADLINE_EXCEEDED = Symbol("deadline_exceeded");
+
+/** Run a promise with a deadline. Resolves to DEADLINE_EXCEEDED and logs a warning if ms elapses first. */
+function withDeadline<T>(p: Promise<T>, ms: number, label: string): Promise<T | typeof DEADLINE_EXCEEDED> {
   return Promise.race([
     p,
-    new Promise<undefined>(resolve =>
+    new Promise<typeof DEADLINE_EXCEEDED>(resolve =>
       setTimeout(() => {
         channelLogger.warn({ label, ms }, "poller: deadline exceeded, continuing");
-        resolve(undefined);
+        resolve(DEADLINE_EXCEEDED);
       }, ms),
     ),
   ]);
@@ -231,7 +233,7 @@ export class MessageQueuePoller {
 
           withDeadline(notificationPromise, 5_000, "mcp.notification")
             .then((result) => {
-              if (result === undefined) {
+              if (result === DEADLINE_EXCEEDED) {
                 // Deadline fired — notification may not have reached Claude
                 // Reset delivered=false so the stuck-queue detector can catch it
                 channelLogger.warn({ msgId: row.id, chatId: row.chat_id }, "mcp.notification deadline exceeded — resetting delivered=false");
