@@ -55,8 +55,9 @@ async function main() {
 
   async function registerBotCommands() {
     await bot.api.setMyCommands([
-      { command: "menu",      description: "All commands grouped by category" },
-      { command: "projects",  description: "List projects (Start/Stop)" },
+      { command: "menu",        description: "All commands grouped by category" },
+      { command: "projects",    description: "List projects (Start/Stop)" },
+      { command: "project_add", description: "Register a new project" },
       { command: "sessions",  description: "List sessions" },
       { command: "switch",    description: "Switch session" },
       { command: "resume",    description: "Resume with context briefing" },
@@ -70,6 +71,7 @@ async function main() {
     ], { scope: { type: "all_private_chats" } }).catch((err) => console.error("[main] failed to set private commands:", err));
     await bot.api.setMyCommands([
       { command: "menu",          description: "All commands" },
+      { command: "project_add",   description: "Register a new project" },
       { command: "interrupt",     description: "Interrupt current Claude session" },
       { command: "project_facts", description: "Show project knowledge facts" },
       { command: "project_scan",  description: "Scan project for knowledge" },

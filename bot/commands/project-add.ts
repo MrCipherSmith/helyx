@@ -24,8 +24,10 @@ function toContainerPath(hostPath: string): string {
 }
 
 export async function handleProjectAdd(ctx: Context): Promise<void> {
-  const text = ctx.message?.text ?? "";
-  const arg = text.replace(/^\/project[_-]add\s*/, "").trim();
+  // When invoked via menu callback, ctx.message.text holds the button label ("📁 Projects"),
+  // not a command — skip arg extraction and always prompt for the path.
+  const rawText = ctx.callbackQuery ? "" : (ctx.message?.text ?? "");
+  const arg = rawText.replace(/^\/project[_-]add\s*/, "").trim();
 
   if (arg) {
     await addProject(ctx, arg);
