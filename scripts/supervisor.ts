@@ -9,7 +9,7 @@
  * sharing the existing DB connection and shell utilities.
  *
  * Monitoring loops:
- *  1. Session heartbeat   — active_status_messages.updated_at stale >SESSION_STALE_MS (default 5 min) → proj_start
+ *  1. Session heartbeat   — active_status_messages.updated_at stale >SESSION_STALE_MS (default 5 min) → alert with buttons, no auto-restart
  *  2. Queue stuck         — message_queue pending >5 min → inline-button alert
  *  3. Voice cleanup       — voice_status_messages >3 min → edit Telegram + delete
  *  4. Status broadcast    — every 5 min (delete old + send new for notification)
@@ -300,7 +300,6 @@ async function checkHungSessions(sql: postgres.Sql, runShell?: RunShell): Promis
 
     for (const row of rows) {
       const project = String(row.project ?? "unknown");
-      const projectPath = String(row.project_path ?? "");
       const sessionId = Number(row.session_id);
       const elapsedMs = Date.now() - new Date(row.updated_at).getTime();
       const elapsedSec = Math.round(elapsedMs / 1000);
@@ -308,76 +307,26 @@ async function checkHungSessions(sql: postgres.Sql, runShell?: RunShell): Promis
 
       console.log(`[supervisor] hung session detected: ${project} (stale ${elapsedSec}s)`);
 
-      const isEscalation = recoveryAttempts.has(dedupKey) &&
-        Date.now() - (recoveryAttempts.get(dedupKey)!.firstDetected) > ESCALATE_MS;
+      if (!shouldAlert(dedupKey)) continue;
 
-      const rec = recoveryAttempts.get(dedupKey) ?? { attempts: 0, firstDetected: Date.now() };
-      rec.attempts++;
-      recoveryAttempts.set(dedupKey, rec);
+      const msg = [
+        `⚠️ <b>Supervisor: сессия не отвечает</b>`,
+        `Проект: <code>${project}</code>`,
+        `Молчит: ${Math.round(elapsedSec / 60)}m ${elapsedSec % 60}s`,
+      ].join("\n");
 
-      // 1. Send initial alert (before restart, so user sees something immediately)
-      if (shouldAlert(dedupKey)) {
-        const header = isEscalation
-          ? `⛔ <b>Supervisor: ESCALATION — сессия зависла</b>`
-          : `⚠️ <b>Supervisor: сессия зависла</b>`;
-        const initMsg = [
-          header,
-          `Проект: <code>${project}</code>`,
-          `Зависание: ${Math.round(elapsedSec / 60)}m ${elapsedSec % 60}s`,
-          `⏳ <i>Перезапускаю...</i>`,
-          isEscalation ? "\n🔧 <i>Убиваю зависшие каналы и повторяю...</i>" : "",
-        ].filter(Boolean).join("\n");
-        await sendAlert(initMsg);
-      }
+      await sendAlertWithButtons(msg, [
+        [
+          { text: "🔄 Перезапустить", callback_data: `sup:restart_session:${sessionId}` },
+          { text: "🚀 Bounce бот",    callback_data: `sup:bounce:${sessionId}` },
+        ],
+        [
+          { text: "✅ Игнорировать",  callback_data: `sup:ignore:${dedupKey}` },
+          { text: "🔕 Тишина 30м",   callback_data: `sup:ack:${dedupKey}` },
+        ],
+      ]);
 
-      // 2. Escalation: kill hung channel processes before proj_start
-      if (isEscalation && runShell) {
-        console.log(`[supervisor] escalation: killing hung channel processes for ${project}`);
-        await runShell(`pkill -f "bun.*channel.ts" || true`).catch(() => {});
-        await new Promise(r => setTimeout(r, 2000));
-      }
-
-      // 3. Trigger restart
-      let actionResult = "no path configured";
-      const actionLabel = isEscalation ? "channel_kill + proj_start" : "proj_start";
-      if (projectPath) {
-        const res = await triggerProjStart(sql, projectPath);
-        actionResult = res.result;
-        console.log(`[supervisor] proj_start result for ${project}: ${actionResult}`);
-      }
-
-      // 4. Verify recovery (poll 60s)
-      const recovered = projectPath ? await verifyRecovery(sql, sessionId) : false;
-
-      const llm = await getLlmExplanation(
-        "hung_session", project, elapsedSec,
-        projectPath ? `${actionLabel}: ${projectPath}` : "no action (no project path)",
-        recovered ? "recovered" : actionResult,
-      );
-
-      await logIncident(sql, "hung_session", project, sessionId, actionLabel,
-        recovered ? "recovered" : actionResult, llm);
-
-      // 5. Send recovery result
-      if (recovered) {
-        await sendAlert(`✅ <b>Сессия восстановлена</b>\nПроект: <code>${project}</code>${llm ? `\n\n💬 ${llm}` : ""}`);
-        recoveryAttempts.delete(dedupKey);
-      } else {
-        const failMsg = [
-          `⛔ <b>Сессия не восстановилась</b>`,
-          `Проект: <code>${project}</code>`,
-          `Результат: ${actionResult}`,
-          llm ? `\n💬 ${llm}` : "",
-          `\n🔧 <i>Требуется ручное вмешательство</i>`,
-        ].filter(Boolean).join("\n");
-        await sendAlertWithButtons(failMsg, [
-          [
-            { text: "🔄 Повторить", callback_data: `sup:restart_session:${sessionId}` },
-            { text: "🚀 Bounce бот", callback_data: `sup:bounce:${sessionId}` },
-          ],
-          [{ text: "🔕 Тишина 30м", callback_data: `sup:ack:${dedupKey}` }],
-        ]);
-      }
+      await logIncident(sql, "hung_session", project, sessionId, "alerted_user", "pending", null);
     }
   } catch (err: any) {
     console.error(`[supervisor] checkHungSessions error: ${err?.message}`);
