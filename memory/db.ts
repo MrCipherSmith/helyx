@@ -772,6 +772,18 @@ const migrations: Migration[] = [
       await tx`DROP TABLE IF EXISTS orchestration_runs`;
     },
   },
+  {
+    version: 45,
+    name: "message_queue forwarded_at column",
+    up: async (tx) => {
+      await tx`ALTER TABLE message_queue ADD COLUMN IF NOT EXISTS forwarded_at TIMESTAMPTZ DEFAULT NULL`;
+      await tx.unsafe(`
+        CREATE INDEX IF NOT EXISTS idx_message_queue_forward_candidates
+        ON message_queue (session_id, created_at)
+        WHERE delivered = false AND forwarded_at IS NULL
+      `);
+    },
+  },
 ];
 
 // --- Public API ---

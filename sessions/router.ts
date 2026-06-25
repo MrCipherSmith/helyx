@@ -48,7 +48,10 @@ export async function routeMessage(chatId: string, forumTopicId?: number): Promi
         projectPath: row.path as string,
       };
     }
-    // No project mapped to this topic → fall through to DM routing
+    // No project mapped to this topic → return disconnected (sessionId=0) so callers
+    // can show "topic not configured" rather than falling through to DM routing,
+    // which could accidentally deliver the message to another project's session.
+    return { mode: "disconnected", sessionId: 0, sessionName: null, projectPath: null };
   }
 
   // Existing DM routing: look up active session via chat_sessions

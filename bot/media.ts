@@ -210,12 +210,11 @@ export async function handleVoice(ctx: Context): Promise<void> {
   const route = await routeMessage(chatId, isForumMessage ? forumTopicId : undefined);
   appendLog(route.sessionId, chatId, "voice", `received ${voice.duration}s, route=${route.mode}`);
 
-  // Early exit for disconnected sessions — don't waste Whisper API call
-  if (route.mode === "disconnected") {
+  // No mapped session — can't transcribe or queue (nothing to deliver to)
+  if (route.mode === "disconnected" && route.sessionId === 0) {
     await replyInThread(ctx,
-      `⚠️ Нет активной CLI-сессии для этого проекта.\n` +
-      `Голосовое сообщение не обработано.\n\n` +
-      `/sessions — список сессий | /standalone — standalone режим`,
+      `⚠️ Топик не привязан ни к одной сессии.\n` +
+      `Используй /project_add чтобы зарегистрировать проект для этого топика.`,
     );
     return;
   }
@@ -311,11 +310,10 @@ export async function handleVoice(ctx: Context): Promise<void> {
 
       if (text) {
         appendLog(route.sessionId, chatId, "voice", `transcribed: ${text.slice(0, 80)}`);
-        await updateStatus(`🎤 Transcribed: ${text}`);
 
         const content = `🎤 ${text}`;
 
-        if (route.mode === "cli") {
+        if (route.mode === "cli" || route.mode === "disconnected") {
           // Dedup: Telegram may retry the webhook if transcription takes too long.
           // Skip if this message_id is already in the queue.
           const tgMsgId = String(ctx.message?.message_id ?? "");
@@ -346,13 +344,20 @@ export async function handleVoice(ctx: Context): Promise<void> {
               ${JSON.stringify({ isVoice: true })}
             )
           `;
-          appendLog(route.sessionId, chatId, "queue", "voice message queued for CLI");
+          if (route.mode === "disconnected") {
+            const sessionLabel = route.sessionName ?? `#${route.sessionId}`;
+            await updateStatus(`🎤 Transcribed: ${text}\n⏳ Сессия ${sessionLabel} перезапускается — доставлю автоматически.`);
+          } else {
+            await updateStatus(`🎤 Transcribed: ${text}`);
+          }
+          appendLog(route.sessionId, chatId, "queue", `voice message queued for ${route.mode}`);
           // 👀 — same reaction the text-handler sets; voice handler path skips text-handler
           if (ctx.message?.message_id) {
             ctx.api.setMessageReaction(ctx.chat!.id, ctx.message.message_id, [{ type: "emoji", emoji: "👀" }]).catch(() => {});
           }
-          touchIdleTimer(route.sessionId, chatId, route.projectPath);
+          if (route.mode === "cli") touchIdleTimer(route.sessionId, chatId, route.projectPath);
         } else if (route.mode === "standalone") {
+          await updateStatus(`🎤 Transcribed: ${text}`);
           await addMessage({
             sessionId: route.sessionId,
             projectPath: route.projectPath,

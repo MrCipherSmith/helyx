@@ -84,18 +84,43 @@ export async function handleText(ctx: Context): Promise<void> {
   appendLog(route.sessionId, chatId, "route", `mode=${route.mode}, session=#${route.sessionId}`);
 
   if (route.mode === "disconnected") {
-    appendLog(route.sessionId, chatId, "route", `session "${route.sessionName}" not active`, "warn");
     const sessionLabel = escapeHtml(route.sessionName ?? `#${route.sessionId}`);
-    const projectHint = route.projectPath ? `\n📁 Проект: <code>${escapeHtml(route.projectPath)}</code>` : "";
-    await replyInThread(
-      ctx,
-      `⚠️ Сессия <b>${sessionLabel}</b> не активна.${projectHint}\n\n` +
-      `Если Claude Code запущен — сессия подключится автоматически при следующем запуске.\n` +
-      `Или:\n` +
-      `/standalone — перейти в standalone (без Claude Code)\n` +
-      `/sessions — все сессии`,
-      { parse_mode: "HTML" },
-    );
+    const projectHint = route.projectPath ? `\n📁 <code>${escapeHtml(route.projectPath)}</code>` : "";
+
+    // If we have a session_id, queue the message for deferred delivery instead of dropping it.
+    // The session subprocess reuses its session_id on restart (resolve() picks up the same row),
+    // so the poller will deliver this message automatically when the session comes back.
+    // The supervisor stuck-queue alert fires after 5 min if the session never restarts.
+    if (route.sessionId) {
+      const fromUser = ctx.from?.username ?? ctx.from?.first_name ?? "user";
+      const messageId = String(ctx.message?.message_id ?? "");
+      await sql`
+        INSERT INTO message_queue (session_id, chat_id, from_user, content, message_id)
+        VALUES (${route.sessionId}, ${chatId}, ${fromUser}, ${text}, ${messageId})
+        ON CONFLICT (chat_id, message_id)
+          WHERE message_id IS NOT NULL AND message_id != '' AND message_id != 'tool'
+        DO NOTHING
+      `;
+      appendLog(route.sessionId, chatId, "route", `session disconnected — queued, will deliver on restart`, "warn");
+      await replyInThread(
+        ctx,
+        `⏳ Сессия <b>${sessionLabel}</b> перезапускается.${projectHint}\nСообщение поставлено в очередь — доставлю автоматически, когда сессия поднимется.`,
+        { parse_mode: "HTML" },
+      );
+      if (ctx.message?.message_id) {
+        ctx.react("👀").catch(() => {});
+      }
+      return;
+    }
+
+    // No session_id (0) — either no project is mapped to this forum topic, or session deleted.
+    appendLog(0, chatId, "route", `no session for topic — not queued`, "warn");
+    const noSessionMsg = route.sessionName
+      ? `⚠️ Сессия <b>${sessionLabel}</b> не активна.${projectHint}\n\n` +
+        `Если Claude Code запущен — сессия подключится автоматически.\n` +
+        `/standalone — standalone режим | /sessions — все сессии`
+      : `⚠️ Топик не привязан ни к одному проекту.\nИспользуй /project_add чтобы зарегистрировать проект для этого топика.`;
+    await replyInThread(ctx, noSessionMsg, { parse_mode: "HTML" });
     return;
   }
 

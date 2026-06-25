@@ -17,6 +17,8 @@
  *  6. Gemma health analyst — every 10 min, holistic snapshot → Gemma → digest if problems found
  *
  * Alerting: Telegram topic SUPERVISOR_CHAT_ID / SUPERVISOR_TOPIC_ID (from .env).
+ *           JOINBOX_TOPIC_ID (optional) — preferred fallback for stuck-message forwarding.
+ *           STUCK_QUEUE_FORWARD_MINUTES (default 10) — forward threshold.
  *           If not set, alerts are logged only.
  *
  * LLM diagnosis: qwen3:8b via Ollama (timeout 10s, non-blocking).
@@ -32,6 +34,8 @@ const SUPERVISOR_TOPIC_ID = Number(process.env.SUPERVISOR_TOPIC_ID ?? "0");
 const BOT_TOKEN           = process.env.TELEGRAM_BOT_TOKEN  ?? "";
 const OLLAMA_URL          = process.env.OLLAMA_URL ?? "http://localhost:11434";
 const IDLE_COMPACT_MIN    = Math.max(10, Number(process.env.IDLE_COMPACT_MIN ?? "60") || 60); // minutes before auto-compact
+const JOINBOX_TOPIC_ID    = Number(process.env.JOINBOX_TOPIC_ID ?? "0"); // preferred fallback topic for stuck-message forwarding
+const STUCK_QUEUE_FORWARD_MINUTES = Math.max(1, Number(process.env.STUCK_QUEUE_FORWARD_MINUTES ?? "10") || 10);
 
 // Thresholds
 // Claude Code doing long-running work (git analysis, deep reasoning) can go silent for 3-4 min
@@ -398,9 +402,65 @@ async function checkStuckQueue(sql: postgres.Sql): Promise<void> {
         [{ text: "🔕 Тишина 30м", callback_data: `sup:ack:${dedupKey}` }],
       ]);
     }
+
+    // Forward messages stuck past STUCK_QUEUE_FORWARD_MINUTES to the fallback channel.
+    await forwardStuckMessages(sql);
   } catch (err: any) {
     console.error(`[supervisor] checkStuckQueue error: ${err?.message}`);
   }
+}
+
+async function forwardStuckMessages(sql: postgres.Sql): Promise<void> {
+  const fallback = resolveFallbackChannel();
+  if (!fallback) {
+    // Only log if there are actual candidates so we don't spam on every healthy tick.
+    return;
+  }
+
+  const candidates = await sql`
+    SELECT mq.id, mq.session_id, mq.chat_id, mq.from_user, mq.content,
+           s.project,
+           EXTRACT(EPOCH FROM (NOW() - mq.created_at))::int AS age_seconds
+    FROM message_queue mq
+    JOIN sessions s ON s.id = mq.session_id
+    WHERE mq.delivered = false
+      AND mq.forwarded_at IS NULL
+      AND mq.created_at < NOW() - make_interval(mins => ${STUCK_QUEUE_FORWARD_MINUTES})
+  `;
+
+  if (candidates.length === 0) return;
+
+  for (const row of candidates) {
+    const ageMin = Math.round(Number(row.age_seconds) / 60);
+    const text = [
+      `📬 <b>Stuck message forwarded</b>`,
+      `Project: <code>${row.project}</code>`,
+      `Session: #<code>${row.session_id}</code>`,
+      `From: ${row.from_user}`,
+      `Queued: ${ageMin}m ago`,
+      `———`,
+      row.content,
+    ].join("\n");
+
+    const res = await tgPost("sendMessage", {
+      chat_id: fallback.chat,
+      message_thread_id: fallback.topic,
+      text,
+      parse_mode: "HTML",
+    });
+    if (res) {
+      await sql`UPDATE message_queue SET forwarded_at = NOW() WHERE id = ${row.id}`;
+      console.log(`[supervisor] forwarded stuck message #${row.id} (${row.project}) to fallback channel`);
+    }
+  }
+}
+
+function resolveFallbackChannel(): { chat: string; topic: number } | null {
+  if (!BOT_TOKEN || !SUPERVISOR_CHAT_ID) return null;
+  if (JOINBOX_TOPIC_ID > 0) return { chat: SUPERVISOR_CHAT_ID, topic: JOINBOX_TOPIC_ID };
+  if (SUPERVISOR_TOPIC_ID > 0) return { chat: SUPERVISOR_CHAT_ID, topic: SUPERVISOR_TOPIC_ID };
+  console.warn("[supervisor] no fallback channel configured, skipping forward");
+  return null;
 }
 
 // --- Loop 3: Voice status recovery ---
