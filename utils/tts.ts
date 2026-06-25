@@ -77,7 +77,7 @@ export function detectRussian(text: string): boolean {
 
 /**
  * Returns true if the text qualifies for a voice attachment:
- * - At least 200 chars
+ * - At least 300 chars (VOICE_MIN_CHARS)
  * - Not mostly code (fenced code blocks < 40% of text length)
  * - Not a diff (fewer than 6 lines starting with + or -)
  */
@@ -97,6 +97,65 @@ export function shouldSendVoice(text: string): boolean {
   if (diffLines >= 6) return false;
 
   return true;
+}
+
+/** Max spoken length of a single voice message. Longer replies are split into
+ *  multiple voice messages so no single clip exceeds this. */
+export const MAX_VOICE_SECONDS = 90;
+
+/** Estimated TTS speaking rate (characters per second). Tunable via env so it can
+ *  be calibrated to the active voice without a code change. ~15 ch/s ≈ 128 wpm for
+ *  mixed Russian/Latin speech — deliberately conservative so chunks stay under cap. */
+const VOICE_CHARS_PER_SECOND = Number(process.env.VOICE_CHARS_PER_SECOND) || 15;
+
+/** Estimate spoken duration (seconds) of text, ignoring markdown that gets stripped. */
+export function estimateVoiceSeconds(text: string): number {
+  return stripMarkdown(text).length / VOICE_CHARS_PER_SECOND;
+}
+
+/**
+ * Split text into chunks whose estimated spoken duration is <= maxSeconds each.
+ * Prefers paragraph, then sentence, then line, then word boundaries so a chunk
+ * never cuts mid-word. Returns [text] unchanged when it already fits.
+ */
+export function splitForVoice(text: string, maxSeconds = MAX_VOICE_SECONDS): string[] {
+  const maxChars = Math.max(1, Math.floor(maxSeconds * VOICE_CHARS_PER_SECOND));
+  const trimmed = text.trim();
+  if (trimmed.length <= maxChars) return [trimmed];
+
+  const chunks: string[] = [];
+  let remaining = trimmed;
+  const floor = maxChars * 0.4; // don't accept a boundary that wastes >60% of the budget
+
+  while (remaining.length > maxChars) {
+    let splitAt = remaining.lastIndexOf("\n\n", maxChars);
+    if (splitAt < floor) {
+      const sentenceEnd = lastSentenceEnd(remaining, maxChars);
+      if (sentenceEnd > floor) splitAt = sentenceEnd;
+    }
+    if (splitAt < floor) splitAt = remaining.lastIndexOf("\n", maxChars);
+    if (splitAt < floor) splitAt = remaining.lastIndexOf(" ", maxChars);
+    if (splitAt < floor) splitAt = maxChars; // hard cut — no boundary found
+
+    const piece = remaining.slice(0, splitAt).trim();
+    if (piece) chunks.push(piece);
+    remaining = remaining.slice(splitAt).trim();
+  }
+  if (remaining) chunks.push(remaining);
+  return chunks;
+}
+
+/** Index just past the last sentence terminator (. ! ? … and Cyrillic variants)
+ *  followed by whitespace, at or before `limit`. Returns -1 if none found. */
+function lastSentenceEnd(text: string, limit: number): number {
+  const window = text.slice(0, Math.min(limit, text.length));
+  let found = -1;
+  const re = /[.!?…](?=\s)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(window)) !== null) {
+    found = m.index + 1; // include the terminator
+  }
+  return found;
 }
 
 /** Strip markdown formatting for cleaner TTS output */
@@ -492,23 +551,16 @@ export function maybeAttachVoice(
 }
 
 /**
- * Same as maybeAttachVoice but uses a raw bot token instead of a grammY Bot.
- * Used by the channel subprocess which doesn't have a Bot instance.
- * @param forceVoice — skip shouldSendVoice check (e.g. user sent a voice message)
+ * Synthesize a single text piece and send it as one Telegram voice message.
+ * Awaitable so callers can chain pieces in order. Shows the "recording voice…"
+ * indicator until the upload completes. Never throws — logs and resolves.
  */
-export function maybeAttachVoiceRaw(
+export async function sendOneVoice(
   token: string,
   chatId: number | string,
   text: string,
   threadId?: number | null,
-  forceVoice = false,
-): void {
-  channelLogger.info({ chatId, threadId, textLen: text.length, forceVoice, hasGroqKey: !!GROQ_API_KEY }, "tts: maybeAttachVoiceRaw called");
-  if (!forceVoice && !shouldSendVoice(text)) {
-    channelLogger.info({ chatId, textLen: text.length }, "tts: shouldSendVoice=false, skipping");
-    return;
-  }
-
+): Promise<void> {
   // Show "recording voice..." indicator while synthesis is in progress.
   // Telegram clears chat actions after 5s, so repeat every 4s until done.
   const actionBody: Record<string, unknown> = {
@@ -525,46 +577,98 @@ export function maybeAttachVoiceRaw(
   sendAction();
   const actionTimer = setInterval(sendAction, 4000);
 
-  synthesize(text)
-    .then(async (result) => {
-      clearInterval(actionTimer);
-      if (!result) {
-        channelLogger.warn({ chatId }, "tts: synthesize returned null");
-        return;
-      }
-      const { buf, fmt } = result;
-      const mimeType = fmt === "mp3" ? "audio/mpeg" : "audio/wav";
-      const filename = fmt === "mp3" ? "voice.mp3" : "voice.wav";
-      const form = new FormData();
-      form.append("chat_id", String(chatId));
-      form.append("voice", new Blob([buf.buffer as ArrayBuffer], { type: mimeType }), filename);
-      if (threadId) form.append("message_thread_id", String(threadId));
-      channelLogger.info({ chatId, threadId, bufSize: buf.length, fmt }, "tts: sending voice");
-      const sendVoice = () => fetch(`https://api.telegram.org/bot${token}/sendVoice`, {
-        method: "POST",
-        body: form,
-      });
-      let res = await sendVoice();
-      // Retry once on 429 Too Many Requests, respecting retry_after
-      if (res.status === 429) {
-        let retryAfter = 5;
-        try {
-          const body = await res.json() as { parameters?: { retry_after?: number } };
-          retryAfter = body.parameters?.retry_after ?? 5;
-        } catch { /* use default */ }
-        channelLogger.warn({ chatId, retryAfter }, "tts: sendVoice 429, retrying after delay");
-        await new Promise(r => setTimeout(r, (retryAfter + 1) * 1000));
-        res = await sendVoice();
-      }
-      if (!res.ok) {
-        const err = await res.text();
-        channelLogger.error({ status: res.status, err, fmt }, "tts: sendVoice failed");
-      } else {
-        channelLogger.info({ chatId, threadId, fmt }, "tts: voice sent ok");
-      }
-    })
-    .catch((err) => {
-      clearInterval(actionTimer);
-      channelLogger.error({ err }, "tts: failed to send voice (raw)");
+  try {
+    const result = await synthesize(text);
+    if (!result) {
+      channelLogger.warn({ chatId }, "tts: synthesize returned null");
+      return;
+    }
+    const { buf, fmt } = result;
+    const mimeType = fmt === "mp3" ? "audio/mpeg" : "audio/wav";
+    const filename = fmt === "mp3" ? "voice.mp3" : "voice.wav";
+    const form = new FormData();
+    form.append("chat_id", String(chatId));
+    form.append("voice", new Blob([buf.buffer as ArrayBuffer], { type: mimeType }), filename);
+    if (threadId) form.append("message_thread_id", String(threadId));
+    channelLogger.info({ chatId, threadId, bufSize: buf.length, fmt }, "tts: sending voice");
+    const sendVoice = () => fetch(`https://api.telegram.org/bot${token}/sendVoice`, {
+      method: "POST",
+      body: form,
     });
+    let res = await sendVoice();
+    // Retry once on 429 Too Many Requests, respecting retry_after
+    if (res.status === 429) {
+      let retryAfter = 5;
+      try {
+        const body = await res.json() as { parameters?: { retry_after?: number } };
+        retryAfter = body.parameters?.retry_after ?? 5;
+      } catch { /* use default */ }
+      channelLogger.warn({ chatId, retryAfter }, "tts: sendVoice 429, retrying after delay");
+      await new Promise(r => setTimeout(r, (retryAfter + 1) * 1000));
+      res = await sendVoice();
+    }
+    if (!res.ok) {
+      const err = await res.text();
+      channelLogger.error({ status: res.status, err, fmt }, "tts: sendVoice failed");
+    } else {
+      channelLogger.info({ chatId, threadId, fmt }, "tts: voice sent ok");
+    }
+  } catch (err) {
+    channelLogger.error({ err }, "tts: failed to send voice (raw)");
+  } finally {
+    clearInterval(actionTimer);
+  }
+}
+
+/**
+ * Same as maybeAttachVoice but uses a raw bot token instead of a grammY Bot.
+ * Used by the channel subprocess which doesn't have a Bot instance.
+ * Long replies are split into multiple voice messages of ≤ MAX_VOICE_SECONDS each,
+ * sent sequentially so they arrive in order. Fire-and-forget.
+ * @param forceVoice — skip shouldSendVoice check (e.g. user sent a voice message)
+ */
+export function maybeAttachVoiceRaw(
+  token: string,
+  chatId: number | string,
+  text: string,
+  threadId?: number | null,
+  forceVoice = false,
+): void {
+  channelLogger.info({ chatId, threadId, textLen: text.length, forceVoice, hasGroqKey: !!GROQ_API_KEY }, "tts: maybeAttachVoiceRaw called");
+  if (!forceVoice && !shouldSendVoice(text)) {
+    channelLogger.info({ chatId, textLen: text.length }, "tts: shouldSendVoice=false, skipping");
+    return;
+  }
+
+  const chunks = splitForVoice(text);
+  channelLogger.info({ chatId, chunkCount: chunks.length }, "tts: sending voice in chunks");
+  void (async () => {
+    for (const chunk of chunks) {
+      await sendOneVoice(token, chatId, chunk, threadId);
+    }
+  })();
+}
+
+/**
+ * Interleave a long reply as ⟨text, voice⟩ pairs of ≤ MAX_VOICE_SECONDS each:
+ * sends chunk[0]'s voice (its text is assumed already sent by the caller as the
+ * main reply message), then for each later chunk sends its text followed by its
+ * voice. Sequential so Telegram delivers everything in order. Fire-and-forget —
+ * never throws.
+ */
+export async function sendVoicedReply(
+  token: string,
+  chatId: number | string,
+  chunks: string[],
+  threadId: number | null,
+  sendText: (chunk: string) => Promise<void>,
+): Promise<void> {
+  for (let i = 0; i < chunks.length; i++) {
+    try {
+      if (i > 0) await sendText(chunks[i]!);
+      await sendOneVoice(token, chatId, chunks[i]!, threadId);
+    } catch (err) {
+      channelLogger.error({ err, i }, "tts: sendVoicedReply chunk failed");
+    }
+  }
 }
