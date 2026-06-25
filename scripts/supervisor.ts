@@ -9,7 +9,7 @@
  * sharing the existing DB connection and shell utilities.
  *
  * Monitoring loops:
- *  1. Session heartbeat   — active_status_messages.updated_at stale >2 min → proj_start
+ *  1. Session heartbeat   — active_status_messages.updated_at stale >SESSION_STALE_MS (default 5 min) → proj_start
  *  2. Queue stuck         — message_queue pending >5 min → inline-button alert
  *  3. Voice cleanup       — voice_status_messages >3 min → edit Telegram + delete
  *  4. Status broadcast    — every 5 min (delete old + send new for notification)
@@ -34,7 +34,9 @@ const OLLAMA_URL          = process.env.OLLAMA_URL ?? "http://localhost:11434";
 const IDLE_COMPACT_MIN    = Math.max(10, Number(process.env.IDLE_COMPACT_MIN ?? "60") || 60); // minutes before auto-compact
 
 // Thresholds
-const SESSION_STALE_MS  = 2 * 60 * 1000;   // 2 min — heartbeat timeout
+// Claude Code doing long-running work (git analysis, deep reasoning) can go silent for 3-4 min
+// naturally — 2 min was too aggressive and caused constant false-positive restarts.
+const SESSION_STALE_MS  = Number(process.env.SESSION_STALE_MS ?? String(5 * 60 * 1000));   // 5 min — heartbeat timeout
 const QUEUE_STUCK_MS    = 5 * 60 * 1000;   // 5 min — queue unprocessed
 const VOICE_STALE_MS    = 3 * 60 * 1000;   // 3 min — voice download timeout
 const ESCALATE_MS       = 30 * 60 * 1000;  // 30 min — escalation threshold
@@ -293,7 +295,7 @@ async function checkHungSessions(sql: postgres.Sql, runShell?: RunShell): Promis
       FROM sessions s
       JOIN active_status_messages asm ON asm.session_id = s.id
       WHERE s.status = 'active'
-        AND asm.updated_at < NOW() - INTERVAL '2 minutes'
+        AND asm.updated_at < NOW() - (${Math.floor(SESSION_STALE_MS / 1000)} * INTERVAL '1 second')
     `;
 
     for (const row of rows) {
@@ -804,12 +806,12 @@ async function checkUnansweredMessages(sql: postgres.Sql): Promise<void> {
             AND mq.chat_id    = m.chat_id
             AND mq.delivered  = false
         )
-        -- Claude is NOT actively processing this chat (ASM stale > 2 min)
+        -- Claude is NOT actively processing this chat (ASM stale > SESSION_STALE_MS)
         AND NOT EXISTS (
           SELECT 1 FROM active_status_messages asm
           WHERE asm.session_id  = s.id
             AND asm.chat_id     = m.chat_id
-            AND asm.updated_at  > NOW() - INTERVAL '2 minutes'
+            AND asm.updated_at  > NOW() - (${Math.floor(SESSION_STALE_MS / 1000)} * INTERVAL '1 second')
         )
     `.catch(() => [] as any[]);
 
