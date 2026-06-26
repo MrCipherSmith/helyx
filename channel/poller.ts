@@ -64,15 +64,16 @@ async function buildContextBlock(
 
 /** Run a promise with a deadline. Resolves to DEADLINE_EXCEEDED and logs a warning if ms elapses first. */
 function withDeadline<T>(p: Promise<T>, ms: number, label: string): Promise<T | typeof DEADLINE_EXCEEDED> {
-  return Promise.race([
-    p,
-    new Promise<typeof DEADLINE_EXCEEDED>(resolve =>
-      setTimeout(() => {
-        channelLogger.warn({ label, ms }, "poller: deadline exceeded, continuing");
-        resolve(DEADLINE_EXCEEDED);
-      }, ms),
-    ),
-  ]);
+  let timerId: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<typeof DEADLINE_EXCEEDED>((resolve) => {
+    timerId = setTimeout(() => {
+      channelLogger.warn({ label, ms }, "poller: deadline exceeded, continuing");
+      resolve(DEADLINE_EXCEEDED);
+    }, ms);
+  });
+  // Cancel the timer when p settles first so the warning only fires on genuine deadline violations.
+  const guardedP = p.finally(() => clearTimeout(timerId));
+  return Promise.race([guardedP, timeoutPromise]);
 }
 
 export interface PollerContext {
@@ -241,6 +242,12 @@ export class MessageQueuePoller {
           : null;
         const injectionKey = `${sid}:${sessionInfo?.clientId ?? ""}`;
 
+        // Tracks chats that already had their old status deleted in this batch.
+        // For burst batches (multiple messages queued for the same chat), skip
+        // deleteStatusMessage on 2nd+ rows so the status created by the first row
+        // survives — sendStatusMessage updates it in-place instead of flashing 3ms.
+        const processedChats = new Set<string>();
+
         for (const row of rows) {
           const tDequeue = Date.now();
           const queueAge = tDequeue - new Date(row.created_at).getTime();
@@ -283,11 +290,14 @@ export class MessageQueuePoller {
           this.touchIdleTimer();
 
           // 1. Create status message FIRST so it always appears before Claude's reply.
-          // Both calls are capped at 4s: Telegram HTTP retries (up to 60s total) can
-          // block the poller loop and prevent Claude's tool-call responses from being
-          // processed, causing a deadlock. If the deadline fires we log and continue —
-          // losing the status message is preferable to a hung session.
-          await withDeadline(this.status.deleteStatusMessage(row.chat_id), 4_000, "deleteStatusMessage");
+          // deleteStatusMessage is capped at 4s; sendStatusMessage at 4s: Telegram HTTP retries
+          // (up to 60s total) can block the poller loop and cause a deadlock.
+          // For burst batches: skip delete for 2nd+ rows of the same chat — sendStatusMessage
+          // will update the existing status in-place instead of flashing a 3ms status.
+          if (!processedChats.has(row.chat_id)) {
+            await withDeadline(this.status.deleteStatusMessage(row.chat_id), 4_000, "deleteStatusMessage");
+          }
+          processedChats.add(row.chat_id);
           this.status.startTypingForChat(row.chat_id);
           const stage = carriedOverChats.has(row.chat_id)
             ? "➕ Догнал ещё один вопрос"

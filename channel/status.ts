@@ -125,6 +125,13 @@ export class StatusManager {
   /** Last timestamp the tmux monitor reported activity — tracked even without an active status
    *  so schedulePostReplyCheck can detect if Claude is still working after an early reply. */
   private lastMonitorActivity = new Map<string, number>();
+  /**
+   * Generation counter per state-key for in-flight sendStatusMessage calls.
+   * Allows a slow Telegram response that resolves after the 4s deadline to detect
+   * that a newer call (or a deleteStatusMessage) has superseded it, and self-delete
+   * the orphan Telegram message instead of late-registering it in activeStatus.
+   */
+  private pendingSendGenerations = new Map<string, number>();
   private readonly TYPING_TIMEOUT_MS = 30_000;
   private readonly RESPONSE_GUARD_MS = 5 * 60_000; // 5 min
 
@@ -410,6 +417,12 @@ export class StatusManager {
       return null;
     }
 
+    // Register a generation token before the async Telegram call. If deleteStatusMessage
+    // fires (or a newer sendStatusMessage starts) while we await the HTTP response, our
+    // generation will be stale — we self-delete the orphan message instead of registering.
+    const myGen = (this.pendingSendGenerations.get(key) ?? 0) + 1;
+    this.pendingSendGenerations.set(key, myGen);
+
     try {
       const t0 = Date.now();
       const initialText = formatStatusText(`${prefix}${stage}`, "0s", "", null, SPINNER_FRAMES[0]);
@@ -421,8 +434,25 @@ export class StatusManager {
       const result = await sendTelegramMessage(token, effectiveChatId, initialText, extra);
       const tgRtt = Date.now() - t0;
       if (!result.ok) {
+        // Guard: only clean up our own entry; a concurrent newer call may have bumped the gen.
+        if (this.pendingSendGenerations.get(key) === myGen) {
+          this.pendingSendGenerations.delete(key);
+        }
         channelLogger.warn({ error: result.errorBody }, "sendStatusMessage failed");
         return `Telegram API error`;
+      }
+
+      // Guard: if generation changed since we started, a newer call or deleteStatusMessage
+      // superseded us — self-delete the orphan rather than late-registering it.
+      if (this.pendingSendGenerations.get(key) !== myGen) {
+        channelLogger.warn(
+          { chatId, messageId: result.messageId, tgRttMs: tgRtt },
+          "sendStatusMessage: late registration — deleting orphan",
+        );
+        // DO NOT delete pendingSendGenerations[key] — it belongs to the newer caller (or is a
+        // stale residual). Deleting would cause the newer caller to see undefined and self-orphan.
+        deleteTelegramMessage(token, effectiveChatId, result.messageId!);
+        return null;
       }
 
       const state: StatusState = {
@@ -457,10 +487,15 @@ export class StatusManager {
         // If staleSec >= 90, don't heartbeat — let supervisor detect the stale row
       }, 30_000);
       this.activeStatus.set(key, state);
+      this.pendingSendGenerations.delete(key);
       this.persistStatusMessage(key, state).catch(() => {});
       channelLogger.info({ phase: "status", step: "created", chatId: effectiveChatId, messageId: state.messageId, tgRttMs: tgRtt }, "perf");
       return null;
     } catch (e) {
+      // Guard: only clean up our own entry; a concurrent newer call may have bumped the gen.
+      if (this.pendingSendGenerations.get(key) === myGen) {
+        this.pendingSendGenerations.delete(key);
+      }
       channelLogger.error({ err: e }, "sendStatusMessage exception");
       return `Exception: ${e}`;
     }
@@ -576,6 +611,15 @@ export class StatusManager {
   async deleteStatusMessage(chatId: string): Promise<void> {
     this.disarmResponseGuard(chatId); // reply received — cancel fallback
     const key = this.stateKey(chatId);
+
+    // Bump generation so any in-flight sendStatusMessage that resolves late will
+    // see a mismatch and self-delete its orphan message instead of registering it.
+    const currentGen = this.pendingSendGenerations.get(key);
+    if (currentGen !== undefined) {
+      this.pendingSendGenerations.set(key, currentGen + 1);
+      channelLogger.debug({ chatId, prevGen: currentGen }, "deleteStatusMessage: bumped generation (in-flight send or stale residual from prior orphan)");
+    }
+
     const state = this.activeStatus.get(key);
     const tDelete = Date.now();
     if (!state) {
