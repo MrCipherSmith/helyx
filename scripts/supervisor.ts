@@ -339,7 +339,7 @@ async function checkHungSessions(sql: postgres.Sql, runShell?: RunShell): Promis
 
 // --- Loop 2: Stuck queue monitor ---
 
-async function checkStuckQueue(sql: postgres.Sql): Promise<void> {
+async function checkStuckQueue(sql: postgres.Sql, runShell?: RunShell): Promise<void> {
   try {
     await refreshAcks(sql);
 
@@ -358,7 +358,6 @@ async function checkStuckQueue(sql: postgres.Sql): Promise<void> {
 
     for (const row of rows) {
       const project = String(row.project ?? "unknown");
-      const projectPath = String(row.project_path ?? "");
       const sessionId = Number(row.session_id);
       const oldestMs = Date.now() - new Date(row.oldest_pending).getTime();
       const oldestSec = Math.round(oldestMs / 1000);
@@ -366,32 +365,28 @@ async function checkStuckQueue(sql: postgres.Sql): Promise<void> {
 
       console.log(`[supervisor] stuck queue: ${project} (oldest msg ${oldestSec}s)`);
 
+      // Check if Claude is actively working via tmux spinner — if yes, just wait.
+      if (runShell) {
+        const paneRaw = await runShell(
+          `tmux capture-pane -t "bots:${project}" -p 2>/dev/null || true`,
+        );
+        const paneLines = paneRaw.output.split("\n");
+        const spinnerActive = paneLines.slice(-10).some(l =>
+          /^[·✶✻]\s+.+/.test(l.trim()),
+        );
+        if (spinnerActive) {
+          console.log(`[supervisor] stuck queue but Claude spinner active, skipping: ${project}`);
+          continue;
+        }
+      }
+
       if (!shouldAlert(dedupKey)) continue;
 
-      // Auto-trigger proj_start (same strategy as hung session recovery)
-      let actionResult = "no path configured";
-      if (projectPath) {
-        const res = await triggerProjStart(sql, projectPath);
-        actionResult = res.result;
-        console.log(`[supervisor] stuck_queue proj_start for ${project}: ${actionResult}`);
-      }
-
-      const recovered = projectPath ? await verifyRecovery(sql, sessionId) : false;
-
-      await logIncident(sql, "stuck_queue", project, sessionId, "proj_start",
-        recovered ? "recovered" : actionResult, "");
-
-      if (recovered) {
-        await sendAlert(`✅ <b>Очередь восстановлена</b>\nПроект: <code>${project}</code>`);
-        continue;
-      }
-
-      // Auto-recovery failed — alert user with manual options
       const msg = [
-        `⚠️ <b>Supervisor: очередь зависла</b>`,
+        `⚠️ <b>Supervisor: сообщение не обработано</b>`,
         `Проект: <code>${project}</code>`,
-        `Старейшее сообщение: ${Math.round(oldestSec / 60)}m ${oldestSec % 60}s`,
-        `Авто-рестарт: ${actionResult} — требуется ручное действие.`,
+        `В очереди: ${Math.round(oldestSec / 60)}m ${oldestSec % 60}s`,
+        `Claude не отвечает и не работает — возможно завис.`,
       ].join("\n");
 
       await sendAlertWithButtons(msg, [
@@ -401,6 +396,8 @@ async function checkStuckQueue(sql: postgres.Sql): Promise<void> {
         ],
         [{ text: "🔕 Тишина 30м", callback_data: `sup:ack:${dedupKey}` }],
       ]);
+
+      await logIncident(sql, "stuck_queue", project, sessionId, "alerted_user", "pending", null);
     }
 
     // Forward messages stuck past STUCK_QUEUE_FORWARD_MINUTES to the fallback channel.
@@ -1122,12 +1119,12 @@ export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
   setTimeout(() => {
     if (!queueCheckRunning) {
       queueCheckRunning = true;
-      checkStuckQueue(sql).catch(() => {}).finally(() => { queueCheckRunning = false; });
+      checkStuckQueue(sql, runShell).catch(() => {}).finally(() => { queueCheckRunning = false; });
     }
     const queueTimer = setInterval(() => {
       if (queueCheckRunning) return;
       queueCheckRunning = true;
-      checkStuckQueue(sql).catch(() => {}).finally(() => { queueCheckRunning = false; });
+      checkStuckQueue(sql, runShell).catch(() => {}).finally(() => { queueCheckRunning = false; });
     }, 60_000);
     queueTimer.unref?.();
   }, 15_000);
