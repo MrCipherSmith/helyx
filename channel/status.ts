@@ -190,10 +190,30 @@ export class StatusManager {
       // Claude is probably in a long thinking or tool phase — not stuck yet.
       // Edit the existing guard message in-place (silent update) to avoid spamming new messages.
       // Cap at 6 re-arms (30 minutes total) to prevent indefinite re-arming.
+      //
+      // Exception: if newer messages are waiting in the queue for this chat AND it has been
+      // more than 10 min, unblock immediately so the user's follow-ups are not deferred for
+      // the full 30-min re-arm cycle. This handles the case where Claude replied to a
+      // DIFFERENT chat in a multi-chat batch and never cleared this chat's status.
+      let hasPendingQueue = false; // hoisted so Case 3 can use it
       if (looksActive) {
         const count = (this.responseGuardRearmCount.get(key) ?? 0) + 1;
         this.responseGuardRearmCount.set(key, count);
-        if (count < 6) {
+        const TEN_MIN_MS = 10 * 60_000;
+        // If it's been more than 10 min, check whether newer messages are waiting. If so,
+        // unblock immediately instead of waiting for the full 30-min re-arm cycle.
+        if (count < 6 && silentMs >= TEN_MIN_MS) {
+          const sid = this.ctx.sessionId();
+          hasPendingQueue = (sid !== null) && await this.ctx.sql`
+            SELECT 1 FROM message_queue
+            WHERE session_id = ${sid} AND chat_id = ${chatId} AND delivered = false
+            LIMIT 1
+          `.then(rows => rows.length > 0).catch(() => false);
+          if (hasPendingQueue) {
+            channelLogger.warn({ chatId, silentMs, rearmCount: count }, "response guard: pending queue blocked, unblocking chat immediately");
+          }
+        }
+        if (count < 6 && !hasPendingQueue) {
           channelLogger.warn({ chatId, silentMs, stage: stageText, rearmCount: count }, "response guard: long thinking, re-arming");
           const guardText = `⏳ Claude думает уже 5+ мин. Последняя активность: ${silentStr} назад.\n/session — статус сессии`;
           const existing = this.guardMessages.get(key);
@@ -213,24 +233,33 @@ export class StatusManager {
           this.armResponseGuard(chatId);
           return;
         }
-        // count >= 6: fall through to Case 3 (stuck cleanup) regardless of looksActive
-        channelLogger.warn({ chatId, silentMs, stage: stageText, rearmCount: count }, "response guard: rearm cap reached, treating as stuck");
+        // count >= 6 OR pending queue blocked: fall through to Case 3
+        if (hasPendingQueue) {
+          channelLogger.warn({ chatId, silentMs, stage: stageText, rearmCount: count }, "response guard: unblocking for pending queue");
+        } else {
+          channelLogger.warn({ chatId, silentMs, stage: stageText, rearmCount: count }, "response guard: rearm cap reached, treating as stuck");
+        }
       }
 
-      // Case 3: no recent activity and no active-looking stage — likely stuck.
-      channelLogger.warn({ chatId, silentMs, stage: stageText }, "response guard: no activity, likely stuck");
+      // Case 3: no recent activity and no active-looking stage — likely stuck, OR
+      // the chat had pending queue messages that were blocked for >10 min.
+      if (!hasPendingQueue) {
+        channelLogger.warn({ chatId, silentMs, stage: stageText }, "response guard: no activity, likely stuck");
+      }
       const guardEntry = this.guardMessages.get(key);
       if (guardEntry && token) {
         deleteTelegramMessage(token, guardEntry.chatId, guardEntry.messageId);
         this.guardMessages.delete(key);
       }
       await this.deleteStatusMessage(chatId);
-      await sendTelegramMessage(
-        token,
-        effectiveChatId,
-        `🔴 Claude не отвечает и tmux молчит уже ${silentStr} — сессия возможно зависла.\n/session — статус сессии`,
-        extra,
-      );
+      if (!hasPendingQueue) {
+        await sendTelegramMessage(
+          token,
+          effectiveChatId,
+          `🔴 Claude не отвечает и tmux молчит уже ${silentStr} — сессия возможно зависла.\n/session — статус сессии`,
+          extra,
+        );
+      }
     }, this.RESPONSE_GUARD_MS);
 
     this.responseGuards.set(key, timer);
