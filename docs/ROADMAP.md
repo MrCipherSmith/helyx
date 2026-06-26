@@ -14,7 +14,17 @@
 
 ## ✅ Implemented
 
-### v1.49.0 (Latest) — Supervisor Overhaul
+### v1.50.0 (Latest) — Session Stability Reform & Context Injection
+
+- **Session Context Injection** — on CLI restart, first delivered message includes prior context block (LLM summary → raw messages fallback); guard key `sessionId:clientId` resets on every new Claude Code process; fail-open (DB errors are logged and skipped)
+- **Restart Control Reform** — `checkHungSessions` and `checkStuckQueue` no longer auto-restart; both use unified dedup key `session_problem:<project>`; alerts include pane tail and spinner detection
+- **`enqueueRestart()`** — single idempotent entry point for all `proj_start` commands; double-press returns "⏳ уже в очереди"
+- **`forwardStuckMessages`** — callable per-project from supervisor-actions callback `sup:force_deliver`
+- **Alert auto-resolution** — alert message edited to ✅ after two consecutive clean ticks (60 s); inline keyboard cleared automatically
+- **`run-cli.sh` restart cap** — escalates to Telegram after `MAX_RESTARTS_IN_WINDOW` (default 3) restarts in `RESTART_WINDOW_SECONDS` (default 300 s); writes marker file + exits loop
+- **tmux Audit Daemon** (`scripts/tmux-session-logger.ts`) — structured JSONL log of all session/window lifecycle events; periodic snapshots; `--query` CLI for post-mortem; started by `admin-daemon`
+
+### v1.49.0 — Supervisor Overhaul
 
 - **Smart status broadcast** — edits message in-place (silent) when healthy; delete+send (notification) only when stuck queue or 🔴 docker container detected
 - **Stuck queue auto-recovery** — `checkStuckQueue` now triggers `proj_start` automatically before alerting user; manual buttons appear only if auto-recovery fails
@@ -483,7 +493,7 @@ Core features established in foundational releases:
 
 ## 🚧 In Progress
 
-None currently. Latest merged work completed in v1.47.0.
+None currently.
 
 ---
 
