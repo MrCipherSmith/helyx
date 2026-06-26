@@ -421,6 +421,23 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
         if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
           result = { ok: false, output: `invalid project name: ${name}` }; break;
         }
+        // Reset in-flight messages (delivered=true but Claude not yet responded) so they
+        // get re-delivered to the new session after restart. Only touches messages from
+        // the last 30 min — older ones were almost certainly already processed.
+        if (project_id) {
+          const resetResult = await sql`
+            UPDATE message_queue SET delivered = false
+            WHERE session_id IN (
+              SELECT id FROM sessions WHERE project_id = ${project_id} AND source = 'remote'
+            )
+              AND delivered = true
+              AND forwarded_at IS NULL
+              AND created_at > NOW() - INTERVAL '30 minutes'
+          `;
+          if (resetResult.count > 0) {
+            console.log(`[admin-daemon] proj_stop: reset ${resetResult.count} in-flight message(s) for project ${project_id}`);
+          }
+        }
         // Kill ALL windows for this project — tmux only kills the first match per call.
         const killResult = await runShell(`count=0; while tmux kill-window -t "bots:${name}" 2>/dev/null; do count=$((count+1)); done; echo "killed $count window(s)"`);
         result = { ok: true, output: killResult.output };
