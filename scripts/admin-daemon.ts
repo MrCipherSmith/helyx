@@ -13,6 +13,7 @@
 import { resolve } from "path";
 import { startTmuxWatchdog } from "./tmux-watchdog.ts";
 import { startSupervisor } from "./supervisor.ts";
+import { startTmuxSessionLogger } from "./tmux-session-logger.ts";
 import { runCurator, getLastCuratorRun } from "../utils/curator.ts";
 import { sendCuratorSummary } from "../utils/skill-approval.ts";
 
@@ -135,6 +136,7 @@ if (botToken) {
 
 // Start session health supervisor
 startSupervisor(sql, runShell as any);
+startTmuxSessionLogger(sql, runShell);
 
 // --- Process health heartbeat ---
 // Writes admin-daemon PID + Docker container statuses to `process_health` every 30 s.
@@ -429,6 +431,11 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
         }
         break;
       }
+
+      case "supervisor_ack":
+        // supervisor.ts reads these records directly from DB — no execution needed.
+        result = { ok: true, output: "ack recorded" };
+        break;
 
       default:
         result = { ok: false, output: `unknown command: ${row.command}` };

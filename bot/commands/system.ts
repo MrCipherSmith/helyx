@@ -10,7 +10,9 @@ import { sql } from "../../memory/db.ts";
 function isAdmin(ctx: Context): boolean {
   const adminChatId = process.env.TELEGRAM_CHAT_ID;
   if (!adminChatId) return false; // fail closed — no config, no access
-  return String(ctx.chat?.id) === adminChatId;
+  // In DMs: chat.id === adminChatId. In forum topics: chat.id is the group id,
+  // but from.id is always the user's personal id (same as DM chat id).
+  return String(ctx.chat?.id) === adminChatId || String(ctx.from?.id) === adminChatId;
 }
 
 async function systemStatus(): Promise<{ lines: string[]; running: boolean; pendingCmd?: string }> {

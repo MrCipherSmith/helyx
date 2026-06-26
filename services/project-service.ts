@@ -112,3 +112,41 @@ export class ProjectService {
 }
 
 export const projectService = new ProjectService();
+
+/**
+ * Idempotent restart enqueue — the single authoritative path for all proj_start commands.
+ * Callers pass their own sql connection; this function never touches the module-level singleton.
+ */
+export async function enqueueRestart(
+  sql: import("postgres").Sql,
+  projectId: number,
+  reason: string,
+  requestedBy: string,
+): Promise<"queued" | "skipped_already_pending"> {
+  const [existing] = await sql`
+    SELECT id FROM admin_commands
+    WHERE command = 'proj_start'
+      AND (payload->>'project_id')::int = ${projectId}
+      AND status IN ('pending', 'processing')
+    LIMIT 1
+  `;
+  if (existing) return "skipped_already_pending";
+
+  const [project] = await sql`
+    SELECT path, name, tmux_session_name FROM projects WHERE id = ${projectId}
+  `;
+  if (!project) throw new Error(`enqueueRestart: project ${projectId} not found`);
+
+  await sql`
+    INSERT INTO admin_commands (command, payload)
+    VALUES ('proj_start', ${sql.json({
+      project_id: projectId,
+      path: project.path,
+      name: project.name,
+      tmux_session_name: project.tmux_session_name,
+      reason,
+      requestedBy,
+    })})
+  `;
+  return "queued";
+}

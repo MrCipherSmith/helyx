@@ -7,6 +7,8 @@
 import type { Context } from "grammy";
 import { InlineKeyboard } from "grammy";
 import { sql } from "../../memory/db.ts";
+import { enqueueRestart } from "../../services/project-service.ts";
+import { forwardStuckMessages } from "../../scripts/supervisor.ts";
 
 export async function handleSupervisorCallback(ctx: Context): Promise<void> {
   // Only the configured admin chat may trigger supervisor actions
@@ -21,32 +23,12 @@ export async function handleSupervisorCallback(ctx: Context): Promise<void> {
   const action = parts[1];
 
   if (action === "restart_session") {
-    const sessionId = parts[2];
-    if (!sessionId) { await ctx.answerCallbackQuery({ text: "Нет ID сессии" }); return; }
-
-    const [session] = await sql`
-      SELECT project_path, project FROM sessions WHERE id = ${sessionId}
-    `.catch(() => []);
-
-    if (!session) {
-      await ctx.answerCallbackQuery({ text: "Сессия не найдена" });
-      return;
-    }
-
-    if (!session.project_path) {
-      await ctx.answerCallbackQuery({ text: "Нет project_path для этой сессии" });
-      return;
-    }
-
-    await sql`
-      INSERT INTO admin_commands (command, payload)
-      VALUES ('proj_start', ${sql.json({ path: session.project_path })})
-    `;
-
-    await ctx.answerCallbackQuery({ text: `⏳ Запускаю ${session.project}...` });
-    await ctx.editMessageReplyMarkup({
-      reply_markup: new InlineKeyboard().text("⏳ Перезапускается...", "sup:noop"),
-    }).catch(() => {});
+    const projectId = parseInt(parts[2] ?? "0", 10);
+    const result = await enqueueRestart(sql, projectId, "user:button", "user:button");
+    const replyText = result === "skipped_already_pending"
+      ? "⏳ Перезапуск уже в очереди — ожидайте"
+      : "✅ Перезапуск поставлен в очередь";
+    await ctx.answerCallbackQuery({ text: replyText });
     return;
   }
 
@@ -57,8 +39,8 @@ export async function handleSupervisorCallback(ctx: Context): Promise<void> {
   }
 
   if (action === "ack") {
-    const key = parts.slice(2).join(":");
-    const durationMin = 30;
+    const key = parts.slice(2, 4).join(":");
+    const durationMin = 60;
     await sql`
       INSERT INTO admin_commands (command, payload)
       VALUES ('supervisor_ack', ${sql.json({ key, until_ms: Date.now() + durationMin * 60_000 })})
@@ -80,6 +62,50 @@ export async function handleSupervisorCallback(ctx: Context): Promise<void> {
     return;
   }
 
+  if (action === "pane") {
+    const projectId = parseInt(parts[2] ?? "0", 10);
+    const [project] = await sql`SELECT name FROM projects WHERE id = ${projectId}`;
+    if (!project) { await ctx.answerCallbackQuery({ text: "Проект не найден" }); return; }
+    const proc = Bun.spawn(["tmux", "capture-pane", "-p", "-t", `bots:${project.name}`, "-S", "-20"], { stdout: "pipe", stderr: "pipe" });
+    const out = await new Response(proc.stdout).text().catch(() => "");
+    await proc.exited;
+    const paneLines = out.replace(/\x1B\[[0-9;]*m/g, "").split("\n").filter(Boolean).slice(-20).join("\n");
+    const chatId = ctx.callbackQuery?.message?.chat?.id;
+    const threadId = ctx.callbackQuery?.message?.message_thread_id;
+    if (chatId) {
+      const body: Record<string, unknown> = {
+        chat_id: chatId,
+        text: `📋 <b>${project.name}</b> — последние 20 строк пейна:\n<pre>${paneLines.slice(0, 3500)}</pre>`,
+        parse_mode: "HTML",
+      };
+      if (threadId) body.message_thread_id = threadId;
+      await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).catch(() => {});
+    }
+    await ctx.answerCallbackQuery({ text: "Лог отправлен" });
+    return;
+  }
+
+  if (action === "force_deliver") {
+    const sessionId = parseInt(parts[2] ?? "0", 10);
+    await forwardStuckMessages(sql, sessionId);
+    await ctx.answerCallbackQuery({ text: "✅ Принудительная доставка запущена" });
+    return;
+  }
+
+  if (action === "start_by_pid") {
+    const projectId = parseInt(parts[2] ?? "0", 10);
+    const result = await enqueueRestart(sql, projectId, "run-cli:max_restarts", "run-cli");
+    const replyText = result === "skipped_already_pending"
+      ? "⏳ Перезапуск уже в очереди"
+      : "✅ Запуск поставлен в очередь";
+    await ctx.answerCallbackQuery({ text: replyText });
+    return;
+  }
+
   if (action === "noop") {
     await ctx.answerCallbackQuery();
     return;
@@ -94,11 +120,7 @@ export async function handleSupervisorCommand(ctx: Context): Promise<void> {
 
 export async function handleSupervisorMessage(ctx: Context): Promise<void> {
   const text = (ctx.message?.text ?? "").toLowerCase().trim();
-
-  // Respond to any message in the supervisor topic (status queries and general questions)
-  // — this topic is supervisor-only, so all text gets a status response
-  const isIgnored = !text; // skip empty
-  if (isIgnored) return;
+  // When called from menu callback there is no message text — treat as a plain status query.
 
   const [sessions, qRow, health, incRow] = await Promise.all([
     sql`

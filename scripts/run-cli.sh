@@ -39,6 +39,11 @@ if [ "$PROJECT_DIR" != "$HELYX_DIR" ] && [ -f ".env" ]; then
   load_env ".env" && echo "[run-cli] Loaded project .env"
 fi
 
+MAX_RESTARTS_IN_WINDOW="${MAX_RESTARTS_IN_WINDOW:-3}"
+RESTART_WINDOW_SECONDS="${RESTART_WINDOW_SECONDS:-300}"
+PROJECT_NAME="$(basename "${PROJECT_DIR:-$(pwd)}")"
+STATE_FILE="/tmp/helyx-restart-${PROJECT_NAME}.state"
+
 # Detect if we're inside tmux
 IN_TMUX="${TMUX:-}"
 
@@ -47,6 +52,49 @@ if [ -z "$IN_TMUX" ]; then
 fi
 
 while true; do
+  # --- Restart rate limiter ---
+  _now=$(date +%s)
+  if [ -f "$STATE_FILE" ]; then
+    _win_start=$(sed -n '1p' "$STATE_FILE")
+    _count=$(sed -n '2p' "$STATE_FILE")
+    _win_start="${_win_start:-0}"
+    _count="${_count:-0}"
+    if [ $(( _now - _win_start )) -gt "$RESTART_WINDOW_SECONDS" ]; then
+      # Window expired — reset
+      printf '%s\n%s\n' "$_now" "1" > "$STATE_FILE"
+    elif [ "$_count" -ge "$MAX_RESTARTS_IN_WINDOW" ]; then
+      # Escalate and stop
+      echo "[run-cli] ESCALATION: restarted ${_count} times in ${RESTART_WINDOW_SECONDS}s — stopping" >&2
+      mkdir -p "${PROJECT_DIR}/logs/restart-failures"
+      _marker="${PROJECT_DIR}/logs/restart-failures/${PROJECT_NAME}-$(date +%s).failed"
+      if [ -n "${TMUX_PANE:-}" ]; then
+        tmux capture-pane -p -t "$TMUX_PANE" 2>/dev/null | tail -50 > "$_marker" || true
+      else
+        tail -50 "${LOG_FILE:-/dev/null}" > "$_marker" 2>/dev/null || true
+      fi
+      if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${SUPERVISOR_CHAT_ID:-}" ]; then
+        _project_db_id=$(psql "${DATABASE_URL:-}" -t -c "SELECT id FROM projects WHERE path='${PROJECT_DIR}'" 2>/dev/null | tr -d ' \n' || true)
+        _tg_body="{\"chat_id\":\"${SUPERVISOR_CHAT_ID}\",\"text\":\"🚨 ${PROJECT_NAME}: Claude Code перезапустился ${_count} раз за ${RESTART_WINDOW_SECONDS}сек — остановлен.\\nТребуется ручной запуск.\""
+        if [ -n "${SUPERVISOR_TOPIC_ID:-}" ]; then
+          _tg_body="${_tg_body},\"message_thread_id\":${SUPERVISOR_TOPIC_ID}"
+        fi
+        if [ -n "${_project_db_id:-}" ]; then
+          _tg_body="${_tg_body},\"reply_markup\":{\"inline_keyboard\":[[{\"text\":\"🔄 Запустить вручную\",\"callback_data\":\"sup:start_by_pid:${_project_db_id}\"}]]}"
+        fi
+        _tg_body="${_tg_body}}"
+        curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+          -H "Content-Type: application/json" \
+          -d "$_tg_body" > /dev/null || echo "[run-cli] Telegram escalation failed" >&2
+      fi
+      exit 0
+    else
+      printf '%s\n%s\n' "$_win_start" "$(( _count + 1 ))" > "$STATE_FILE"
+    fi
+  else
+    printf '%s\n%s\n' "$_now" "1" > "$STATE_FILE"
+  fi
+  # --- End restart rate limiter ---
+
   echo "[run-cli] Starting claude at $(date '+%Y-%m-%d %H:%M:%S')" | tee -a "$LOG_FILE"
 
   CHANNEL_LOG_FILE="/tmp/channel-${PROJECT_NAME}.log"
@@ -87,6 +135,7 @@ while true; do
 
   # Clean exit — don't restart
   if [ $EXIT_CODE -eq 0 ]; then
+    rm -f "$STATE_FILE"
     echo "[run-cli] Clean exit, stopping."
     break
   fi

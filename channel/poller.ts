@@ -8,8 +8,59 @@ import type { StatusManager } from "./status.ts";
 import type { SkillEvaluator } from "./skill-evaluator.ts";
 import { channelLogger } from "../logger.ts";
 import { setTelegramReaction } from "./telegram.ts";
+import { getProjectHistory } from "../memory/short-term.ts";
+import { sessionManager } from "../sessions/manager.ts";
 
 const DEADLINE_EXCEEDED = Symbol("deadline_exceeded");
+const CONTEXT_INJECT_LIMIT = Number(process.env.CONTEXT_INJECT_LIMIT ?? 15);
+
+type ContextTier = "summary" | "raw";
+interface ContextBlock { content: string; tier: ContextTier; messageCount?: number }
+
+async function buildContextBlock(
+  projectPath: string,
+  chatId: string,
+  sql: postgres.Sql,
+): Promise<ContextBlock | null> {
+  // Tier 1: most recent summary or project_context from long-term memory.
+  // project_context rows are stored with chatId='' (summarizeWork has no chatId param),
+  // so they need a separate OR branch; summary rows use the real chatId.
+  const rows = await sql`
+    SELECT content, type
+    FROM memories
+    WHERE project_path = ${projectPath}
+      AND (
+        (chat_id = ${chatId} AND type IN ('summary', 'project_context'))
+        OR (chat_id = '' AND type = 'project_context')
+      )
+      AND archived_at IS NULL
+    ORDER BY created_at DESC,
+             CASE WHEN type = 'project_context' THEN 0 ELSE 1 END
+    LIMIT 1
+  `;
+
+  if (rows.length > 0) {
+    return {
+      content: `[Session context from prior conversation]\n${rows[0].content}\n[End context]`,
+      tier: "summary",
+    };
+  }
+
+  // Tier 2: raw recent messages cross-session for this project+chat.
+  const messages = await getProjectHistory(projectPath, chatId, CONTEXT_INJECT_LIMIT);
+  if (messages.length === 0) return null;
+
+  const lines = messages.map((m) => {
+    const preview = m.content.length > 200 ? m.content.slice(0, 197) + "…" : m.content;
+    return `${m.role}: ${preview}`;
+  });
+
+  return {
+    content: `[Session context from prior conversation]\n${lines.join("\n")}\n[End context]`,
+    tier: "raw",
+    messageCount: messages.length,
+  };
+}
 
 /** Run a promise with a deadline. Resolves to DEADLINE_EXCEEDED and logs a warning if ms elapses first. */
 function withDeadline<T>(p: Promise<T>, ms: number, label: string): Promise<T | typeof DEADLINE_EXCEEDED> {
@@ -51,6 +102,12 @@ export class MessageQueuePoller {
    * status prefix so the user sees a clean turn boundary.
    */
   private deferredChats = new Set<string>();
+  /**
+   * Tracks sessions that already received a context injection this process run.
+   * Key: "sessionId:clientId" — resets automatically when the channel process restarts
+   * or when Claude Code reconnects (clientId changes on each new process).
+   */
+  private injectedSessions = new Set<string>();
 
   constructor(
     private ctx: PollerContext,
@@ -177,6 +234,13 @@ export class MessageQueuePoller {
           }
         }
 
+        // Fetch session once per batch — sid is constant for the entire while-iteration.
+        // Used to build the injection key and look up projectPath for context injection.
+        const sessionInfo = rows.length > 0
+          ? await sessionManager.get(sid).catch(() => null)
+          : null;
+        const injectionKey = `${sid}:${sessionInfo?.clientId ?? ""}`;
+
         for (const row of rows) {
           const tDequeue = Date.now();
           const queueAge = tDequeue - new Date(row.created_at).getTime();
@@ -189,7 +253,23 @@ export class MessageQueuePoller {
           const ttsNote = isVoiceMsg
             ? "[Channel system: The user sent a voice message. ALWAYS send a voice reply regardless of length — it is sent automatically after reply, you do NOT need to do anything extra.]\n"
             : "[Channel system: Replies ≥300 chars are automatically sent as a voice message after you call reply — you do NOT need to do anything extra, and you CAN send voice (automatically). Never claim you cannot.]\n";
-          const enrichedContent = `${ttsNote}${hint}${row.content}`;
+
+          // Inject prior-session context into the first message delivered to a fresh session.
+          // The key includes clientId so the guard resets on every new Claude Code process.
+          let contextPrefix = "";
+          if (sessionInfo?.projectPath && !this.injectedSessions.has(injectionKey)) {
+            this.injectedSessions.add(injectionKey);
+            const block = await buildContextBlock(sessionInfo.projectPath, row.chat_id, this.ctx.sql)
+              .catch((err) => { channelLogger.warn({ err, sid }, "context-inject: query failed"); return null; });
+            if (block) {
+              contextPrefix = block.content + "\n\n";
+              channelLogger.info({ sessionId: sid, projectPath: sessionInfo.projectPath, chatId: row.chat_id, tier: block.tier, messageCount: block.messageCount }, "context-inject: injected");
+            } else {
+              channelLogger.info({ sessionId: sid, projectPath: sessionInfo.projectPath }, "context-inject: skip (no prior history)");
+            }
+          }
+
+          const enrichedContent = `${contextPrefix}${ttsNote}${hint}${row.content}`;
           if (hint) channelLogger.debug({ hint: hint.trim() }, "skill hint injected");
 
           // ⚡ — message taken into work by Claude Code (replaces 👀)

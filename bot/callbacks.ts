@@ -67,6 +67,10 @@ export async function handleCallbackQuery(ctx: Context): Promise<void> {
     const { handleSupervisorCallback } = await import("./commands/supervisor-actions.ts");
     return handleSupervisorCallback(ctx);
   }
+  if (data.startsWith("tmuxlog:")) {
+    const { handleTmuxLogCallback } = await import("./commands/tmux-log.ts");
+    return handleTmuxLogCallback(ctx);
+  }
   await ctx.answerCallbackQuery({ text: "Unknown action" });
 }
 

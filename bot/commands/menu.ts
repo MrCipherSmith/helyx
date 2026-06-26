@@ -74,10 +74,19 @@ const GROUPS: Group[] = [
     label: "🖥 System",
     adminOnly: true,
     commands: [
-      { name: "system",         label: "🖥 Control" },
-      { name: "monitor",        label: "📊 Monitor" },
-      { name: "remote_control", label: "🎮 Remote" },
-      { name: "interrupt",      label: "⚡ Interrupt" },
+      { name: "system",           label: "🖥 Control" },
+      { name: "monitor",          label: "📊 Monitor" },
+      { name: "remote_control",   label: "🎮 Remote" },
+      { name: "interrupt",        label: "⚡ Interrupt" },
+      { name: "prepare_restart",  label: "💾 Prep Restart" },
+    ],
+  },
+  {
+    id: "monitoring",
+    label: "🛡 Monitoring",
+    commands: [
+      { name: "supervisor_status", label: "📊 Статус" },
+      { name: "tmux_log",          label: "📜 Tmux Log" },
     ],
   },
   {
@@ -90,6 +99,7 @@ const GROUPS: Group[] = [
       { name: "pending",          label: "⏳ Pending" },
       { name: "permission_stats", label: "🔐 Perms" },
       { name: "session_export",   label: "📤 Export" },
+      { name: "tmux_log",         label: "📜 Tmux Log" },
     ],
   },
   {
@@ -142,7 +152,9 @@ async function isForumTopic(ctx: Context): Promise<boolean> {
 function isAdminCtx(ctx: Context): boolean {
   const adminChatId = process.env.TELEGRAM_CHAT_ID;
   if (!adminChatId) return false;
-  return String(ctx.chat?.id) === adminChatId;
+  // In DMs: chat.id === adminChatId. In forum topics: chat.id is the group id,
+  // but from.id is always the user's personal id (same as DM chat id).
+  return String(ctx.chat?.id) === adminChatId || String(ctx.from?.id) === adminChatId;
 }
 
 // ── Keyboards ──────────────────────────────────────────────────────────────
@@ -249,11 +261,15 @@ async function dispatch(ctx: Context, name: string): Promise<void> {
     case "project_add":   { const { handleProjectAdd }   = await import("./project-add.ts");   await handleProjectAdd(ctx);   break; }
     case "project_facts": { const { handleProjectFacts } = await import("./project-facts.ts"); await handleProjectFacts(ctx); break; }
     case "project_scan":  { const { handleProjectScan }  = await import("./project-facts.ts"); await handleProjectScan(ctx);  break; }
+    // Monitoring
+    case "supervisor_status":  { const { handleSupervisorCommand }  = await import("./supervisor-actions.ts"); await handleSupervisorCommand(ctx);  break; }
+    case "prepare_restart":    { const { handlePrepareRestart }     = await import("./prepare-restart.ts");    await handlePrepareRestart(ctx);     break; }
     // System
     case "system":         { const { handleSystem }        = await import("./system.ts");        await handleSystem(ctx);        break; }
     case "monitor":        { const { handleMonitor }       = await import("./monitor.ts");        await handleMonitor(ctx);       break; }
     case "remote_control": { const { handleRemoteControl } = await import("./remote-control.ts"); await handleRemoteControl(ctx); break; }
     case "interrupt":      { const { handleInterrupt }     = await import("./interrupt.ts");      await handleInterrupt(ctx);     break; }
+    case "tmux_log":       { const { handleTmuxLog }       = await import("./tmux-log.ts");       await handleTmuxLog(ctx);       break; }
     // Stats
     case "stats":            { const { handleStats }           = await import("./admin.ts"); await handleStats(ctx);           break; }
     case "logs":             { const { handleLogs }            = await import("./admin.ts"); await handleLogs(ctx);            break; }

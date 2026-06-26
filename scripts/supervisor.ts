@@ -52,6 +52,11 @@ const DEDUP_WINDOW_MS = 5 * 60 * 1000; // 5 min dedup window
 // Acknowledged alerts: key → silenced until ms (refreshed from DB each loop iteration)
 const ackedUntil = new Map<string, number>();
 
+// Active alert tracking for recovery edits: key → { messageId, chatId, sentAt, text }
+const activeAlerts = new Map<string, { messageId: number; chatId: string; sentAt: number; text?: string }>();
+// Recovery clean-since tracking: key → first timestamp when both conditions became clean
+const recoveryCleanSince = new Map<string, number>();
+
 async function refreshAcks(sql: postgres.Sql): Promise<void> {
   const rows = await sql`
     SELECT payload FROM admin_commands
@@ -226,38 +231,6 @@ async function sendAlertWithButtons(
   return result?.result?.message_id ?? null;
 }
 
-// --- Insert admin_command for proj_start ---
-
-async function triggerProjStart(
-  sql: postgres.Sql,
-  projectPath: string,
-): Promise<{ ok: boolean; result: string }> {
-  try {
-    const [row] = await sql`
-      INSERT INTO admin_commands (command, payload)
-      VALUES ('proj_start', ${sql.json({ path: projectPath })})
-      RETURNING id
-    `;
-    const id = row?.id;
-    if (!id) return { ok: false, result: "insert failed" };
-
-    // Poll for completion (max 30s)
-    const deadline = Date.now() + 30_000;
-    while (Date.now() < deadline) {
-      await new Promise(r => setTimeout(r, 2000));
-      const [statusRow] = await sql`
-        SELECT status, result FROM admin_commands WHERE id = ${id}
-      `;
-      if (!statusRow) break;
-      if (statusRow.status === "done")  return { ok: true,  result: String(statusRow.result ?? "done") };
-      if (statusRow.status === "error") return { ok: false, result: String(statusRow.result ?? "error") };
-    }
-    return { ok: false, result: "timeout waiting for admin-daemon" };
-  } catch (err: any) {
-    return { ok: false, result: err?.message ?? "db error" };
-  }
-}
-
 // --- Log incident to DB ---
 
 async function logIncident(
@@ -293,11 +266,13 @@ async function checkHungSessions(sql: postgres.Sql, runShell?: RunShell): Promis
         s.id         AS session_id,
         s.project    AS project,
         s.project_path,
+        p.id         AS project_id,
         asm.key,
         asm.started_at,
         asm.updated_at
       FROM sessions s
       JOIN active_status_messages asm ON asm.session_id = s.id
+      JOIN projects p ON p.id = s.project_id AND p.tmux_session_name = 'bots'
       WHERE s.status = 'active'
         AND asm.updated_at < NOW() - (${Math.floor(SESSION_STALE_MS / 1000)} * INTERVAL '1 second')
     `;
@@ -305,32 +280,69 @@ async function checkHungSessions(sql: postgres.Sql, runShell?: RunShell): Promis
     for (const row of rows) {
       const project = String(row.project ?? "unknown");
       const sessionId = Number(row.session_id);
+      const projectId = Number(row.project_id);
       const elapsedMs = Date.now() - new Date(row.updated_at).getTime();
       const elapsedSec = Math.round(elapsedMs / 1000);
-      const dedupKey = `hung_session:${project}`;
+      const dedupKey = `session_problem:${project}`;
 
       console.log(`[supervisor] hung session detected: ${project} (stale ${elapsedSec}s)`);
 
-      if (!shouldAlert(dedupKey)) continue;
+      // Capture tmux pane for context
+      let paneLines: string[] = [];
+      let spinnerActive = false;
+      if (runShell) {
+        const paneRaw = await runShell(`tmux capture-pane -p -t "bots:${project}" 2>/dev/null || true`);
+        const stripped = paneRaw.output.replace(/\x1B\[[0-9;]*m/g, "");
+        paneLines = stripped.split("\n").filter(Boolean).slice(-5);
+        spinnerActive = stripped.split("\n").slice(-10).some(l => /^[·✶✻]\s/.test(l.trim()));
+      }
 
-      const msg = [
+      if (!shouldAlert(dedupKey)) {
+        // Already alerted by another loop — edit existing message to add hung-session info
+        const existing = activeAlerts.get(dedupKey);
+        if (existing?.messageId && existing.text) {
+          const additionalInfo = `⚠️ Также: сессия не отвечает — молчит ${Math.round(elapsedSec / 60)}m ${elapsedSec % 60}s`;
+          await tgPost("editMessageText", {
+            chat_id: SUPERVISOR_CHAT_ID,
+            message_id: existing.messageId,
+            text: existing.text + "\n\n" + additionalInfo,
+            parse_mode: "HTML",
+          }).catch(() => {});
+        }
+        continue;
+      }
+
+      const dateStr = new Date().toISOString().slice(0, 10);
+      const logPath = `/home/altsay/bots/helyx/logs/tmux-sessions/${dateStr}.jsonl`;
+
+      const msgParts = [
         `⚠️ <b>Supervisor: сессия не отвечает</b>`,
-        `Проект: <code>${project}</code>`,
-        `Молчит: ${Math.round(elapsedSec / 60)}m ${elapsedSec % 60}s`,
-      ].join("\n");
+        `Проект: <code>${project}</code>  Путь: <code>${row.project_path ?? "?"}</code>`,
+        `Молчит: ${Math.round(elapsedSec / 60)}m ${elapsedSec % 60}s назад`,
+      ];
+      if (spinnerActive) {
+        msgParts.push(`⚙️ Claude сейчас работает — возможно, не завис`);
+      }
+      if (paneLines.length > 0) {
+        msgParts.push(`Пане (последние 5 строк):\n<pre>${paneLines.join("\n")}</pre>`);
+      }
+      msgParts.push(`📁 Лог: ${logPath}`);
+      const msg = msgParts.join("\n");
 
-      await sendAlertWithButtons(msg, [
+      const messageId = await sendAlertWithButtons(msg, [
         [
-          { text: "🔄 Перезапустить", callback_data: `sup:restart_session:${sessionId}` },
-          { text: "🚀 Bounce бот",    callback_data: `sup:bounce:${sessionId}` },
+          { text: "📋 Показать лог", callback_data: `sup:pane:${projectId}` },
+          { text: spinnerActive ? "⚠️ Перезапустить (Claude работает!)" : "🔄 Перезапустить", callback_data: `sup:restart_session:${projectId}` },
         ],
         [
-          { text: "✅ Игнорировать",  callback_data: `sup:ignore:${dedupKey}` },
-          { text: "🔕 Тишина 30м",   callback_data: `sup:ack:${dedupKey}` },
+          { text: "🔇 Заглушить на 1 ч", callback_data: `sup:ack:session_problem:${project}:${projectId}` },
         ],
       ]);
+      if (messageId) {
+        activeAlerts.set(dedupKey, { messageId, chatId: SUPERVISOR_CHAT_ID, sentAt: Date.now(), text: msg });
+      }
 
-      await logIncident(sql, "hung_session", project, sessionId, "alerted_user", "pending", null);
+      await logIncident(sql, "hung_session", project, sessionId, "alerted_user", "pending", "");
     }
   } catch (err: any) {
     console.error(`[supervisor] checkHungSessions error: ${err?.message}`);
@@ -348,9 +360,12 @@ async function checkStuckQueue(sql: postgres.Sql, runShell?: RunShell): Promise<
         mq.session_id,
         s.project,
         s.project_path,
-        MIN(mq.created_at) AS oldest_pending
+        MIN(mq.created_at) AS oldest_pending,
+        (SELECT content FROM message_queue WHERE session_id = mq.session_id AND delivered = false ORDER BY created_at LIMIT 1) AS first_msg_content,
+        COUNT(*) AS stuck_count
       FROM message_queue mq
       JOIN sessions s ON s.id = mq.session_id
+      JOIN projects p ON p.id = s.project_id AND p.tmux_session_name = 'bots'
       WHERE mq.delivered = false
         AND mq.created_at < NOW() - INTERVAL '5 minutes'
       GROUP BY mq.session_id, s.project, s.project_path
@@ -361,43 +376,67 @@ async function checkStuckQueue(sql: postgres.Sql, runShell?: RunShell): Promise<
       const sessionId = Number(row.session_id);
       const oldestMs = Date.now() - new Date(row.oldest_pending).getTime();
       const oldestSec = Math.round(oldestMs / 1000);
-      const dedupKey = `stuck_queue:${project}`;
+      const stuckCount = Number(row.stuck_count ?? 1);
+      const firstMsgContent = String(row.first_msg_content ?? "");
+      const dedupKey = `session_problem:${project}`;
 
-      console.log(`[supervisor] stuck queue: ${project} (oldest msg ${oldestSec}s)`);
+      console.log(`[supervisor] stuck queue: ${project} (oldest msg ${oldestSec}s, count ${stuckCount})`);
 
-      // Check if Claude is actively working via tmux spinner — if yes, just wait.
+      // Capture tmux pane for context
+      let paneLines: string[] = [];
+      let spinnerActive = false;
       if (runShell) {
-        const paneRaw = await runShell(
-          `tmux capture-pane -t "bots:${project}" -p 2>/dev/null || true`,
-        );
-        const paneLines = paneRaw.output.split("\n");
-        const spinnerActive = paneLines.slice(-10).some(l =>
-          /^[·✶✻]\s+.+/.test(l.trim()),
-        );
-        if (spinnerActive) {
-          console.log(`[supervisor] stuck queue but Claude spinner active, skipping: ${project}`);
-          continue;
-        }
+        const paneRaw = await runShell(`tmux capture-pane -p -t "bots:${project}" 2>/dev/null || true`);
+        const stripped = paneRaw.output.replace(/\x1B\[[0-9;]*m/g, "");
+        paneLines = stripped.split("\n").filter(Boolean).slice(-5);
+        spinnerActive = stripped.split("\n").slice(-10).some(l => /^[·✶✻]\s/.test(l.trim()));
       }
 
-      if (!shouldAlert(dedupKey)) continue;
+      if (!shouldAlert(dedupKey)) {
+        // Already alerted by another loop — edit existing message to add stuck-queue info
+        const existing = activeAlerts.get(dedupKey);
+        if (existing?.messageId && existing.text) {
+          const additionalInfo = `⚠️ Также: очередь застряла — ${stuckCount} сообщений, ${Math.round(oldestSec / 60)}m ${oldestSec % 60}s`;
+          await tgPost("editMessageText", {
+            chat_id: SUPERVISOR_CHAT_ID,
+            message_id: existing.messageId,
+            text: existing.text + "\n\n" + additionalInfo,
+            parse_mode: "HTML",
+          }).catch(() => {});
+        }
+        continue;
+      }
 
-      const msg = [
-        `⚠️ <b>Supervisor: сообщение не обработано</b>`,
+      const dateStr = new Date().toISOString().slice(0, 10);
+      const logPath = `/home/altsay/bots/helyx/logs/tmux-sessions/${dateStr}.jsonl`;
+      const preview = firstMsgContent.slice(0, 120) + (firstMsgContent.length > 120 ? "…" : "");
+
+      const msgParts = [
+        `⚠️ <b>Supervisor: очередь застряла</b>`,
         `Проект: <code>${project}</code>`,
-        `В очереди: ${Math.round(oldestSec / 60)}m ${oldestSec % 60}s`,
-        `Claude не отвечает и не работает — возможно завис.`,
-      ].join("\n");
+        `Сообщений в очереди: ${stuckCount}, ждут: ${Math.round(oldestSec / 60)}m ${oldestSec % 60}s`,
+        `Первое: <i>${preview}</i>`,
+      ];
+      if (spinnerActive) {
+        msgParts.push(`⚙️ Claude сейчас работает — ждёт завершения задачи`);
+      }
+      msgParts.push(`📁 Лог: ${logPath}`);
+      const msg = msgParts.join("\n");
 
-      await sendAlertWithButtons(msg, [
+      const messageId = await sendAlertWithButtons(msg, [
         [
-          { text: "🔄 Перезапустить", callback_data: `sup:restart_session:${sessionId}` },
-          { text: "✅ Игнорировать",  callback_data: `sup:ignore:${dedupKey}` },
+          { text: "📬 Принудительно доставить", callback_data: `sup:force_deliver:${sessionId}` },
+          { text: spinnerActive ? "⚠️ Перезапустить (Claude работает!)" : "🔄 Перезапустить сессию", callback_data: `sup:restart_session:${sessionId}` },
         ],
-        [{ text: "🔕 Тишина 30м", callback_data: `sup:ack:${dedupKey}` }],
+        [
+          { text: "🔇 Заглушить на 1 ч", callback_data: `sup:ack:session_problem:${project}:${sessionId}` },
+        ],
       ]);
+      if (messageId) {
+        activeAlerts.set(dedupKey, { messageId, chatId: SUPERVISOR_CHAT_ID, sentAt: Date.now(), text: msg });
+      }
 
-      await logIncident(sql, "stuck_queue", project, sessionId, "alerted_user", "pending", null);
+      await logIncident(sql, "stuck_queue", project, sessionId, "alerted_user", "pending", "");
     }
 
     // Forward messages stuck past STUCK_QUEUE_FORWARD_MINUTES to the fallback channel.
@@ -407,23 +446,37 @@ async function checkStuckQueue(sql: postgres.Sql, runShell?: RunShell): Promise<
   }
 }
 
-async function forwardStuckMessages(sql: postgres.Sql): Promise<void> {
+export async function forwardStuckMessages(sql: postgres.Sql, sessionId?: number): Promise<void> {
   const fallback = resolveFallbackChannel();
   if (!fallback) {
     // Only log if there are actual candidates so we don't spam on every healthy tick.
     return;
   }
 
-  const candidates = await sql`
-    SELECT mq.id, mq.session_id, mq.chat_id, mq.from_user, mq.content,
-           s.project,
-           EXTRACT(EPOCH FROM (NOW() - mq.created_at))::int AS age_seconds
-    FROM message_queue mq
-    JOIN sessions s ON s.id = mq.session_id
-    WHERE mq.delivered = false
-      AND mq.forwarded_at IS NULL
-      AND mq.created_at < NOW() - make_interval(mins => ${STUCK_QUEUE_FORWARD_MINUTES})
-  `;
+  const candidates = sessionId != null
+    ? await sql`
+        SELECT mq.id, mq.session_id, mq.chat_id, mq.from_user, mq.content,
+               s.project,
+               EXTRACT(EPOCH FROM (NOW() - mq.created_at))::int AS age_seconds
+        FROM message_queue mq
+        JOIN sessions s ON s.id = mq.session_id
+        JOIN projects p ON p.id = s.project_id AND p.tmux_session_name = 'bots'
+        WHERE mq.delivered = false
+          AND mq.forwarded_at IS NULL
+          AND mq.created_at < NOW() - make_interval(mins => ${STUCK_QUEUE_FORWARD_MINUTES})
+          AND mq.session_id = ${sessionId}
+      `
+    : await sql`
+        SELECT mq.id, mq.session_id, mq.chat_id, mq.from_user, mq.content,
+               s.project,
+               EXTRACT(EPOCH FROM (NOW() - mq.created_at))::int AS age_seconds
+        FROM message_queue mq
+        JOIN sessions s ON s.id = mq.session_id
+        JOIN projects p ON p.id = s.project_id AND p.tmux_session_name = 'bots'
+        WHERE mq.delivered = false
+          AND mq.forwarded_at IS NULL
+          AND mq.created_at < NOW() - make_interval(mins => ${STUCK_QUEUE_FORWARD_MINUTES})
+      `;
 
   if (candidates.length === 0) return;
 
@@ -596,7 +649,7 @@ async function sendStatusBroadcast(sql: postgres.Sql, runShell: RunShell): Promi
     lines.push(`<b>Супервизор:</b> 🛡 uptime ${uptimeMin}m · инцидентов: ${incidentCount}`);
 
     if (stuckTotal > 0) {
-      lines.push("", `⚠️ Зависших сообщений: ${stuckTotal}. Использую proj_start для восстановления...`);
+      lines.push("", `⚠️ Зависших сообщений: ${stuckTotal}. Нажмите кнопку в алерте для перезапуска.`);
     }
 
     const text = lines.join("\n");
@@ -1091,6 +1144,57 @@ async function checkGemmaHealth(sql: postgres.Sql): Promise<void> {
   }).catch((err: any) => console.error(`[gemma-health] Telegram post failed: ${err?.message}`));
 }
 
+// --- Recovery check ---
+
+async function checkRecovery(sql: postgres.Sql): Promise<void> {
+  for (const [dedupKey, alert] of activeAlerts) {
+    const project = dedupKey.replace("session_problem:", "");
+
+    // Check hung condition (is ASM heartbeat still stale?)
+    const [hungRow] = await sql`
+      SELECT 1 FROM sessions s
+      JOIN active_status_messages asm ON asm.session_id = s.id
+      JOIN projects p ON p.id = s.project_id
+      WHERE s.status = 'active' AND p.name = ${project}
+        AND asm.updated_at < NOW() - (${Math.floor(SESSION_STALE_MS / 1000)} * INTERVAL '1 second')
+    `.catch(() => []);
+
+    // Check stuck condition (are there still undelivered messages older than 5 min?)
+    const [stuckRow] = await sql`
+      SELECT 1 FROM message_queue mq
+      JOIN sessions s ON s.id = mq.session_id
+      JOIN projects p ON p.id = s.project_id
+      WHERE mq.delivered = false
+        AND mq.created_at < NOW() - INTERVAL '5 minutes'
+        AND p.name = ${project}
+    `.catch(() => []);
+
+    const bothClear = !hungRow && !stuckRow;
+
+    if (bothClear) {
+      const cleanSince = recoveryCleanSince.get(dedupKey);
+      if (cleanSince && Date.now() - cleanSince >= 60_000) {
+        // Two consecutive clean ticks — resolve
+        const elapsedMin = Math.round((Date.now() - alert.sentAt) / 60_000);
+        const timeStr = new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC";
+        await tgPost("editMessageText", {
+          chat_id: alert.chatId,
+          message_id: alert.messageId,
+          text: `✅ Сессия восстановилась — ждали ${elapsedMin} мин — ${timeStr}`,
+          reply_markup: { inline_keyboard: [] },
+        }).catch(() => {});
+        alertedAt.delete(dedupKey);
+        activeAlerts.delete(dedupKey);
+        recoveryCleanSince.delete(dedupKey);
+      } else if (!cleanSince) {
+        recoveryCleanSince.set(dedupKey, Date.now());
+      }
+    } else {
+      recoveryCleanSince.delete(dedupKey);
+    }
+  }
+}
+
 // --- Main entry point ---
 
 export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
@@ -1179,6 +1283,14 @@ export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
     }, 2 * 60_000);
     unansweredTimer.unref?.();
   }, 45_000);
+
+  // Loop: Recovery check — every 60s (offset 30s from session loop)
+  setTimeout(() => {
+    const recoveryTimer = setInterval(() => {
+      checkRecovery(sql).catch(() => {});
+    }, 60_000);
+    recoveryTimer.unref?.();
+  }, 30_000);
 
   // Run initial checks after a short delay (let admin-daemon settle first)
   setTimeout(() => {
