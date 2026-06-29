@@ -35,11 +35,18 @@ interface StatusState {
   stage: string;
   paneSnapshot: string | null;
   paneSnapshotAt: number | null;
-  timer: ReturnType<typeof setInterval> | null;
+  timer: ReturnType<typeof setTimeout> | null;
   dbHeartbeatTimer: ReturnType<typeof setInterval> | null;
   spinnerFrame: number;
   lastUpdateAt: number;
   editInFlight: boolean;
+  lastSentSignature: string | null;
+  turnToolCount: number;
+  turnFileCount: number;
+  turnFilePaths: Set<string>;
+  lastCountedToolLine: string | null;
+  pendingImmediateEdit: boolean;
+  nextEditDelay: number | null;
 }
 
 interface SessionStats {
@@ -75,15 +82,82 @@ const STATUS_MAX_LINES = 40;
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const SPINNER_STALE_MS = 60_000;
 
+const SPINNER_INTERVAL_ACTIVE_MS = 3_000;   // when monitor has been active recently
+const SPINNER_INTERVAL_IDLE_MS   = 15_000;  // when no monitor activity for >IDLE_THRESHOLD_MS
+const IDLE_THRESHOLD_MS          = 12_000;  // switch to idle after 12s of silence
+
 function getSpinnerIcon(spinnerFrame: number, lastUpdateAt: number): string {
   if (Date.now() - lastUpdateAt > SPINNER_STALE_MS) return "⚠️";
   return SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length];
 }
 
-function formatStatusText(stage: string, elapsed: string, tokens: string, paneSnapshot?: string | null, spinnerIcon?: string): string {
+// SU-1: FNV-1a 32-bit hash — fast, no external deps, sufficient for dedup
+function computeSignature(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = (h * 0x01000193) >>> 0;
+  }
+  return h.toString(16);
+}
+
+// SU-3: Activity phase classification
+type ActivityPhase = 'thinking' | 'reading' | 'writing' | 'running' | 'searching' | 'waiting';
+
+// Returns null for empty/whitespace stage so no emoji is shown.
+//
+// Note on stage format: all tool-call lines from tmux-monitor.ts start with "● ":
+//   "● $ command"           — Bash
+//   "● Read: filename"      — file read
+//   "● Write: filename"     — file write
+//   "● MCP: toolname"       — MCP call
+//   "● AgentType: desc"     — agent call
+//   "● toolname..."         — generic tool
+// Non-tool stage text (custom messages, "Thinking...", etc.) does NOT start with "● ".
+function detectPhase(stage: string): ActivityPhase | null {
+  const s = stage.trim().toLowerCase();
+  if (!s) return null;
+  if (s.includes('permission') || s.includes('approve') || s.includes('waiting')) return 'waiting';
+
+  // stage is multi-line: spinner line first, most recent tool line last.
+  // Find the last "● " line to classify the current tool call.
+  const lastBulletLine = s.split('\n').filter(l => l.startsWith('● ')).at(-1) ?? '';
+  if (lastBulletLine) {
+    if (lastBulletLine.startsWith('● $'))                                              return 'running';   // Bash
+    if (lastBulletLine.includes('● read'))                                             return 'reading';
+    if (lastBulletLine.includes('● write') || lastBulletLine.includes('● edit') || lastBulletLine.includes('● creat')) return 'writing';
+    if (lastBulletLine.includes('grep') || lastBulletLine.includes('search') || lastBulletLine.includes('find') || lastBulletLine.includes('● mcp')) return 'searching';
+    return 'running';  // MCP, Agent, generic tool → running
+  }
+
+  // Non-tool stage text (custom messages)
+  if (s.includes('write') || s.includes('edit') || s.includes('creat')) return 'writing';
+  if (s.includes('read'))                                                  return 'reading';
+  if (s.includes('bash') || s.includes('execut') || s.includes('run'))   return 'running';
+  if (s.includes('grep') || s.includes('search') || s.includes('find'))  return 'searching';
+  return 'thinking';
+}
+
+const PHASE_LABEL: Record<ActivityPhase, string> = {
+  thinking:  '🧠',
+  reading:   '📖',
+  writing:   '✏️',
+  running:   '⚡',
+  searching: '🔍',
+  waiting:   '💬',
+};
+
+interface StatusExtras {
+  phaseEmoji?: string;
+  toolCount?: number;
+  fileCount?: number;
+}
+
+function formatStatusText(stage: string, elapsed: string, tokens: string, paneSnapshot?: string | null, spinnerIcon?: string, extras?: StatusExtras): string {
   const normalized = normalizeStage(stage);
   const icon = spinnerIcon ?? SPINNER_FRAMES[0];
-  const header = `${icon} <i>${elapsed}${tokens}</i>`;
+  const phase = extras?.phaseEmoji ? ` ${extras.phaseEmoji}` : '';
+  const header = `${icon} <i>${elapsed}${tokens}</i>${phase}`;
 
   let stageBody: string;
   if (normalized.includes("\n")) {
@@ -98,14 +172,22 @@ function formatStatusText(stage: string, elapsed: string, tokens: string, paneSn
     stageBody = `  ${escapeHtml(normalized)}`;
   }
 
-  // Append live pane snapshot as a spoiler section if available
+  // Compute footer once; empty string if no tool activity yet
+  const footer = (extras?.toolCount ?? 0) > 0
+    ? `\n🔧 ${extras!.toolCount} tools · ${extras!.fileCount ?? 0} files`
+    : '';
+
+  // Path 1 — pane snapshot early return (must include footer)
   if (paneSnapshot && paneSnapshot.trim()) {
     const paneLines = paneSnapshot.trim().split("\n").slice(-6);
     const paneText = escapeHtml(paneLines.join("\n"));
-    return `${header}\n${stageBody}\n<blockquote><tg-spoiler>🖥 ${paneText}</tg-spoiler></blockquote>`;
+    return `${header}\n${stageBody}\n<blockquote><tg-spoiler>🖥 ${paneText}</tg-spoiler></blockquote>${footer}`;
   }
 
-  return normalized.includes("\n") ? `${header}\n${stageBody}` : `${header}${stageBody}`;
+  // Path 2/3 — preserve existing single-line compact vs multi-line distinction
+  return normalized.includes("\n")
+    ? `${header}\n${stageBody}${footer}`
+    : `${header}${stageBody}${footer}`;
 }
 
 export class StatusManager {
@@ -413,7 +495,16 @@ export class StatusManager {
       existing.stage = `${prefix}${stage}`;
       existing.startedAt = Date.now();
       existing.lastUpdateAt = Date.now();
-      await this.editStatusMessage(existing);
+      if (existing.editInFlight) {
+        existing.pendingImmediateEdit = true;
+      } else {
+        existing.editInFlight = true;
+        try {
+          await this.editStatusMessage(existing);
+        } finally {
+          existing.editInFlight = false;
+        }
+      }
       return null;
     }
 
@@ -468,17 +559,39 @@ export class StatusManager {
         spinnerFrame: 0,
         lastUpdateAt: Date.now(),
         editInFlight: false,
+        lastSentSignature: null,
+        turnToolCount: 0,
+        turnFileCount: 0,
+        turnFilePaths: new Set(),
+        lastCountedToolLine: null,
+        pendingImmediateEdit: false,
+        nextEditDelay: null,
       };
-      state.timer = setInterval(async () => {
-        if (state.editInFlight) return;
-        state.editInFlight = true;
-        try {
-          await this.refreshPaneSnapshot(state).catch(() => {});
-          await this.editStatusMessage(state);
-        } finally {
-          state.editInFlight = false;
-        }
-      }, 15_000);
+      const scheduleTick = (key: string): void => {
+        const state = this.activeStatus.get(key);
+        if (!state) return;
+        const delay = state.nextEditDelay ?? this.chooseSpinnerInterval(state);
+        state.nextEditDelay = null;
+        state.timer = setTimeout(async () => {
+          if (state.editInFlight) {
+            scheduleTick(key);
+            return;
+          }
+          state.editInFlight = true;
+          try {
+            await this.refreshPaneSnapshot(state).catch(() => {});
+            await this.editStatusMessage(state);
+            // SU-5: drain any pending stage update buffered during in-flight edit
+            if (state.pendingImmediateEdit) {
+              state.pendingImmediateEdit = false;
+              await this.editStatusMessage(state);
+            }
+          } finally {
+            state.editInFlight = false;
+          }
+          scheduleTick(key);
+        }, delay);
+      };
       state.dbHeartbeatTimer = setInterval(() => {
         const staleSec = (Date.now() - state.lastUpdateAt) / 1000;
         if (staleSec < 90) {
@@ -487,6 +600,7 @@ export class StatusManager {
         // If staleSec >= 90, don't heartbeat — let supervisor detect the stale row
       }, 30_000);
       this.activeStatus.set(key, state);
+      scheduleTick(key);
       this.pendingSendGenerations.delete(key);
       this.persistStatusMessage(key, state).catch(() => {});
       channelLogger.info({ phase: "status", step: "created", chatId: effectiveChatId, messageId: state.messageId, tgRttMs: tgRtt }, "perf");
@@ -541,8 +655,6 @@ export class StatusManager {
   async updateStatus(chatId: string, stage: string): Promise<void> {
     const key = this.stateKey(chatId);
     this.accumulateStats(key, stage);
-    // Always record monitor activity time — even without an active status message.
-    // This lets schedulePostReplyCheck detect if Claude is still working after an early reply.
     this.lastMonitorActivity.set(key, Date.now());
     const state = this.activeStatus.get(key);
     if (!state) {
@@ -550,12 +662,44 @@ export class StatusManager {
       // Do NOT create a new orphan status message here.
       return;
     }
-    // Activity observed — Claude is alive, reset the response guard so it does not
-    // fire prematurely during legitimate long-running tasks.
+    this.accumulateTurnActivity(state, stage);  // SU-4
     this.resetResponseGuard(chatId);
     state.lastUpdateAt = Date.now();
     state.stage = stage;
-    await this.editStatusMessage(state);
+
+    if (state.editInFlight) {
+      // Timer is currently awaiting an editTelegramMessage — buffer the new stage;
+      // the timer's finally block drains it via pendingImmediateEdit.
+      state.pendingImmediateEdit = true;
+      return;
+    }
+    // Acquire the guard so the timer cannot fire a concurrent edit while we await.
+    state.editInFlight = true;
+    try {
+      await this.editStatusMessage(state);
+    } finally {
+      state.editInFlight = false;
+    }
+  }
+
+  private accumulateTurnActivity(state: StatusState, stage: string): void {
+    // stage is multi-line: spinner line first (oldest), then tool lines below (newer).
+    // Use the LAST "● " line — the most recent tool call in the block.
+    const lastToolLine = stage.split('\n').filter(l => l.startsWith('●')).at(-1);
+    if (!lastToolLine) return;
+    // Dedup: skip if this is the same tool line we already counted on the previous poll.
+    // The same "● Read: file.ts" line persists across multiple updateStatus() calls while
+    // surrounding lines (spinner text, sub-output) change — without this guard it would be
+    // double-counted every poll tick.
+    if (lastToolLine === state.lastCountedToolLine) return;
+    state.lastCountedToolLine = lastToolLine;
+    state.turnToolCount++;
+    // Extract filename from file-operation lines (e.g. "● Read: src/channel/status.ts")
+    const fileMatch = lastToolLine.match(/●\s+(?:Read|Write|Edit|Create):\s*([^\s\n]+\.[a-zA-Z]{1,8})/i);
+    if (fileMatch) {
+      state.turnFilePaths.add(fileMatch[1]);
+      state.turnFileCount = state.turnFilePaths.size;
+    }
   }
 
   private accumulateStats(key: string, stage: string): void {
@@ -578,19 +722,60 @@ export class StatusManager {
     if (addedOnly && !linesMatch) stats.linesAdded += parseInt(addedOnly[1]);
   }
 
+  private chooseSpinnerInterval(state: StatusState): number {
+    const key = state.threadId
+      ? `${state.chatId}:${state.threadId}`
+      : state.chatId;
+    const lastActivity = this.lastMonitorActivity.get(key) ?? 0;
+    return (Date.now() - lastActivity) < IDLE_THRESHOLD_MS
+      ? SPINNER_INTERVAL_ACTIVE_MS
+      : SPINNER_INTERVAL_IDLE_MS;
+  }
+
   private async editStatusMessage(state: StatusState): Promise<void> {
     const token = this.ctx.token();
     if (!token) return;
-    state.spinnerFrame = (state.spinnerFrame + 1) % SPINNER_FRAMES.length;
-    const spinnerIcon = getSpinnerIcon(state.spinnerFrame, state.lastUpdateAt);
+
     const elapsed = formatElapsed(Date.now() - state.startedAt);
     const key = state.threadId ? `${state.chatId}:${state.threadId}` : state.chatId;
     const tokens = this.lastTokenInfo.get(key);
     const tokenStr = tokens ? ` · ↓ ${tokens}` : "";
-    const text = formatStatusText(state.stage, elapsed, tokenStr, state.paneSnapshot, spinnerIcon);
+    // SU-3: compute phase extras
+    const phase = detectPhase(state.stage);
+    const extras: StatusExtras = {
+      phaseEmoji: phase ? PHASE_LABEL[phase] : undefined,
+      toolCount: state.turnToolCount,
+      fileCount: state.turnFileCount,
+    };
+
+    // SU-1: compute signature from CONTENT ONLY, excluding the spinner icon.
+    // The spinner icon always changes on each call (spinnerFrame increments below),
+    // so including it in the signature would make dedup permanently inert.
+    // Signature captures: stage + elapsed + tokens + paneSnapshot + phase + toolCount + fileCount.
+    const contentForSig = formatStatusText(state.stage, elapsed, tokenStr, state.paneSnapshot, undefined, extras);
+    const sig = computeSignature(contentForSig);
+    if (sig === state.lastSentSignature) {
+      channelLogger.debug({ messageId: state.messageId }, "editStatusMessage: skipping redundant edit");
+      return;
+    }
+
+    // Content changed — advance spinner and compose final text with the live icon
+    state.spinnerFrame = (state.spinnerFrame + 1) % SPINNER_FRAMES.length;
+    const spinnerIcon = getSpinnerIcon(state.spinnerFrame, state.lastUpdateAt);
+    const text = formatStatusText(state.stage, elapsed, tokenStr, state.paneSnapshot, spinnerIcon, extras);
+
     const res = await editTelegramMessage(token, state.chatId, state.messageId, text, { parse_mode: "HTML" });
     if (!res.ok && !res.errorBody?.includes("message is not modified")) {
       channelLogger.warn({ error: res.errorBody, messageId: state.messageId }, "editStatusMessage failed");
+    }
+    if (res.ok) {
+      state.lastSentSignature = sig;
+    }
+    // SU-6: back off if rate-limited
+    // "telegramRequest 429 deadline exceeded" is the actual error body produced by telegram.ts
+    // when the 60s retry budget is exhausted.
+    if (!res.ok && (res.errorBody?.includes("429") || res.errorBody?.includes("deadline exceeded"))) {
+      state.nextEditDelay = 30_000;
     }
   }
 
@@ -628,7 +813,7 @@ export class StatusManager {
     }
     const statusLifeMs = tDelete - state.startedAt;
     channelLogger.info({ phase: "status", step: "deleting", chatId, statusLifeMs, messageId: state.messageId }, "perf");
-    if (state.timer) clearInterval(state.timer);
+    if (state.timer) clearTimeout(state.timer);
     if (state.dbHeartbeatTimer) clearInterval(state.dbHeartbeatTimer);
     this.activeStatus.delete(key);
     this.ctx.sql`DELETE FROM active_status_messages WHERE key = ${key}`.catch(() => {});
