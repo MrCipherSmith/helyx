@@ -239,3 +239,18 @@ export async function setTelegramReaction(
   });
   return { ok: res.ok, errorBody: res.errorBody };
 }
+
+export function pinTelegramMessage(token: string, chatId: string, messageId: number): void {
+  telegramRequest(token, "pinChatMessage", {
+    chat_id: Number(chatId),
+    message_id: messageId,
+    disable_notification: true,
+  }).catch(() => {});
+}
+
+export function unpinTelegramMessage(token: string, chatId: string, messageId: number): void {
+  telegramRequest(token, "unpinChatMessage", {
+    chat_id: Number(chatId),
+    message_id: messageId,
+  }).catch(() => {});
+}

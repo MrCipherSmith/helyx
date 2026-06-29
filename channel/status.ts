@@ -11,7 +11,7 @@ import type postgres from "postgres";
 import { startTypingRaw, type TypingHandle } from "../utils/typing.ts";
 import { startTmuxMonitor, type TmuxMonitorHandle } from "../utils/tmux-monitor.ts";
 import { startOutputMonitor, getOutputFilePath, type OutputMonitorHandle } from "../utils/output-monitor.ts";
-import { editTelegramMessage, deleteTelegramMessage, sendTelegramMessage } from "./telegram.ts";
+import { editTelegramMessage, deleteTelegramMessage, sendTelegramMessage, pinTelegramMessage, unpinTelegramMessage } from "./telegram.ts";
 import { channelLogger } from "../logger.ts";
 import { escapeHtml } from "../utils/html.ts";
 
@@ -603,6 +603,7 @@ export class StatusManager {
       scheduleTick(key);
       this.pendingSendGenerations.delete(key);
       this.persistStatusMessage(key, state).catch(() => {});
+      pinTelegramMessage(token, effectiveChatId, state.messageId);
       channelLogger.info({ phase: "status", step: "created", chatId: effectiveChatId, messageId: state.messageId, tgRttMs: tgRtt }, "perf");
       return null;
     } catch (e) {
@@ -861,6 +862,7 @@ export class StatusManager {
     if (tokens) parts.push(`↓ ${tokens}`);
 
     const summaryText = `✅ ${parts.join(" · ")}`;
+    unpinTelegramMessage(token, state.chatId, state.messageId);
     const editRes = await editTelegramMessage(token, state.chatId, state.messageId, summaryText, { parse_mode: "HTML" });
     if (!editRes.ok) {
       deleteTelegramMessage(token, state.chatId, state.messageId);
