@@ -58,7 +58,7 @@ The snapshot is serialized as structured text and sent to Gemma with:
 ## Model config
 
 - Primary: `SUMMARIZE_MODEL` env var (currently `gemma4:e4b`)
-- Fallback: `OLLAMA_CHAT_MODEL` (`qwen3:8b`)
+- Fallback: `OLLAMA_CHAT_MODEL` (`gemma4:e4b`)
 - Timeout: 15 seconds
 - If Ollama unreachable: skip silently, log a single line
 

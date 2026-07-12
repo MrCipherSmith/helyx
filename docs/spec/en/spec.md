@@ -465,7 +465,7 @@ Features:
 | `OPENROUTER_API_KEY` | `""` | For OpenRouter | OpenRouter API key |
 | `OPENROUTER_MODEL` | `qwen/qwen3-235b-a22b:free` | NO | OpenRouter model |
 | `OLLAMA_URL` | `http://localhost:11434` | NO | Ollama server URL (embeddings + chat) |
-| `OLLAMA_CHAT_MODEL` | `qwen3:8b` | NO | Ollama model for standalone chat |
+| `OLLAMA_CHAT_MODEL` | `gemma4:e4b` | NO | Ollama model for standalone chat |
 | `EMBEDDING_MODEL` | `nomic-embed-text` | NO | Ollama embedding model |
 | `DATABASE_URL` | — | **YES** | PostgreSQL connection string |
 | `PORT` | `3847` | NO | Bot server port |

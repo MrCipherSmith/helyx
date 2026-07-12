@@ -669,7 +669,7 @@ ollama pull nomic-embed-text
 | `GOOGLE_AI_API_KEY` | No | Google AI API ([aistudio.google.com](https://aistudio.google.com/apikey)) |
 | `GOOGLE_AI_MODEL` | No | Google AI model (default: `gemma-4-31b-it`) |
 | `OPENROUTER_API_KEY` | No | OpenRouter API (many models available) |
-| `OLLAMA_CHAT_MODEL` | No | Local Ollama model (default: `qwen3:8b`) |
+| `OLLAMA_CHAT_MODEL` | No | Local Ollama model (default: `gemma4:e4b`) |
 | `GROQ_API_KEY` | No | Voice transcription ([free](https://console.groq.com)) |
 | `DATABASE_URL` | Yes | PostgreSQL connection string |
 | `POSTGRES_PASSWORD` | Yes | PostgreSQL password (required in docker-compose) |

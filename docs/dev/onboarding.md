@@ -67,7 +67,7 @@ The wizard walks through 7 sections of questions, then automatically performs al
 - `Anthropic` — asks for API key; sets `CLAUDE_MODEL=claude-sonnet-4-20250514`.
 - `Google AI` — asks for API key and model (default: `gemma-4-31b-it`).
 - `OpenRouter` — asks for API key and model (default: `qwen/qwen3-235b-a22b:free`).
-- `Ollama` — asks for chat model name (default: `qwen3:8b`); no API key required.
+- `Ollama` — asks for chat model name (default: `gemma4:e4b`); no API key required.
 
 **3b. Ollama for embeddings and summarization**
 

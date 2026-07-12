@@ -21,7 +21,7 @@
  *           STUCK_QUEUE_FORWARD_MINUTES (default 10) — forward threshold.
  *           If not set, alerts are logged only.
  *
- * LLM diagnosis: qwen3:8b via Ollama (timeout 10s, non-blocking).
+ * LLM diagnosis: gemma4:e4b via Ollama (timeout 10s, non-blocking).
  */
 
 import type postgres from "postgres";

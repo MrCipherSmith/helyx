@@ -157,7 +157,7 @@ async function setup() {
   let googleAiModel = "gemma-4-31b-it";
   let openrouterKey = "";
   let openrouterModel = "qwen/qwen3-235b-a22b:free";
-  let ollamaModel = "qwen3:8b";
+  let ollamaModel = "gemma4:e4b";
 
   if (providerIdx === 0) {
     anthropicKey = ask("Anthropic API Key");
@@ -168,7 +168,7 @@ async function setup() {
     openrouterKey = ask("OpenRouter API Key");
     openrouterModel = ask("OpenRouter Model", "qwen/qwen3-235b-a22b:free");
   } else {
-    ollamaModel = ask("Ollama Chat Model", "qwen3:8b");
+    ollamaModel = ask("Ollama Chat Model", "gemma4:e4b");
   }
 
   // 3b. Local Ollama for embeddings + summarization
