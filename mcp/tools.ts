@@ -423,11 +423,11 @@ export async function executeTool(
       // Try rich message first (Bot API 10.1 — GFM: headers, tables, lists, 32768 chars)
       let richOk = false;
       try {
-        await bot.api.sendRichMessage({
+        await (bot.api as any).sendRichMessage({
           chat_id: chatId,
           rich_message: { markdown: replyText },
           ...forumExtra,
-        } as any);
+        });
         richOk = true;
       } catch {
         // fall through to chunked HTML path
@@ -449,7 +449,7 @@ export async function executeTool(
       await bot.api.setMessageReaction(
         Number(args.chat_id),
         args.message_id as number,
-        [{ type: "emoji", emoji: args.emoji as string }],
+        [{ type: "emoji", emoji: args.emoji as any }],
       );
       return text(`Reacted with ${args.emoji}`);
     }

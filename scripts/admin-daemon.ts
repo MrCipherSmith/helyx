@@ -304,7 +304,7 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
         // Mark done first, then spawn a fresh instance and exit.
         await sql`
           UPDATE admin_commands SET status = 'done', result = 'spawning replacement', executed_at = now()
-          WHERE id = ${row.id}
+          WHERE id = ${row.id as unknown as number}
         `;
         await runShell(
           `nohup bun ${resolve(import.meta.dir, "admin-daemon.ts")} >> /tmp/admin-daemon.log 2>&1 &`
@@ -464,7 +464,7 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
   await sql`
     UPDATE admin_commands
     SET status = ${result.ok ? "done" : "error"}, result = ${result.output}, executed_at = now()
-    WHERE id = ${row.id}
+    WHERE id = ${row.id as unknown as number}
   `;
 
   console.log(`[admin-daemon] ${result.ok ? "✓" : "✗"} ${row.command}: ${result.output.slice(0, 100)}`);

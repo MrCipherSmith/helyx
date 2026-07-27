@@ -39,10 +39,10 @@ afterAll(async () => {
   if (!HAS_DB) return;
   const sql = await getSql();
   if (seed.cleanupSessionIds.length > 0) {
-    await sql`DELETE FROM sessions WHERE id IN ${sql(seed.cleanupSessionIds)}`;
+    await sql`DELETE FROM sessions WHERE id IN ${sql(seed.cleanupSessionIds as unknown as string[])}`;
   }
   if (seed.cleanupAdminCommandIds.length > 0) {
-    await sql`DELETE FROM admin_commands WHERE id IN ${sql(seed.cleanupAdminCommandIds)}`;
+    await sql`DELETE FROM admin_commands WHERE id IN ${sql(seed.cleanupAdminCommandIds as unknown as string[])}`;
   }
 });
 
@@ -127,7 +127,7 @@ describe("v1.32.1 jsonb cast fix", () => {
       expect(Number(matches[0].id)).toBe(Number(a.id));
     } finally {
       if (cleanup.length > 0) {
-        await sql`DELETE FROM admin_commands WHERE id IN ${sql(cleanup)}`;
+        await sql`DELETE FROM admin_commands WHERE id IN ${sql(cleanup as unknown as string[])}`;
       }
     }
   });

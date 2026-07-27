@@ -63,7 +63,7 @@ export async function handleBtw(ctx: Context): Promise<void> {
   while (Date.now() < deadline) {
     await Bun.sleep(POLL_INTERVAL_MS);
     const rows = await sql`
-      SELECT status, result FROM admin_commands WHERE id = ${cmdId}
+      SELECT status, result FROM admin_commands WHERE id = ${cmdId as unknown as number}
     `;
     const r = rows[0];
     if (!r) break;
