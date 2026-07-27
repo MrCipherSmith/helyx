@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "review-orchestrator-output-contract",
+  "title": "Review Orchestrator Output Contract",
+  "type": "object",
+  "required": [
+    "status",
+    "verdict",
+    "summary",
+    "review_context",
+    "findings",
+    "stats",
+    "metadata"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": [
+        "DONE",
+        "DONE_WITH_CONCERNS"
+      ]
+    },
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "APPROVE",
+        "APPROVE_WITH_SUGGESTIONS",
+        "REQUEST_CHANGES"
+      ]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "review_context": {
+      "$ref": "review-context.schema.json"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "stats": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer"
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "orchestrator": {
+          "type": "string"
+        },
+        "model_strategy": {
+          "type": "string"
+        },
+        "agents": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reviewed_at": {
+          "type": "string"
+        },
+        "token_policy": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

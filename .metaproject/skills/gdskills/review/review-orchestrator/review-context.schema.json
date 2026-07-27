@@ -1,0 +1,333 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "review-context",
+  "title": "Review Context Pack",
+  "type": "object",
+  "required": [
+    "request",
+    "scope",
+    "routing",
+    "token_policy"
+  ],
+  "properties": {
+    "request": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "git": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "pr": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": true
+    },
+    "scope": {
+      "type": "object",
+      "required": [
+        "mode",
+        "files"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "diff",
+            "path"
+          ]
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "changed_lines": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "risk_areas": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "requirements": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "rules": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "routing": {
+      "type": "object",
+      "required": [
+        "selected_reviewers"
+      ],
+      "properties": {
+        "selected_reviewers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "skipped_reviewers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reasons": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "token_policy": {
+      "type": "object",
+      "required": [
+        "context_mode",
+        "omissions"
+      ],
+      "properties": {
+        "context_mode": {
+          "type": "string",
+          "enum": [
+            "none",
+            "light",
+            "full"
+          ]
+        },
+        "budget": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "omissions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "model_plan": {
+          "type": "object",
+          "description": "Detected model capabilities and chosen strategy for review sub-agents.",
+          "properties": {
+            "detector_ran": {
+              "type": "boolean"
+            },
+            "strategy": {
+              "type": "string",
+              "enum": [
+                "current",
+                "ask",
+                "adaptive",
+                "economy",
+                "per-group",
+                "current-session"
+              ]
+            },
+            "current_model": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "complex_model": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "normal_model": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "simple_model": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "user_confirmed_expensive_fanout": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "review_plan": {
+      "type": "object",
+      "description": "Grouped reviewer plan shown before optional reviewer prompts.",
+      "properties": {
+        "already_selected": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "optional_convention_detected": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "skipped": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "reviewer",
+              "reason"
+            ],
+            "properties": {
+              "reviewer": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "enable_with": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "optional_legacy_profile_available": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "selected_legacy_profile": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "dispatch_plan": {
+          "type": "array",
+          "description": "Per-reviewer runtime dispatch decision for native agent compatibility.",
+          "items": {
+            "type": "object",
+            "required": [
+              "reviewer",
+              "runtime"
+            ],
+            "properties": {
+              "reviewer": {
+                "type": "string"
+              },
+              "runtime": {
+                "type": "string",
+                "enum": [
+                  "native-agent",
+                  "general-purpose-fallback",
+                  "blocked"
+                ]
+              },
+              "agent_type": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "skill_path": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "publication_plan": {
+          "type": "object",
+          "description": "User-confirmed PR review report publication mode and generated artifact metadata.",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "ask",
+                "comment",
+                "comment-and-ai-artifact",
+                "none"
+              ]
+            },
+            "pr_number": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "pr_url": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "comment_posted": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "ai_artifact_path": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "ai_artifact_link": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "user_confirmed": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

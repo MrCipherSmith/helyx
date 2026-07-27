@@ -1,0 +1,373 @@
+{
+  "generatedAt": "2026-07-07T20:13:11.636Z",
+  "scopes": {
+    "component:bot/commands": {
+      "health_score": 74,
+      "risk_score": 60
+    },
+    "component:dashboard/src": {
+      "health_score": 100,
+      "risk_score": 0
+    },
+    "component:dashboard/src/api": {
+      "health_score": 100,
+      "risk_score": 0
+    },
+    "component:dashboard/src/components": {
+      "health_score": 100,
+      "risk_score": 0
+    },
+    "component:dashboard/src/components/ui": {
+      "health_score": 100,
+      "risk_score": 0
+    },
+    "component:dashboard/src/hooks": {
+      "health_score": 100,
+      "risk_score": 0
+    },
+    "component:dashboard/src/lib": {
+      "health_score": 100,
+      "risk_score": 0
+    },
+    "component:dashboard/src/pages": {
+      "health_score": 67,
+      "risk_score": 45
+    },
+    "component:dashboard/webapp": {
+      "health_score": 100,
+      "risk_score": 0
+    },
+    "component:dashboard/webapp/src": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "component:dashboard/webapp/src/components": {
+      "health_score": 76,
+      "risk_score": 30
+    },
+    "component:dashboard/webapp/src/utils": {
+      "health_score": 100,
+      "risk_score": 0
+    },
+    "component:tests/e2e": {
+      "health_score": 100,
+      "risk_score": 0
+    },
+    "component:tests/e2e/api": {
+      "health_score": 100,
+      "risk_score": 0
+    },
+    "component:tests/e2e/dashboard": {
+      "health_score": 100,
+      "risk_score": 0
+    },
+    "component:tests/unit": {
+      "health_score": 100,
+      "risk_score": 0
+    },
+    "file:bot/callbacks.ts": {
+      "health_score": 87,
+      "risk_score": 5
+    },
+    "file:bot/commands/admin.ts": {
+      "health_score": 89,
+      "risk_score": 5
+    },
+    "file:bot/commands/btw.ts": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:bot/commands/codex.ts": {
+      "health_score": 91,
+      "risk_score": 5
+    },
+    "file:bot/commands/interrupt.ts": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:bot/commands/memory-export.ts": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:bot/commands/menu.ts": {
+      "health_score": 91,
+      "risk_score": 5
+    },
+    "file:bot/commands/monitor.ts": {
+      "health_score": 91,
+      "risk_score": 5
+    },
+    "file:bot/commands/project-add.ts": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:bot/commands/project-facts.ts": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:bot/commands/projects.ts": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:bot/commands/supervisor-actions.ts": {
+      "health_score": 91,
+      "risk_score": 5
+    },
+    "file:bot/commands/tmux-log.ts": {
+      "health_score": 91,
+      "risk_score": 5
+    },
+    "file:bot/media.ts": {
+      "health_score": 89,
+      "risk_score": 5
+    },
+    "file:bot/poll-handler.ts": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:bot/streaming.ts": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:bot/text-handler.ts": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:channel/index.ts": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:channel/permissions.ts": {
+      "health_score": 89,
+      "risk_score": 5
+    },
+    "file:channel/poller.ts": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:channel/session.ts": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:channel/skill-evaluator.ts": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:channel/status.ts": {
+      "health_score": 83,
+      "risk_score": 5
+    },
+    "file:channel/tools.ts": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:claude/client.ts": {
+      "health_score": 87,
+      "risk_score": 5
+    },
+    "file:cli.ts": {
+      "health_score": 91,
+      "risk_score": 5
+    },
+    "file:dashboard/src/pages/Layout.tsx": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:dashboard/src/pages/Logs.tsx": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:dashboard/src/pages/Memories.tsx": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:dashboard/src/pages/Monitor.tsx": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:dashboard/src/pages/Overview.tsx": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:dashboard/src/pages/Projects.tsx": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:dashboard/src/pages/SessionDetail.tsx": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:dashboard/src/pages/Sessions.tsx": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:dashboard/src/pages/Stats.tsx": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:dashboard/webapp/src/App.tsx": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:dashboard/webapp/src/components/GitBrowser.tsx": {
+      "health_score": 91,
+      "risk_score": 5
+    },
+    "file:dashboard/webapp/src/components/PRList.tsx": {
+      "health_score": 91,
+      "risk_score": 5
+    },
+    "file:dashboard/webapp/src/components/PermissionList.tsx": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:dashboard/webapp/src/components/ProcessHealth.tsx": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:dashboard/webapp/src/components/SessionMonitor.tsx": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:dashboard/webapp/src/components/SessionTimeline.tsx": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:main.ts": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:mcp/dashboard-api.ts": {
+      "health_score": 91,
+      "risk_score": 5
+    },
+    "file:mcp/server.ts": {
+      "health_score": 91,
+      "risk_score": 5
+    },
+    "file:memory/long-term.ts": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:memory/summarizer.ts": {
+      "health_score": 91,
+      "risk_score": 5
+    },
+    "file:orchestrator/gate.ts": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:orchestrator/matrix.ts": {
+      "health_score": 91,
+      "risk_score": 5
+    },
+    "file:scripts/admin-daemon.ts": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:scripts/supervisor.ts": {
+      "health_score": 84,
+      "risk_score": 5
+    },
+    "file:scripts/tmux-session-logger.ts": {
+      "health_score": 91,
+      "risk_score": 5
+    },
+    "file:scripts/tmux-watchdog.ts": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:utils/aux-llm-client.ts": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:utils/claude-usage.ts": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:utils/cli-config.ts": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:utils/curator.ts": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:utils/output-monitor.ts": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:utils/skill-handlers.ts": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:utils/stream-json-parser.ts": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "file:utils/tmux-monitor.ts": {
+      "health_score": 93,
+      "risk_score": 5
+    },
+    "module:adapters": {
+      "health_score": 100,
+      "risk_score": 0
+    },
+    "module:bot": {
+      "health_score": 74,
+      "risk_score": 85
+    },
+    "module:channel": {
+      "health_score": 83,
+      "risk_score": 35
+    },
+    "module:claude": {
+      "health_score": 87,
+      "risk_score": 5
+    },
+    "module:cleanup": {
+      "health_score": 100,
+      "risk_score": 0
+    },
+    "module:dashboard": {
+      "health_score": 79,
+      "risk_score": 80
+    },
+    "module:mcp": {
+      "health_score": 93,
+      "risk_score": 10
+    },
+    "module:memory": {
+      "health_score": 92,
+      "risk_score": 10
+    },
+    "module:orchestrator": {
+      "health_score": 84,
+      "risk_score": 10
+    },
+    "module:scripts": {
+      "health_score": 85,
+      "risk_score": 20
+    },
+    "module:services": {
+      "health_score": 100,
+      "risk_score": 0
+    },
+    "module:sessions": {
+      "health_score": 100,
+      "risk_score": 0
+    },
+    "module:tests": {
+      "health_score": 100,
+      "risk_score": 0
+    },
+    "module:utils": {
+      "health_score": 83,
+      "risk_score": 40
+    },
+    "project": {
+      "health_score": 85,
+      "risk_score": 305
+    }
+  }
+}

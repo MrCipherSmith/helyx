@@ -1,0 +1,106 @@
+---
+description: "Manage project documentation in <PROJECT_DIR>/docs (default) or $GDMETAPRO_DOCS_ROOT with synchronized multilingual outputs."
+alwaysApply: false
+---
+
+# Documentation Management Rules
+
+## Purpose
+Define how the agent creates and updates documentation under `<DOCS_ROOT>` (`<PROJECT_DIR>/docs` by default, or `$GDMETAPRO_DOCS_ROOT`).
+
+## When To Apply
+Apply when the user asks to create or update documentation, plans, requirements, communication notes, reports, or review artifacts.
+
+## Mandatory Behavior
+1. Ask for target location and folder name before writing any doc.
+2. Use date-stamped folders; never overwrite previous doc sets.
+3. Keep language variants synchronized.
+4. Update `<DOCS_ROOT>/README.md` after doc changes.
+5. Ask whether to apply changes (branch/commit/PR) after edits.
+
+## Required Locations
+- Root: `<DOCS_ROOT>` (default: `<PROJECT_DIR>/docs`)
+- Standard pattern: `<DOCS_ROOT>/<category>/<name>-<YYYY-MM-DD>/`
+
+## DOCS_ROOT Resolution
+
+The docs root is resolved in this priority order:
+
+1. **`DOCS_ROOT` passed explicitly** by the orchestrator in the sub-agent dispatch prompt
+2. **`GDMETAPRO_DOCS_ROOT` environment variable** (if set in the shell)
+3. **`<PROJECT_DIR>/docs/`** — default, relative to the project being worked on
+
+```bash
+DOCS_ROOT="${GDMETAPRO_DOCS_ROOT:-$PROJECT_DIR/docs}"
+```
+
+`PROJECT_DIR` is always known by Phase 0.2 of the orchestrator. Sub-agents (context-collector, feature-analyzer, etc.) **never resolve DOCS_ROOT themselves** — they receive it explicitly from the orchestrator.
+
+## Category Definitions
+
+| Category | Path pattern | Description |
+|----------|-------------|-------------|
+| `requirements` | `docs/requirements/<name>/<YYYY-MM-DD>/` | Feature requirements (iterations grouped by name) |
+| `plans` | `docs/plans/<name>/<YYYY-MM-DD>/` | Standalone implementation plans |
+| `report` | `docs/report/<name>/<YYYY-MM-DD>/` | Standalone review/audit reports |
+| `review-testing` | `docs/review-testing/<name>/<YYYY-MM-DD>/` | QA and testing artifacts |
+| `communication` | `docs/communication/<name>/<YYYY-MM-DD>/` | Communication and context docs |
+| `analysis` | `docs/analysis/<name>/<YYYY-MM-DD>/` | Feature/branch analysis (see below) |
+
+## Analysis Category Structure
+
+The `analysis` category is used by the `feature-analyzer` skill and any branch/feature analysis tasks.
+
+```
+docs/analysis/<feature-name>/<YYYY-MM-DD>/
+  report/
+    ru/
+      report.md
+    en/
+      report.md
+    ai/
+      report.md
+  plans/
+    ru/
+      implementation-plan.md
+    en/
+      implementation-plan.md
+    ai/
+      implementation-plan.md
+```
+
+- `report/` — detailed analysis of changes, ticket, cross-repo findings
+- `plans/` — actionable implementation plan derived from the analysis
+- Each subfolder contains `ru/`, `en/`, `ai/` language variants (all three are mandatory)
+
+## Language Matrix
+- Requirements: `ru`, `en`, `ai`
+- Implementation plans: `ru`, `en`, `ai`
+- Communication docs: `ru`, `en`, `ai`
+- Analysis (`report/` + `plans/`): `ru`, `en`, `ai` (mandatory)
+- Other categories: follow explicit user request; default to at least `en`.
+
+## Naming Rules
+- Ask user for `<name>` first.
+- Use semantic, kebab-case folder names.
+- Keep filenames deterministic: `<name>.md` unless user asks another convention.
+
+## Output Contract
+- Every generated document MUST be Markdown (`.md`).
+- Structure must be explicit with headings and actionable sections.
+- Code examples must be fenced code blocks.
+
+## Relationship to `jobs/`
+
+`docs/` and `jobs/` are **separate systems**:
+- `docs/` — general project documentation (requirements, plans, reports, analysis). Managed by this rule.
+- `jobs/` — orchestrator pipeline artifacts. Each job folder documents one orchestrated task end-to-end.
+
+Standalone skill invocations continue to use `docs/analysis/`. Only orchestrator-driven work produces output in `jobs/`.
+See `core/jobs-documentation.mdc` for the `jobs/` system.
+
+## Prohibited
+- Single-language output when the category requires `ru+en+ai`.
+- Partial language updates.
+- Writing docs outside the requested category path without confirmation.
+- Mixing `report/` and `plans/` content in the same file.

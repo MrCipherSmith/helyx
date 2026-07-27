@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gd-metapro.local/schemas/pr-issue-documenter/output-contract.schema.json",
+  "title": "PR & Issue Documenter Output Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "actions_taken"],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["success", "partial", "error"]
+    },
+    "actions_taken": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["action", "target", "url"],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["pr-description-updated", "issue-created", "issue-updated", "parent-issue-updated"]
+          },
+          "target": { "type": "string", "description": "e.g. PR #123, Issue #456" },
+          "url": { "type": "string", "format": "uri" }
+        }
+      }
+    },
+    "pr_description": {
+      "type": "string",
+      "description": "Generated PR description markdown"
+    },
+    "issue_body": {
+      "type": "string",
+      "description": "Generated issue body markdown"
+    },
+    "contradictions_found": {
+      "type": "array",
+      "description": "List of contradictions detected in existing descriptions",
+      "items": { "type": "string" }
+    },
+    "errors": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

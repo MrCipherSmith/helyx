@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gd-metapro.local/schemas/pr-issue-documenter/input-contract.schema.json",
+  "title": "PR & Issue Documenter Input Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "pr": {
+      "type": "object",
+      "description": "GitHub PR to document",
+      "additionalProperties": false,
+      "properties": {
+        "owner": { "type": "string" },
+        "repo": { "type": "string" },
+        "number": { "type": "integer", "minimum": 1 },
+        "url": { "type": "string", "format": "uri" }
+      }
+    },
+    "issue": {
+      "type": "object",
+      "description": "Linked GitHub issue (optional)",
+      "additionalProperties": false,
+      "properties": {
+        "owner": { "type": "string" },
+        "repo": { "type": "string" },
+        "number": { "type": "integer", "minimum": 1 },
+        "url": { "type": "string", "format": "uri" }
+      }
+    },
+    "commits": {
+      "type": "array",
+      "description": "Specific commit SHAs to analyze (alternative to PR)",
+      "items": { "type": "string" }
+    },
+    "action": {
+      "type": "string",
+      "enum": ["generate-pr-description", "create-issue", "update-issue", "auto"],
+      "default": "auto",
+      "description": "What to do: auto = determine from context"
+    },
+    "job_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "job_name": { "type": "string" },
+        "context_path": { "type": "string" },
+        "branch": { "type": "string" },
+        "base_branch": { "type": "string" },
+        "issue_number": { "type": "integer" }
+      }
+    }
+  }
+}

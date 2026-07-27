@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gd-metapro.local/schemas/job-documenter/output-contract.schema.json",
+  "title": "Job Documenter Output Contract",
+  "description": "DOCUMENTER_RESULT returned by job-documenter for every action.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["action", "status"],
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": ["init", "add-document", "update-readme", "finalize"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["success", "error"]
+    },
+    "job_path": {
+      "type": "string",
+      "description": "Absolute path to job folder (for init and finalize)"
+    },
+    "files_created": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "List of file paths created"
+    },
+    "readme_updated": {
+      "type": "boolean",
+      "description": "Whether README.md was updated (for add-document)"
+    },
+    "updates_applied": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "List of updates applied (for update-readme)"
+    },
+    "final_status": {
+      "type": "string",
+      "enum": ["completed", "aborted"],
+      "description": "Final job status (for finalize)"
+    },
+    "total_documents": {
+      "type": "integer",
+      "description": "Total documents in job folder (for finalize)"
+    },
+    "verification": {
+      "type": "string",
+      "description": "passed or list of discrepancies (for finalize)"
+    },
+    "error_details": {
+      "type": "string",
+      "description": "Error description when status=error"
+    },
+    "error_log_created": {
+      "type": "boolean",
+      "description": "Whether error-log.md was created on failure"
+    }
+  }
+}

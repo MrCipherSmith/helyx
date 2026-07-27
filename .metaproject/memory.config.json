@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "ranking": {
+    "weights": {
+      "relevance": 1,
+      "recency": 0.5,
+      "confidence": 0.5,
+      "status": 0.5,
+      "scope": 0.5
+    },
+    "recencyDecayPerDay": 0.995,
+    "maxResults": 10
+  },
+  "confidence": {
+    "default": "medium",
+    "values": {
+      "low": 0.34,
+      "medium": 0.67,
+      "high": 1
+    }
+  },
+  "statusBoost": {
+    "accepted": 1,
+    "draft": 0.4,
+    "conflict": 0.2,
+    "deprecated": 0.1,
+    "superseded": 0.1
+  },
+  "dedup": {
+    "titleSimilarity": 0.8,
+    "summaryJaccard": 0.6,
+    "minSharedScopeOrTags": 1
+  },
+  "ingest": {
+    "defaultStatus": "draft",
+    "allowAutoAccept": false
+  },
+  "reflect": {
+    "minClusterSize": 3
+  }
+}

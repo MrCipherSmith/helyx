@@ -1,0 +1,8 @@
+{
+  "maxOutputLines": 120,
+  "maxImportantLines": 60,
+  "maxGroupItems": 12,
+  "compactHeadLines": 120,
+  "compactTailLines": 80,
+  "outlineMaxEntries": 160
+}

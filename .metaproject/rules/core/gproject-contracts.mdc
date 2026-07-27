@@ -1,0 +1,198 @@
+---
+description: >
+  Dispatch and return contracts for gproject subagents. Extends
+  subagent-context-construction.md with gproject-specific fields.
+  Loaded by: gproject-orchestrator, all gproject-* subagents.
+globs: skills/gproject-*/**
+alwaysApply: false
+---
+
+# gproject Subagent Contracts
+
+## Extends
+
+This rule extends `rules/core/subagent-context-construction.md` and
+`rules/core/subagent-status-protocol.md`. All base rules apply.
+gproject adds domain-specific fields.
+
+---
+
+## Language Rule
+
+All gproject subagents MUST respond in the same language the user used in their
+original request. If the user wrote in Russian — respond in Russian. If in English — in English.
+This applies to artifact content, summaries, questions, and all user-facing output.
+The decisions registry keys (D_mode, D_frontend, etc.) remain in English regardless of language.
+
+---
+
+## Dispatch Contract (Orchestrator → Subagent)
+
+Every dispatch from gproject-orchestrator MUST include:
+
+```yaml
+# Required (from base protocol)
+description: "<phase>: <task>"
+subagent_type: "general"
+prompt: "<structured prompt — see template below>"
+
+# gproject-specific (inside prompt)
+phase: "<phase number and name>"
+mode: "new_project | task_in_project"
+user_language: "<language of the original user request>"
+input_artifacts: [<ONLY files this subagent needs>]
+decisions_so_far: <ONLY decisions relevant to this phase>
+constraints: [<from previous phases>]
+output_contract:
+  artifact_path: "<where to write full output>"
+  summary_max_tokens: 150
+  decisions_format: "key: value"
+```
+
+### Minimality Principle (Enhanced)
+
+Base rule says: "Subagents must not infer context from conversation history."
+gproject strengthens this:
+
+1. **Artifact minimality**: subagent receives ONLY artifacts listed in
+   `input_artifacts` — never all artifacts in the job directory
+2. **Decision minimality**: subagent receives ONLY decisions relevant to
+   its phase — not the full decisions.md
+3. **No cross-phase leakage**: Phase 4 agent cannot see Phase 0 raw data
+   unless explicitly passed (which it shouldn't be — use Phase 1 summary instead)
+
+### What each phase receives:
+
+| Phase | Input Artifacts | Decisions Subset |
+|-------|----------------|-----------------|
+| 0: Discovery | user input, uploaded docs, repo path | none (first phase) |
+| 1: Problem | discovery-brief.md | D_mode, D_domain, D_audience, D_scale |
+| 2: Stack | problem-statement.md | D_core_problems, D_goals, D_non_goals |
+| 3: Patterns | stack-decision.md, problem-statement.md | D_level, D_frontend..D_infra |
+| 4: PRD | problem-statement.md, architecture.md, tech-bestpractices.md | ALL decisions |
+| 5: Review | ALL artifacts, decisions.md | ALL decisions |
+| 6: Planning | prd.md, architecture.md | ALL decisions |
+
+---
+
+## Return Contract (Subagent → Orchestrator)
+
+Every subagent response MUST begin with STATUS prefix (per base protocol)
+and include gproject-specific fields:
+
+### STATUS: DONE
+
+```yaml
+STATUS: DONE
+summary: |
+  <3-5 sentences. What was produced, key decisions made, confidence level.>
+  <Max 150 tokens.>
+new_decisions:
+  D_<name>: "<value>"
+artifact_path: ".metaproject/jobs/<job>/artifacts/<name>.md"
+next_phase_needs:
+  - "<hint for orchestrator about what next phase will need>"
+```
+
+### STATUS: DONE_WITH_CONCERNS
+
+```yaml
+STATUS: DONE_WITH_CONCERNS
+summary: |
+  <3-5 sentences. Same as DONE but includes concern summary.>
+new_decisions:
+  D_<name>: "<value>"
+concerns:
+  - severity: "high | medium"
+    description: "<what's wrong>"
+    suggestion: "<how to address>"
+artifact_path: ".metaproject/jobs/<job>/artifacts/<name>.md"
+```
+
+### STATUS: NEEDS_CONTEXT
+
+```yaml
+STATUS: NEEDS_CONTEXT
+questions:
+  - id: "Q1"
+    text: "<clear question>"
+    options:
+      A: "<option — most common / recommended>"
+      B: "<option>"
+      C: "<option>"
+      D: "<option — 'not sure' or 'other' is acceptable>"
+    why: "<1 sentence: why this matters for this phase>"
+    can_be_resolved_by_agent: false | "<agent name if yes>"
+  - id: "Q2"
+    ...
+partial_artifact_path: ".metaproject/jobs/<job>/artifacts/<name>.partial.md"
+# Subagent MAY save partial work for resume
+```
+
+### STATUS: BLOCKED
+
+```yaml
+STATUS: BLOCKED
+blocker: "<clear description of what's blocking>"
+required_to_unblock: "<what the orchestrator or user must provide>"
+rollback_suggestion: "<if applicable, which phase to go back to>"
+```
+
+---
+
+## Orchestrator Context Budget
+
+The orchestrator MUST stay within these limits:
+
+| Item | Max Tokens | Notes |
+|------|-----------|-------|
+| state.json | 200 | Pipeline state only |
+| decisions.md (in memory) | 500 | Compact: ID + value only |
+| Phase summaries (all) | 800 | Max 120 per phase |
+| Current dispatch overhead | 400 | Template + routing logic |
+| **Total** | **~1900** | If exceeded, compress decisions |
+
+### Compression triggers:
+- decisions.md > 800 tokens → create decisions-compact.md (ID: value only, no rationale)
+- phase_summaries total > 800 → keep only last 3 phases in memory, rest on disk
+
+---
+
+## NEEDS_CONTEXT Resolution Protocol
+
+When a subagent returns NEEDS_CONTEXT:
+
+```
+1. Parse questions array
+2. For each question:
+   IF can_be_resolved_by_agent is truthy:
+     → Dispatch named agent with the question as task
+     → Collect answer
+     → Add to answers dict
+   ELSE:
+     → Add to user_questions list
+
+3. IF user_questions is not empty:
+     → Present to user as questionnaire
+     → Format: numbered questions with A/B/C/D options
+     → Collect answers
+
+4. Compose context supplement:
+   {
+     "answers": {
+       "Q1": {"choice": "B", "detail": "<if user added detail>"},
+       "Q2": {"choice": "A"}
+     },
+     "agent_research": {
+       "Q3": "<findings from dispatched agent>"
+     }
+   }
+
+5. Re-dispatch original subagent with:
+   - Original task + input_artifacts
+   - PLUS: context_supplement (above)
+   - PLUS: partial_artifact_path (if subagent saved partial work)
+
+6. Max 2 NEEDS_CONTEXT loops per phase
+   → After 2, escalate to user with full context
+```

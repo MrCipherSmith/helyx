@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gd-metapro.local/schemas/flow-orchestrator/input-contract.schema.json",
+  "title": "FlowOrchestratorInput",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["request"],
+  "properties": {
+    "request": {
+      "type": "string",
+      "minLength": 1,
+      "description": "User request, issue URL, feature description, or active flow instruction."
+    },
+    "flow_id": {
+      "type": "string",
+      "description": "Optional existing flow id, slug, or directory name."
+    },
+    "issue_url": {
+      "type": "string",
+      "description": "Optional GitHub issue URL used to initialize a new flow."
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["init", "execute", "complete", "resume", "auto"],
+      "default": "auto"
+    },
+    "constraints": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    }
+  }
+}

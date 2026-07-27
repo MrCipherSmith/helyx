@@ -1,0 +1,62 @@
+---
+description: "Workflow for adding or editing rules in the AGENTS.mdc + rules/core structure."
+alwaysApply: false
+---
+
+# Rule Management Workflow
+
+## Purpose
+Define a deterministic workflow for adding, editing, and syncing rules.
+
+## Trigger
+Apply when user asks to create, update, move, reorganize, or sync rules.
+
+## Source of Truth
+- Repository source: `.metaproject/rules`
+- Root always-on file (plain): `AGENTS.md`
+- Root always-on file (Cursor): `AGENTS.mdc` (frontmatter wrapper around AGENTS.md)
+- Thematic files: `.metaproject/rules/core/*.mdc`
+
+## Mandatory Clarification Step
+Before creating or editing any rule, the agent MUST ask and confirm:
+1. Target location
+2. Target folder name
+3. Rule file name (semantic, no numeric prefix)
+4. Rule scope and trigger conditions
+
+## Mandatory Behavior
+1. Update or create thematic rule files only under `rules/core`.
+2. Keep all rule files in English.
+3. Keep frontmatter valid YAML.
+4. If core files changed, update `AGENTS.md` catalog (and keep AGENTS.mdc in sync).
+5. Run synchronization only after source files are updated.
+
+## How to Run Synchronization
+After editing rules under `.metaproject/rules/` or `AGENTS.md`, sync to all targets:
+
+```bash
+gd-metapro update
+```
+
+### Sync Targets
+- `~/.cursor/rules/AGENTS.md` — Cursor global rules
+- `~/.codex/AGENTS.md` — Codex global rules
+- `~/.config/zed/AGENTS.md` — Zed global rules
+- `~/.config/opencode/AGENTS.md` — OpenCode global rules
+
+## Rule File Standard
+Every core rule MUST include:
+- Purpose
+- When To Apply
+- Mandatory Behavior
+- Output Contract (when the rule defines user-facing deliverables)
+- Optional examples
+
+## Output Contract for Rule Work
+- Any produced rule text must be Markdown.
+- Any code example must be fenced.
+- Final response language must follow user query language.
+
+## Apply Changes Workflow
+After rule changes, ask whether to apply changes.
+If approved: create branch from `main`, commit, and open PR to `main`.

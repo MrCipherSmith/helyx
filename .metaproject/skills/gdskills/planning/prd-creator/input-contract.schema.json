@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "prd-creator-input-contract",
+  "title": "PRD-Creator Input Contract",
+  "description": "Defines the input parameters for the PRD-Creator skill, supporting both direct and orchestrated modes.",
+  "type": "object",
+  "required": ["mode", "initialRequest"],
+  "properties": {
+    "mode": {
+      "type": "string",
+      "enum": ["direct", "orchestrated"],
+      "description": "Operational mode. Direct: interacts with the user. Orchestrated: invoked by another agent with structured context."
+    },
+    "initialRequest": {
+      "type": "string",
+      "minLength": 10,
+      "description": "The raw user request or initial problem statement."
+    },
+    "contextSchema": {
+      "type": "object",
+      "description": "Contextual information for the PRD (primarily used in Orchestrated mode).",
+      "properties": {
+        "product": {
+          "type": "string",
+          "description": "The product or application name."
+        },
+        "module": {
+          "type": "string",
+          "description": "The specific module or feature area."
+        },
+        "techStack": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of technologies to be used."
+        },
+        "projectRules": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of project-specific rules or guidelines."
+        }
+      }
+    },
+    "constraints": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Explicit constraints (architectural, technical, design) for the feature."
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Additional metadata about the request.",
+      "properties": {
+        "priority": {
+          "type": "string",
+          "enum": ["low", "medium", "high"]
+        },
+        "riskLevel": {
+          "type": "string",
+          "enum": ["low", "medium", "high"]
+        }
+      }
+    }
+  }
+}

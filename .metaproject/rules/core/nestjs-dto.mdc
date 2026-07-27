@@ -1,0 +1,50 @@
+---
+description: "NestJS DTO standards for Swagger decorators, validation, and typing."
+alwaysApply: false
+globs:
+  - "**/*dto*.ts"
+  - "**/dto/**/*.ts"
+---
+
+# NestJS DTO Rules
+
+## Purpose
+Ensure DTOs are explicit, validated, and API-documented.
+
+## When To Apply
+Apply when creating or reviewing NestJS DTO files (`*dto*.ts`, `dto/**/*.ts`) in the backend project.
+
+## Mandatory Standards
+- Use `@ApiProperty()` for required fields.
+- Use `@ApiPropertyOptional()` for optional fields.
+- Use class-validator decorators (`@IsString`, `@IsNumber`, `@IsEnum`, etc.).
+- Use `@IsOptional()` only for truly optional fields.
+- Keep decorator descriptions in English.
+
+## Example DTO
+
+```typescript
+import { IsString, IsEmail, IsOptional, IsUUID, Length } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
+
+export class CreateUserDto {
+  @ApiProperty({ description: 'User display name', maxLength: 100 })
+  @IsString()
+  @Length(1, 100)
+  name: string;
+
+  @ApiProperty({ description: 'User email address' })
+  @IsEmail()
+  @Transform(({ value }) => value.toLowerCase().trim())
+  email: string;
+
+  @ApiPropertyOptional({ description: 'External ID from identity provider' })
+  @IsOptional()
+  @IsUUID()
+  externalId?: string;
+}
+```
+
+## Output Contract
+- DTO examples in responses must be Markdown code blocks.

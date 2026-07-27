@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "review-orchestrator-input-contract",
+  "title": "Review Orchestrator Input Contract",
+  "type": "object",
+  "properties": {
+    "flags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "path": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "commit_range": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "issue_url": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "context_doc": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "context_mode": {
+      "type": "string",
+      "enum": [
+        "none",
+        "light",
+        "full"
+      ],
+      "default": "light"
+    },
+    "model_strategy": {
+      "type": "string",
+      "enum": [
+        "current",
+        "ask",
+        "adaptive"
+      ],
+      "default": "current"
+    },
+    "token_budget": {
+      "type": "object",
+      "properties": {
+        "total": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1000
+        },
+        "per_reviewer": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1000
+        },
+        "diff_max_chars": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1000
+        },
+        "file_max_chars": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1000
+        }
+      },
+      "additionalProperties": false
+    },
+    "publish_pr_review_report": {
+      "type": "string",
+      "enum": [
+        "ask",
+        "comment",
+        "comment-and-ai-artifact",
+        "none",
+        "true",
+        "false"
+      ],
+      "default": "ask"
+    },
+    "review_report_artifact": {
+      "type": "string",
+      "enum": [
+        "ask",
+        "ai-md",
+        "none"
+      ],
+      "default": "ask"
+    }
+  },
+  "additionalProperties": true
+}

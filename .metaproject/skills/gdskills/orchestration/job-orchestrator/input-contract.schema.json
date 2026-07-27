@@ -1,0 +1,188 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "job-orchestrator-input-contract",
+  "title": "Job Orchestrator Input Contract",
+  "description": "Defines all input parameters required to run job-orchestrator. This is the top-level entry point for the AI implementation pipeline.",
+  "type": "object",
+  "required": ["issue", "codebase", "automation"],
+  "properties": {
+    "issue": {
+      "type": "object",
+      "description": "GitHub issue identification. Provide EITHER url OR repo+number.",
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Full GitHub issue URL",
+          "examples": ["https://github.com/<ORG>/<PROJECT>/issues/4141"]
+        },
+        "repo": {
+          "type": "string",
+          "pattern": "^[\\w.-]+/[\\w.-]+$",
+          "description": "GitHub owner/repo (alternative to url)",
+          "examples": ["<ORG>/<PROJECT>"]
+        },
+        "number": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Issue number (alternative to url)",
+          "examples": [4141]
+        }
+      },
+      "oneOf": [
+        { "required": ["url"] },
+        { "required": ["repo", "number"] }
+      ]
+    },
+    "codebase": {
+      "type": "object",
+      "description": "Codebase configuration for implementation.",
+      "required": ["path"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Absolute path to the repository root",
+          "examples": ["/Users/dev/<PROJECT>"]
+        },
+        "role": {
+          "type": "string",
+          "enum": ["frontend", "backend", "shared"],
+          "default": "frontend",
+          "description": "Role of this codebase"
+        },
+        "base_branch": {
+          "type": "string",
+          "default": "develop-2",
+          "description": "Base branch to create feature branch from"
+        },
+        "additional_codebases": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path", "role"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "Absolute path"
+              },
+              "role": {
+                "type": "string",
+                "enum": ["frontend", "backend", "shared"]
+              },
+              "branch": {
+                "type": "string"
+              }
+            }
+          },
+          "description": "Additional codebases for issue-analyzer cross-repo analysis (read-only, implementation happens in primary codebase)"
+        }
+      }
+    },
+    "automation": {
+      "type": "object",
+      "description": "Controls for the orchestration pipeline.",
+      "required": ["skip_confirmation"],
+      "properties": {
+        "skip_confirmation": {
+          "type": "boolean",
+          "const": true,
+          "description": "Must be true — sub-agents run without confirmation"
+        },
+        "max_review_iterations": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3,
+          "default": 2,
+          "description": "Max review → fix iterations"
+        },
+        "auto_create_pr": {
+          "type": "boolean",
+          "default": false,
+          "description": "Auto-create draft PR without asking user (default: ask)"
+        },
+        "reviewers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "code-ai-review",
+              "code-boss-review",
+              "code-style-review",
+              "code-mobx-store-review"
+            ]
+          },
+          "default": ["code-ai-review", "code-boss-review", "code-style-review"],
+          "description": "Review skills to always run"
+        },
+        "conditional_reviewers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {
+            "code-mobx-store-review": "*.store.ts"
+          },
+          "description": "Review skills to run conditionally: {skill_name: file_glob_pattern}"
+        },
+        "run_final_checks": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run lint/type-check/test after review loop"
+        },
+        "analyzer_settings": {
+          "type": "object",
+          "description": "Settings passed to issue-analyzer sub-agent",
+          "properties": {
+            "max_tasks": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10,
+              "default": 7
+            },
+            "search_depth": {
+              "type": "string",
+              "enum": ["shallow", "focused", "deep"],
+              "default": "focused"
+            },
+            "include_context": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        },
+        "implementer_settings": {
+          "type": "object",
+          "description": "Settings passed to task-implementer sub-agents",
+          "properties": {
+            "auto_commit": {
+              "type": "boolean",
+              "default": true
+            },
+            "verify_lint": {
+              "type": "boolean",
+              "default": true
+            },
+            "verify_types": {
+              "type": "boolean",
+              "default": true
+            },
+            "verify_tests": {
+              "type": "boolean",
+              "default": true
+            },
+            "verify_stories": {
+              "type": "boolean",
+              "default": false
+            },
+            "max_self_fix_attempts": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5,
+              "default": 3
+            }
+          }
+        }
+      }
+    }
+  }
+}

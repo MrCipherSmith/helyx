@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tests-creator-output-contract",
+  "title": "Tests Creator Output Contract",
+  "description": "Output from tests-creator: test case specifications for task-implementer plus status report.",
+  "type": "object",
+  "required": ["test_case_specs", "status_report"],
+  "properties": {
+    "test_case_specs": {
+      "type": "object",
+      "required": ["framework", "test_files", "run_command", "expected_result"],
+      "properties": {
+        "framework": {
+          "type": "string",
+          "enum": ["vitest", "jest", "bun:test", "mocha", "pytest", "go_test", "unknown"],
+          "description": "Detected test framework"
+        },
+        "test_files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path", "target_module", "test_count", "tests"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "Path to the generated test file"
+              },
+              "target_module": {
+                "type": "string",
+                "description": "Source file this test covers (may not exist yet)"
+              },
+              "test_count": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Number of test cases in this file"
+              },
+              "tests": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["id", "description", "criterion", "type", "status"],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^test-\\d+$",
+                      "description": "Unique test identifier"
+                    },
+                    "description": {
+                      "type": "string",
+                      "description": "The it() description string"
+                    },
+                    "criterion": {
+                      "type": "string",
+                      "description": "Which acceptance criterion this test covers"
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": ["happy_path", "edge_case", "error_path"],
+                      "description": "Test scenario type"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": ["written", "todo"],
+                      "description": "written = real assertion exists; todo = it.todo() stub"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "run_command": {
+          "type": "string",
+          "description": "Command to run just these test files",
+          "examples": ["bun test src/__tests__/UserValidator.test.ts", "npx vitest run src/"]
+        },
+        "expected_result": {
+          "type": "string",
+          "description": "Expected test runner output after generation (before implementation)",
+          "examples": ["all failing (RED phase)", "4 failed, 0 passed"]
+        },
+        "notes": {
+          "type": "string",
+          "description": "Test design decisions, assumptions, or concerns"
+        }
+      }
+    },
+    "status_report": {
+      "type": "object",
+      "required": ["status", "tests_written", "all_criteria_covered"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["DONE", "DONE_WITH_CONCERNS", "BLOCKED", "NEEDS_CONTEXT"],
+          "description": "Subagent status protocol value"
+        },
+        "tests_written": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total number of test cases written"
+        },
+        "test_files_committed": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Paths of committed test files"
+        },
+        "all_criteria_covered": {
+          "type": "boolean",
+          "description": "Whether every acceptance criterion has at least one test"
+        },
+        "uncovered_criteria": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Acceptance criteria without test coverage (if any)"
+        },
+        "red_verified": {
+          "type": "boolean",
+          "description": "Whether tests were run and confirmed to be failing"
+        },
+        "concerns": {
+          "type": "string",
+          "description": "Any concerns or assumptions made during test generation"
+        }
+      }
+    }
+  }
+}

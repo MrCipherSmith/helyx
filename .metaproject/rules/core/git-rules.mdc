@@ -1,0 +1,37 @@
+---
+description: "Git safety rules for protected paths and controlled apply-changes flow."
+alwaysApply: false
+---
+
+# Git Commit Rules
+
+## Purpose
+Prevent accidental commits and enforce controlled publishing flow.
+
+## When To Apply
+Apply before any git operation: commit, branch creation, or PR creation. Always loaded alongside commit-message-formatting.mdc.
+
+## Protected Paths
+- `.cursor/`: never commit.
+- `<DOCS_ROOT>/`: do not commit by default unless explicitly approved by the user.
+- `.metaproject/jobs/` (or `$GDMETAPRO_JOBS_ROOT`): do not commit by default unless explicitly approved by the user. Job documentation — never force-delete; contains orchestrator run artifacts.
+
+## Mandatory Behavior
+1. Ensure protected paths are covered in `.gitignore`.
+2. After rule/doc updates, ask user whether to apply changes.
+3. If approved: create branch from `main`, commit, and open PR to `main`.
+4. If declined: do not create branch/commit/PR.
+
+## Commit Message Rules
+Follow `core/commit-message-formatting.mdc`.
+
+## Red Flags — Stop and re-read this rule if you are thinking:
+
+| Rationalization | Why it's wrong |
+|---|---|
+| "This is a quick fix, I'll commit directly to main" | Branch protection rules exist precisely for quick fixes that turn into incidents |
+| "The protected path isn't really sensitive here, I'll include it" | Protected paths are protected unconditionally — context does not create exceptions |
+| "The user said to commit everything, so I'll skip the .gitignore check" | User instructions override workflow steps, not safety invariants |
+| "I'll ask about the PR later — let me commit first to save the work" | Committing before confirming intent conflates saving work with publishing it |
+
+**IRON LAW: NEVER COMMIT TO A PROTECTED PATH OR BRANCH WITHOUT EXPLICIT USER APPROVAL, REGARDLESS OF HOW URGENT THE CHANGE APPEARS.**

@@ -1,0 +1,561 @@
+---
+description: "Reference template and checklist for MobX store structure and async state handling."
+alwaysApply: false
+globs:
+  - "**/*store*.ts"
+---
+
+# MobX Store Template
+
+## Purpose
+Provide a reliable baseline for MobX stores and context wiring.
+
+## When To Apply
+Apply when creating or reviewing a MobX store file (`*.store.ts`, `*Store.ts`).
+
+## Required Store Elements
+- `makeObservable(this)` in constructor.
+- Observable state fields.
+- Computed getters for derived state.
+- Public `@action.bound` actions for mutations triggered from UI.
+- `runInAction` in private async/orchestration methods, especially for post-`await` mutations.
+- Context + hook with null-check error.
+
+## Member Accessibility Modifiers
+
+ESLint enforces `@typescript-eslint/explicit-member-accessibility: ["error", { accessibility: "no-public" }]` — the `public` keyword is **forbidden**. Public members have no modifier.
+
+| Modifier | When to use |
+|----------|-------------|
+| *(no modifier)* | Public observable state, `@computed` getters, lifecycle methods (`dispose()`, `init()`), public non-mutating helpers/selectors, and public `@action.bound` UI methods |
+| `private` | Internal state (`disposed`, `initialized`, `_value`), helper methods, API-calling methods (`fetchX`, `performX`), inter-store callbacks (`onChangeX`, `onFireX`, `handleX`, `syncX`) |
+| `private readonly` | Constructor-injected dependencies, immutable config (`service`, `context`, `id`) |
+| `readonly` | Immutable identity fields that are public (`pipelineType`, `contextActions`) |
+| `protected` | Only in abstract base classes for extension points |
+
+## Member Ordering
+
+Follow the project convention below for predictable store layout:
+
+```
+1. private fields
+2. public fields
+3. constructor
+4. public methods
+   - @computed getters
+   - lifecycle methods (`dispose()`, `init()`, `onMount()`, `onUnmount()`)
+   - public non-mutating helpers/selectors (`getById`, `findX`, `uniqueElement`)
+   - public `@action.bound` UI entrypoints (`onChangeX`, `onClickX`, `onSave`, `onSubmit`)
+5. private methods
+```
+
+The exact naming can vary by module, but the shape should stay stable: internal state first, public state next, constructor once, public API grouped together, private orchestration last.
+
+## Public UI Actions
+
+- Methods invoked from React components or route/UI event handlers MUST be `@action.bound`.
+- These methods are typically named with an `on...` prefix when they represent UI events: `onChangeName`, `onSave`, `onSubmit`, `onToggleExpanded`.
+- Public sync `@action.bound` methods may mutate store state directly. Do **not** wrap those direct mutations in `runInAction` — the action boundary already exists.
+- Public async `@action.bound` methods should stay thin: optional guard check → delegate to a `private async` method.
+
+```typescript
+@action.bound
+async onSave() {
+  if (this.saving) return;
+  await this.performSave();
+}
+
+@action.bound
+onChangeName(value: string) {
+  this.name = value;
+  this.error = null;
+}
+```
+
+## Public Helper and Selector Methods
+
+Public methods that do **not** mutate store state are not actions:
+
+- helpers/selectors such as `getById`, `findBySlug`, `hasItem`, `uniqueElement`
+- read-only utility methods used by components or sibling stores
+
+Rules:
+- no `@action.bound`
+- no `runInAction`
+- arrow methods are acceptable and often preferred when a method reference can escape the class instance
+
+```typescript
+getById = (id: string) => {
+  return this.items.find((item) => item.id === id);
+};
+```
+
+## Private Methods and Async Orchestration
+
+- API/IO, persistence, sockets, background orchestration, and internal synchronization belong in `private` methods.
+- Private methods are often best expressed as arrow fields when preserving `this` matters.
+- `private async` methods should usually use `try/catch/finally`.
+- State mutations inside private methods should happen inside `runInAction` blocks.
+- After every `await`, any state mutation must re-enter MobX via `runInAction`.
+- If the method owns `loading` / `saving` / `processing` flags, set them via `runInAction` in `try` and clear them in `finally`.
+- Avoid `@action.bound` on private methods by default.
+- **Exception**: `@action.bound private` is acceptable when a private method is passed as a bound callback reference to a child/sibling store constructor.
+
+```typescript
+private performSave = async () => {
+  try {
+    runInAction(() => {
+      this.saving = true;
+      this.error = null;
+    });
+
+    const saved = await SomeApi.save(this.draft);
+
+    runInAction(() => {
+      if (this.disposed) return;
+      this.item = saved;
+    });
+  } catch (err: unknown) {
+    runInAction(() => {
+      if (this.disposed) return;
+      this.error = err instanceof Error ? err.message : 'Save failed';
+    });
+  } finally {
+    runInAction(() => {
+      if (this.disposed) return;
+      this.saving = false;
+    });
+  }
+};
+```
+
+## Inter-Store Callbacks and Internal Handlers
+
+Methods that serve as **internal callbacks** between stores or internal event handlers MUST be `private`. These are NOT part of the store's public API — they are internal synchronization glue.
+
+**Common patterns that MUST be `private`:**
+- `onChangeEditorState(state)` — callback receiving state from child/sibling store
+- `onFireExecutorChange()` — internal sync handler when executor changes
+- `onChangeX(value)` — handler for internal state propagation between stores when not called from React UI
+- `handleX()`, `syncX()` — any internal coordination method
+
+**Decision rule:** Ask "Is this method called from a React component via JSX/event handler?" If NO — it is `private`.
+
+```typescript
+// WRONG — public inter-store callback
+@action.bound
+onChangeEditorState(editorState: ICodeEditorState) {
+  this.setRawScript(editorState.script);
+}
+
+// CORRECT — private inter-store callback passed to another store
+@action.bound
+private onChangeEditorState(editorState: ICodeEditorState) {
+  this.setRawScript(editorState.script);
+}
+```
+
+**Note:** `@action.bound` on a `private` callback is acceptable in the callback-reference pattern because it preserves `this` and MobX action tracking when handing the method to another store.
+
+## Bidirectional Sync Bounce Protection
+
+When two stores synchronize state bidirectionally (Store A writes to Store B and Store B writes back to Store A), an **equality guard** is required in the reverse-sync path to prevent infinite callback loops.
+
+**Pattern:** Before propagating a value back to the source store, check that the value actually changed:
+
+```typescript
+// Store A → Store B (forward sync, triggered by user action)
+@action.bound
+private onChangeEditorState(editorState: ICodeEditorState) {
+  this.setRawScript(editorState.script);
+  const codeExecutorId = this.codeExecutor?.id;
+  if (this.codeEditorStore.executorId !== codeExecutorId) {
+    this.codeEditorStore.setExecutorId(codeExecutorId);
+  }
+}
+```
+
+**Anti-pattern — missing equality guard causes infinite loop:**
+
+```typescript
+// WRONG — no guard, will bounce back and forth
+private onChangeEditorState(editorState: ICodeEditorState) {
+  this.setRawScript(editorState.script);
+  const codeExecutorId = this.codeExecutor?.id;
+  this.codeEditorStore.setExecutorId(codeExecutorId); // triggers onChangeX → back to here
+}
+```
+
+**Rule:** In any bidirectional sync between stores, at least one direction MUST have `if (newValue !== currentValue)` before writing to the other store.
+
+## Truthy vs Equality Guards for Optional Values
+
+When guarding state updates, prefer **equality comparison** (`!==`) over **truthy checks** (`if (value && ...)`) for optional/nullable fields. A truthy guard blocks propagation of legitimate `undefined`/`null`/`0`/`""` values.
+
+```typescript
+// WRONG — truthy guard blocks clearing (undefined cannot propagate)
+if (executor && executor.id !== this.executorId) {
+  this.setExecutorId(executor.id);
+}
+// If executor is undefined (user cleared it), nothing happens — stale value remains
+
+// CORRECT — equality guard allows clearing
+if (executor?.id !== this.executorId) {
+  this.setExecutorId(executor?.id);
+}
+// If executor is undefined, executorId becomes undefined — field is properly cleared
+```
+
+**Rule:** Use `if (value !== currentValue)` instead of `if (value && value !== currentValue)` when `undefined`/`null` is a valid state that should propagate. Reserve truthy guards only for fields that must never be falsy.
+
+## Lifecycle Initialization
+
+- `init()` / `onMount()` is called by the **parent store**, not from component `useEffect`.
+- Components should **not** trigger store data loading via `useEffect`. Parent store orchestrates child store lifecycle.
+- `dispose()` is called by the parent store in its `onUnmount()` to prevent stale-state updates.
+
+```typescript
+@action.bound
+onMount() {
+  void this.variablesStore.init();
+}
+
+@action.bound
+onUnmount() {
+  this.variablesStore?.dispose();
+}
+```
+
+## API Calls in Private Methods
+
+API/IO calls must live in **private** store methods, never in components and never as the main body of a public UI action:
+
+- public `@action.bound` methods are thin: guard check → delegate to private method
+- private methods handle: API call → `runInAction` mutation blocks → toast/error handling → cleanup
+
+
+## Observable Type Variants
+
+MobX provides different levels of observation depth:
+
+| Decorator | Behavior |
+|-----------|----------|
+| `@observable` | Deep observation — nested objects and arrays are made observable recursively |
+| `@observable.ref` | Reference only — only the reference itself is tracked, inner contents are NOT observable |
+| `@observable.shallow` | One level deep — array/object items are not made observable, but the container is |
+| `@observable.struct` | Structural comparison — triggers only when the value structurally differs from the previous |
+
+```typescript
+// Deep observable (default) — full reactivity on nested data
+@observable items: IItem[] = [];
+@observable config: IConfig = { ... };
+
+// Reference observable — use when you own the object reactivity elsewhere
+// or when it's a large external object you don't want deeply proxied
+@observable.ref items: IItem[] = [];
+@observable.ref editorInstance: EditorType | null = null;
+
+// Shallow observable — container is reactive, items are plain
+@observable.shallow list: IItem[] = [];
+
+// Structural — only triggers reaction when value structurally changes
+@observable.struct position: { x: number; y: number } = { x: 0, y: 0 };
+```
+
+### Private Observable with Getter/Setter
+
+Use a private backing field `_value` with a public getter (and optional setter action) when you need to control access or add side effects on mutation:
+
+```typescript
+@observable private _value: string = "";
+
+@computed get value() {
+  return this._value;
+}
+
+@action.bound
+setValue(value: string) {
+  this._value = value;
+}
+```
+
+### MobX Observable Collections (IObservableArray / ObservableMap)
+
+Use `IObservableArray` and `ObservableMap` when you need access to MobX-specific collection methods (`.replace()`, `.remove()`, `.clear()`, `.has()`, `.merge()`). Plain arrays/maps assigned to `@observable` are also deeply observed but lack these utility methods.
+
+```typescript
+import { IObservableArray, ObservableMap, observable } from "mobx";
+
+// IObservableArray — MobX-enhanced array
+@observable someListsByMobx: IObservableArray<IItem> = observable([]);
+
+// ObservableMap — MobX-enhanced Map
+@observable someMapByMobx: ObservableMap<string, IItem> = observable(new Map());
+```
+
+#### IObservableArray API
+
+```typescript
+// Mutation — all trigger reactions
+this.someListsByMobx.push(item);                      // add one or more at end
+this.someListsByMobx.pop();                           // remove last
+this.someListsByMobx.splice(index, deleteCount, ...newItems); // in-place splice
+this.someListsByMobx.replace([item1, item2]);         // replace all contents atomically
+this.someListsByMobx.remove(item);                   // remove first matching item (by reference)
+this.someListsByMobx.clear();                         // remove all items
+
+// Read — standard array methods work normally
+this.someListsByMobx.find(x => x.id === id);
+this.someListsByMobx.filter(x => x.active);
+this.someListsByMobx.map(x => x.name);
+this.someListsByMobx.slice();                         // returns plain array snapshot
+this.someListsByMobx.toJSON();                        // alias for slice()
+```
+
+#### ObservableMap API
+
+```typescript
+// Mutation
+this.someMapByMobx.set('key', value);                 // add or update
+this.someMapByMobx.delete('key');                     // remove by key
+this.someMapByMobx.clear();                           // remove all
+this.someMapByMobx.replace(new Map([['k', v]]));      // replace all contents atomically
+this.someMapByMobx.merge({ key: value });             // merge object or map into existing
+
+// Read
+this.someMapByMobx.get('key');                        // value or undefined
+this.someMapByMobx.has('key');                        // boolean
+this.someMapByMobx.keys();                            // IterableIterator<string>
+this.someMapByMobx.values();                          // IterableIterator<V>
+this.someMapByMobx.entries();                         // IterableIterator<[string, V]>
+this.someMapByMobx.forEach((value, key) => ...);
+this.someMapByMobx.toJSON();                          // plain object snapshot
+```
+
+### Non-Observable Props (passed from parent store)
+
+Props injected from outside the store that do not need reactivity are stored as plain class fields (no decorator):
+
+```typescript
+somePropValue: IConfig;
+somePropFn: () => void;
+```
+
+## Reactions and Disposers
+
+Use `autorun`, `reaction`, and `when` for side effects that respond to observable changes. Always dispose them in `dispose()` to prevent memory leaks and stale callbacks.
+
+```typescript
+import { autorun, reaction, when, IReactionDisposer } from "mobx";
+
+export class ExampleStore {
+  private disposed = false;
+  private disposers: IReactionDisposer[] = [];
+
+  constructor() {
+    makeObservable(this);
+    // Set up reactions after makeObservable
+    this.disposers.push(
+      // autorun — runs immediately and on every dependency change
+      autorun(() => {
+        if (this.items.length > 0) {
+          console.log("items changed:", this.items.length);
+        }
+      }),
+
+      // reaction — explicit dependency tracking, runs only on change (not on init)
+      reaction(
+        () => this.loading,
+        (loading) => {
+          if (!loading) this.onLoadComplete();
+        }
+      ),
+
+      // when — runs once when predicate becomes true, then auto-disposes
+      when(
+        () => this.items.length > 0,
+        () => { /* one-time side effect */ }
+      )
+    );
+  }
+
+  dispose() {
+    this.disposed = true;
+    this.disposers.forEach(d => d());
+    this.disposers = [];
+  }
+}
+```
+
+**Rule:** Every `autorun`, `reaction`, or `when` created in the store MUST have its disposer stored and called in `dispose()`.
+
+## Constructor Variants
+
+```typescript
+// Basic — no dependencies
+constructor() {
+  makeObservable(this);
+}
+
+// With private injected dependency
+constructor(private readonly service: SomeService) {
+  makeObservable(this);
+}
+
+// With public readonly identity (no `public` keyword — ESLint forbids it)
+// Use `readonly` instead:
+constructor(readonly id: string) {
+  makeObservable(this);
+}
+
+// With value prop + callback prop (from parent store)
+constructor(somePropValue: IConfig, somePropFn: () => void) {
+  makeObservable(this);
+  this.somePropValue = somePropValue;
+  this.somePropFn = somePropFn;
+}
+```
+
+## Minimal Template
+```typescript
+import { action, computed, createContext, IObservableArray, IReactionDisposer, makeObservable, observable, ObservableMap, reaction, runInAction } from "mobx";
+import { useContext } from "react";
+
+export class ExampleStore {
+  // 1. Private fields
+  private readonly service: SomeService;
+  @observable private _value = "";
+  private disposed = false;
+  private disposers: IReactionDisposer[] = [];
+
+  // 2. Public fields
+  @observable loading = false;
+  @observable saving = false;
+  @observable error: string | null = null;
+  @observable.ref items: IItem[] = [];
+  @observable someListsByMobx: IObservableArray<IItem> = observable([]);
+  @observable someMapByMobx: ObservableMap<string, IItem> = observable(new Map());
+  readonly pipelineType = "example";
+
+  // 3. Constructor
+  constructor(service: SomeService) {
+    this.service = service;
+    makeObservable(this);
+  }
+
+  // 4. Public methods
+  @computed get isEmpty() {
+    return this.items.length === 0;
+  }
+
+  @computed get value() {
+    return this._value;
+  }
+
+  getById = (id: string) => {
+    return this.items.find((item) => item.id === id);
+  };
+
+  dispose() {
+    this.disposed = true;
+    this.disposers.forEach((dispose) => dispose());
+    this.disposers = [];
+  }
+
+  @action.bound
+  async init() {
+    await this.fetchItems();
+  }
+
+  @action.bound
+  onChangeValue(value: string) {
+    this._value = value;
+    this.error = null;
+  }
+
+  @action.bound
+  async onCreateItem(name: string) {
+    if (this.saving) return;
+    await this.performCreate(name);
+  }
+
+  // 5. Private methods
+  private registerReactions = () => {
+    this.disposers.push(
+      reaction(
+        () => this.items.length,
+        () => {
+          // side effect
+        },
+      ),
+    );
+  };
+
+  private fetchItems = async () => {
+    try {
+      runInAction(() => {
+        this.loading = true;
+        this.error = null;
+      });
+
+      const items = await this.service.getAll();
+
+      runInAction(() => {
+        if (this.disposed) return;
+        this.items = items;
+      });
+    } catch (err: unknown) {
+      runInAction(() => {
+        if (this.disposed) return;
+        this.error = err instanceof Error ? err.message : "Fetch failed";
+      });
+    } finally {
+      runInAction(() => {
+        if (this.disposed) return;
+        this.loading = false;
+      });
+    }
+  };
+
+  private performCreate = async (name: string) => {
+    try {
+      runInAction(() => {
+        this.saving = true;
+        this.error = null;
+      });
+
+      const created = await this.service.create({ name });
+
+      runInAction(() => {
+        if (this.disposed) return;
+        this.items = [...this.items, created];
+      });
+    } catch (err: unknown) {
+      runInAction(() => {
+        if (this.disposed) return;
+        this.error = err instanceof Error ? err.message : "Create failed";
+      });
+    } finally {
+      runInAction(() => {
+        if (this.disposed) return;
+        this.saving = false;
+      });
+    }
+  };
+
+  private syncCollections = () => {
+    runInAction(() => {
+      this.someListsByMobx.replace([{ id: "1", name: "Item 1" }]);
+      this.someMapByMobx.set("1", { id: "1", name: "Item 1" });
+    });
+  };
+}
+
+export const ExampleStoreContext = createContext<ExampleStore | null>(null);
+
+export const useExampleStore = () => {
+  const store = useContext(ExampleStoreContext);
+  if (!store) throw new Error("useExampleStore must be used within provider");
+  return store;
+};
+```

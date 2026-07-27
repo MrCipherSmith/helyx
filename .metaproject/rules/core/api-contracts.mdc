@@ -1,0 +1,148 @@
+---
+description: "API contract rules: OpenAPI-first design, semantic versioning, no breaking changes without major version bump, contract testing. Use when designing, modifying, or consuming HTTP APIs."
+alwaysApply: false
+---
+
+# API Contracts
+
+## Purpose
+Prevent silent breaking changes, version drift, and undocumented API behaviour. Enforce OpenAPI-first design and strict versioning discipline.
+
+## When To Apply
+Apply when creating new API endpoints, modifying existing endpoints, changing DTOs/schemas, or writing API client code.
+
+---
+
+## Core Principle: Contract Before Code
+
+The OpenAPI spec (or equivalent schema) is the source of truth. Code is generated from or validated against the spec — not the other way around.
+
+```
+1. Design the endpoint in OpenAPI/schema first
+2. Review the contract for breaking changes
+3. Generate or update types/validators from the spec
+4. Implement the handler
+5. Write contract tests that validate the spec is honoured
+```
+
+---
+
+## Rules
+
+### Rule 1: OpenAPI-First for New Endpoints
+Every new HTTP endpoint MUST have an OpenAPI 3.x definition before the handler is implemented:
+
+```yaml
+# Required fields for every endpoint definition
+paths:
+  /users/{id}:
+    get:
+      operationId: getUser          # unique, stable identifier
+      summary: Get user by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: User found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+```
+
+**Required for every endpoint:**
+- `operationId` (stable, unique)
+- All path/query/header parameters documented
+- All response codes documented (including 4xx, 5xx)
+- Request body schema referenced (not inlined) for reuse
+
+### Rule 2: Semantic Versioning for APIs
+
+| Change Type | Version Impact | Action Required |
+|---|---|---|
+| Add optional field to response | None / patch | Safe — backwards compatible |
+| Add optional field to request | None / patch | Safe — old clients omit it |
+| Add new endpoint | Minor bump | Document in changelog |
+| Make optional field required | **Major bump** | Breaking change |
+| Remove field from response | **Major bump** | Breaking change |
+| Rename field | **Major bump** | Breaking change |
+| Change field type | **Major bump** | Breaking change |
+| Remove endpoint | **Major bump** | Deprecate first, remove in next major |
+
+**Breaking change protocol:**
+1. Add deprecation notice to old version (`deprecated: true` in OpenAPI)
+2. Implement new version at `/v{N+1}/...` or with new operationId
+3. Run old version in parallel for ≥1 release cycle
+4. Remove old version only after clients have migrated
+
+### Rule 3: Contract Testing
+Every public API endpoint MUST have at least one contract test that:
+- Validates the response shape matches the OpenAPI schema
+- Tests the error responses (at minimum: 400, 404, 401 where applicable)
+- Uses schema validation, not string matching
+
+```typescript
+// Example: contract test using a schema validator
+describe('GET /users/:id contract', () => {
+  it('returns User schema on 200', async () => {
+    const res = await request(app).get('/users/valid-id');
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchSchema(UserSchema); // validated against OpenAPI
+  });
+
+  it('returns 404 with NotFound schema on unknown id', async () => {
+    const res = await request(app).get('/users/nonexistent');
+    expect(res.status).toBe(404);
+    expect(res.body).toMatchSchema(NotFoundSchema);
+  });
+});
+```
+
+### Rule 4: No Undocumented Fields
+Every field in a request or response body MUST appear in the schema. Fields not in the schema must be stripped from responses (`additionalProperties: false` in JSON Schema).
+
+### Rule 5: Consistent Error Schema
+All error responses must use the same envelope schema:
+
+```typescript
+interface ApiError {
+  code: string;       // machine-readable, e.g. "USER_NOT_FOUND"
+  message: string;    // human-readable
+  details?: unknown;  // optional structured context
+  requestId: string;  // for traceability
+}
+```
+
+Never return raw Error objects, stack traces, or ORM error messages to API consumers.
+
+### Rule 6: Idempotency Keys for Mutations
+POST/PUT/PATCH endpoints that create or modify state MUST support idempotency via `Idempotency-Key` header or a stable `clientId` in the body. This prevents duplicate operations on network retry.
+
+---
+
+## Iron Laws
+
+**IRON LAW 1: NO breaking change may be deployed without a major version bump and a deprecation period.**
+**IRON LAW 2: The OpenAPI spec is updated BEFORE the implementation — not after as documentation.**
+**IRON LAW 3: Error responses MUST use the standard ApiError envelope — no raw exceptions, no ad-hoc shapes.**
+
+---
+
+## Red Flags — Stop and re-read this rule if you are thinking:
+
+| Rationalization | Why it's wrong |
+|---|---|
+| "It's just adding a field, that's not breaking" | Removing a field later will be breaking — document it now to establish the contract |
+| "The spec can wait, I'll document it later" | Specs written after code document what the code does, not what it should do — bugs get documented too |
+| "Renaming a field is internal, consumers will adapt" | Consumers have no way to know a field was renamed — this silently breaks every client |
+| "I'll use v2 later if needed, for now v1 is fine" | Delaying versioning means v1 can never be changed without breaking consumers |
+| "Contract tests slow down development" | Contract tests catch breaking changes before they reach consumers — not after |
+| "The error format doesn't matter as long as the status code is right" | Status codes alone are insufficient for automated error handling — codes and schemas matter |
+
+**IRON LAW: A BREAKING CHANGE WITHOUT A VERSION BUMP IS A PRODUCTION INCIDENT WAITING TO HAPPEN.**

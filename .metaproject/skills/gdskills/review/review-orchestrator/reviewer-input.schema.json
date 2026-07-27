@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "reviewer-input",
+  "title": "Reviewer Input",
+  "type": "object",
+  "required": [
+    "review_context",
+    "reviewer",
+    "scope_mode",
+    "model_class",
+    "budget"
+  ],
+  "properties": {
+    "review_context": {
+      "$ref": "review-context.schema.json"
+    },
+    "reviewer": {
+      "type": "string"
+    },
+    "scope_mode": {
+      "type": "string",
+      "enum": [
+        "diff",
+        "path"
+      ]
+    },
+    "context_doc": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "issue_url": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "model_class": {
+      "type": "string",
+      "enum": [
+        "simple",
+        "normal",
+        "complex",
+        "current-session"
+      ]
+    },
+    "budget": {
+      "type": "object",
+      "required": [
+        "max_findings"
+      ],
+      "properties": {
+        "max_prompt_tokens": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1000
+        },
+        "max_findings": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "additionalProperties": false
+    },
+    "branch": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "base_sha": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "diff": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "target_path": {
+      "type": [
+        "string",
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "file_contents": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "additionalProperties": true
+}

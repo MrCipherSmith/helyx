@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gd-metapro.local/schemas/gdskills/agent-event.schema.json",
+  "title": "Metaproject Agent Event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "run_id", "event_id", "type", "timestamp_utc"],
+  "properties": {
+    "contract_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "run_id": { "type": "string" },
+    "event_id": { "type": "string" },
+    "dispatch_id": { "type": ["string", "null"] },
+    "type": {
+      "type": "string",
+      "enum": [
+        "run_started",
+        "run_completed",
+        "run_failed",
+        "dispatch_created",
+        "dispatch_completed",
+        "dispatch_blocked",
+        "artifact_written",
+        "question_asked",
+        "decision_recorded",
+        "validation_failed"
+      ]
+    },
+    "message": { "type": "string" },
+    "data": { "type": "object", "additionalProperties": true },
+    "timestamp_utc": { "type": "string", "format": "date-time" }
+  }
+}

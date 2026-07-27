@@ -18,3 +18,27 @@ piper/
 # Orchestrator job artifacts
 jobs/
 logs/
+
+# gd-metapro:begin
+# Metaproject: keep agent-facing context versioned, ignore executable/generated internals.
+.metaproject/runtime/
+.metaproject/core/**/*.ts
+.metaproject/data/**/storage/
+.metaproject/data/**/raw/
+.metaproject/data/**/queries/
+.metaproject/data/**/summaries/
+.metaproject/data/gdctx/artifacts/
+.metaproject/data/gdwiki/artifacts/
+.metaproject/data/gdwiki/link-check/
+.metaproject/data/health/history/
+.metaproject/data/health/artifacts/latest.md
+.metaproject/data/health/artifacts/latest.json
+.metaproject/data/testing/history/
+.metaproject/data/testing/logs/
+.metaproject/data/testing/artifacts/latest.md
+.metaproject/data/testing/artifacts/latest.json
+.metaproject/reports/
+# gd-metapro:end
+
+# graphify: generated knowledge-graph output (regenerate with /graphify)
+graphify-out/

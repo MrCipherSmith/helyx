@@ -1,0 +1,208 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "context-collector-output-contract",
+  "title": "Context Collector — Output Contract (CONTEXT_RESULT)",
+  "description": "Schema for the CONTEXT_RESULT block returned by the context-collector skill upon completion of any action.",
+  "type": "object",
+  "required": ["action", "status", "context_path", "version", "summary", "sections_collected"],
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": ["collect", "update"],
+      "description": "The action that was executed, echoed from the input CONTRACT."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["success", "error"],
+      "description": "Outcome of the context collection or update operation."
+    },
+    "job_name": {
+      "type": ["string", "null"],
+      "description": "The JOB_NAME from the input. Null when context-collector was run standalone without a job folder."
+    },
+    "context_path": {
+      "type": "string",
+      "description": "Absolute or ~ -rooted path to the written context.md file.",
+      "examples": [
+        ".metaproject/jobs/implement-savemode-component/ai/context.md",
+        ".metaproject/jobs/<job-name>/ai/context.md"
+      ]
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+$",
+      "description": "Document version in MAJOR.MINOR format. Starts at '1.0' for new documents; incremented on each update (e.g. '1.1', '1.2').",
+      "examples": ["1.0", "1.1", "2.0"]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 20,
+      "description": "2-3 sentence human-readable summary of what context was collected or updated and which key sources were used."
+    },
+    "sections_collected": {
+      "type": "array",
+      "description": "List of section names or identifiers that were written into the context document. Maps to top-level headings in context.md.",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 0,
+      "examples": [
+        [
+          "Task Overview",
+          "Key Decisions & Constraints",
+          "Applicable Rules & Conventions",
+          "Codebase Patterns",
+          "Libraries & APIs",
+          "Best Practices",
+          "References",
+          "Previous Related Work"
+        ]
+      ]
+    },
+    "sections": {
+      "type": "object",
+      "description": "Counts of sources processed in each research phase.",
+      "properties": {
+        "local_sources": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of local documentation files, rules, and job artifacts used."
+        },
+        "external_sources": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of external URLs fetched during Phase 3."
+        },
+        "rules_applied": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of project rules extracted and included."
+        },
+        "libraries_documented": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of npm packages or libraries documented with API summaries."
+        }
+      },
+      "additionalProperties": false
+    },
+    "errors": {
+      "type": "array",
+      "description": "List of non-fatal errors or warnings encountered during execution. Empty array on clean success. Populated even when status is 'success' if any sources were skipped.",
+      "items": {
+        "type": "object",
+        "required": ["phase", "message"],
+        "properties": {
+          "phase": {
+            "type": "string",
+            "enum": ["RECEIVE", "LOCAL", "EXTERNAL", "SYNTHESIZE", "DOCUMENT"],
+            "description": "The execution phase in which the error occurred."
+          },
+          "source": {
+            "type": ["string", "null"],
+            "description": "The specific URL, file path, or resource that caused the error."
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable description of the error or warning."
+          },
+          "action_taken": {
+            "type": ["string", "null"],
+            "description": "What the agent did in response to the error, e.g. 'Skipped source', 'Continued with remaining sources'."
+          }
+        },
+        "additionalProperties": false
+      },
+      "default": []
+    },
+    "error_details": {
+      "type": ["string", "null"],
+      "description": "Present only when status is 'error'. A human-readable explanation of the fatal error that prevented completion."
+    }
+  },
+  "if": {
+    "properties": {
+      "status": { "const": "error" }
+    },
+    "required": ["status"]
+  },
+  "then": {
+    "required": ["error_details"],
+    "properties": {
+      "error_details": {
+        "type": "string",
+        "minLength": 10
+      }
+    }
+  },
+  "examples": [
+    {
+      "action": "collect",
+      "status": "success",
+      "job_name": "implement-savemode-component",
+      "context_path": ".metaproject/jobs/implement-savemode-component/ai/context.md",
+      "version": "1.0",
+      "summary": "Collected context for the SaveMode component implementation. Sourced 3 local docs, 2 relevant rules (code-style-patterns, mobx-store-template), and documented MobX 6 and mobx-react-lite APIs from official docs. No previous related jobs found.",
+      "sections_collected": [
+        "Task Overview",
+        "Key Decisions & Constraints",
+        "Applicable Rules & Conventions",
+        "Codebase Patterns",
+        "Libraries & APIs",
+        "Best Practices",
+        "References"
+      ],
+      "sections": {
+        "local_sources": 3,
+        "external_sources": 4,
+        "rules_applied": 2,
+        "libraries_documented": 2
+      },
+      "errors": [],
+      "error_details": null
+    },
+    {
+      "action": "update",
+      "status": "success",
+      "job_name": "implement-savemode-component",
+      "context_path": ".metaproject/jobs/implement-savemode-component/ai/context.md",
+      "version": "1.1",
+      "summary": "Updated context with tanstack/query optimistic update patterns. Added new 'Libraries & APIs' subsection for @tanstack/react-query v5. Existing sections preserved unchanged.",
+      "sections_collected": [
+        "Libraries & APIs"
+      ],
+      "sections": {
+        "local_sources": 0,
+        "external_sources": 2,
+        "rules_applied": 0,
+        "libraries_documented": 1
+      },
+      "errors": [
+        {
+          "phase": "EXTERNAL",
+          "source": "https://tanstack.com/query/v5/docs/some-page",
+          "message": "URL returned 404 — page not found.",
+          "action_taken": "Skipped source, used alternative URL instead."
+        }
+      ],
+      "error_details": null
+    },
+    {
+      "action": "collect",
+      "status": "error",
+      "job_name": "nonexistent-job",
+      "context_path": "",
+      "version": "0.0",
+      "summary": "",
+      "sections_collected": [],
+      "sections": {
+        "local_sources": 0,
+        "external_sources": 0,
+        "rules_applied": 0,
+        "libraries_documented": 0
+      },
+      "errors": [],
+      "error_details": "Job folder '.metaproject/jobs/nonexistent-job' does not exist. Orchestrator must initialize the job before calling context-collector."
+    }
+  ]
+}

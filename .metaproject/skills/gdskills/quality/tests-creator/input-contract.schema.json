@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tests-creator-input-contract",
+  "title": "Tests Creator Input Contract",
+  "description": "Input parameters for the tests-creator skill. Receives a task object with acceptance criteria and generates failing test stubs.",
+  "type": "object",
+  "required": ["task", "workspace", "automation"],
+  "properties": {
+    "task": {
+      "type": "object",
+      "description": "The task for which to generate tests.",
+      "required": ["task_id", "task_name", "acceptance_criteria", "target_files"],
+      "properties": {
+        "task_id": {
+          "type": "string",
+          "pattern": "^task-\\d+$",
+          "description": "Unique task identifier",
+          "examples": ["task-1"]
+        },
+        "task_name": {
+          "type": "string",
+          "description": "Descriptive name of the task"
+        },
+        "task_type": {
+          "type": "string",
+          "enum": ["ui_component", "store_logic", "service_api", "refactoring", "fix", "mixed"],
+          "description": "Type of implementation task — influences test strategy"
+        },
+        "acceptance_criteria": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "List of acceptance criteria to convert into test cases"
+        },
+        "target_files": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "Source files that will be implemented — tests should cover these"
+        },
+        "description": {
+          "type": "string",
+          "description": "Full task description for additional context"
+        },
+        "context": {
+          "type": "string",
+          "description": "Relevant code context: types, interfaces, function signatures expected"
+        },
+        "existing_tests": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Paths to existing test files (to read conventions from)"
+        },
+        "module_patterns": {
+          "type": "string",
+          "description": "Notes on how similar code is tested in the module"
+        }
+      }
+    },
+    "workspace": {
+      "type": "object",
+      "required": ["codebase_path", "branch"],
+      "properties": {
+        "codebase_path": {
+          "type": "string",
+          "description": "Absolute path to the project root",
+          "examples": ["/Users/dev/myproject"]
+        },
+        "branch": {
+          "type": "string",
+          "description": "Feature branch where test files will be committed"
+        },
+        "issue_number": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "GitHub issue number for commit references"
+        }
+      }
+    },
+    "automation": {
+      "type": "object",
+      "required": ["skip_confirmation"],
+      "properties": {
+        "skip_confirmation": {
+          "type": "boolean",
+          "const": true,
+          "description": "Must be true for autonomous mode"
+        },
+        "commit_test_stubs": {
+          "type": "boolean",
+          "default": true,
+          "description": "Commit generated test files immediately"
+        },
+        "verify_red": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run tests to confirm they fail before reporting done"
+        },
+        "stub_style": {
+          "type": "string",
+          "enum": ["forward_declared", "todo"],
+          "default": "forward_declared",
+          "description": "How to write failing stubs: forward_declared uses real assertions on non-existent code; todo uses it.todo()"
+        },
+        "include_edge_cases": {
+          "type": "boolean",
+          "default": true,
+          "description": "Generate edge case tests in addition to happy path"
+        },
+        "max_tests_per_criterion": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5,
+          "default": 3,
+          "description": "Maximum test cases per acceptance criterion"
+        }
+      }
+    }
+  }
+}

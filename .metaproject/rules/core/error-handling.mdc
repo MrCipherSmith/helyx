@@ -1,0 +1,163 @@
+---
+description: "Error handling standards: Result pattern, explicit typed errors, no silent failures, no throw-everywhere anti-pattern. Use when implementing functions that can fail, calling external APIs, or handling async operations."
+alwaysApply: false
+---
+
+# Error Handling
+
+## Purpose
+Prevent silent failures, unhandled promise rejections, and throw-everywhere anti-patterns. Enforce the Result pattern for recoverable errors and explicit error types for domain failures.
+
+## When To Apply
+Apply whenever writing code that interacts with external systems, parses user input, performs I/O, or executes operations that can fail.
+
+---
+
+## Core Principle: Errors Are Values
+
+Recoverable errors are data, not exceptions. Use the **Result pattern** to make failure explicit in the type signature:
+
+```typescript
+type Result<T, E = Error> =
+  | { ok: true; value: T }
+  | { ok: false; error: E };
+
+function ok<T>(value: T): Result<T, never> {
+  return { ok: true, value };
+}
+function err<E>(error: E): Result<never, E> {
+  return { ok: false, error };
+}
+```
+
+---
+
+## Rules
+
+### Rule 1: Result Pattern for Recoverable Errors
+Any function that performs I/O, calls an external API, or parses external data MUST return `Result<T, E>` instead of throwing.
+
+```typescript
+// BAD — caller has no idea this can fail from the type alone
+async function fetchUser(id: string): Promise<User> {
+  const res = await http.get(`/users/${id}`);
+  return res.data; // throws if 404
+}
+
+// GOOD — failure is part of the contract
+async function fetchUser(id: string): Promise<Result<User, NotFoundError | NetworkError>> {
+  const res = await http.get(`/users/${id}`).catch(e => null);
+  if (!res) return err(new NetworkError('fetch failed'));
+  if (res.status === 404) return err(new NotFoundError(id));
+  return ok(res.data);
+}
+```
+
+### Rule 2: Typed Domain Errors
+Do not throw or return generic `Error`. Create typed error classes per domain:
+
+```typescript
+// BAD
+throw new Error('user not found');
+
+// GOOD
+export class NotFoundError extends Error {
+  readonly code = 'NOT_FOUND';
+  constructor(public readonly resource: string, public readonly id: string) {
+    super(`${resource} with id "${id}" not found`);
+  }
+}
+```
+
+Common typed errors to define per domain:
+- `NotFoundError(resource, id)`
+- `ValidationError(field, message)`
+- `UnauthorizedError(action)`
+- `ConflictError(resource, detail)`
+- `ExternalServiceError(service, cause)`
+
+### Rule 3: No Silent Failures
+Never swallow errors without action. Every `catch` block must either:
+- Re-throw (or return `err(...)`)
+- Log with full context AND take fallback action
+- Explicitly mark the result as degraded
+
+```typescript
+// BAD — silent failure
+try {
+  await sendNotification(user);
+} catch (_) {}
+
+// GOOD — explicit, logged, handled
+try {
+  await sendNotification(user);
+} catch (e) {
+  logger.warn('notification failed', { userId: user.id, error: e });
+  // explicit decision: continue without notification
+}
+```
+
+### Rule 4: No Unhandled Promise Rejections
+Every `async` call chain must end with error handling. `Promise.all` rejections must be caught. Fire-and-forget patterns must use `.catch(logger.error)`.
+
+```typescript
+// BAD
+Promise.all([fetchA(), fetchB()]); // unhandled rejection if either fails
+
+// GOOD
+const results = await Promise.allSettled([fetchA(), fetchB()]);
+const failures = results.filter(r => r.status === 'rejected');
+if (failures.length > 0) { /* handle */ }
+```
+
+### Rule 5: Propagate, Don't Wrap Blindly
+When catching and re-throwing, preserve the original error as `cause`:
+
+```typescript
+// BAD — original stack trace lost
+catch (e) { throw new Error('database failed'); }
+
+// GOOD — chain preserved
+catch (e) { throw new DatabaseError('write failed', { cause: e }); }
+```
+
+### Rule 6: No Assertions in Production Code
+`assert(condition, msg)` that throws in production is an anti-pattern for recoverable errors. Use guard clauses that return `Result` or throw typed errors.
+
+---
+
+## Error Boundary Hierarchy
+
+```
+External boundary (API, DB, filesystem)
+  └─ Return Result<T, DomainError>    ← convert to typed error here
+        └─ Domain / use-case layer
+              └─ Return Result<T, E> up the stack
+                    └─ Controller / handler
+                          └─ Map to HTTP status / user message here
+```
+
+**Only the outermost layer (controller/handler) maps errors to HTTP responses or user messages.** Business logic never formats error messages for the UI.
+
+---
+
+## Iron Laws
+
+**IRON LAW 1: A `catch (_) {}` block is forbidden. Every caught exception must be logged or returned as Result.**
+**IRON LAW 2: Generic `throw new Error('message')` in domain code is forbidden. Always use typed error classes.**
+**IRON LAW 3: Any function that can fail due to external conditions MUST reflect that in its return type.**
+
+---
+
+## Red Flags — Stop and re-read this rule if you are thinking:
+
+| Rationalization | Why it's wrong |
+|---|---|
+| "I'll just throw here, the caller will handle it" | The caller often doesn't handle it — unhandled rejections crash processes silently |
+| "The error is unlikely, I'll skip the error case" | Unlikely errors are exactly the ones that cause production incidents |
+| "I'll add proper error handling in a follow-up" | Error handling added after-the-fact misses edge cases that were obvious during initial implementation |
+| "Using Result makes the code verbose" | Verbosity here is intentional: it forces the caller to acknowledge that failure is possible |
+| "I'll wrap everything in a try/catch at the top" | Top-level catch loses all type information and context — handle errors close to their source |
+| "I can just check if the value is null after" | Null is not an error type — it conveys nothing about why the operation failed |
+
+**IRON LAW: SILENCE IS NOT A VALID ERROR STRATEGY. EVERY FAILURE PATH MUST BE OBSERVABLE.**

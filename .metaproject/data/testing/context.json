@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-07T20:12:59.363Z",
+  "frameworks": [
+    "bun",
+    "playwright"
+  ],
+  "scripts": [
+    {
+      "name": "test",
+      "command": "bun test tests/unit/"
+    },
+    {
+      "name": "test:coverage",
+      "command": "bun test --coverage tests/unit/"
+    },
+    {
+      "name": "test:e2e",
+      "command": "cd tests && npx playwright test --config=playwright.config.ts"
+    },
+    {
+      "name": "test:e2e:api",
+      "command": "cd tests && npx playwright test --config=playwright.config.ts --project=api"
+    },
+    {
+      "name": "test:e2e:dashboard",
+      "command": "cd tests && npx playwright test --config=playwright.config.ts --project=dashboard"
+    },
+    {
+      "name": "test:unit",
+      "command": "bun test tests/unit/"
+    }
+  ],
+  "configs": [
+    "dashboard/tsconfig.app.json",
+    "dashboard/tsconfig.json",
+    "dashboard/tsconfig.node.json",
+    "dashboard/webapp/tsconfig.json",
+    "tests/playwright.config.ts",
+    "tsconfig.json"
+  ],
+  "testFiles": [
+    "tests/e2e/api/git.spec.ts",
+    "tests/e2e/api/sessions.spec.ts",
+    "tests/e2e/auth.setup.ts",
+    "tests/e2e/dashboard/overview.spec.ts",
+    "tests/e2e/fixtures.ts",
+    "tests/global-setup.ts",
+    "tests/playwright.config.ts",
+    "tests/unit/aux-llm-prompt.test.ts",
+    "tests/unit/curator-prompt.test.ts",
+    "tests/unit/forum-topics.test.ts",
+    "tests/unit/jsonb-cast-v1.32.test.ts",
+    "tests/unit/matrix-validator.test.ts",
+    "tests/unit/memory-reconciliation.test.ts",
+    "tests/unit/migration-registry.test.ts",
+    "tests/unit/permission-flow.test.ts",
+    "tests/unit/session-lifecycle.test.ts",
+    "tests/unit/skill-distiller.test.ts",
+    "tests/unit/skill-handlers.test.ts",
+    "tests/unit/skill-preprocessor-regex.test.ts",
+    "tests/unit/skill-preprocessor.test.ts",
+    "tests/unit/supervisor-actions.test.ts",
+    "tests/unit/tmux-watchdog.test.ts"
+  ],
+  "ciFiles": [
+    ".github/workflows/build.yml"
+  ],
+  "instructionFiles": [
+    "AGENTS.md",
+    "CLAUDE.md",
+    "docs/ROADMAP.md",
+    "docs/dev/README.md",
+    "docs/dev/api-reference.md",
+    "docs/dev/architecture.md",
+    "docs/dev/data-models.md",
+    "docs/dev/index.md",
+    "docs/dev/modules.md",
+    "docs/dev/onboarding.md",
+    "docs/release/v1.47.0/description-developers-en.md",
+    "docs/release/v1.47.0/description-developers-ru.md",
+    "docs/release/v1.47.0/description-users-en.md",
+    "docs/release/v1.47.0/description-users-ru.md",
+    "docs/release/v1.47.0/posts-en.md",
+    "docs/release/v1.47.0/posts-ru.md",
+    "docs/release/v1.47.0/press-release-en.md",
+    "docs/release/v1.47.0/press-release-ru.md",
+    "docs/release/v1.48.0/release-notes.md",
+    "docs/release/v1.49.0/release-notes.md",
+    "docs/requirements/message-delivery-resilience-2026-06-25/ai/message-delivery-resilience.md",
+    "docs/requirements/message-delivery-resilience-2026-06-25/en/message-delivery-resilience.md",
+    "docs/requirements/message-delivery-resilience-2026-06-25/ru/message-delivery-resilience.md",
+    "docs/requirements/session-context-injection.md",
+    "docs/requirements/session-stability-and-audit-2026-06-26.md",
+    "docs/spec/ai/spec.md",
+    "docs/spec/ai/state-matrix-orchestrator-prd.md",
+    "docs/spec/en/spec.md",
+    "docs/spec/gemma-health-analyst.md",
+    "docs/spec/status-ux-improvements-2026-06-29.md",
+    "docs/tmux-watchdog.md"
+  ],
+  "conventions": [
+    "AGENTS.md: For commands, search, diff, test logs, lint/build output, and large file reads that can produce long output, use the Metaproject gdctx skill by default before loading raw command output into context.",
+    "AGENTS.md: For creating, changing, debugging, reviewing, or running tests, use the Metaproject testing skill and read .metaproject/data/testing/context.md before broad test search or raw logs.",
+    "CLAUDE.md: Naming or coding conventions specific to this project",
+    "CLAUDE.md: You: run `npx @openai/codex \"review the latest changes on this branch\"` and relay the output.",
+    "CLAUDE.md: For commands, search, diff, test logs, lint/build output, and large file reads that can produce long output, use the Metaproject gdctx skill by default before loading raw command output into context.",
+    "CLAUDE.md: For creating, changing, debugging, reviewing, or running tests, use the Metaproject testing skill and read .metaproject/data/testing/context.md before broad test search or raw logs.",
+    "docs/ROADMAP.md: v1.50.0 (Latest) — Session Stability Reform & Context Injection",
+    "docs/ROADMAP.md: E2E test scaffolding** — Playwright config + API and dashboard test projects in `tests/`",
+    "docs/ROADMAP.md: Fix**: `load_env()` function now loads `helyx/.env` first, then overlays the project-specific `.env`. Already-set vars (e.g. Docker-injected `DATABASE_URL`) are never overridden.",
+    "docs/ROADMAP.md: 34 new unit tests in `tests/unit/forum-topics.test.ts`",
+    "docs/ROADMAP.md: Unit Test Suite (43 tests)",
+    "docs/ROADMAP.md: Pure unit tests with no DB, no network, no Telegram dependencies",
+    "docs/ROADMAP.md: `tests/unit/session-lifecycle.test.ts` — 15 tests: state transitions, `sessionDisplayName`, disconnect rules per source type",
+    "docs/ROADMAP.md: `tests/unit/permission-flow.test.ts` — 15 tests: valid transitions, terminal state blocking, idempotency, auto-approve patterns",
+    "docs/ROADMAP.md: `tests/unit/memory-reconciliation.test.ts` — 13 tests: `parseReconcileDecision()` ADD/NOOP/UPDATE/DELETE parsing, similarity threshold logic",
+    "docs/ROADMAP.md: `bun test tests/unit/` runs in ~24ms (all pure functions, no I/O)",
+    "docs/ROADMAP.md: `package.json` scripts: `test` → unit only, `test:unit` → explicit, `test:e2e` → Playwright",
+    "docs/ROADMAP.md: Files changed:** `tests/unit/session-lifecycle.test.ts` (new), `tests/unit/permission-flow.test.ts` (new), `tests/unit/memory-reconciliation.test.ts` (new), `package.json`",
+    "docs/ROADMAP.md: Hourly cleanup job now supports `CLEANUP_DRY_RUN=true` for safe inspection without deleting",
+    "docs/ROADMAP.md: Auto-refresh every 5s; auto-scrolls to latest on first load",
+    "docs/ROADMAP.md: Session-end extraction: second LLM pass after `summarizeWork()` extracts durable project facts (not session-specific events)",
+    "docs/ROADMAP.md: E2E Test Suite + CI Workflow",
+    "docs/ROADMAP.md: Playwright test suite: 20 tests across API (sessions, git, auth) and dashboard (static serving, cache)",
+    "docs/ROADMAP.md: `bun test` / `bun test:api` in root `package.json`",
+    "docs/ROADMAP.md: Full spec: `dashboard/webapp/SPEC.md`",
+    "docs/ROADMAP.md: `TEST_BASE_URL` — `https://helyx.mrciphersmith.com`",
+    "docs/ROADMAP.md: After:** E2E tests run automatically on every push to main and PRs",
+    "docs/ROADMAP.md: Latest commits:** `git log --oneline -40`",
+    "docs/ROADMAP.md: [Architecture](../guides/architecture.md)** — Module map, service layer, logging, testing internals",
+    "docs/ROADMAP.md: [Human Spec](spec/en/spec.md)** — Full project specification for developers"
+  ],
+  "recommendations": []
+}

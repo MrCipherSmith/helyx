@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gd-metapro.local/schemas/feature-analyzer/output-contract.schema.json",
+  "title": "Feature Analyzer Output Contract",
+  "description": "Structured analysis output. Delivered as a Markdown report following SKILL.md output format.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["mode", "source", "target", "summary", "files_analyzed"],
+  "properties": {
+    "mode": {
+      "type": "string",
+      "enum": ["A", "B"],
+      "description": "Analysis mode: A = branch changes, B = current state"
+    },
+    "source": {
+      "type": "object",
+      "required": ["path", "branch"],
+      "properties": {
+        "path": { "type": "string" },
+        "branch": { "type": "string" },
+        "merge_base": { "type": "string" }
+      }
+    },
+    "target": {
+      "type": "object",
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string" },
+        "branch": { "type": "string" }
+      }
+    },
+    "focus": {
+      "type": "string",
+      "description": "Focus area description as provided by user"
+    },
+    "summary": {
+      "type": "string",
+      "description": "Executive summary of analysis findings",
+      "minLength": 1
+    },
+    "files_analyzed": {
+      "type": "object",
+      "properties": {
+        "p0": {
+          "type": "array",
+          "description": "Must-change files",
+          "items": {
+            "type": "object",
+            "required": ["path", "reason"],
+            "properties": {
+              "path": { "type": "string" },
+              "reason": { "type": "string" }
+            }
+          }
+        },
+        "p1": {
+          "type": "array",
+          "description": "Likely-change files",
+          "items": { "type": "object", "required": ["path", "reason"], "properties": { "path": { "type": "string" }, "reason": { "type": "string" } } }
+        },
+        "p2": {
+          "type": "array",
+          "description": "May-need-update files (tests, stories, docs)",
+          "items": { "type": "object", "required": ["path", "reason"], "properties": { "path": { "type": "string" }, "reason": { "type": "string" } } }
+        }
+      }
+    },
+    "api_contracts": {
+      "type": "array",
+      "description": "API endpoints or contracts identified",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "type": { "type": "string" },
+          "change": { "type": "string", "enum": ["added", "modified", "removed", "unchanged"] },
+          "details": { "type": "string" }
+        }
+      }
+    },
+    "recommendations": {
+      "type": "array",
+      "description": "Recommended implementation steps for the target repository",
+      "items": { "type": "string" }
+    }
+  }
+}

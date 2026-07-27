@@ -1,0 +1,96 @@
+---
+description: "TDD workflow rules: red-green-refactor cycle, test-first mandate, no-done-without-green invariant. Use when implementing features, fixing bugs, or verifying acceptance criteria."
+alwaysApply: false
+---
+
+# TDD Workflow
+
+## Purpose
+Enforce Test-Driven Development: tests are written before implementation code. An agent MUST NOT claim `STATUS: DONE` unless all tests pass.
+
+## When To Apply
+Apply during any implementation task. Always loaded alongside `task-implementer` and `tests-creator` workflows.
+
+---
+
+## The Red-Green-Refactor Cycle
+
+Every implementation must follow this exact sequence:
+
+```
+1. RED    → Write a failing test that describes the desired behaviour
+2. GREEN  → Write the minimal code to make that test pass
+3. REFACTOR → Clean up code without breaking the test
+```
+
+**CRITICAL: Never skip RED.** Writing code before a failing test exists violates TDD. Even if the test seems trivial, it must be written first.
+
+---
+
+## Mandatory Steps
+
+### Step 1: Receive Acceptance Criteria
+- Parse `acceptance_criteria` from the task object (provided by `issue-analyzer` or `tests-creator`)
+- Each criterion maps to ≥1 test case
+- If no criteria exist, derive them from the task description before proceeding
+
+### Step 2: Run tests-creator (or use pre-generated specs)
+- If `test_case_specs` are provided in the task object → use them directly
+- If not → invoke `tests-creator` to generate specs before writing any code
+- **DO NOT start implementation until test specs are confirmed**
+
+### Step 3: Write tests (RED phase)
+- Create test file(s) at the correct location (co-located or in `__tests__/`)
+- Run the test suite — confirm tests FAIL for the right reason
+- A test that passes before implementation is a broken test
+
+### Step 4: Implement (GREEN phase)
+- Write the minimal code to satisfy each failing test
+- Do not add features not covered by tests
+- Run tests after each logical chunk — do not batch all implementation before running
+
+### Step 5: Refactor
+- Clean up code: extract helpers, rename variables, remove duplication
+- Re-run full test suite after every refactor step
+- Refactoring is complete only when all tests are green
+
+### Step 6: Verify and Report
+- Final `bun test` / `npm test` / `pytest` / equivalent must pass with 0 failures
+- Include test output summary in the result object
+- Report `STATUS: DONE` only when all criteria are covered by passing tests
+
+---
+
+## Output Contract Extension
+
+When reporting task completion, include:
+
+```
+tests_written: <N>
+tests_passing: <N>
+tests_failing: 0
+coverage_notes: "<which acceptance criteria are covered>"
+```
+
+---
+
+## Iron Laws
+
+**IRON LAW 1: NEVER claim STATUS: DONE with failing tests. Zero exceptions.**
+**IRON LAW 2: NEVER write implementation before a failing test exists for that behaviour.**
+**IRON LAW 3: NEVER delete tests to make the suite green. Fix the code instead.**
+
+---
+
+## Red Flags — Stop and re-read this rule if you are thinking:
+
+| Rationalization | Why it's wrong |
+|---|---|
+| "The logic is simple, I don't need a test first" | Simplicity is never a reason to skip TDD — the cycle builds confidence, not just test coverage |
+| "I'll add tests after to save time" | Tests written after implementation verify what the code does, not what it should do |
+| "The tests are flaky, I'll skip them for now" | Flaky tests signal real design problems — fix the flakiness, not the test |
+| "All the important logic is covered, a few edge tests can wait" | Untested edge cases are exactly where bugs live |
+| "I'll mark it DONE and add tests in a follow-up PR" | STATUS: DONE means done — not "done except for tests" |
+| "The test framework setup is complex, I'll just verify manually" | Manual verification is not reproducible and cannot be reviewed by other agents |
+
+**IRON LAW: AN AGENT THAT SHIPS CODE WITHOUT PASSING TESTS HAS NOT COMPLETED ITS TASK.**

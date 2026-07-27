@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gd-metapro.local/schemas/gdskills/subagent-result.schema.json",
+  "title": "Metaproject Subagent Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "run_id",
+    "dispatch_id",
+    "status",
+    "summary",
+    "acceptance",
+    "artifacts",
+    "changed_files",
+    "findings",
+    "questions",
+    "errors",
+    "metrics",
+    "timestamp_utc"
+  ],
+  "properties": {
+    "contract_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "run_id": { "type": "string", "minLength": 1 },
+    "dispatch_id": { "type": "string", "minLength": 1 },
+    "status": {
+      "type": "string",
+      "enum": ["DONE", "DONE_WITH_CONCERNS", "NEEDS_CONTEXT", "BLOCKED", "FAILED"]
+    },
+    "summary": { "type": "string" },
+    "summary_markdown": { "type": ["string", "null"] },
+    "acceptance": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["criterion", "status"],
+        "properties": {
+          "criterion": { "type": "string" },
+          "status": { "type": "string", "enum": ["met", "partial", "not_met", "not_applicable"] },
+          "evidence": { "type": "string" }
+        }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/artifact_ref" }
+    },
+    "changed_files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "change"],
+        "properties": {
+          "path": { "type": "string" },
+          "change": { "type": "string" }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": { "$ref": "review-finding.schema.json" }
+    },
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "question", "why"],
+        "properties": {
+          "id": { "type": "string" },
+          "question": { "type": "string" },
+          "why": { "type": "string" },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "label"],
+              "properties": {
+                "id": { "type": "string" },
+                "label": { "type": "string" },
+                "recommended": { "type": "boolean" }
+              }
+            }
+          },
+          "can_be_resolved_by_agent": { "type": ["string", "boolean", "null"] }
+        }
+      }
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "message"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["validation-error", "missing-input", "execution-error", "timeout", "dependency-error", "unknown"]
+          },
+          "message": { "type": "string" },
+          "detail": { "type": "string" }
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "duration_ms": { "type": ["integer", "null"], "minimum": 0 },
+        "prompt_tokens": { "type": ["integer", "null"], "minimum": 0 },
+        "output_tokens": { "type": ["integer", "null"], "minimum": 0 },
+        "retries": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    },
+    "timestamp_utc": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "artifact_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "kind", "exists"],
+      "properties": {
+        "path": { "type": "string" },
+        "kind": {
+          "type": "string",
+          "enum": ["context", "graph", "wiki", "memory", "health", "diff", "report", "plan", "review", "implementation-report", "final-report", "custom"]
+        },
+        "exists": { "type": "boolean" },
+        "summary": { "type": "string" },
+        "hash": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

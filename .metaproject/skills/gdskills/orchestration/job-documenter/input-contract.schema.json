@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gd-metapro.local/schemas/job-documenter/input-contract.schema.json",
+  "title": "Job Documenter Input Contract",
+  "description": "Input for job-documenter actions. Called exclusively by job-orchestrator.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ACTION", "JOB_NAME", "JOBS_ROOT"],
+  "properties": {
+    "ACTION": {
+      "type": "string",
+      "enum": ["init", "add-document", "update-readme", "finalize"],
+      "description": "Which documenter action to perform"
+    },
+    "JOB_NAME": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$",
+      "description": "Kebab-case job folder name"
+    },
+    "JOBS_ROOT": {
+      "type": "string",
+      "description": "Absolute path to jobs root directory"
+    },
+    "DATA": {
+      "type": "object",
+      "description": "Action-specific payload",
+      "additionalProperties": true,
+      "properties": {
+        "TITLE": { "type": "string" },
+        "DESCRIPTION": { "type": "string" },
+        "INTENT": { "type": "string", "enum": ["analyze", "implement", "review", "custom"] },
+        "SOURCE": { "type": "string" },
+        "PROJECT": { "type": "string" },
+        "BRANCH": { "type": "string" },
+        "BASE_BRANCH": { "type": "string" },
+        "PLAN": { "type": "array", "items": { "type": "object" } },
+        "DOC_TYPE": { "type": "string" },
+        "DOC_NAME": { "type": "string" },
+        "TARGET": { "type": "string", "enum": ["man", "ai", "both"] },
+        "CONTENT": { "type": "string" },
+        "AGENT": { "type": "string" },
+        "TASK": { "type": "string" },
+        "VERSION": { "type": "string" },
+        "DOC_STATUS": { "type": "string", "enum": ["draft", "final"] },
+        "PLAN_UPDATES": { "type": "array" },
+        "AGENTS_UPDATE": { "type": "array" },
+        "PROBLEMS": { "type": "array" },
+        "BRANCH_UPDATE": { "type": "string" },
+        "FINAL_CONTENT": { "type": "string" },
+        "FINAL_STATUS": { "type": "string", "enum": ["completed", "aborted"] },
+        "SUMMARY": { "type": "string" }
+      }
+    }
+  }
+}

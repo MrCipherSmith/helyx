@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "issue-analyzer-input-contract",
+  "title": "Issue Analyzer Input Contract",
+  "description": "Defines all input parameters required to run issue-analyzer skill autonomously. Accepts either issue URL or repo+number.",
+  "type": "object",
+  "required": ["issue", "codebase_paths", "automation"],
+  "properties": {
+    "issue": {
+      "type": "object",
+      "description": "GitHub issue identification. Provide EITHER url OR repo+number.",
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Full GitHub issue URL",
+          "examples": ["https://github.com/<ORG>/<PROJECT>/issues/4141"]
+        },
+        "repo": {
+          "type": "string",
+          "pattern": "^[\\w.-]+/[\\w.-]+$",
+          "description": "GitHub owner/repo (alternative to url)",
+          "examples": ["<ORG>/<PROJECT>"]
+        },
+        "number": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Issue number (alternative to url)",
+          "examples": [4141]
+        },
+        "title": {
+          "type": "string",
+          "description": "Issue title (fallback if gh CLI unavailable)"
+        },
+        "description": {
+          "type": "string",
+          "description": "Issue body (fallback if gh CLI unavailable)"
+        }
+      },
+      "oneOf": [
+        { "required": ["url"] },
+        { "required": ["repo", "number"] }
+      ]
+    },
+    "codebase_paths": {
+      "type": "array",
+      "description": "Local codebase paths to search for affected code",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["path", "role"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Absolute local path to the repository",
+            "examples": ["/Users/dev/<PROJECT>"]
+          },
+          "role": {
+            "type": "string",
+            "enum": ["frontend", "backend", "shared"],
+            "description": "Role of this codebase in the project"
+          },
+          "branch": {
+            "type": "string",
+            "description": "Branch to analyze (defaults to current HEAD)",
+            "examples": ["develop-2"]
+          }
+        }
+      }
+    },
+    "focus": {
+      "type": "object",
+      "description": "Optional focus area to narrow analysis",
+      "properties": {
+        "keywords": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Additional search keywords beyond issue content"
+        },
+        "directories": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Directories to prioritize during search"
+        }
+      }
+    },
+    "automation": {
+      "type": "object",
+      "description": "Controls for autonomous execution",
+      "required": ["skip_confirmation"],
+      "properties": {
+        "skip_confirmation": {
+          "type": "boolean",
+          "const": true,
+          "description": "Must be true for autonomous mode"
+        },
+        "max_tasks": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "default": 7,
+          "description": "Maximum number of tasks to decompose into"
+        },
+        "search_depth": {
+          "type": "string",
+          "enum": ["shallow", "focused", "deep"],
+          "default": "focused",
+          "description": "How deeply to search codebase"
+        },
+        "include_context": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include code context (types, signatures) in output"
+        },
+        "timeout_strategy": {
+          "type": "string",
+          "enum": ["partial", "abort"],
+          "default": "partial",
+          "description": "What to do if analysis takes too long"
+        },
+        "gh_cli_fallback": {
+          "type": "string",
+          "enum": ["skip_enrichment", "abort"],
+          "default": "skip_enrichment",
+          "description": "What to do if gh CLI is unavailable"
+        }
+      }
+    }
+  }
+}

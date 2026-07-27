@@ -1,0 +1,36 @@
+---
+description: "Storybook setup, story authoring, and review checklist."
+alwaysApply: false
+globs:
+  - ".storybook/**"
+  - "**/*.stories.tsx"
+---
+
+# Storybook Guidelines
+
+## Purpose
+Standardize story creation, validation, and visual regression readiness.
+
+## When To Apply
+Apply when creating, reviewing, or updating Storybook stories (`*.stories.tsx`).
+
+## Run Commands
+- Local: `npm run storybook`
+- Clean restart: `npm run storybook:clean`
+- Static build: `npm run build-storybook`
+- Static preview: `npm run storybook:preview`
+
+## Story Authoring Rules
+- Use `*.stories.tsx` with `Meta` and `StoryObj` typing.
+- Prefer `args` for state variants.
+- Use `fn()` from `@storybook/test` for actions.
+- Use decorators for providers/context.
+
+## Review Checklist
+- Cover key states: default/loading/error/empty.
+- Avoid side effects during render.
+- Respect global theme/locale decorators.
+- Update screenshot tests when visual behavior changes.
+
+## Output Contract
+- Story examples in responses must be fenced Markdown code blocks.

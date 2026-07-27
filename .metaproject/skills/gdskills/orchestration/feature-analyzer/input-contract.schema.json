@@ -1,0 +1,247 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "feature-analyzer-input-contract",
+  "title": "Feature Analyzer Input Contract",
+  "description": "Defines all input parameters required to run feature-analyzer skill autonomously without user interaction. This schema eliminates all 7 interactive checkpoints by pre-providing answers.",
+  "type": "object",
+  "required": [
+    "source",
+    "target",
+    "analysis_mode",
+    "automation"
+  ],
+  "properties": {
+    "source": {
+      "type": "object",
+      "description": "Source repository — where code to analyze lives",
+      "required": ["local_path", "branch"],
+      "properties": {
+        "local_path": {
+          "type": "string",
+          "description": "Absolute path to source repository on local filesystem",
+          "examples": ["/Users/dev/<PROJECT>"]
+        },
+        "github_repo": {
+          "type": "string",
+          "pattern": "^[\\w.-]+/[\\w.-]+$",
+          "description": "GitHub owner/repo identifier (optional, for MCP enrichment)",
+          "examples": ["<ORG>/<PROJECT>"]
+        },
+        "branch": {
+          "type": "string",
+          "description": "Branch to analyze in source repo",
+          "examples": ["feature/pipeline-variables"]
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "description": "Target repository — where implementation will happen (can be same as source for single-repo analysis)",
+      "required": ["local_path"],
+      "properties": {
+        "local_path": {
+          "type": "string",
+          "description": "Absolute path to target repository on local filesystem",
+          "examples": ["/Users/dev/<PROJECT>"]
+        },
+        "github_repo": {
+          "type": "string",
+          "pattern": "^[\\w.-]+/[\\w.-]+$",
+          "description": "GitHub owner/repo identifier (optional)",
+          "examples": ["<ORG>/<PROJECT>"]
+        },
+        "branch": {
+          "type": "string",
+          "description": "Current branch in target repo (optional, defaults to current HEAD)",
+          "examples": ["main", "develop"]
+        }
+      }
+    },
+    "analysis_mode": {
+      "type": "object",
+      "description": "Controls which analysis mode to run (eliminates Guard Clause interaction point #2)",
+      "required": ["mode"],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["A", "B"],
+          "description": "A = Changes Analysis (diff base..HEAD), B = Current State Analysis (explore entire codebase)"
+        },
+        "base_branch": {
+          "type": "string",
+          "description": "REQUIRED if mode=A. Branch to diff against. Ignored if mode=B.",
+          "examples": ["main", "develop", "master"]
+        }
+      },
+      "if": {
+        "properties": { "mode": { "const": "A" } }
+      },
+      "then": {
+        "required": ["base_branch"]
+      }
+    },
+    "focus": {
+      "type": "object",
+      "description": "Optional focus area to boost priority of matching files",
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "Natural-language description of what to focus on",
+          "examples": ["variables in pipelines", "authentication changes", "DTO validations"]
+        },
+        "keywords": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Search keywords extracted from focus description",
+          "examples": [["variable", "pipeline", "param"]]
+        },
+        "directories": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Directories to prioritize during search",
+          "examples": [["src/pipelines", "src/models"]]
+        },
+        "scope": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "api_contracts",
+              "full_plan",
+              "breaking_changes",
+              "business_logic",
+              "feature_formalization"
+            ]
+          },
+          "description": "What aspects of analysis to prioritize"
+        }
+      }
+    },
+    "ticket": {
+      "type": "object",
+      "description": "Optional GitHub Issue/PR reference for business context",
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Full URL to GitHub Issue or PR",
+          "examples": ["https://github.com/org/repo/issues/123"]
+        },
+        "title": {
+          "type": "string",
+          "description": "Ticket title (fallback if MCP unavailable)"
+        },
+        "description": {
+          "type": "string",
+          "description": "Ticket description (fallback if MCP unavailable)"
+        }
+      }
+    },
+    "automation": {
+      "type": "object",
+      "description": "Pre-answers to ALL interactive checkpoints. This is what makes the skill run without user interaction.",
+      "required": [
+        "skip_confirmation",
+        "cache_strategy",
+        "large_changeset_strategy",
+        "timeout_strategy",
+        "intermediate_review"
+      ],
+      "properties": {
+        "skip_confirmation": {
+          "type": "boolean",
+          "const": true,
+          "description": "Must be true for autonomous mode. Skips Guard Clause confirmation (interaction point #1)"
+        },
+        "cache_strategy": {
+          "type": "string",
+          "enum": ["fresh", "reuse_if_valid", "refresh", "compare"],
+          "default": "reuse_if_valid",
+          "description": "How to handle existing analysis cache (interaction point #4). fresh = always new, reuse_if_valid = use if <7d and same SHA, refresh = incremental update, compare = diff old vs new"
+        },
+        "large_changeset_strategy": {
+          "type": "object",
+          "description": "How to handle 50+ changed files (interaction point #5)",
+          "required": ["action"],
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": ["directory", "file_types", "commits", "p0_only", "abort"],
+              "default": "p0_only",
+              "description": "directory = filter by path, file_types = filter by extension, commits = first N commits, p0_only = analyze only P0 files, abort = stop analysis"
+            },
+            "filter_paths": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "If action=directory, which paths to include"
+            },
+            "filter_extensions": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "If action=file_types, which extensions to include",
+              "examples": [[".ts", ".tsx", ".dto.ts"]]
+            },
+            "max_commits": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "If action=commits, how many commits to analyze"
+            },
+            "max_files": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 7,
+              "description": "Maximum number of files to select regardless of strategy"
+            }
+          }
+        },
+        "timeout_strategy": {
+          "type": "string",
+          "enum": ["partial", "extend", "prioritize_p0", "abort"],
+          "default": "partial",
+          "description": "What to do when approaching 30-minute limit (interaction point #6). partial = generate report with current findings, extend = continue 15 more min, prioritize_p0 = finish only P0 files, abort = stop"
+        },
+        "intermediate_review": {
+          "type": "string",
+          "enum": ["skip", "log_only", "include_in_report"],
+          "default": "skip",
+          "description": "How to handle intermediate review step (interaction point #7). skip = proceed directly to documentation, log_only = log summary but don't wait, include_in_report = add summary section to final report"
+        },
+        "github_mcp_fallback": {
+          "type": "string",
+          "enum": ["git_only", "abort"],
+          "default": "git_only",
+          "description": "What to do if GitHub MCP is unavailable. git_only = proceed with local git data, abort = stop analysis"
+        }
+      }
+    },
+    "output": {
+      "type": "object",
+      "description": "Output configuration",
+      "properties": {
+        "base_dir": {
+          "type": "string",
+          "description": "Base directory for analysis output. Defaults to <DOCS_ROOT>/analysis/",
+          "examples": ["/Users/dev/.<PROJECT>/docs/analysis"]
+        },
+        "folder_name": {
+          "type": "string",
+          "description": "Custom folder name. Defaults to <feature>-<date> for Mode A, <feature>-current-state-<date> for Mode B"
+        },
+        "languages": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["en", "ru", "ai"]
+          },
+          "default": ["en", "ru", "ai"],
+          "description": "Which report languages to generate. ai = Gherkin format for AI agents"
+        },
+        "include_metrics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include analysis-metrics.md in output"
+        }
+      }
+    }
+  }
+}

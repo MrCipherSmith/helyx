@@ -1,0 +1,221 @@
+---
+description: "Job documentation structure and conventions for .metaproject/jobs (default) or $GDMETAPRO_JOBS_ROOT. Used by job-documenter skill and job-orchestrator."
+alwaysApply: false
+---
+
+# Jobs Documentation Rules
+
+## Purpose
+
+Define how the agent creates and maintains persistent job documentation under `.metaproject/jobs/` (default) or `$GDMETAPRO_JOBS_ROOT` (if set).
+Jobs are the documentation artifacts produced by the `job-orchestrator` pipeline — they capture the full lifecycle of an orchestrated task (analysis, implementation, review, etc.).
+
+## When To Apply
+
+Apply when:
+- `job-orchestrator` creates a new job
+- `job-documenter` skill is invoked to create or update job documentation
+- User asks about job documentation structure or conventions
+
+## Relationship to `docs/`
+
+`jobs/` and `docs/` are **separate systems**:
+- `docs/` — general project documentation (requirements, plans, reports, analysis). Managed by `documentation-management.mdc`.
+- `jobs/` — orchestrator pipeline artifacts. Each job is a self-contained folder documenting one orchestrated task end-to-end.
+
+Standalone skill invocations (e.g. `feature-analyzer` without orchestrator) continue to use `docs/analysis/`.
+Only orchestrator-driven work produces output in `jobs/`.
+
+## Root Location
+
+```
+.metaproject/jobs/          # default — project-local jobs directory
+$GDMETAPRO_JOBS_ROOT            # override — if environment variable is set
+```
+
+## JOBS_ROOT Resolution
+
+The jobs root is resolved in this priority order:
+
+1. **`JOBS_ROOT` passed explicitly** by the orchestrator in the sub-agent dispatch prompt
+2. **`GDMETAPRO_JOBS_ROOT` environment variable** (if set in the shell)
+3. **`.metaproject/jobs/`** — default, relative to the project being worked on
+
+```bash
+JOBS_ROOT="${GDMETAPRO_JOBS_ROOT:-.metaproject/jobs}"
+```
+
+`PROJECT_DIR` is always known by Phase 0.2 of the orchestrator. Sub-agents (job-documenter, context-collector, task-implementer, etc.) **never resolve JOBS_ROOT themselves** — they receive it explicitly from the orchestrator in the dispatch prompt.
+
+## Job Folder Naming
+
+- **Format:** `<context-slug>` — kebab-case, lowercase, alphanumeric + hyphens only.
+- **Auto-generated** by orchestrator from context, then confirmed with user.
+- **Naming patterns:**
+
+| Intent | Example Name |
+|--------|-------------|
+| Issue implementation | `issue-4141--mobx-sync-fix` |
+| Issue analysis only | `analysis--issue-4141` |
+| Feature analysis | `analysis--pipeline-variables` |
+| Code review | `review--pr-4144` |
+| Custom task | `task--refactor-store-layer` |
+
+- Prefix indicates intent type: `issue-`, `analysis--`, `review--`, `task--`.
+- Double hyphen `--` separates the prefix from the descriptive slug.
+- Keep names concise but descriptive (max ~60 characters).
+
+## Required Structure
+
+Every job folder MUST contain at minimum:
+
+```
+.metaproject/jobs/<job-name>/
+  README.md          # Job index — always present, always up-to-date
+  man/               # Human-readable documents
+  ai/                # AI-optimized documents (structured markdown, Gherkin, etc.)
+  results/           # task-implementer JSON result files (created automatically)
+    task-1.json      # Full result for task-1 (written by task-implementer Phase 6)
+    task-2.json      # Full result for task-2
+    ...
+```
+
+> **`results/` folder:** Created by `task-implementer` during Phase 6 (one file per task). The orchestrator and wave-executor never receive full task results inline — they read these files only when a task reports `DONE_WITH_CONCERNS` or `BLOCKED`. This keeps the orchestrator context bounded.
+
+## README.md Format
+
+The README is the entry point for both humans and AI agents. It MUST contain:
+
+```markdown
+# Job: <Job Title>
+
+## Status
+<!-- One of: in-progress | completed | aborted | paused -->
+**Status:** in-progress
+**Created:** <ISO 8601 timestamp>
+**Updated:** <ISO 8601 timestamp>
+
+## Description
+<1-3 sentences describing what this job does>
+
+## Context
+| Key | Value |
+|-----|-------|
+| Intent | <analyze / implement / review / custom> |
+| Source | <issue URL, PR URL, or description> |
+| Project | <project directory path> |
+| Branch | <feature branch name, if any> |
+| Base Branch | <base branch> |
+
+## Plan
+<!-- Ordered list of planned steps with status -->
+1. [x] Analyze issue (issue-analyzer)
+2. [ ] Prepare feature branch
+3. [ ] Implement tasks (task-implementer)
+4. [ ] Review (code-ai-review, code-boss-review, code-style-review)
+5. [ ] Fix review findings
+6. [ ] Final checks
+7. [ ] Generate report
+
+## Agents Used
+| Agent | Phase | Status |
+|-------|-------|--------|
+| issue-analyzer | Analysis | completed |
+| task-implementer | Implementation | in-progress |
+| code-ai-review | Review | pending |
+
+## Documents
+
+### Human-Readable (`man/`)
+| File | Description | Status |
+|------|-------------|--------|
+| [analysis.md](man/analysis.md) | Issue decomposition and analysis | final |
+| [plan.md](man/plan.md) | Implementation plan | final |
+| [report.md](man/report.md) | Implementation report | draft |
+
+### AI-Optimized (`ai/`)
+| File | Description | Status |
+|------|-------------|--------|
+| [analysis.md](ai/analysis.md) | Structured analysis for sub-agents | final |
+| [tasks.feature](ai/tasks.feature) | Gherkin scenarios for implementation | final |
+
+## Problems & Notes
+<!-- Any issues encountered, decisions made, blockers -->
+- None so far
+```
+
+## Document Types
+
+Standard document names (used in both `man/` and `ai/`):
+
+| Name | Purpose | Typical Content |
+|------|---------|----------------|
+| `analysis.md` | Issue/feature decomposition | Analysis results, affected areas, dependencies |
+| `plan.md` | Execution plan | Ordered steps, agents to use, expected outcomes |
+| `report.md` | Implementation report | What was done, files changed, commits made |
+| `review.md` | Review findings | Reviewer results, severity, file:line references |
+| `context.md` | Unified context document | Collected local/external context, library docs, best practices |
+| `final-report.md` | Aggregated final report | Complete summary of entire job |
+| `improvements.md` | Suggested improvements | Post-job improvement suggestions |
+| `requirements.md` | Requirements gathered | Requirements extracted during analysis |
+| `error-log.md` | Error documentation | Errors encountered during job execution |
+| `tasks.feature` | Gherkin scenarios (ai/ only) | Atomic task definitions for sub-agents |
+| `review-findings.md` | Structured review data (ai/ only) | Machine-parseable review results |
+
+Custom names are allowed but MUST follow kebab-case convention.
+
+## Document Metadata
+
+Every document (in both `man/` and `ai/`) MUST end with a metadata block:
+
+```markdown
+
+---
+
+<!-- Document Metadata -->
+| Key | Value |
+|-----|-------|
+| Created | 2026-02-20T14:30:00Z |
+| Agent | issue-analyzer |
+| Task | Analyze issue #4141 |
+| Job | issue-4141--mobx-sync-fix |
+| Version | 1.0 |
+| Status | final |
+```
+
+**Status values:** `draft` | `final` | `updated` | `error`
+
+**Version:** Starts at `1.0`. Incremented when document is updated (e.g. after review-fix loop: `1.0` → `1.1`).
+
+## `man/` vs `ai/` Content Guidelines
+
+### `man/` — Human-Readable
+- Written in clear, narrative markdown
+- Includes context and explanations
+- Uses headings, bullet points, tables for readability
+- Code snippets are illustrative, not exhaustive
+- Suitable for reading by developers, leads, PMs
+
+### `ai/` — AI-Optimized
+- Structured for machine parsing
+- Uses consistent formats: Gherkin features, structured tables, JSON-like blocks
+- Includes full file paths, line numbers, exact identifiers
+- Minimal prose — data-dense
+- Suitable for feeding into sub-agents as context
+
+## Prohibited
+
+- Creating a job folder without `README.md`
+- Writing documents outside `.metaproject/jobs/<job-name>/` during a job
+- Mixing `man/` and `ai/` content in the same file
+- Using non-kebab-case file names
+- Leaving README.md out of sync with actual documents in the folder
+- Deleting or overwriting job folders without user confirmation
+- Creating job documentation for standalone skill invocations (use `docs/` instead)
+
+## Lifecycle
+
+1. **Init** — Orchestrator determines job name, calls documenter to create folder + README + plan
+2. **Active** — After each sub-agent completes, orchestrator sends results to documenter. Documents are added to `man/` and `ai/`. README is updated.
+3. **Finalize** — Orchestrator calls documenter to write final report, update README status to `completed`, add completion timestamp.
+4. **Archived** — Job folder remains in `jobs/` indefinitely. Old jobs are NOT auto-deleted.

@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gd-metapro.local/schemas/gdskills/orchestrator-state.schema.json",
+  "title": "Metaproject Orchestrator State",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "run_id", "orchestrator", "phase", "status", "plan", "artifacts", "updated_at"],
+  "properties": {
+    "contract_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "run_id": { "type": "string" },
+    "orchestrator": { "type": "string" },
+    "intent": { "type": "string" },
+    "phase": { "type": "string" },
+    "status": { "type": "string", "enum": ["pending", "in_progress", "completed", "blocked", "failed"] },
+    "plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["steps"],
+      "properties": {
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "skill", "status"],
+            "properties": {
+              "id": { "type": "string" },
+              "skill": { "type": "string" },
+              "depends_on": { "type": "array", "items": { "type": "string" } },
+              "status": { "type": "string", "enum": ["pending", "in_progress", "completed", "skipped", "blocked", "failed"] },
+              "dispatch_id": { "type": ["string", "null"] },
+              "result_path": { "type": ["string", "null"] }
+            }
+          }
+        },
+        "current_step": { "type": ["string", "null"] }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "kind", "exists"],
+        "properties": {
+          "path": { "type": "string" },
+          "kind": { "type": "string" },
+          "exists": { "type": "boolean" },
+          "summary": { "type": "string" }
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "updated_at": { "type": "string", "format": "date-time" }
+  }
+}

@@ -1,0 +1,185 @@
+---
+description: "Async patterns: Promise.all for parallelism, no unhandled rejections, mandatory timeouts for external calls, no blocking the event loop. Use when writing async/await code, parallel operations, or queue consumers."
+alwaysApply: false
+---
+
+# Async Patterns
+
+## Purpose
+Prevent common async pitfalls: sequential execution where parallel is safe, unhandled promise rejections, missing timeouts, and event loop blockage.
+
+## When To Apply
+Apply when writing any `async`/`await` code, calling external services, processing queues, or coordinating multiple async operations.
+
+---
+
+## Rules
+
+### Rule 1: Use Promise.all for Independent Operations
+
+Sequential await for independent operations wastes time. Run them in parallel.
+
+```typescript
+// BAD — sequential: takes 300ms (100 + 100 + 100)
+const user = await fetchUser(id);
+const orders = await fetchOrders(id);
+const prefs = await fetchPreferences(id);
+
+// GOOD — parallel: takes 100ms (max of 100, 100, 100)
+const [user, orders, prefs] = await Promise.all([
+  fetchUser(id),
+  fetchOrders(id),
+  fetchPreferences(id),
+]);
+```
+
+**Rule:** If operation B does not depend on the result of operation A, they MUST run in parallel.
+
+### Rule 2: Use Promise.allSettled When Partial Failure is Acceptable
+
+```typescript
+// BAD — one failure cancels all
+const results = await Promise.all([criticalOp(), optionalOp()]); // if optionalOp rejects, criticalOp result is lost
+
+// GOOD — each result handled independently
+const [critical, optional] = await Promise.allSettled([criticalOp(), optionalOp()]);
+if (critical.status === 'rejected') throw critical.reason;
+if (optional.status === 'rejected') logger.warn('optional failed', optional.reason);
+```
+
+Use `Promise.all` when ALL operations are required. Use `Promise.allSettled` when SOME can fail gracefully.
+
+### Rule 3: Every External Call Has a Timeout
+
+Network calls without timeouts hang indefinitely, blocking resources.
+
+```typescript
+// BAD — hangs forever if service is down
+const response = await fetch('https://api.external.com/data');
+
+// GOOD — fails fast after 5 seconds
+const controller = new AbortController();
+const timeout = setTimeout(() => controller.abort(), 5_000);
+try {
+  const response = await fetch('https://api.external.com/data', { signal: controller.signal });
+  // ...
+} finally {
+  clearTimeout(timeout);
+}
+
+// GOOD — with a utility wrapper
+const response = await fetchWithTimeout('https://api.external.com/data', { timeout: 5_000 });
+```
+
+**Default timeouts:**
+- Internal service calls: 3s
+- External API calls: 10s
+- Long-running operations (file processing, ML): 60s with progress events
+- Database queries: configure at connection pool level
+
+### Rule 4: No Unhandled Promise Rejections
+
+Every promise must have a `.catch()` or be `await`-ed inside a `try/catch`.
+
+```typescript
+// BAD — fire-and-forget without error handling
+sendNotification(userId, message); // rejection is swallowed silently
+
+// BAD — floating promise in Express handler
+app.get('/data', (req, res) => {
+  loadData(); // not awaited, errors don't propagate to response
+  res.json({ ok: true });
+});
+
+// GOOD — fire-and-forget with explicit error handling
+sendNotification(userId, message).catch(err => {
+  logger.error('notification failed', { userId, err });
+});
+
+// GOOD — awaited in async handler
+app.get('/data', async (req, res) => {
+  const data = await loadData();
+  res.json(data);
+});
+```
+
+### Rule 5: No CPU-Blocking Operations on the Event Loop
+
+Operations that block the event loop starve all other concurrent requests:
+- `JSON.parse` / `JSON.stringify` on payloads > 1MB → use streaming
+- Synchronous file reads in hot paths → use `fs.promises.*`
+- CPU-intensive loops → offload to worker threads
+- Synchronous crypto operations → use `crypto.subtle` or async equivalents
+
+```typescript
+// BAD — blocks event loop for large payload
+app.post('/import', (req, res) => {
+  const data = JSON.parse(req.body.payload); // synchronous, large payload blocks
+});
+
+// GOOD — streaming parse
+import { pipeline } from 'stream/promises';
+app.post('/import', async (req, res) => {
+  await pipeline(req, new JSONStreamParser(), new DataProcessor());
+});
+```
+
+### Rule 6: Batch Async Operations with Controlled Concurrency
+
+Running N async operations at once can overwhelm downstream services. Use a concurrency limiter:
+
+```typescript
+// BAD — 1000 parallel requests to an API
+await Promise.all(items.map(item => processItem(item)));
+
+// GOOD — max 10 concurrent operations
+import PLimit from 'p-limit';
+const limit = PLimit(10);
+await Promise.all(items.map(item => limit(() => processItem(item))));
+```
+
+### Rule 7: Async Initialization Pattern
+
+Classes with async setup must not use the constructor for initialization:
+
+```typescript
+// BAD — constructor cannot be async
+class DatabasePool {
+  constructor() {
+    this.pool = await createPool(); // syntax error
+  }
+}
+
+// GOOD — factory method pattern
+class DatabasePool {
+  private constructor(private readonly pool: Pool) {}
+
+  static async create(): Promise<DatabasePool> {
+    const pool = await createPool();
+    return new DatabasePool(pool);
+  }
+}
+const db = await DatabasePool.create();
+```
+
+---
+
+## Iron Laws
+
+**IRON LAW 1: Sequential await for independent operations is a performance bug. Use Promise.all.**
+**IRON LAW 2: Every external HTTP call must have an explicit timeout configured.**
+**IRON LAW 3: A floating promise (not awaited, no .catch) is an unhandled rejection waiting to crash the process.**
+
+---
+
+## Red Flags — Stop and re-read this rule if you are thinking:
+
+| Rationalization | Why it's wrong |
+|---|---|
+| "I'll add a timeout later if it's needed" | Missing timeouts are invisible until a downstream service hangs — add them when the call is written |
+| "The operation is fast, sequential await is fine" | Sequential operations that are "fast" become bottlenecks under load |
+| "I don't need to await this, it's just a side effect" | Fire-and-forget without `.catch` silently loses errors that may indicate data corruption |
+| "Promise.allSettled is verbose, I'll use Promise.all and handle errors in each function" | Promise.all cancels all operations on first rejection — allSettled gives you full control |
+| "Concurrency limiting adds complexity" | Uncontrolled concurrency causes rate limit errors, OOM, and cascading failures downstream |
+
+**IRON LAW: AN ASYNC FUNCTION THAT CAN HANG INDEFINITELY IS A DENIAL-OF-SERVICE VULNERABILITY.**

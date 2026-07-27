@@ -1,0 +1,149 @@
+---
+description: "Documentation mandate for all implementing agents: spec document at start, change report at end. Use when any agent is about to perform multi-step code implementation, feature development, or orchestrated task execution."
+alwaysApply: false
+---
+
+# Implementation Documentation Mandate
+
+## Purpose
+Every non-trivial implementation job must produce two documents: a **spec** at the start (what will be done and why) and a **change report** at the end (what was done, what changed, test results). This makes AI-generated work auditable, resumable, and understandable to humans without reading the code.
+
+## When To Apply
+Apply to any agent that:
+- Implements more than one file change
+- Runs for more than one phase / step
+- Involves tests, review, or PR creation
+
+Applies to: `job-orchestrator`, `feature-dev`, `task-implementer` (for multi-task jobs), any custom orchestration.
+Does NOT apply to: single-file quick fixes, standalone read-only analysis, ad-hoc one-liners.
+
+---
+
+## Document 1: Implementation Spec (create BEFORE writing any code)
+
+**Purpose:** Documents what the agent is about to do so the user can verify the plan and future agents can understand the intent.
+
+**Must include:**
+```markdown
+# Implementation Spec — <feature/issue name>
+Date: <ISO date>
+Agent: <skill name + version>
+
+## What
+<2-3 sentence description of what will be implemented>
+
+## Why
+<reason: issue link, user request, business value>
+
+## Scope
+**In scope:**
+- <item>
+
+**Out of scope:**
+- <item>
+
+## Acceptance Criteria
+- [ ] <testable criterion 1>
+- [ ] <testable criterion 2>
+
+## Approach
+<brief description of implementation approach: files to change, key design decisions>
+
+## Test Strategy
+<how tests will be written: framework, which scenarios will be covered>
+```
+
+**Storage:**
+- In `job-orchestrator` jobs: saved via `job-documenter` to `.metaproject/jobs/<job-name>/man/spec.md`
+- In `feature-dev`: saved to `<project_root>/.feature-spec.md` (gitignored) or printed and confirmed by user
+- In any agent: at minimum, the spec is presented to the user and confirmed before code is written
+
+**Timing:** Spec is created after requirements are gathered but BEFORE any branch is created or code is written.
+
+---
+
+## Document 2: Change Report (create AFTER all work is complete)
+
+**Purpose:** Auditable record of what the agent actually did — for the user, for review, and for the changelog.
+
+**Must include:**
+```markdown
+# Change Report — <feature/issue name>
+Date: <ISO date>
+Agent: <skill name + version>
+Branch: <branch name>
+PR: <PR URL or "not created">
+
+## Summary
+<2-3 sentence summary of what was implemented>
+
+## Files Changed
+| File | Action | Description |
+|------|--------|-------------|
+| src/services/UserService.ts | created | New user validation service |
+| src/services/UserService.test.ts | created | 8 tests, all passing |
+| src/components/Form.tsx | modified | Added validation UI |
+
+## Tests
+- Tests written: <N>
+- Tests passing: <N>
+- Tests failing: 0
+- Frameworks: <vitest/jest/etc>
+
+## Verification Gate
+- Lint: <pass / N errors>
+- Type-check: <pass / N errors>
+- Tests: <pass / N failed>
+
+## Acceptance Criteria Met
+- [x] <criterion 1> — verified by <test name>
+- [x] <criterion 2> — verified by <test name>
+- [ ] <criterion 3> — NOT met (reason)
+
+## Commits
+- <hash> <message>
+
+## Notes
+<anything unexpected, deferred, or worth knowing>
+```
+
+**Storage:**
+- In `job-orchestrator` jobs: saved via `job-documenter` to `.metaproject/jobs/<job-name>/man/change-report.md`
+- In `feature-dev`: appended to PR description + printed to user
+- In any agent: at minimum, printed as the final message
+
+**Timing:** Created as the very last step before reporting done to the user or orchestrator.
+
+---
+
+## Agent Compliance Checklist
+
+Before marking any implementation task as complete, verify:
+
+- [ ] Spec was created and confirmed before code was written
+- [ ] tests-creator ran before task-implementer (TDD pipeline)
+- [ ] code-verifier ran after implementation (gate: PASS or PASS_WITH_WARNINGS)
+- [ ] Change report was produced at the end
+- [ ] All acceptance criteria are checked off (or explicitly noted as not met)
+
+---
+
+## Iron Laws
+
+**IRON LAW 1: NO implementation starts without a confirmed spec. Code written without a spec has no verifiable definition of done.**
+**IRON LAW 2: NO implementation is complete without a change report. "It works" is not auditable.**
+**IRON LAW 3: The change report must reference actual test results from code-verifier — not self-assessment.**
+
+---
+
+## Red Flags — Stop and re-read this rule if you are thinking:
+
+| Rationalization | Why it's wrong |
+|---|---|
+| "The task is simple, a spec is overkill" | Simple tasks that skip specs are where scope creep silently happens |
+| "I'll document it after the PR is merged" | Post-merge docs are never written — and are useless for PR review |
+| "The user confirmed verbally, no need to write it down" | Verbal confirmation is invisible to reviewers, future agents, and the changelog |
+| "The code is self-documenting, a change report adds nothing" | The change report is for the user and the audit trail, not for the code reader |
+| "I'll skip the spec to save time" | The spec takes 2 minutes and saves hours of "wait, what was this supposed to do?" |
+
+**IRON LAW: AN UNDOCUMENTED IMPLEMENTATION IS AN UNVERIFIABLE IMPLEMENTATION.**

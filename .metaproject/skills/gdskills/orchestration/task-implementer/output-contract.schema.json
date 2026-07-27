@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gd-metapro.local/schemas/task-implementer/output-contract.schema.json",
+  "title": "Task Implementer Output Contract",
+  "description": "JSON result returned by task-implementer after executing a task. Replaces the previous Gherkin format.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["task_id", "task_name", "task_type", "status"],
+  "properties": {
+    "task_id": { "type": "string", "pattern": "^task-[0-9]+$" },
+    "task_name": { "type": "string" },
+    "task_type": {
+      "type": "string",
+      "enum": ["ui_component", "store_logic", "service_api", "refactoring", "fix", "mixed"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["success", "partial", "failed"],
+      "description": "success: all criteria met, all verifications pass; partial: some criteria met or verification failures; failed: critical blockers"
+    },
+    "description": { "type": "string", "description": "What was implemented" },
+    "files_modified": { "type": "array", "items": { "type": "string" } },
+    "files_created": { "type": "array", "items": { "type": "string" } },
+    "files_deleted": { "type": "array", "items": { "type": "string" } },
+    "commits": { "type": "array", "items": { "type": "string" } },
+    "lint_result": {
+      "type": "string",
+      "description": "pass OR 'N errors: <details>'"
+    },
+    "type_check_result": {
+      "type": "string",
+      "description": "pass OR 'N errors: <details>'"
+    },
+    "test_result": {
+      "type": "string",
+      "description": "pass OR 'N passed, M failed: <details>' OR 'skipped'"
+    },
+    "story_result": {
+      "type": "string",
+      "description": "pass OR 'build error: <details>' OR 'not applicable'"
+    },
+    "acceptance_criteria_met": {
+      "type": "string",
+      "description": "all OR 'partial: <list of unmet criteria>' OR none"
+    },
+    "notes": {
+      "type": "string",
+      "description": "Warnings, blockers, or additional context"
+    }
+  }
+}

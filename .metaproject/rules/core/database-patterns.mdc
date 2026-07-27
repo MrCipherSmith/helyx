@@ -1,0 +1,162 @@
+---
+description: "Database access patterns: no N+1 queries, indexes before deploy, backward-compatible migrations, transaction discipline. Use when writing queries, migrations, or ORM models."
+alwaysApply: false
+---
+
+# Database Patterns
+
+## Purpose
+Prevent N+1 query explosions, missing indexes, and migration-induced outages. Enforce safe, observable, backward-compatible database changes.
+
+## When To Apply
+Apply when writing ORM queries, creating migrations, designing schema changes, or reviewing data access code.
+
+---
+
+## Rules
+
+### Rule 1: No N+1 Queries
+A query inside a loop is always an N+1 violation. Use eager loading, `JOIN`, or `IN` clause batching.
+
+```typescript
+// BAD — N+1: 1 query for orders + 1 query per order for user
+const orders = await Order.findAll();
+for (const order of orders) {
+  const user = await User.findById(order.userId); // N queries
+  console.log(user.name);
+}
+
+// GOOD — single query with eager load
+const orders = await Order.findAll({ include: [{ model: User }] });
+for (const order of orders) {
+  console.log(order.user.name); // no additional queries
+}
+
+// GOOD alternative — batch with IN clause
+const userIds = orders.map(o => o.userId);
+const users = await User.findAll({ where: { id: userIds } });
+const userMap = new Map(users.map(u => [u.id, u]));
+```
+
+**Detection rule:** Any `findById`, `findOne`, or `findByPk` inside a loop MUST be refactored.
+
+### Rule 2: Index Before Query
+Every WHERE, JOIN, ORDER BY column that does not already have an index MUST have a migration adding one before the feature ships.
+
+```sql
+-- Migration checklist before deploy:
+-- 1. Identify all new WHERE clauses in the feature
+-- 2. Check EXPLAIN ANALYZE on representative data volume
+-- 3. Add indexes for any full-table scans
+
+CREATE INDEX CONCURRENTLY idx_orders_user_id ON orders(user_id);
+-- CONCURRENTLY avoids table lock in production
+```
+
+**Index requirements:**
+- Foreign keys: always indexed
+- Columns used in WHERE with high cardinality: indexed
+- Composite indexes: column order matters (most selective first)
+- Unique constraints: also serve as indexes — declare explicitly
+
+### Rule 3: Backward-Compatible Migrations
+
+Migrations run before code deploys in rolling deployments. The new schema MUST be compatible with both old and new application code simultaneously.
+
+**Safe migration sequence:**
+
+| Change | Safe? | Safe Method |
+|---|---|---|
+| Add nullable column | Yes | Single migration |
+| Add NOT NULL column | No | 3-step: add nullable → backfill → add constraint |
+| Rename column | No | 3-step: add new → copy data → remove old |
+| Remove column | No | 2-step: stop reading in code → migration to drop |
+| Add index | Yes (use CONCURRENTLY) | Single migration |
+| Drop index | Yes | Single migration |
+| Change column type | No | 3-step: add new → migrate data → remove old |
+
+**3-Step pattern for breaking changes:**
+```sql
+-- Step 1 (Deploy A): Add new column as nullable
+ALTER TABLE users ADD COLUMN email_verified_at TIMESTAMP;
+
+-- Deploy new code that writes to both old and new column
+
+-- Step 2 (Deploy B): Backfill + add NOT NULL constraint
+UPDATE users SET email_verified_at = created_at WHERE email_verified_at IS NULL;
+ALTER TABLE users ALTER COLUMN email_verified_at SET NOT NULL;
+
+-- Deploy new code that only reads new column
+
+-- Step 3 (Deploy C): Remove old column (if applicable)
+```
+
+### Rule 4: Transactions for Multi-Step Mutations
+Any operation that writes to multiple tables or performs multiple writes to the same table MUST use a transaction.
+
+```typescript
+// BAD — partial failure leaves data inconsistent
+await userRepo.save(user);
+await walletRepo.create({ userId: user.id, balance: 0 }); // if this fails, orphaned user
+
+// GOOD — atomic operation
+await db.transaction(async (trx) => {
+  await userRepo.save(user, { transaction: trx });
+  await walletRepo.create({ userId: user.id, balance: 0 }, { transaction: trx });
+});
+```
+
+### Rule 5: Never SELECT * in Application Code
+Always select specific columns to avoid:
+- Accidentally loading large TEXT/BLOB columns
+- Breaking when new columns are added to the schema
+- Leaking sensitive fields (passwords, tokens)
+
+```typescript
+// BAD
+const users = await User.findAll(); // loads ALL columns
+
+// GOOD
+const users = await User.findAll({ attributes: ['id', 'name', 'email'] });
+```
+
+### Rule 6: Soft Deletes Need Index on deleted_at
+If using soft deletes (`deleted_at IS NULL` filter), that filter is on every query. Index it:
+
+```sql
+CREATE INDEX idx_users_deleted_at ON users(deleted_at) WHERE deleted_at IS NULL;
+```
+
+---
+
+## Migration Review Checklist
+
+Before merging any migration:
+- [ ] `CONCURRENTLY` used for new indexes on existing tables
+- [ ] NOT NULL columns have a default or backfill in the same migration
+- [ ] No column renames (use 3-step instead)
+- [ ] `EXPLAIN ANALYZE` run on production-scale data for new queries
+- [ ] Rollback plan documented (reverse migration or migration with inverse operation)
+- [ ] Migration is idempotent (safe to run twice: use `IF NOT EXISTS`, `IF EXISTS`)
+
+---
+
+## Iron Laws
+
+**IRON LAW 1: A query inside a loop is an N+1. Fix it before merging.**
+**IRON LAW 2: A NOT NULL column without a backfill migration will fail in production on deploy.**
+**IRON LAW 3: Multi-table writes without a transaction are a data integrity bug.**
+
+---
+
+## Red Flags — Stop and re-read this rule if you are thinking:
+
+| Rationalization | Why it's wrong |
+|---|---|
+| "The table is small, N+1 is fine for now" | Tables grow — N+1 that's "fine now" causes outages at 100k rows |
+| "I'll add the index after it's in production if it's slow" | Adding an index without CONCURRENTLY locks the table in production |
+| "The migration is simple, I don't need a rollback plan" | Every migration that fails in production requires a rollback — having no plan means downtime |
+| "NULL is fine, I'll add NOT NULL later" | Nullable columns become load-bearing nullability over time — enforce constraints early |
+| "SELECT * is easier during development" | SELECT * loaded to production is a query-time performance and security risk |
+
+**IRON LAW: A MIGRATION THAT LOCKS A TABLE ON A BUSY PRODUCTION DATABASE IS A PLANNED OUTAGE.**

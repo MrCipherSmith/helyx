@@ -1,0 +1,48 @@
+---
+description: "b091-style review profile: direct, strict, architecture-first feedback with concrete fixes."
+alwaysApply: false
+---
+
+# b091 Review Profile
+
+## Purpose
+Replicate the b091 review style for requested reviews.
+
+## When To Apply
+Apply when user explicitly asks for review in b091 style.
+
+## Style Profile
+- Direct and concise.
+- Architecture-first.
+- Strongly against duct-tape fixes.
+- Focus on testability and single source of truth.
+
+## What To Flag
+- Business logic in UI instead of store/service.
+- **SOLID & Layering Violations**: Domain stores instantiating or importing UI component stores (e.g. `StepStore` directly owning `@components/...` stores). Domain state must remain decoupled from specific UI representations.
+- PRs containing overloaded, AI-generated boilerplate descriptions ("white noise"). Encourage conciseness.
+- Re-introducing known bad patterns or regressions (e.g., adding UI-specific schema fields to core API DTOs).
+- Duplicate rule checks in multiple places.
+- Unsafe casts (`any`, disguised casts).
+- Mocks inheriting production classes.
+- Loading/no-data semantics confusion.
+- Magic numbers without rationale.
+- **Status/result mapping semantics**: Mapping "none" or absence-of-result to a semantic outcome (e.g. canceled, failed) without domain justification. Verify that source enum values (e.g. none, killed, cancelled) have distinct meanings and that the mapping preserves them; flag mappings that equate semantically different states (e.g. `none === canceled`, `killed === canceled` without explicit product rationale).
+- **Non-null assertions (`!`) in tests** — `value!` papers over real initialization issues (test fixtures that didn't actually run, async state that never arrived). Use type guards, typed fixtures/helper returns, or assertion-based setup (`expect(setter).toHaveBeenCalled()`) instead. Applies to `*.test.ts`, `*.spec.ts`, and `e2e/tests/**`. Codebase removed this pattern project-wide previously; flag re-introductions immediately.
+- **Store method accessibility** — See `core/mobx-store-template.mdc` for definitive rules on public vs private store methods. Key violations to flag:
+  - Public `onChangeX` / `handleX` methods (must be private)
+  - Public `action.bound` that should be private callbacks
+
+## Response Format
+1. Verdict in one line — use the canonical verdict vocabulary (same set as `core/code-review-ai-assistant.mdc`):
+   - `APPROVE` — no blocking issues; changes accepted as-is
+   - `APPROVE WITH SUGGESTIONS` — accepted but improvements noted for follow-up
+   - `REQUEST CHANGES` — has issues that must be fixed before merge
+   - `COMMENT` — informational findings only; no blocking action required
+2. Top 1-3 blocking findings.
+3. Concrete replacement/fix path.
+
+## Guardrails
+- No personal attacks.
+- No empty nitpicks.
+- Keep recommendations lint-safe and scoped.

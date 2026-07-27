@@ -1,0 +1,149 @@
+---
+description: "SOLID principles for agent-generated code — focus on Single Responsibility, Open/Closed, and Dependency Inversion as the most commonly violated. Use when designing classes, modules, or service interfaces."
+alwaysApply: false
+---
+
+# SOLID Principles
+
+## Purpose
+Prevent the three most common SOLID violations in AI-generated code: god classes, hardcoded dependencies, and modification-on-every-change designs.
+
+## When To Apply
+Apply when creating new classes, services, or modules; when adding logic to an existing class; when wiring up dependencies.
+
+---
+
+## S — Single Responsibility Principle
+
+**One class/module = one reason to change.**
+
+### Rules
+- A class that does more than one thing must be split
+- A function that is longer than ~30 lines almost certainly has multiple responsibilities
+- Mixins of data-fetching + business logic + rendering are always a violation
+- If you cannot name a class in ≤3 words without "and", it has too many responsibilities
+
+### Signals of violation
+- Class name contains "Manager", "Handler", "Util", "Helper" (often catch-alls)
+- Constructor receives >5 dependencies
+- File is longer than 300 lines and is not a config or generated file
+- Method count exceeds 10 on a non-entity class
+
+### Correct pattern
+```typescript
+// BAD — does everything
+class UserService {
+  fetchUser() { /* HTTP */ }
+  validateUser() { /* domain logic */ }
+  formatUserForUI() { /* presentation */ }
+  saveToCache() { /* infrastructure */ }
+}
+
+// GOOD — each class has one job
+class UserRepository { fetchUser() {} }
+class UserValidator { validate() {} }
+class UserPresenter { format() {} }
+class UserCache { save() {} }
+```
+
+---
+
+## O — Open/Closed Principle
+
+**Open for extension, closed for modification.**
+
+### Rules
+- New behaviour must be addable without editing existing classes
+- Use polymorphism, strategy pattern, or configuration — not if/else chains
+- Every time you add an `else if` to handle a new variant, ask: "should this be a new strategy?"
+- Enums as switch-statement keys are the canonical violation — add a new enum value → touch N files
+
+### Signals of violation
+- Switch/if-else over a type enum with 3+ cases
+- Adding a new payment provider / notification channel / export format requires editing core logic
+- A "type" field drives behaviour throughout the codebase
+
+### Correct pattern
+```typescript
+// BAD — every new type requires editing this function
+function notify(type: string, msg: string) {
+  if (type === 'email') sendEmail(msg);
+  else if (type === 'sms') sendSMS(msg);
+  else if (type === 'push') sendPush(msg);
+}
+
+// GOOD — new channels added without touching existing code
+interface Notifier { send(msg: string): Promise<void>; }
+class EmailNotifier implements Notifier { send() {} }
+class SMSNotifier implements Notifier { send() {} }
+// registry → inject the right one
+```
+
+---
+
+## D — Dependency Inversion Principle
+
+**Depend on abstractions, not concretions.**
+
+### Rules
+- High-level modules must not import low-level modules directly
+- Dependencies are injected, not constructed inside the class
+- `new ConcreteService()` inside a business-logic class is always a violation
+- Tests become trivially easy when DIP is followed — if mocking is hard, DIP is violated
+
+### Signals of violation
+- `new` keyword used inside a service or use-case class body
+- Direct imports of `axios`, `prisma`, `fetch` in business logic layers
+- Constructor creates its own dependencies instead of receiving them
+- Testing requires monkey-patching module imports
+
+### Correct pattern
+```typescript
+// BAD — hard dependency on concrete HTTP client
+class OrderService {
+  async createOrder(data: OrderDTO) {
+    const client = new HttpClient(); // ← violation
+    return client.post('/orders', data);
+  }
+}
+
+// GOOD — depends on abstraction, injected externally
+interface HttpClient { post(url: string, body: unknown): Promise<unknown>; }
+
+class OrderService {
+  constructor(private readonly http: HttpClient) {}
+  async createOrder(data: OrderDTO) {
+    return this.http.post('/orders', data);
+  }
+}
+```
+
+---
+
+## L & I (Brief Notes)
+
+**Liskov Substitution (L):** A subclass must be usable wherever the parent is expected. If overriding a method throws where the parent would not — that is a violation.
+
+**Interface Segregation (I):** Prefer small, focused interfaces. A class should not be forced to implement methods it does not use. Split fat interfaces into role interfaces.
+
+---
+
+## Iron Laws
+
+**IRON LAW 1: A class with a name ending in "Manager", "Helper", or "Utils" MUST be reviewed for SRP before committing.**
+**IRON LAW 2: `new ConcreteClass()` inside business logic is forbidden. Pass dependencies via constructor.**
+**IRON LAW 3: Adding a new variant must not require editing more than 1 existing file. If it does, refactor first.**
+
+---
+
+## Red Flags — Stop and re-read this rule if you are thinking:
+
+| Rationalization | Why it's wrong |
+|---|---|
+| "It's just one extra method, I'll add it here" | Each small addition is how god classes are built — one method at a time |
+| "I'll inject it later, for now I'll just `new` it" | "Later" never comes; the hard dependency ships to production |
+| "An interface is overkill for this simple case" | Interfaces cost nothing at compile time and enable testing at zero extra effort |
+| "I'll use a switch, there are only 3 cases" | 3 cases becomes 10 over time — the OCP violation compounds |
+| "The constructor is getting long but refactoring is risky" | A long constructor is a signal the class has too many responsibilities — refactor now, not later |
+
+**IRON LAW: CODE THAT CANNOT BE TESTED WITHOUT MOCKING FILESYSTEM OR NETWORK IN BUSINESS LOGIC HAS A DIP VIOLATION.**

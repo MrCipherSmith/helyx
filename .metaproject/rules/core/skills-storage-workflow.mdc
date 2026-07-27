@@ -1,0 +1,88 @@
+---
+description: "Skill authoring, storage, and sync workflow for Cursor, Codex, Zed, and OpenCode."
+alwaysApply: false
+---
+
+# Skills Storage Workflow
+
+## Purpose
+Keep skill definitions consistent across master source and global agent directories.
+
+## Trigger
+Apply when user asks to create, update, or sync a skill.
+
+## Mandatory Clarification Step
+Before creating or editing a skill, ask and confirm:
+1. Target location
+2. Skill folder name
+3. Agent profile scope (`Cursor`, `Codex`, `Zed`, `OpenCode`, or all)
+
+## Source of Truth
+`.metaproject/skills/gdskills/<skill-name>/`
+
+## Required Source Layout
+- `SKILL.md` — canonical source of truth
+- `SKILL.cursor.md` — Cursor-specific variant (optional; falls back to SKILL.md)
+- `SKILL.codex.md` — Codex-specific variant (optional; falls back to SKILL.md)
+- `SKILL.zed.md` — Zed-specific variant (optional; falls back to SKILL.md)
+- `SKILL.opencode.md` — OpenCode-specific variant (optional; falls back to SKILL.md)
+
+`SKILL.md` is always required. Platform variants are optional — if absent, `gd-metapro update` installs `SKILL.md` as fallback.
+
+## Global Sync Mapping
+- `SKILL.cursor.md` (or `SKILL.md`) → `~/.cursor/skills/<skill-name>/SKILL.md`
+- `SKILL.codex.md` (or `SKILL.md`) → `${CODEX_HOME:-~/.codex}/skills/<skill-name>/SKILL.md`
+- `SKILL.antigravity.md` (or `SKILL.md`) → `~/.antigravity/skills/<skill-name>/SKILL.md`
+- `SKILL.zed.md` (or `SKILL.md`) → `~/.config/zed/skills/<skill-name>/SKILL.md`
+- `SKILL.opencode.md` (or `SKILL.md`) → `~/.config/opencode/skills/<skill-name>/SKILL.md`
+
+## Mandatory Behavior
+1. Always create/update `SKILL.md` as the canonical source.
+2. Create platform variants only when platform-specific adaptations are needed; otherwise `SKILL.md` serves all platforms via fallback.
+3. Keep all profiles aligned in structure and intent.
+3. Validate skills before sync.
+4. Sync both global destinations after source update.
+5. Ensure `agents/openai.yaml` exists where required by the target agent UI.
+6. For create/update/sync workflows, produce a machine-readable final result for orchestrators.
+
+## Machine-Readable Contract
+Use canonical schema:
+- `.metaproject/rules/schemas/skill-workflow-result.schema.json`
+
+Contract requirements:
+- One top-level JSON object only.
+- Stable required keys.
+- Closed objects (`additionalProperties: false`).
+- `contract_version` in semver.
+- `timestamp_utc` in RFC 3339 UTC.
+
+### Decision Mapping for Orchestrator
+- `status=needs_input` -> `decision=ask_clarification`
+- `status=ready_for_implementation` -> `decision=proceed_to_implementation`
+- `status=implemented` -> `decision=proceed_to_sync` or `stop`
+- `status=blocked|failed` -> `decision=stop`
+
+## Pre-Sync Validation (Mandatory)
+Run before syncing skills:
+
+```bash
+gd-metapro skills verify --all
+```
+
+Then run sync:
+
+```bash
+gd-metapro update
+```
+
+If validation fails, do not sync.
+
+## Naming
+- `skill-name` must be lowercase with numbers/hyphens only.
+- Keep names semantic and stable.
+
+## Forbidden
+- Do not create skills in `~/.cursor/skills-cursor/`.
+
+## Apply Changes Workflow
+Changes under `.metaproject/skills/gdskills/*` should be synced to tool directories using `gd-metapro update`.

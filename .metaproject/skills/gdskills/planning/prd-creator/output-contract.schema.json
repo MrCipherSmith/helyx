@@ -1,0 +1,175 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "prd-creator-output-contract",
+    "title": "PRD-Creator Output Contract",
+    "description": "Defines the output structure for the PRD-Creator skill, which can be either clarification questions or a completed PRD.",
+    "type": "object",
+    "required": [
+        "status"
+    ],
+    "properties": {
+        "status": {
+            "type": "string",
+            "enum": [
+                "needs_clarification",
+                "completed"
+            ],
+            "description": "The status of the PRD formulation process."
+        },
+        "questions": {
+            "type": "array",
+            "description": "List of clarification questions. Present if status is 'needs_clarification'.",
+            "items": {
+                "type": "object",
+                "required": [
+                    "id",
+                    "type",
+                    "question"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": [
+                            "multiple_choice",
+                            "open_text"
+                        ]
+                    },
+                    "question": {
+                        "type": "string"
+                    },
+                    "options": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "Available options for multiple_choice questions."
+                    }
+                }
+            }
+        },
+        "prd": {
+            "type": "object",
+            "description": "The finalized Product Requirements Document. Present if status is 'completed'.",
+            "required": [
+                "overview",
+                "context",
+                "problemStatement",
+                "goals",
+                "functionalRequirements",
+                "nonFunctionalRequirements",
+                "acceptanceCriteria",
+                "verification"
+            ],
+            "properties": {
+                "overview": {
+                    "type": "string"
+                },
+                "context": {
+                    "type": "object"
+                },
+                "problemStatement": {
+                    "type": "string"
+                },
+                "goals": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "nonGoals": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "functionalRequirements": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "nonFunctionalRequirements": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "constraints": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "edgeCases": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "acceptanceCriteria": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "Gherkin format Given/When/Then scenarios."
+                },
+                "verification": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "qualityScore": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 10,
+            "description": "Internal quality score of the generated PRD."
+        },
+        "riskAssessment": {
+            "type": "string",
+            "enum": [
+                "low",
+                "medium",
+                "high"
+            ],
+            "description": "Assessed risk level of the feature based on the PRD."
+        }
+    },
+    "allOf": [
+        {
+            "if": {
+                "properties": {
+                    "status": {
+                        "const": "needs_clarification"
+                    }
+                }
+            },
+            "then": {
+                "required": [
+                    "questions"
+                ]
+            }
+        },
+        {
+            "if": {
+                "properties": {
+                    "status": {
+                        "const": "completed"
+                    }
+                }
+            },
+            "then": {
+                "required": [
+                    "prd",
+                    "qualityScore",
+                    "riskAssessment"
+                ]
+            }
+        }
+    ]
+}

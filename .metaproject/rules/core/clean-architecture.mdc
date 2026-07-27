@@ -1,0 +1,163 @@
+---
+description: "Clean Architecture layer rules: dependency direction, layer isolation, no cross-layer leakage. Use when designing new modules, structuring services, or reviewing architectural boundaries."
+alwaysApply: false
+---
+
+# Clean Architecture
+
+## Purpose
+Enforce correct dependency direction across architectural layers. Business logic must not depend on frameworks, databases, or UI. Changes to infrastructure must not require changes to domain logic.
+
+## When To Apply
+Apply when creating new modules, services, or features; when deciding where to place a new class or function; when wiring up dependencies between layers.
+
+---
+
+## Layer Model
+
+```
+┌─────────────────────────────────────┐
+│           Presentation Layer         │  Controllers, API handlers, CLI commands
+├─────────────────────────────────────┤
+│           Application Layer          │  Use cases, orchestration, DTOs
+├─────────────────────────────────────┤
+│             Domain Layer             │  Entities, value objects, domain services
+├─────────────────────────────────────┤
+│         Infrastructure Layer         │  DB, HTTP clients, queues, filesystem
+└─────────────────────────────────────┘
+```
+
+**The Dependency Rule:** Dependencies point INWARD only.
+- Infrastructure → Domain (ok)
+- Application → Domain (ok)
+- Presentation → Application (ok)
+- Domain → Infrastructure (FORBIDDEN)
+- Domain → Framework (FORBIDDEN)
+
+---
+
+## Rules
+
+### Rule 1: Domain Layer Has No Framework Imports
+The domain layer must import nothing from:
+- ORM packages (`prisma`, `typeorm`, `mongoose`)
+- HTTP frameworks (`express`, `fastapi`, `nestjs`)
+- External SDKs (AWS SDK, Stripe, etc.)
+
+```typescript
+// BAD — domain entity knows about Prisma
+import { Prisma } from '@prisma/client';
+class Order {
+  static fromPrisma(row: Prisma.OrderGetPayload<{}>): Order {}
+}
+
+// GOOD — domain is pure TypeScript
+class Order {
+  constructor(
+    readonly id: OrderId,
+    readonly status: OrderStatus,
+    readonly lines: OrderLine[],
+  ) {}
+}
+```
+
+### Rule 2: Repositories Are Interfaces in Domain, Implementations in Infrastructure
+
+```typescript
+// Domain layer — interface only
+export interface OrderRepository {
+  findById(id: OrderId): Promise<Order | null>;
+  save(order: Order): Promise<void>;
+}
+
+// Infrastructure layer — concrete implementation
+export class PrismaOrderRepository implements OrderRepository {
+  constructor(private readonly prisma: PrismaClient) {}
+  async findById(id: OrderId) { /* ... */ }
+  async save(order: Order) { /* ... */ }
+}
+```
+
+### Rule 3: DTOs Live at Layer Boundaries
+- **Request DTOs** (validation) → Presentation layer
+- **Application DTOs** (use-case input/output) → Application layer
+- **Domain objects** → Domain layer
+- **Persistence models** → Infrastructure layer
+
+Never pass a Prisma row directly to a controller, or a request DTO directly into a domain entity.
+
+### Rule 4: Use Cases Orchestrate, Domain Encapsulates Logic
+- Use cases (Application layer): coordinate repositories and domain services, handle transactions
+- Domain entities: contain business rules, invariants, validations
+- Controllers: parse input, call use case, format output — nothing else
+
+```typescript
+// BAD — business logic leaking into controller
+app.post('/orders', async (req, res) => {
+  if (req.body.items.length === 0) { /* domain rule in controller */ }
+  const discounted = req.body.total * 0.9; /* domain logic */
+  await db.orders.create({ data: req.body }); /* infrastructure in controller */
+});
+
+// GOOD — controller delegates everything
+app.post('/orders', async (req, res) => {
+  const dto = parseCreateOrderDto(req.body);
+  const result = await createOrderUseCase.execute(dto);
+  res.status(201).json(formatOrderResponse(result));
+});
+```
+
+### Rule 5: No God Services
+A service that touches more than 2 domain aggregates is doing too much. Split it.
+
+### Rule 6: Module Boundaries Are Enforced by Imports
+If module A imports from module B's internal files (`b/internal/...`), that is a boundary violation. Public APIs of modules are their index exports only.
+
+---
+
+## Directory Structure Pattern
+
+```
+src/
+├── domain/
+│   ├── order/
+│   │   ├── Order.ts             # entity
+│   │   ├── OrderRepository.ts   # interface
+│   │   └── OrderService.ts      # domain service
+├── application/
+│   ├── order/
+│   │   ├── CreateOrderUseCase.ts
+│   │   └── dto/
+│   │       ├── CreateOrderDto.ts
+│   │       └── OrderResponseDto.ts
+├── infrastructure/
+│   ├── persistence/
+│   │   └── PrismaOrderRepository.ts
+│   └── http/
+│       └── StripePaymentGateway.ts
+└── presentation/
+    └── http/
+        └── OrderController.ts
+```
+
+---
+
+## Iron Laws
+
+**IRON LAW 1: The domain layer has zero framework imports. If it imports Prisma, Express, or any SDK — fix it.**
+**IRON LAW 2: Business rules live in the domain layer, not in controllers or use cases.**
+**IRON LAW 3: A controller that queries the database directly violates the architecture unconditionally.**
+
+---
+
+## Red Flags — Stop and re-read this rule if you are thinking:
+
+| Rationalization | Why it's wrong |
+|---|---|
+| "It's a small project, layers are overkill" | Layerless code becomes unmaintainable the moment it needs testing or a second database |
+| "I'll just pass the Prisma object through, it's easier" | The domain now depends on Prisma — every Prisma version upgrade potentially breaks business logic |
+| "The use case is thin, I'll put the logic in the controller" | Controllers are discarded when the transport changes (HTTP → gRPC, REST → GraphQL) |
+| "I'll clean up the layers after the feature ships" | Features shipped with wrong architecture become the foundation for future features |
+| "The repository interface is just ceremony" | The interface enables testing without a database — eliminating it eliminates testability |
+
+**IRON LAW: IF CHANGING THE DATABASE REQUIRES CHANGING BUSINESS LOGIC, THE ARCHITECTURE IS WRONG.**

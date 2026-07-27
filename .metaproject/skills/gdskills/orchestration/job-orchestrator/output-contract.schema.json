@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "job-orchestrator-output-contract",
+  "title": "Job Orchestrator Output Contract",
+  "description": "Defines the structure of the final report and PR proposal produced by job-orchestrator.",
+  "type": "object",
+  "required": ["format", "structure"],
+  "properties": {
+    "format": {
+      "type": "string",
+      "const": "markdown",
+      "description": "Output is in Markdown format (not Gherkin — this is the top-level human-readable report)"
+    },
+    "structure": {
+      "type": "object",
+      "description": "Structure of the implementation report",
+      "required": ["sections"],
+      "properties": {
+        "sections": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "Summary",
+              "Tasks",
+              "Review Results",
+              "Unresolved Issues",
+              "Final Checks",
+              "Changes Summary",
+              "PR Proposal"
+            ]
+          },
+          "description": "Sections in the report"
+        }
+      }
+    },
+    "report_fields": {
+      "type": "object",
+      "description": "Key fields in the report for programmatic access",
+      "properties": {
+        "summary": {
+          "type": "object",
+          "properties": {
+            "issue_number": { "type": "integer" },
+            "issue_title": { "type": "string" },
+            "issue_type": { "type": "string" },
+            "branch_name": { "type": "string" },
+            "tasks_completed": { "type": "integer" },
+            "tasks_total": { "type": "integer" },
+            "review_iterations": { "type": "integer" },
+            "final_status": {
+              "type": "string",
+              "enum": ["READY FOR PR", "HAS WARNINGS", "HAS ISSUES", "FAILED"]
+            }
+          }
+        },
+        "task_results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "task_id": { "type": "string" },
+              "task_name": { "type": "string" },
+              "status": { "type": "string", "enum": ["success", "partial", "failed"] },
+              "files": { "type": "array", "items": { "type": "string" } },
+              "commits": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "review_results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "reviewer": { "type": "string" },
+              "critical": { "type": "integer" },
+              "warning": { "type": "integer" },
+              "info": { "type": "integer" }
+            }
+          }
+        },
+        "final_checks": {
+          "type": "object",
+          "properties": {
+            "lint": { "type": "string" },
+            "type_check": { "type": "string" },
+            "tests": { "type": "string" }
+          }
+        },
+        "pr_data": {
+          "type": "object",
+          "properties": {
+            "title": { "type": "string" },
+            "base": { "type": "string" },
+            "head": { "type": "string" },
+            "draft": { "type": "boolean" },
+            "body": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

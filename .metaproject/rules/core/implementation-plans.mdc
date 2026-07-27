@@ -1,0 +1,58 @@
+---
+description: "Rules for creating implementation plans in date-stamped requirement folders."
+alwaysApply: false
+---
+
+# Implementation Plans Rules
+
+## Purpose
+Define structure and storage for implementation plans.
+
+## When To Apply
+Apply when creating or updating an implementation plan document.
+
+## Location
+`<DOCS_ROOT>/requirements/<requirement-name>/<YYYY-MM-DD>/`
+
+## Mandatory Behavior
+1. Ask for target location and folder name before creation.
+2. If requirement folder does not exist, create requirements first.
+3. Use a new date folder for every new plan iteration.
+4. Generate and keep synchronized language variants: `ru`, `en`, `ai`.
+
+## Required Plan Structure
+1. High-level plan
+2. Detailed plan
+3. Execution tracking with unchecked checkboxes
+
+## Output Contract
+- Plan files MUST be Markdown (`.md`).
+- Code or command examples MUST be fenced code blocks.
+
+## Red Flags — Stop and re-read this rule if you are thinking:
+
+| Rationalization | Why it's wrong |
+|---|---|
+| "The plan is in my head, I don't need to write it down" | An unwritten plan cannot be reviewed, versioned, or handed to another agent |
+| "I'll use the existing folder instead of creating a new date folder" | Date folders are the audit trail — overwriting one erases the iteration history |
+| "The user knows what we discussed, I'll skip asking for the folder name" | The location question is a confirmation gate, not a convenience; skipping it causes misplaced files |
+| "I'll write the plan in English only since that's what the user spoke" | All three variants (ru/en/ai) are required — omitting one breaks downstream tooling |
+
+**IRON LAW: ALWAYS ASK FOR TARGET LOCATION AND FOLDER NAME BEFORE CREATING ANY PLAN FILE, AND GENERATE ALL THREE LANGUAGE VARIANTS.**
+
+## Template
+```markdown
+# <Plan Name>
+
+## 1. High-Level Plan
+- Objective:
+- Scope:
+
+## 2. Detailed Plan
+### Step 1
+### Step 2
+
+## 3. Execution Tracking
+- [ ] Step 1 completed
+- [ ] Step 2 completed
+```

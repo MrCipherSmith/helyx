@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "ignore": {
+    "paths": [
+      "node_modules/**",
+      ".git/**",
+      ".metaproject/**",
+      "dist/**",
+      "build/**",
+      "coverage/**",
+      ".next/**",
+      "out/**",
+      "storybook-static/**",
+      "**/storybook-static/**",
+      "public/**",
+      "**/public/**",
+      "assets/**",
+      "**/public/assets/**",
+      "static/**",
+      "**/static/**",
+      "generated/**",
+      "**/generated/**"
+    ]
+  },
+  "sources": {
+    "eslint": {
+      "mode": "auto",
+      "required": true
+    },
+    "typescript": {
+      "mode": "auto",
+      "required": true
+    },
+    "tests": {
+      "mode": "auto",
+      "required": false
+    },
+    "coverage": {
+      "mode": "import",
+      "required": false
+    },
+    "dependencyAudit": {
+      "mode": "auto",
+      "required": false
+    },
+    "sonarqube": {
+      "mode": "disabled",
+      "required": false
+    },
+    "complexity": {
+      "mode": "auto",
+      "required": false
+    }
+  },
+  "metrics": {
+    "coverageTarget": 80,
+    "coverageSoftFloor": 60,
+    "complexityThreshold": 10,
+    "churnWindowDays": 90
+  },
+  "scoring": {
+    "priorityWeights": {
+      "P0": 100,
+      "P1": 20,
+      "P2": 5,
+      "P3": 1
+    },
+    "coverageWeight": 1,
+    "complexityWeight": 2,
+    "normalizePerLoc": 1000
+  },
+  "gate": {
+    "failOnPriorities": [
+      "P0"
+    ],
+    "failOnRegressionDrop": 10,
+    "warnOnRegressionDrop": 3,
+    "failOnMissingRequiredSource": true
+  }
+}

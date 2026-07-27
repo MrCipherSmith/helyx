@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "context-collector-input-contract",
+  "title": "Context Collector — Input Contract",
+  "description": "Schema for the input provided to the context-collector skill by job-orchestrator or user.",
+  "type": "object",
+  "required": ["ACTION", "JOB_NAME", "JOBS_ROOT", "PROJECT_DIR", "DATA"],
+  "properties": {
+    "ACTION": {
+      "type": "string",
+      "enum": ["collect", "update"],
+      "description": "The operation to perform. 'collect' builds a new context document; 'update' refreshes an existing one."
+    },
+    "JOB_NAME": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "Kebab-case job folder name. Must match an existing folder under JOBS_ROOT."
+    },
+    "JOBS_ROOT": {
+      "type": "string",
+      "description": "Absolute path to the jobs root directory. Default: .metaproject/jobs. Override: $GDMETAPRO_JOBS_ROOT.",
+      "examples": ["/path/to/project/jobs", "/custom/jobs/root"]
+    },
+    "PROJECT_DIR": {
+      "type": "string",
+      "description": "Absolute path to the project directory to analyze for codebase patterns and package.json."
+    },
+    "DATA": {
+      "type": "object",
+      "description": "Task-specific data payload.",
+      "required": ["TASK_DESCRIPTION"],
+      "properties": {
+        "TASK_DESCRIPTION": {
+          "type": "string",
+          "minLength": 10,
+          "description": "What the job is about — from issue, user request, or analysis. Required for both 'collect' and 'update'."
+        },
+        "FOCUS_AREAS": {
+          "type": ["string", "array", "null"],
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional. Specific areas to focus on, e.g. 'MobX stores', 'pipeline validation'. Accepts a string or an array of strings.",
+          "examples": [
+            "MobX stores",
+            ["pipeline validation", "React memoization"]
+          ]
+        },
+        "ANALYSIS_RESULT": {
+          "type": ["string", "null"],
+          "description": "Optional. Output from issue-analyzer, if available. May be a file path or inline content.",
+          "examples": [
+            ".metaproject/jobs/my-job/ai/analysis.md",
+            "Inline Gherkin or analysis summary text"
+          ]
+        },
+        "KNOWN_LIBRARIES": {
+          "type": ["array", "string", "null"],
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional. Libraries already identified prior to context collection. Accepts a list of package names or a comma-separated string.",
+          "examples": [
+            ["mobx", "react-query", "zod"],
+            "mobx, react-query, zod"
+          ]
+        },
+        "UPDATE_REASON": {
+          "type": ["string", "null"],
+          "description": "Required when ACTION is 'update'. Describes why the context document needs refreshing.",
+          "examples": [
+            "New library 'tanstack/query' discovered during implementation",
+            "Review finding suggests different MobX pattern should be used"
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "ACTION": { "const": "update" }
+        }
+      },
+      "then": {
+        "required": ["TASK_DESCRIPTION", "UPDATE_REASON"],
+        "properties": {
+          "UPDATE_REASON": {
+            "type": "string",
+            "minLength": 5
+          }
+        }
+      }
+    }
+  },
+  "if": {
+    "properties": {
+      "ACTION": { "const": "update" }
+    },
+    "required": ["ACTION"]
+  },
+  "then": {
+    "properties": {
+      "DATA": {
+        "required": ["TASK_DESCRIPTION", "UPDATE_REASON"]
+      }
+    }
+  },
+  "examples": [
+    {
+      "ACTION": "collect",
+      "JOB_NAME": "implement-savemode-component",
+      "JOBS_ROOT": ".metaproject/jobs",
+      "PROJECT_DIR": "/Users/dev/<PROJECT>",
+      "DATA": {
+        "TASK_DESCRIPTION": "Implement a SaveMode toggle component that switches between draft and published states in the pipeline editor.",
+        "FOCUS_AREAS": ["MobX stores", "pipeline validation", "React observer pattern"],
+        "ANALYSIS_RESULT": ".metaproject/jobs/implement-savemode-component/ai/analysis.md",
+        "KNOWN_LIBRARIES": ["mobx", "mobx-react-lite", "zod"],
+        "UPDATE_REASON": null
+      }
+    },
+    {
+      "ACTION": "update",
+      "JOB_NAME": "implement-savemode-component",
+      "JOBS_ROOT": ".metaproject/jobs",
+      "PROJECT_DIR": "/Users/dev/<PROJECT>",
+      "DATA": {
+        "TASK_DESCRIPTION": "Implement a SaveMode toggle component that switches between draft and published states in the pipeline editor.",
+        "FOCUS_AREAS": ["tanstack/query", "optimistic updates"],
+        "ANALYSIS_RESULT": null,
+        "KNOWN_LIBRARIES": null,
+        "UPDATE_REASON": "New library tanstack/query discovered during implementation — need documentation on optimistic update patterns."
+      }
+    }
+  ]
+}

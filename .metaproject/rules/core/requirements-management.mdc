@@ -1,0 +1,35 @@
+---
+description: "Rules for creating and updating requirement documents with multilingual outputs."
+alwaysApply: false
+---
+
+# Requirements Management Rules
+
+## Purpose
+Standardize how requirement sets are created and maintained.
+
+## When To Apply
+Apply when creating or updating requirement documents.
+
+## Location
+`<DOCS_ROOT>/requirements/<requirement-name>/<YYYY-MM-DD>/`
+
+## Mandatory Behavior
+1. Ask for target location and requirement folder name before writing.
+2. Confirm naming convention before creation.
+3. Always create a new date-stamped subfolder; do not overwrite old sets.
+4. Generate synchronized `ru`, `en`, and `ai` versions.
+5. Document assumptions and open questions explicitly.
+
+## Output Contract
+- Use Markdown (`.md`) only.
+- Keep sections explicit: context, scope, requirements, constraints, open questions.
+- Code snippets must be fenced code blocks.
+
+## Workflow
+1. Capture request.
+2. Clarify folder/location.
+3. Create folder structure.
+4. Create all required language files.
+5. Validate synchronization.
+6. Ask whether to apply changes.

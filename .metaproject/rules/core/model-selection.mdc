@@ -1,0 +1,53 @@
+---
+description: "Model selection workflow for sub-agents. Detects available models and allows user to choose."
+alwaysApply: false
+---
+
+# Model Selection for Sub-Agents
+
+## Purpose
+When launching a sub-agent or skill, detect available models in the current environment and allow the user to choose.
+
+## Trigger
+When you need to launch a sub-agent/skill and want to use a different model than the current one.
+
+## Available Models Detection
+
+Run to detect available models:
+
+```bash
+.metaproject/scripts/detect-models.sh
+```
+
+## Current Environment Models
+
+### Codex
+- `gpt-5.2-codex` - Frontier agentic coding model (recommended)
+- `gpt-5.3-codex` - Latest frontier agentic coding model
+- `gpt-5.1-codex-max` - Codex-optimized flagship for deep reasoning
+- `gpt-5.1-codex-mini` - Cheaper, faster, less capable
+- `gpt-5.2` - Latest frontier model
+
+### Cursor
+Uses OpenAI models (GPT-4, GPT-4o, etc.)
+
+### Antigravity
+Check configuration in `~/.antigravity/`
+
+### OpenCode
+Check configuration in `~/.config/opencode/`
+
+### Zed
+Uses AI models configured in Zed settings
+
+## Workflow
+
+1. **Detect available models** - Run `detect-models.sh` or check known configurations
+2. **Present options** - Show user available models with descriptions
+3. **Get confirmation** - Ask user which model to use
+4. **Launch sub-agent** - Use selected model for the sub-agent
+
+## Mandatory Behavior
+- Always ask user before changing model for sub-agents
+- Show model descriptions to help user decide
+- Default to current model unless user explicitly chooses otherwise

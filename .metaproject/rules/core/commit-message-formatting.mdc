@@ -1,0 +1,25 @@
+---
+description: "Conventional commit formatting rules."
+alwaysApply: false
+---
+
+# Commit Message Formatting Rules
+
+## Purpose
+Generate concise English conventional commits.
+
+## When To Apply
+Apply whenever creating a git commit message.
+
+## Language
+- Commit messages must be English only.
+
+## Header
+- Use one prefix: `fix:`, `feat:`, `chore:`, `refactor:`, `docs:`, `style:`, `test:`, `perf:`, `ci:`, `build:`.
+- Optional scope: `feat(scope): message` where scope is the affected module (e.g. `feat(pipelines):`, `fix(store):`).
+- Keep header to 72 chars max (including type and scope).
+
+## Body
+- Use short bullets.
+- Describe what changed and user impact.
+- Avoid file lists and implementation minutiae.

@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "reviewer-finding",
+  "title": "Reviewer Result and Findings",
+  "type": "object",
+  "required": [
+    "status",
+    "reviewer",
+    "summary",
+    "findings",
+    "stats"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": [
+        "DONE",
+        "DONE_WITH_CONCERNS",
+        "NEEDS_CONTEXT",
+        "BLOCKED"
+      ]
+    },
+    "reviewer": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "severity",
+          "problem",
+          "impact",
+          "suggested_fix",
+          "evidence",
+          "confidence",
+          "reviewer"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "blocker",
+              "major",
+              "minor",
+              "info"
+            ]
+          },
+          "file": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "line": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "problem": {
+            "type": "string"
+          },
+          "impact": {
+            "type": "string"
+          },
+          "suggested_fix": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "reviewer": {
+            "type": "string"
+          },
+          "dedupe_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "blocking_merge": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "needs_context": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "stats": {
+      "type": "object",
+      "required": [
+        "blocker",
+        "major",
+        "minor",
+        "info"
+      ],
+      "properties": {
+        "blocker": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "major": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "minor": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "info": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "tokens": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,203 @@
+{
+  "adapters": [
+    "adapters/claude.ts",
+    "adapters/index.ts",
+    "adapters/types.ts"
+  ],
+  "bot": [
+    "bot/access.ts",
+    "bot/bot.ts",
+    "bot/callbacks.ts",
+    "bot/commands/add.ts",
+    "bot/commands/admin.ts",
+    "bot/commands/btw.ts",
+    "bot/commands/codex.ts",
+    "bot/commands/forum.ts",
+    "bot/commands/interrupt.ts",
+    "bot/commands/memory-export.ts",
+    "bot/commands/memory.ts",
+    "bot/commands/menu.ts",
+    "bot/commands/model.ts",
+    "bot/commands/monitor.ts",
+    "bot/commands/prepare-restart.ts",
+    "bot/commands/project-add.ts",
+    "bot/commands/project-facts.ts",
+    "bot/commands/projects.ts",
+    "bot/commands/quickstart.ts",
+    "bot/commands/remote-control.ts",
+    "bot/commands/resume.ts",
+    "bot/commands/session.ts",
+    "bot/commands/supervisor-actions.ts",
+    "bot/commands/system.ts",
+    "bot/commands/tmux-actions.ts",
+    "bot/commands/tmux-log.ts",
+    "bot/format.ts",
+    "bot/forum-cache.ts",
+    "bot/handlers.ts",
+    "bot/media.ts",
+    "bot/poll-handler.ts",
+    "bot/streaming.ts",
+    "bot/switch-cache.ts",
+    "bot/text-handler.ts",
+    "bot/topic-queue.ts"
+  ],
+  "channel.ts": [
+    "channel.ts"
+  ],
+  "channel": [
+    "channel/index.ts",
+    "channel/permissions.ts",
+    "channel/poller.ts",
+    "channel/recovery.ts",
+    "channel/session.ts",
+    "channel/skill-evaluator.ts",
+    "channel/status.ts",
+    "channel/telegram.ts",
+    "channel/tools.ts"
+  ],
+  "claude": [
+    "claude/client.ts",
+    "claude/prompt.ts"
+  ],
+  "cleanup": [
+    "cleanup/jobs.ts",
+    "cleanup/runner.ts"
+  ],
+  "cli.ts": [
+    "cli.ts"
+  ],
+  "config.ts": [
+    "config.ts"
+  ],
+  "dashboard": [
+    "dashboard/auth.ts",
+    "dashboard/eslint.config.js",
+    "dashboard/src/api/client.ts",
+    "dashboard/src/components/SlidePanel.tsx",
+    "dashboard/src/components/ui/dropdown-menu.tsx",
+    "dashboard/src/components/ui/tooltip.tsx",
+    "dashboard/src/hooks/useEventStream.ts",
+    "dashboard/src/i18n.ts",
+    "dashboard/src/lib/notifications.ts",
+    "dashboard/src/lib/utils.ts",
+    "dashboard/src/main.tsx",
+    "dashboard/src/pages/Layout.tsx",
+    "dashboard/src/pages/Login.tsx",
+    "dashboard/src/pages/Logs.tsx",
+    "dashboard/src/pages/Memories.tsx",
+    "dashboard/src/pages/Monitor.tsx",
+    "dashboard/src/pages/Overview.tsx",
+    "dashboard/src/pages/Permissions.tsx",
+    "dashboard/src/pages/Projects.tsx",
+    "dashboard/src/pages/SessionDetail.tsx",
+    "dashboard/src/pages/Sessions.tsx",
+    "dashboard/src/pages/Stats.tsx",
+    "dashboard/vite.config.ts",
+    "dashboard/webapp/src/api.ts",
+    "dashboard/webapp/src/App.tsx",
+    "dashboard/webapp/src/components/GitBrowser.tsx",
+    "dashboard/webapp/src/components/MessageHistory.tsx",
+    "dashboard/webapp/src/components/PermissionList.tsx",
+    "dashboard/webapp/src/components/PRList.tsx",
+    "dashboard/webapp/src/components/ProcessHealth.tsx",
+    "dashboard/webapp/src/components/SessionMonitor.tsx",
+    "dashboard/webapp/src/components/SessionTimeline.tsx",
+    "dashboard/webapp/src/main.tsx",
+    "dashboard/webapp/src/utils/fileIcons.ts",
+    "dashboard/webapp/vite.config.ts"
+  ],
+  "logger.ts": [
+    "logger.ts"
+  ],
+  "main.ts": [
+    "main.ts"
+  ],
+  "mcp": [
+    "mcp/bridge.ts",
+    "mcp/dashboard-api.ts",
+    "mcp/notification-broadcaster.ts",
+    "mcp/pending-expects.ts",
+    "mcp/server.ts",
+    "mcp/tools.ts"
+  ],
+  "memory": [
+    "memory/db.ts",
+    "memory/embeddings.ts",
+    "memory/long-term.ts",
+    "memory/project-scanner.ts",
+    "memory/short-term.ts",
+    "memory/summarizer.ts"
+  ],
+  "orchestrator": [
+    "orchestrator/gate.ts",
+    "orchestrator/matrix.ts",
+    "orchestrator/store.ts"
+  ],
+  "scripts": [
+    "scripts/admin-daemon.ts",
+    "scripts/supervisor.ts",
+    "scripts/tmux-session-logger.ts",
+    "scripts/tmux-watchdog.ts"
+  ],
+  "services": [
+    "services/forum-service.ts",
+    "services/index.ts",
+    "services/memory-service.ts",
+    "services/message-service.ts",
+    "services/permission-service.ts",
+    "services/project-service.ts",
+    "services/session-service.ts",
+    "services/summarization-service.ts"
+  ],
+  "sessions": [
+    "sessions/delete.ts",
+    "sessions/manager.ts",
+    "sessions/router.ts",
+    "sessions/state-machine.ts"
+  ],
+  "tests": [
+    "tests/e2e/api/git.spec.ts",
+    "tests/e2e/api/sessions.spec.ts",
+    "tests/e2e/auth.setup.ts",
+    "tests/e2e/dashboard/overview.spec.ts",
+    "tests/e2e/fixtures.ts",
+    "tests/global-setup.ts",
+    "tests/playwright.config.ts",
+    "tests/unit/aux-llm-prompt.test.ts",
+    "tests/unit/curator-prompt.test.ts",
+    "tests/unit/forum-topics.test.ts",
+    "tests/unit/jsonb-cast-v1.32.test.ts",
+    "tests/unit/matrix-validator.test.ts",
+    "tests/unit/memory-reconciliation.test.ts",
+    "tests/unit/migration-registry.test.ts",
+    "tests/unit/permission-flow.test.ts",
+    "tests/unit/session-lifecycle.test.ts",
+    "tests/unit/skill-distiller.test.ts",
+    "tests/unit/skill-handlers.test.ts",
+    "tests/unit/skill-preprocessor-regex.test.ts",
+    "tests/unit/skill-preprocessor.test.ts",
+    "tests/unit/supervisor-actions.test.ts",
+    "tests/unit/tmux-watchdog.test.ts"
+  ],
+  "utils": [
+    "utils/aux-llm-client.ts",
+    "utils/chunk.ts",
+    "utils/claude-usage.ts",
+    "utils/cli-config.ts",
+    "utils/curator.ts",
+    "utils/files.ts",
+    "utils/html.ts",
+    "utils/output-monitor.ts",
+    "utils/skill-approval.ts",
+    "utils/skill-distiller.ts",
+    "utils/skill-handlers.ts",
+    "utils/skill-preprocessor.ts",
+    "utils/stats.ts",
+    "utils/stream-json-parser.ts",
+    "utils/tmux-monitor.ts",
+    "utils/tools-reader.ts",
+    "utils/transcribe.ts",
+    "utils/tts.ts",
+    "utils/typing.ts"
+  ]
+}

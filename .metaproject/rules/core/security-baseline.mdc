@@ -1,0 +1,155 @@
+---
+description: "Security baseline: no secrets in code, parameterized queries, input validation at boundaries, dependency hygiene. Use when writing any code that handles user input, credentials, or external data."
+alwaysApply: false
+---
+
+# Security Baseline
+
+## Purpose
+Prevent the most common and highest-impact security vulnerabilities: hardcoded secrets, SQL injection, missing input validation, and exposed sensitive data.
+
+## When To Apply
+Apply when handling user input, writing queries, managing authentication, reading/writing files, or calling external services.
+
+---
+
+## Rules
+
+### Rule 1: No Secrets in Code or Version Control
+
+**FORBIDDEN in any committed file:**
+- Passwords, API keys, tokens, connection strings
+- Private keys (RSA, EC, SSH)
+- JWT secrets, session secrets
+- Webhook secrets
+- Database credentials
+
+```typescript
+// BAD — secret hardcoded
+const client = new S3Client({ credentials: { accessKeyId: 'AKIAIOSFODNN7EXAMPLE', secretAccessKey: 'wJalrXUtn...' } });
+
+// GOOD — read from environment
+const client = new S3Client({
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+  },
+});
+```
+
+**Required:**
+- All secrets via environment variables or secret manager (Vault, AWS SSM, etc.)
+- `.env` files listed in `.gitignore` before any credential is added
+- `process.env.SECRET` access guarded with startup validation (fail-fast if missing)
+
+### Rule 2: Parameterized Queries — No String Interpolation
+SQL injection is the #1 critical vulnerability. Never build queries by string concatenation.
+
+```typescript
+// BAD — SQL injection
+const result = await db.query(`SELECT * FROM users WHERE id = '${userId}'`);
+
+// GOOD — parameterized
+const result = await db.query('SELECT * FROM users WHERE id = $1', [userId]);
+
+// GOOD with ORM
+const user = await User.findOne({ where: { id: userId } });
+```
+
+The same rule applies to NoSQL queries: never use `$where` with interpolated strings in MongoDB, never eval-based queries.
+
+### Rule 3: Validate All External Input
+
+Every value from HTTP requests, CLI args, environment variables, and file reads is untrusted. Validate at the boundary before it enters the application:
+
+```typescript
+// Bad — raw body passed to domain
+app.post('/users', async (req, res) => {
+  await createUser(req.body); // unvalidated
+});
+
+// Good — validate schema at boundary
+import { z } from 'zod';
+const CreateUserSchema = z.object({
+  name: z.string().min(1).max(100),
+  email: z.string().email(),
+  age: z.number().int().min(0).max(150),
+});
+
+app.post('/users', async (req, res) => {
+  const result = CreateUserSchema.safeParse(req.body);
+  if (!result.success) return res.status(400).json({ errors: result.error.issues });
+  await createUser(result.data); // typed, validated
+});
+```
+
+**Validation requirements:**
+- Type coercion is not validation — validate types AND constraints
+- Validate string length bounds (prevent oversized payloads)
+- Validate numeric ranges (prevent overflow attacks)
+- Sanitize HTML if any user input is ever rendered in a browser
+
+### Rule 4: Least Privilege for Database Access
+- Application database user has only the permissions it needs (no `DROP TABLE`, no `CREATE DATABASE`)
+- Separate read and write credentials where possible
+- Never use `root` or `admin` database user in application code
+
+### Rule 5: Never Log Sensitive Data
+
+```typescript
+// BAD
+logger.info('User login', { user, password: req.body.password });
+logger.debug('Payment processed', { card: payment.cardNumber });
+
+// GOOD — log identifiers, not secrets
+logger.info('User login', { userId: user.id, email: user.email });
+logger.debug('Payment processed', { paymentId: payment.id, last4: payment.cardLast4 });
+```
+
+**Never log:** passwords, tokens, full credit card numbers, SSNs, private keys, full session cookies.
+
+### Rule 6: Dependency Hygiene
+- Run `npm audit` / `bun audit` before shipping any new dependency
+- Pin major versions in `package.json` (no `*` or `latest`)
+- Prefer dependencies with active maintenance (last commit < 1 year)
+- Minimize dependency tree — if you can implement it in 10 lines, don't add a package
+
+### Rule 7: Secure Defaults for HTTP
+Every HTTP API must have:
+- Rate limiting on authentication endpoints
+- CORS configured explicitly (not `*` in production)
+- Security headers: `X-Content-Type-Options`, `X-Frame-Options`, `Strict-Transport-Security`
+- Request size limits (prevent DoS via oversized payloads)
+
+---
+
+## Pre-Commit Security Check
+
+Before committing, verify:
+- [ ] No API keys, tokens, or passwords in diff
+- [ ] No `console.log` with sensitive data
+- [ ] New environment variables documented in `.env.example`
+- [ ] No `eval()`, `new Function()`, or dynamic `require()` with user input
+- [ ] No `dangerouslySetInnerHTML` with unescaped user input (React)
+
+---
+
+## Iron Laws
+
+**IRON LAW 1: A hardcoded secret in source code is a production security incident the moment it is committed.**
+**IRON LAW 2: String interpolation in SQL queries is forbidden. No exceptions for "internal" data.**
+**IRON LAW 3: External input that reaches the database, filesystem, or shell without validation is an attack surface.**
+
+---
+
+## Red Flags — Stop and re-read this rule if you are thinking:
+
+| Rationalization | Why it's wrong |
+|---|---|
+| "It's just a dev key, I'll replace it before production" | Dev keys get forgotten in repos — automated secret scanners find them in minutes after push |
+| "The input comes from our own frontend, so it's trusted" | Frontends can be bypassed — always validate at the server boundary |
+| "SQL injection requires a specific pattern, my query is safe" | Every string-interpolated query is vulnerable — parameterize unconditionally |
+| "Logging the token is fine, our logs are private" | Logs are exfiltrated in breaches — sensitive data in logs amplifies every incident |
+| "This package has a known CVE but it's not on the attack path" | "Not on the attack path" is an assumption that changes when the system evolves |
+
+**IRON LAW: SECURITY VULNERABILITIES DO NOT WAIT FOR CONVENIENT TIMING TO BE EXPLOITED.**

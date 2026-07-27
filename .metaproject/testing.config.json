@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "enabled": true,
+  "runner": "auto",
+  "changedSelection": {
+    "strategies": [
+      "runner",
+      "gdgraph",
+      "naming"
+    ],
+    "fallbackWhenEmpty": "warn"
+  },
+  "hooks": {
+    "postCommitRefresh": true,
+    "prePushGate": false
+  },
+  "artifacts": {
+    "keepRawLogs": true,
+    "historyLimit": 50
+  }
+}

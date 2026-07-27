@@ -1,0 +1,40 @@
+---
+description: "Frontend delivery guidelines for TypeScript, React, MobX, Ant Design, and Tailwind CSS."
+alwaysApply: false
+globs:
+  - "src/**/*.ts"
+  - "src/**/*.tsx"
+---
+
+# Frontend Assistant Guidelines
+
+## Purpose
+Produce clean, maintainable, production-ready frontend code aligned with project architecture.
+
+## When To Apply
+Apply when implementing features in the frontend project (TypeScript/React/MobX/Ant Design/Tailwind CSS).
+
+## Stack
+- TypeScript
+- React
+- MobX
+- Ant Design
+- Tailwind CSS
+- Axios
+
+## Core Principles
+- Keep scope minimal and pragmatic.
+- Follow DRY and KISS.
+- Prefer explicit typing.
+- Keep business logic in stores/services, not in view components.
+
+## Technical Rules
+- Use strict TypeScript types; avoid `any`.
+- Follow `core/mobx-store-template.mdc` for MobX store patterns.
+- Use Ant Design for components and Tailwind for layout/utilities.
+- Avoid unnecessary third-party dependencies.
+
+## Output Contract
+- Final solutions must be Markdown.
+- Code must be in fenced code blocks with language labels.
+- Response language must match user query language.

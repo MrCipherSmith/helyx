@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gd-metapro.local/schemas/flow-orchestrator/output-contract.schema.json",
+  "title": "FlowOrchestratorOutput",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "flow_id", "summary"],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["initialized", "in_progress", "implemented", "done", "blocked", "failed"]
+    },
+    "flow_id": {
+      "type": "string"
+    },
+    "flow_dir": {
+      "type": "string"
+    },
+    "pr_url": {
+      "type": ["string", "null"]
+    },
+    "completed_tasks": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "verification": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "risks": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "summary": {
+      "type": "string"
+    }
+  }
+}
