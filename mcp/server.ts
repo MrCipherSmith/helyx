@@ -50,7 +50,7 @@ function isAllowedTranscriptPath(p: string): boolean {
 // Track active transports by session
 const transports = new Map<string, StreamableHTTPServerTransport>();
 
-import { pendingExpects, pushExpect, tryAutoLink } from "./pending-expects.ts";
+import { pendingExpects, pushExpect, tryAutoLink, rememberTransportProject, forgetTransportProject } from "./pending-expects.ts";
 
 function registerTools(server: McpServer, bot: Bot | null, getClientId?: () => string | undefined): void {
   const exec = (name: string, args: Record<string, unknown>) => {
@@ -406,14 +406,15 @@ export function startMcpHttpServer(bot: Bot | null): ReturnType<typeof createSer
           req.on("end", () => resolve(data));
           req.on("error", reject);
         });
-        const { session_id } = JSON.parse(body);
+        const { session_id, project_path } = JSON.parse(body);
         if (!session_id || typeof session_id !== "number") {
           res.writeHead(400, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "session_id required" }));
           return;
         }
-        await pushExpect(session_id);
-        console.log(`[mcp] pending expect registered: session #${session_id} (queue: ${pendingExpects.size})`);
+        const expectPath = typeof project_path === "string" && project_path.startsWith("/") ? project_path : null;
+        await pushExpect(session_id, expectPath);
+        console.log(`[mcp] pending expect registered: session #${session_id}${expectPath ? ` (${expectPath})` : ""} (queue: ${pendingExpects.size})`);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true }));
       } catch (err: any) {
@@ -553,6 +554,14 @@ export function startMcpHttpServer(bot: Bot | null): ReturnType<typeof createSer
 
       const mcpServer = createMcpServer(bot, () => transportSessionId);
 
+      // Project identity declared by the CLI via header (set through
+      // HELYX_PROJECT_PATH env expansion in the mcp server config).
+      const rawProjectHeader = req.headers["x-helyx-project"];
+      const declaredProject =
+        typeof rawProjectHeader === "string" && rawProjectHeader.startsWith("/")
+          ? rawProjectHeader
+          : null;
+
       transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (id: string) => {
@@ -560,7 +569,8 @@ export function startMcpHttpServer(bot: Bot | null): ReturnType<typeof createSer
           registerMcpSession(id, mcpServer);
           transportSessionId = id;
           sessionManager.trackTransport(id);
-          console.log(`[mcp] transport initialized: ${id.slice(0, 12)}`);
+          if (declaredProject) rememberTransportProject(id, declaredProject);
+          console.log(`[mcp] transport initialized: ${id.slice(0, 12)}${declaredProject ? ` (${declaredProject})` : ""}`);
           // Try auto-link immediately (if channel.ts registered expect before us)
           tryAutoLink(id).catch((err) => console.error("[mcp] auto-link failed:", err?.message));
         },
@@ -573,6 +583,7 @@ export function startMcpHttpServer(bot: Bot | null): ReturnType<typeof createSer
           unregisterMcpSession(sid);
           const hasDbSession = sessionManager.getSessionIdByClient(sid) !== undefined;
           sessionManager.untrackTransport(sid);
+          forgetTransportProject(sid);
           if (hasDbSession) {
             await sessionManager.disconnect(sid);
           }

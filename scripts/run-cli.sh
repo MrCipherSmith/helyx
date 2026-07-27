@@ -16,6 +16,11 @@ OUTPUT_FILE="/tmp/claude-output-${PROJECT_NAME}.log"
 
 cd "$PROJECT_DIR" || { echo "[run-cli] Cannot cd to $PROJECT_DIR"; exit 1; }
 
+# Project identity for the helyx HTTP MCP server: expanded into the
+# X-Helyx-Project header via ${HELYX_PROJECT_PATH} in the mcp config, so the
+# bot links this CLI's transport to the right session deterministically.
+export HELYX_PROJECT_PATH="$(pwd -P)"
+
 echo "[run-cli] Project: $PROJECT_DIR"
 echo "[run-cli] Log: $LOG_FILE"
 

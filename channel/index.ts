@@ -202,7 +202,7 @@ async function main() {
       const res = await fetch(`${ENV.BOT_API_URL}/api/sessions/expect`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: sessionMgr.sessionId }),
+        body: JSON.stringify({ session_id: sessionMgr.sessionId, project_path: projectPath }),
       });
       if (res.ok) {
         channelLogger.info({ sessionId: sessionMgr.sessionId }, "registered expect for session");
@@ -254,7 +254,7 @@ async function main() {
       fetch(`${ENV.BOT_API_URL}/api/sessions/expect`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: sessionMgr.sessionId }),
+        body: JSON.stringify({ session_id: sessionMgr.sessionId, project_path: projectPath }),
       }).catch(() => {});
     }
     // Refresh forum topic ID — may have changed if topic was recreated or project added after startup
