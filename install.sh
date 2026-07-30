@@ -29,6 +29,34 @@ REPO_API="https://api.github.com/repos/MrCipherSmith/helyx"
 INSTALL_DIR="${HELYX_DIR:-$HOME/bots/helyx}"
 BIN_DIR="${HOME}/.local/bin"
 
+# --- Arguments ---
+#
+# Anything not consumed here is forwarded to `helyx setup`, so a provisioning
+# script can drive the whole install in one call:
+#   install.sh --profile minimal --bot-token … --allowed-users … --api-key …
+
+BUILD_LOCAL=0
+SETUP_ARGS=()
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --build-local) BUILD_LOCAL=1 ;;
+    --help|-h)
+      cat <<'USAGE'
+Usage: install.sh [--build-local] [setup flags...]
+
+  --build-local   Build the image from source instead of pulling it.
+
+Any other flags are passed to `helyx setup`. Passing --profile makes the
+whole install unattended; see `helyx setup --help`.
+USAGE
+      exit 0
+      ;;
+    *) SETUP_ARGS+=("$1") ;;
+  esac
+  shift
+done
+
 # Resolve version: explicit > latest release from GitHub API
 if [ -n "$HELYX_VERSION" ]; then
   VERSION="$HELYX_VERSION"
@@ -124,11 +152,37 @@ if ! echo "$PATH" | grep -q "$BIN_DIR"; then
   fi
 fi
 
+# --- Pull the published image ---
+#
+# Building locally is not required: a dashboard-off build fits in 256 MB, so
+# almost any host can do it. Pulling is simply faster and needs no toolchain.
+# --build-local skips this and lets `docker compose` build from source.
+
+IMAGE="ghcr.io/mrciphersmith/helyx:latest"
+
+if [ "$BUILD_LOCAL" -eq 0 ]; then
+  echo -e "  ${CYAN}Pulling${NC} $IMAGE"
+  if docker pull "$IMAGE" >/dev/null 2>&1; then
+    docker tag "$IMAGE" helyx-bot:latest
+    echo -e "  ${GREEN}✓${NC} image ready (skipping local build)"
+  else
+    echo -e "  ${DIM}Pull failed — will build locally instead.${NC}"
+    echo -e "  ${DIM}If this is unexpected, the GHCR package may still be private.${NC}"
+  fi
+fi
+
 # --- Done ---
 
 echo -e "\n${GREEN}${BOLD}Installed!${NC}\n"
 echo -e "  CLI:  ${CYAN}helyx${NC} (in $BIN_DIR)"
 echo -e "  Repo: $INSTALL_DIR\n"
-echo -e "${BOLD}Running setup wizard...${NC}\n"
 
+# Forward any setup flags. With flags the run is unattended and must not be
+# given a tty — a provisioning script has no terminal to attach.
+if [ ${#SETUP_ARGS[@]} -gt 0 ]; then
+  echo -e "${BOLD}Running setup (unattended)...${NC}\n"
+  exec helyx setup "${SETUP_ARGS[@]}"
+fi
+
+echo -e "${BOLD}Running setup wizard...${NC}\n"
 exec helyx setup < /dev/tty

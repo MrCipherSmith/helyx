@@ -1886,6 +1886,14 @@ function help() {
 
   ${c.bold("Setup:")}
     setup           Interactive installation wizard (server)
+                --profile minimal|local|full   pick defaults; also makes the
+                                               run unattended (no prompts)
+                --bot-token --allowed-users --provider --api-key --model
+                --transport --webhook-url --webhook-secret --groq-key
+                --tts --model-preset --use-ollama --dashboard/--no-dashboard
+                --deploy --db-password --port
+                --force   overwrite an existing .env (kept as .env.bak)
+                --start   start Docker services after an unattended run
     remote          Connect laptop to a remote bot server
     mcp-register    Re-register MCP servers in Claude Code
 
