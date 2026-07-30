@@ -1,6 +1,14 @@
 services:
   bot:
-    build: .
+    build:
+      context: .
+      args:
+        # Off by default — the dashboard build stages are what make the image
+        # need 1 GB instead of 256 MB. Set WITH_DASHBOARD=true in .env (or the
+        # environment) on a host that wants the dashboard, and keep
+        # ENABLE_DASHBOARD in .env in agreement with it: building without the
+        # dashboard and enabling it at runtime yields empty pages.
+        WITH_DASHBOARD: ${WITH_DASHBOARD:-false}
     restart: unless-stopped
     ports:
       - "127.0.0.1:${PORT:-3847}:${PORT:-3847}"
@@ -28,7 +36,10 @@ services:
       - ${HOST_PROJECTS_DIR:-${HOME}/bots}:/host-projects
       - ${HOME}:/host-home:ro
       - ./logs:/app/logs
-      - ./piper:/app/piper:ro
+      # Voices only. Mounting the whole ./piper would shadow the runtime that
+      # ships inside the image, and the failure is silent — synthesis just
+      # stops working on a host whose ./piper is empty.
+      - ./piper/voices:/app/piper/voices:ro
     healthcheck:
       test: ["CMD-SHELL", "bun -e \"fetch('http://localhost:${PORT:-3847}/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))\""]
       interval: 15s

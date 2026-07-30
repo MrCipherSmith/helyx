@@ -177,7 +177,9 @@ async function getLlmExplanation(
     });
     if (!res.ok) return "";
     const data = await res.json() as { message?: { content?: string } };
-    return (data.message?.content ?? "").trim();
+    // `think: false` above covers current Ollama; strip as well for versions
+    // that ignore it, so a reasoning trace never reaches the incident text.
+    return (data.message?.content ?? "").replace(/<think>[\s\S]*?<\/think>/g, "").trim();
   } catch {
     return "";
   }

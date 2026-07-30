@@ -34,14 +34,33 @@ const BOT_DIR = import.meta.dir;
 
 // --- Helpers ---
 
-function ask(question: string, defaultValue = ""): string {
+/**
+ * `key` names the CLI flag that answers this prompt in unattended mode.
+ * Prompts without a key fall back to their default when unattended.
+ */
+function ask(question: string, defaultValue = "", key?: string): string {
+  if (UNATTENDED) return (key ? flag(key) : undefined) ?? defaultValue;
   const suffix = defaultValue ? ` ${c.dim(`[${defaultValue}]`)}` : "";
   process.stdout.write(`  ${question}${suffix}: `);
   const answer = prompt("")?.trim() ?? "";
   return answer || defaultValue;
 }
 
-function askChoice(question: string, options: string[]): number {
+/**
+ * `values` maps flag values to option indices, so unattended runs say
+ * `--provider anthropic` rather than `--provider 1`; without it the flag takes
+ * a 1-based option number.
+ */
+function askChoice(question: string, options: string[], key?: string, values?: string[]): number {
+  if (UNATTENDED) {
+    const v = key ? flag(key) : undefined;
+    if (v === undefined) return 0;
+    const idx = values ? values.indexOf(v) : parseInt(v, 10) - 1;
+    if (idx < 0 || idx >= options.length) {
+      fatal(`--${key}: unknown value "${v}"${values ? ` (expected: ${values.join(", ")})` : ""}`);
+    }
+    return idx;
+  }
   console.log(`\n  ${c.bold(question)}`);
   options.forEach((opt, i) => console.log(`  ${c.cyan(`${i + 1}.`)} ${opt}`));
   const answer = ask(">");
@@ -50,12 +69,26 @@ function askChoice(question: string, options: string[]): number {
   return 0;
 }
 
+/** Yes/no prompt. `--flag` means yes, `--no-flag` means no. */
+function askYesNo(question: string, defaultYes: boolean, key: string): boolean {
+  if (UNATTENDED) {
+    if (flag(key) !== undefined) return flag(key) !== "false";
+    if (flag(`no-${key}`) !== undefined) return false;
+    return defaultYes;
+  }
+  return askChoice(question, defaultYes ? ["Yes", "No"] : ["No", "Yes"]) === (defaultYes ? 0 : 1);
+}
+
 /**
  * Multi-select checkbox prompt. Returns a Set of selected indices.
  * Items in `required` are always checked and shown as [✓ locked].
  * User enters comma-separated numbers to toggle, or Enter to confirm.
  */
 function askMultiCheck(question: string, options: string[], required: number[] = []): Set<number> {
+  // Unattended runs take the required set — there is no flag shape that
+  // expresses an arbitrary multi-select cleanly, and the required items are
+  // exactly the defensible default.
+  if (UNATTENDED) return new Set<number>(required);
   const selected = new Set<number>(required);
   console.log(`\n  ${c.bold(question)}`);
   console.log(c.dim("  Enter numbers to toggle, Enter to confirm (required items are locked)"));
@@ -118,30 +151,223 @@ function fail(msg?: string) {
   console.log(` ${c.red(msg ?? "failed")}`);
 }
 
+// --- Unattended mode ---
+//
+// Every wizard prompt already routes through ask/askChoice/askMultiCheck, so
+// teaching those three to resolve from flags is enough to make the whole wizard
+// non-interactive — no prompt needs individual handling.
+//
+// Passing --profile switches the run to unattended. A missing required value is
+// then a named error, never a silent fallback to a prompt: a provisioning
+// script must fail loudly rather than block forever on stdin nobody is reading.
+
+let FLAGS: Record<string, string> = {};
+let UNATTENDED = false;
+
+function parseFlags(argv: string[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]!;
+    if (!arg.startsWith("--")) continue;
+    const eq = arg.indexOf("=");
+    if (eq !== -1) {
+      out[arg.slice(2, eq)] = arg.slice(eq + 1);
+    } else {
+      const key = arg.slice(2);
+      const next = argv[i + 1];
+      if (next && !next.startsWith("--")) {
+        out[key] = next;
+        i++;
+      } else {
+        out[key] = "true"; // bare boolean flag
+      }
+    }
+  }
+  return out;
+}
+
+function flag(key: string): string | undefined {
+  const v = FLAGS[key];
+  return v === undefined || v === "" ? undefined : v;
+}
+
+function fatal(msg: string): never {
+  console.error(`\n  ${c.red("error")}: ${msg}\n`);
+  process.exit(1);
+}
+
+function requireFlag(key: string, what: string): string {
+  const v = flag(key);
+  if (v === undefined) fatal(`--${key} is required in unattended mode (${what})`);
+  return v;
+}
+
+// --- Deployment profiles ---
+
+type ProfileId = "minimal" | "local" | "full";
+
+interface Profile {
+  id: ProfileId;
+  label: string;
+  /** Dashboard default. It is an axis of its own, not a function of host size. */
+  dashboard: boolean;
+  /** Whether the wizard even raises the dashboard question. */
+  askDashboard: boolean;
+  /** Local inference via Ollama. */
+  ollama: boolean;
+  ttsDefault: string;
+}
+
+const PROFILES: Record<ProfileId, Profile> = {
+  minimal: {
+    id: "minimal",
+    label: "minimal — everything through APIs. 2 GB / 2 vCPU / 30 GB",
+    dashboard: false,
+    askDashboard: false,
+    ollama: false,
+    ttsDefault: "none",
+  },
+  local: {
+    id: "local",
+    label: "local — Ollama with light models, Piper TTS, offline. 6 GB / 4 vCPU / 40 GB",
+    dashboard: false,
+    askDashboard: true,
+    ollama: true,
+    ttsDefault: "piper",
+  },
+  full: {
+    id: "full",
+    label: "full — dashboard on, heavy models allowed. 16 GB / 4 vCPU / 80 GB",
+    dashboard: true,
+    askDashboard: false,
+    ollama: true,
+    ttsDefault: "auto",
+  },
+};
+
+// --- Local model presets ---
+//
+// The preset id is the stable contract; which model backs it is a maintenance
+// decision that will drift as models are released. Selected on multilingual
+// competence rather than raw capability: the local model's harder job is
+// SUMMARIZE_MODEL over conversation history, not chat.
+
+interface Preset {
+  id: string;
+  model: string;
+  /** Rough memory needed to serve it. Estimated, not benchmarked. */
+  ramMb: number;
+  label: string;
+}
+
+const MODEL_PRESETS: Preset[] = [
+  { id: "tiny", model: "qwen3:1.7b", ramMb: 2500, label: "tiny — qwen3:1.7b (1.4 GB download, 40K context)" },
+  { id: "small", model: "qwen3:4b", ramMb: 4500, label: "small — qwen3:4b (2.5 GB download, 256K context)" },
+  { id: "heavy", model: "gemma4:e4b", ramMb: 12000, label: "heavy — gemma4:e4b (9.6 GB download)" },
+];
+
+/**
+ * Memory available to this machine, in MB. Prefers the cgroup limit over the
+ * host total, so a container is not told it has the whole host to play with.
+ * Returns null when it cannot tell — the caller warns rather than guessing.
+ */
+function availableMemoryMb(): number | null {
+  try {
+    const v = readFileSync("/sys/fs/cgroup/memory.max", "utf8").trim();
+    if (v && v !== "max") {
+      const n = parseInt(v, 10);
+      if (n > 0) return Math.floor(n / 1048576);
+    }
+  } catch {}
+  try {
+    const v = readFileSync("/sys/fs/cgroup/memory/memory.limit_in_bytes", "utf8").trim();
+    const n = parseInt(v, 10);
+    // cgroup v1 reports an absurd sentinel when unlimited.
+    if (n > 0 && n < 1e15) return Math.floor(n / 1048576);
+  } catch {}
+  try {
+    const m = readFileSync("/proc/meminfo", "utf8").match(/^MemTotal:\s+(\d+) kB/m);
+    if (m?.[1]) return Math.floor(parseInt(m[1], 10) / 1024);
+  } catch {}
+  return null;
+}
+
 // --- Setup wizard ---
 
 async function setup() {
+  FLAGS = parseFlags(process.argv.slice(3));
+  UNATTENDED = flag("profile") !== undefined;
+
   console.log(`\n  ${c.bold("Helyx Setup")}`);
   console.log(`  ${"─".repeat(40)}\n`);
 
-  // 1. Deployment type
-  const deployIdx = askChoice("Deployment type:", [
-    "Docker (recommended — PostgreSQL included)",
-    "Manual (PostgreSQL + Ollama already installed)",
-  ]);
-  const useDocker = deployIdx === 0;
+  // Refuse to clobber a working installation.
+  //
+  // This wizard writes .env in the repository directory and, further down,
+  // recreates the Docker services. Run by accident inside a live install — a
+  // provisioning script pointed at the wrong path, a re-run to "check
+  // something" — that silently replaces the operator's credentials and
+  // restarts the bot with them. .env is gitignored, so there is nothing to
+  // restore from.
+  const envPath = `${BOT_DIR}/.env`;
+  if (existsSync(envPath) && flag("force") === undefined) {
+    console.log(c.red("  .env already exists — refusing to overwrite it.\n"));
+    console.log(`  This directory holds a configured installation. Re-running setup`);
+    console.log(`  would replace its credentials and restart its services.\n`);
+    console.log(`  To reconfigure anyway:  ${c.cyan("helyx setup --force")}`);
+    console.log(c.dim(`  A copy is kept at .env.bak when --force is used.\n`));
+    process.exit(1);
+  }
+
+  // 0. Profile — decides every default below, so it comes first and the rest
+  //    of the wizard only asks what the chosen profile actually needs.
+  const profileIds: ProfileId[] = ["minimal", "local", "full"];
+  const profileIdx = askChoice(
+    "Deployment profile:",
+    profileIds.map((id) => PROFILES[id].label),
+    "profile",
+    profileIds,
+  );
+  const profile = PROFILES[profileIds[profileIdx]!]!;
+  if (!UNATTENDED) console.log(c.dim(`\n  Profile: ${profile.id}`));
+
+  // 1. Deployment type. `minimal` exists to be answered quickly, and Docker is
+  //    the answer for it — asking would spend one of its few questions on a
+  //    decision it has already made. --deploy still overrides.
+  const useDocker = profile.id === "minimal" && flag("deploy") === undefined
+    ? true
+    : askChoice("Deployment type:", [
+        "Docker (recommended — PostgreSQL included)",
+        "Manual (PostgreSQL + Ollama already installed)",
+      ], "deploy", ["docker", "manual"]) === 0;
 
   // 2. Telegram
   console.log();
-  const botToken = ask("Telegram Bot Token (from @BotFather)");
+  const botToken = UNATTENDED
+    ? requireFlag("bot-token", "Telegram bot token from @BotFather")
+    : ask("Telegram Bot Token (from @BotFather)");
   if (!botToken) {
     console.log(c.red("\n  Bot token is required. Get one from @BotFather in Telegram."));
     return;
   }
-  const allowedUsers = ask("Your Telegram User ID");
+  const allowedUsers = UNATTENDED
+    ? requireFlag("allowed-users", "comma-separated Telegram user IDs")
+    : ask("Your Telegram User ID");
   if (!allowedUsers) {
     console.log(c.red("\n  User ID is required. Send /start to @userinfobot to get yours."));
     return;
+  }
+
+  // 2b. Dashboard. Deliberately not tied to the profile's host size: it is a
+  //     separate axis, and `webhook` transport publishes this same HTTP server
+  //     through a tunnel, so the dashboard's routes become reachable with only
+  //     their own auth in front. That surface is opted into, never inherited.
+  let enableDashboard = profile.dashboard;
+  if (profile.askDashboard) {
+    console.log();
+    enableDashboard = askYesNo("Enable the web dashboard?", false, "dashboard");
+  } else if (UNATTENDED && (flag("dashboard") !== undefined || flag("no-dashboard") !== undefined)) {
+    enableDashboard = askYesNo("", profile.dashboard, "dashboard");
   }
 
   // 3. LLM Provider
@@ -150,7 +376,7 @@ async function setup() {
     "Google AI (Gemma 4 models, free tier available)",
     "OpenRouter (many models, free & paid)",
     "Ollama (local, free)",
-  ]);
+  ], "provider", ["anthropic", "google", "openrouter", "ollama"]);
 
   let anthropicKey = "";
   let googleAiKey = "";
@@ -160,52 +386,85 @@ async function setup() {
   let ollamaModel = "gemma4:e4b";
 
   if (providerIdx === 0) {
-    anthropicKey = ask("Anthropic API Key");
+    anthropicKey = UNATTENDED ? requireFlag("api-key", "Anthropic API key") : ask("Anthropic API Key", "", "api-key");
   } else if (providerIdx === 1) {
-    googleAiKey = ask("Google AI API Key");
-    googleAiModel = ask("Google AI Model", "gemma-4-31b-it");
+    googleAiKey = UNATTENDED ? requireFlag("api-key", "Google AI API key") : ask("Google AI API Key", "", "api-key");
+    googleAiModel = ask("Google AI Model", "gemma-4-31b-it", "model");
   } else if (providerIdx === 2) {
-    openrouterKey = ask("OpenRouter API Key");
-    openrouterModel = ask("OpenRouter Model", "qwen/qwen3-235b-a22b:free");
+    openrouterKey = UNATTENDED ? requireFlag("api-key", "OpenRouter API key") : ask("OpenRouter API Key", "", "api-key");
+    openrouterModel = ask("OpenRouter Model", "qwen/qwen3-235b-a22b:free", "model");
   } else {
-    ollamaModel = ask("Ollama Chat Model", "gemma4:e4b");
+    ollamaModel = ask("Ollama Chat Model", MODEL_PRESETS[0]!.model, "model");
   }
 
-  // 3b. Local Ollama for embeddings + summarization
-  console.log();
-  let ollamaEmbeddingModel = "nomic-embed-text";
+  // 3b. Local Ollama for embeddings + summarization.
+  //     Skipped entirely in `minimal`, which is API-only by definition.
+  let ollamaEmbeddingModel = "";
   let summarizeModel = "";
 
-  // Detect if Ollama is running locally
-  const ollamaDetected = await fetch("http://localhost:11434/api/tags", { signal: AbortSignal.timeout(2000) })
-    .then((r) => r.ok)
-    .catch(() => false);
+  if (profile.ollama) {
+    console.log();
+    const ollamaDetected = await fetch("http://localhost:11434/api/tags", { signal: AbortSignal.timeout(2000) })
+      .then((r) => r.ok)
+      .catch(() => false);
 
-  if (ollamaDetected) {
-    console.log(`  ${c.green("✓")} Ollama detected at localhost:11434`);
-    console.log(c.dim("  Ollama can power semantic memory search (embeddings) and fast local summarization."));
-    console.log(c.dim("  Recommended: nomic-embed-text for embeddings, gemma4:e4b for summarization.\n"));
+    if (ollamaDetected) {
+      console.log(`  ${c.green("✓")} Ollama detected at localhost:11434`);
 
-    const ollamaUseIdx = askChoice("Use Ollama for memory search + summarization?", [
-      "Yes, use Ollama (recommended — free, offline)",
-      "No, use main LLM provider (Claude/Google AI/etc.)",
-    ]);
+      // Offer only presets this machine can actually serve. Choosing a model
+      // the host cannot run is a failure that surfaces at first use, long
+      // after setup reported success.
+      const mem = availableMemoryMb();
+      const fits = mem === null ? MODEL_PRESETS : MODEL_PRESETS.filter((p) => p.ramMb <= mem);
 
-    if (ollamaUseIdx === 0) {
-      ollamaEmbeddingModel = ask("Embedding model", "nomic-embed-text");
-      summarizeModel = ask("Summarization model", "gemma4:e4b");
+      if (mem === null) {
+        console.log(c.yellow("  Could not determine available memory — all presets shown, pick with care."));
+      } else {
+        console.log(c.dim(`  Detected ${Math.round(mem / 1024 * 10) / 10} GB available.`));
+      }
+
+      if (fits.length === 0) {
+        console.log(c.yellow(`  No local model preset fits ${mem} MB. Falling back to the API provider`));
+        console.log(c.dim("  for summarization; semantic memory search stays disabled.\n"));
+      } else {
+        if (mem !== null && fits.length < MODEL_PRESETS.length) {
+          const hidden = MODEL_PRESETS.filter((p) => p.ramMb > mem).map((p) => p.id);
+          console.log(c.dim(`  Hidden (need more memory): ${hidden.join(", ")}`));
+        }
+        const useIdx = askChoice("Use Ollama for memory search + summarization?", [
+          "Yes — free and offline",
+          "No — use the main LLM provider",
+        ], "use-ollama", ["yes", "no"]);
+
+        if (useIdx === 0) {
+          const presetIdx = askChoice(
+            "Local model preset:",
+            fits.map((p) => p.label),
+            "model-preset",
+            fits.map((p) => p.id),
+          );
+          const preset = fits[presetIdx]!;
+          ollamaEmbeddingModel = ask("Embedding model", "nomic-embed-text", "embedding-model");
+          summarizeModel = preset.model;
+          if (providerIdx === 3) ollamaModel = preset.model;
+          console.log(c.dim(`  Summarization: ${preset.model}`));
+        }
+      }
+    } else {
+      console.log(c.dim("  Ollama not detected. Semantic memory search and local summarization will be disabled."));
+      console.log(c.dim("  Install later: https://ollama.com/download → ollama pull nomic-embed-text\n"));
     }
-  } else {
-    console.log(c.dim("  Ollama not detected. Semantic memory search and local summarization will be disabled."));
-    console.log(c.dim("  Install later: https://ollama.com/download → ollama pull nomic-embed-text\n"));
   }
 
-  // 4. Telegram transport
-  const transportIdx = askChoice("Telegram transport:", [
-    "Polling (default — works everywhere, no domain needed)",
-    "Webhook (requires public URL, e.g. via Cloudflare Tunnel)",
-  ]);
-  const useWebhook = transportIdx === 1;
+  // 4. Telegram transport. Webhook needs a domain and a tunnel, which is not a
+  //    `minimal` starting point — polling works everywhere. --transport still
+  //    overrides for anyone who has the domain ready.
+  const useWebhook = profile.id === "minimal" && flag("transport") === undefined
+    ? false
+    : askChoice("Telegram transport:", [
+        "Polling (default — works everywhere, no domain needed)",
+        "Webhook (requires public URL, e.g. via Cloudflare Tunnel)",
+      ], "transport", ["polling", "webhook"]) === 1;
 
   let webhookUrl = "";
   let webhookSecret = "";
@@ -215,32 +474,54 @@ async function setup() {
     console.log(c.dim("    cloudflared tunnel route dns <tunnel-name> bot.yourdomain.com"));
     console.log(c.dim("  Then the URL would be: https://bot.yourdomain.com/telegram/webhook"));
     console.log(c.dim("  The secret is any random string to verify requests from Telegram.\n"));
-    webhookUrl = ask("Webhook URL (e.g. https://bot.yourdomain.com/telegram/webhook)");
+    webhookUrl = UNATTENDED
+      ? requireFlag("webhook-url", "public HTTPS URL for the Telegram webhook")
+      : ask("Webhook URL (e.g. https://bot.yourdomain.com/telegram/webhook)", "", "webhook-url");
     if (!webhookUrl) {
       console.log(c.red("\n  Webhook URL is required."));
       return;
     }
-    webhookSecret = ask("Webhook secret (random string)", crypto.randomUUID());
+    webhookSecret = ask("Webhook secret (random string)", crypto.randomUUID(), "webhook-secret");
   }
 
-  // 5. Voice transcription (Groq — also used for TTS normalization)
-  console.log();
-  const groqKey = ask("Groq API Key for voice transcription (Enter to skip, free at console.groq.com)");
+  // 5. Voice transcription (Groq — also used for TTS normalization).
+  //    Optional everywhere, so `minimal` takes it from a flag if given and
+  //    otherwise leaves it empty; it can be added to .env at any time.
+  const groqKey = profile.id === "minimal"
+    ? (flag("groq-key") ?? "")
+    : (console.log(), ask("Groq API Key for voice transcription (Enter to skip, free at console.groq.com)", "", "groq-key"));
 
-  // 6. TTS (voice output)
-  console.log();
-  console.log(`  ${c.bold("TTS (voice output)")}`);
-  const ttsIdx = askChoice("TTS provider:", [
-    "auto (Piper → Yandex → Groq, recommended)",
-    "Piper (local, Russian, offline — free)",
-    "Yandex SpeechKit (Russian, best quality)",
-    "Kokoro (local, English, offline — free)",
-    "OpenAI TTS (multilingual)",
-    "Groq Orpheus (English only)",
-    "Disable TTS",
-  ]);
+  // 6. TTS (voice output).
+  //    `minimal` has no local synthesis by definition, so it never reaches the
+  //    Piper branch and never downloads a 60 MB voice it will not use.
   const ttsProviders = ["auto", "piper", "yandex", "kokoro", "openai", "groq", "none"] as const;
-  const ttsProvider = ttsProviders[ttsIdx] ?? "auto";
+  let ttsProvider: (typeof ttsProviders)[number] = profile.ttsDefault as (typeof ttsProviders)[number];
+
+  if (profile.id === "minimal") {
+    // No local synthesis by definition, and no prompt: TTS is off unless a key
+    // already implies a provider, or --tts says otherwise.
+    const chosen = flag("tts");
+    if (chosen) ttsProvider = chosen as (typeof ttsProviders)[number];
+    else if (groqKey) ttsProvider = "groq";
+    else ttsProvider = "none";
+  } else {
+    console.log();
+    console.log(`  ${c.bold("TTS (voice output)")}`);
+    const ttsIdx = askChoice("TTS provider:", [
+      "auto (Piper → Yandex → Groq, recommended)",
+      "Piper (local, Russian, offline — free)",
+      "Yandex SpeechKit (Russian, best quality)",
+      "Kokoro (local, English, offline — free)",
+      "OpenAI TTS (multilingual)",
+      "Groq Orpheus (English only)",
+      "Disable TTS",
+    ], "tts", [...ttsProviders]);
+    // Unattended with no --tts takes the profile's default rather than the
+    // first menu entry, so `local` gets piper as its contract promises.
+    ttsProvider = UNATTENDED && flag("tts") === undefined
+      ? (profile.ttsDefault as (typeof ttsProviders)[number])
+      : (ttsProviders[ttsIdx] ?? "auto");
+  }
 
   let piperDir = "";
   let piperModel = "";
@@ -332,11 +613,18 @@ async function setup() {
     openaiApiKey = ask("OpenAI API Key");
   }
 
-  // 7. Database password
-  const dbPassword = ask("PostgreSQL password", "helyx_secret");
+  // 7. Database password. In `minimal` a random one is generated rather than
+  //    asked for: the database is not reachable from outside the compose
+  //    network, so the value is an implementation detail, and "helyx_secret"
+  //    is a worse default than something nobody has to remember.
+  const dbPassword = profile.id === "minimal" && flag("db-password") === undefined
+    ? crypto.randomUUID().replace(/-/g, "")
+    : ask("PostgreSQL password", "helyx_secret", "db-password");
 
-  // 6. Port
-  const port = ask("Bot port", "3847");
+  // 8. Port
+  const port = profile.id === "minimal" && flag("port") === undefined
+    ? "3847"
+    : ask("Bot port", "3847", "port");
 
   // Generate .env
   console.log();
@@ -347,6 +635,13 @@ async function setup() {
     : `postgres://helyx:${dbPassword}@localhost:5432/helyx`;
 
   const envLines = [
+    "# Deployment",
+    `HELYX_PROFILE=${profile.id}`,
+    // Written explicitly on every fresh install. An .env that predates this
+    // flag has no such line, and config.ts treats "absent" as enabled so
+    // existing deployments keep their dashboard across an upgrade.
+    `ENABLE_DASHBOARD=${enableDashboard}`,
+    "",
     "# Telegram",
     `TELEGRAM_BOT_TOKEN=${botToken}`,
     `ALLOWED_USERS=${allowedUsers}`,
@@ -373,8 +668,10 @@ async function setup() {
     "",
     "# Ollama (embeddings + local summarization)",
     `OLLAMA_URL=http://localhost:11434`,
+    // Empty in `minimal`: no embedding model means semantic memory search is
+    // off, which is the intended trade for an API-only deployment.
     `EMBEDDING_MODEL=${ollamaEmbeddingModel}`,
-    ...(summarizeModel ? [`SUMMARIZE_MODEL=${summarizeModel}`] : [`# SUMMARIZE_MODEL=gemma4:e4b`]),
+    ...(summarizeModel ? [`SUMMARIZE_MODEL=${summarizeModel}`] : [`# SUMMARIZE_MODEL=qwen3:1.7b`]),
     "",
     "# Voice transcription",
     `GROQ_API_KEY=${groqKey}`,
@@ -404,8 +701,14 @@ async function setup() {
     `HOST_PROJECTS_DIR=${process.env.HOME ?? "/root"}`,
   ];
 
-  await Bun.write(`${BOT_DIR}/.env`, envLines.join("\n") + "\n");
+  // --force reached this point over an existing file: keep a copy, since .env
+  // is gitignored and holds the only copy of the operator's credentials.
+  if (existsSync(envPath)) {
+    writeFileSync(`${envPath}.bak`, readFileSync(envPath));
+  }
+  await Bun.write(envPath, envLines.join("\n") + "\n");
   done();
+  if (existsSync(`${envPath}.bak`)) console.log(c.dim("  Previous .env saved as .env.bak"));
 
   // Ensure required dirs exist with correct ownership (before Docker creates them as root)
   await run(["mkdir", "-p", `${BOT_DIR}/logs`], { silent: true });
@@ -416,8 +719,17 @@ async function setup() {
   const install = await run(["bun", "install", "--frozen-lockfile"]);
   install.ok ? done() : fail();
 
-  // Start services
-  if (useDocker) {
+  // Start services.
+  //
+  // Never automatic when unattended: a provisioning run should produce a
+  // configured directory and stop there, leaving the decision to start or
+  // restart anything to whoever is driving it. `--start` opts in.
+  const mayStart = !UNATTENDED || flag("start") !== undefined;
+  if (useDocker && !mayStart) {
+    console.log(c.dim("\n  Configured. Services not started (unattended run)."));
+    console.log(`  Start them with: ${c.cyan("docker compose up -d")}\n`);
+  }
+  if (useDocker && mayStart) {
     step("Starting Docker services");
     const up = await run(["docker", "compose", "up", "-d", "--build"]);
     up.ok ? done() : fail();
