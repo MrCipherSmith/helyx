@@ -1,6 +1,6 @@
 # PRD: Deployment Simplification
 
-Version: 1.0.1
+Version: 1.1.0
 
 ## 1. Problem
 
@@ -13,14 +13,19 @@ small one".
 
 Five concrete defects, all measured on 2026-07-30 against the running stack:
 
-**P1 — The dashboard is mandatory and expensive.** There is no feature flag
-anywhere: a grep for `ENABLE`/`DISABLE` across `config.ts` returns nothing. The
-dashboard is compiled into the image by two dedicated Dockerfile stages
-(`dashboard-build`, `webapp-build`), each running its own `bun install` plus
-`bun run build`. The `dashboard/` source tree is 246 MB, and the resulting
-`helyx-bot:latest` image is 3.13 GB. At runtime it is served from the same HTTP
-server as MCP, unconditionally, at `mcp/server.ts:517`. A user who only wants a
-Telegram bot pays the full cost.
+**P1 — The dashboard is mandatory, and it is what makes the build fail on a
+small host.** There is no feature flag anywhere: a grep for `ENABLE`/`DISABLE`
+across `config.ts` returns nothing. The dashboard is compiled into the image by
+two dedicated Dockerfile stages (`dashboard-build`, `webapp-build`), each
+running its own `bun install` plus `bun run build`. At runtime it is served from
+the same HTTP server as MCP, unconditionally, at `mcp/server.ts:517`.
+
+The cost is **memory, not size** — this was measured after the package was
+drafted and corrects the original claim. The dashboard adds 1.02 MB to the
+image, so a user who only wants a Telegram bot carries almost no extra bytes.
+What they do carry is a build that needs four times the memory: it dies at
+512 MB inside `bun run build`, and succeeds at 256 MB once those stages are
+gone (specification §2.1).
 
 **P2 — Local-model defaults are unusable on a small host.** The wizard's Ollama
 path defaults to `gemma4:e4b` for both chat and summarization. That model is
@@ -32,26 +37,39 @@ selection succeeds and the deployment then fails at first use.
 rest is tiny: `helyx-bot-1` holds 77 MB RSS at 0.5% CPU, `helyx-postgres-1`
 holds 68 MB, and the database is 32 MB (145 MB volume). Runtime is not the
 constraint — the image build is. `bun install` plus two dashboard builds needs
-roughly 2 GB of free memory, so the smallest viable server is dictated by a
+memory the runtime never needs, so the smallest viable server is dictated by a
 step that only ever needs to happen once, anywhere.
 
-That 2 GB is an estimate, not a measurement — see specification §2.1. It is the
-load-bearing number behind this whole package and should be profiled before the
-work is scheduled.
+**Measured 2026-07-30, and the original framing of this problem was wrong.**
+The figure this package was written around — ~2 GB to build — is off by at least
+2×: the full build completes in 1 GB with no OOM, three seconds slower than in
+2 GB. It fails at 512 MB, and it fails precisely inside `bun run build` for the
+dashboard webapp. With the two dashboard stages removed it builds in 256 MB.
+
+So the build is a real constraint, but a much smaller one than claimed, and it
+is *the dashboard build* that sets the floor — not `bun install`, and not the
+build in general. Full numbers and method in specification §2.1.
 
 **P4 — The installer cannot run unattended.** `install.sh:134` ends with
 `exec helyx setup < /dev/tty`. There is no flag-driven path, so the installer
 cannot be used from cloud-init, a Dockerfile, CI, or any provisioning tool.
 
-**P5 — Local TTS has no installation path at all.** This was found while
-answering Q4 and is a pre-existing defect, not a consequence of the other four.
-Nothing Piper-related is in the image: `which piper` inside the running
-container returns nothing. The engine and the voices both arrive through the
-`./piper:/app/piper:ro` bind mount, populated by hand on the maintainer's
-machine. The setup wizard downloads voices from HuggingFace but never downloads
-the 52 MB runtime, so there is no automated way to obtain it. A published image
-would therefore ship a `local` profile whose TTS cannot work at all — which
-makes this a blocker for R5, not a nice-to-have.
+**P5 — Piper ships by accident, voices and all.** An earlier revision of this
+document stated that nothing Piper-related was in the image and that a published
+image would have no working TTS. **That was wrong**, and the correction is
+recorded in specification §5A.1: the check behind it — `which piper` inside the
+container — only proves the binary is not on `PATH`, which it never is.
+
+What is actually true: `COPY . .` copies the entire `piper/` directory into the
+image, all 233 MB of it — runtime *and* every voice the maintainer had on disk.
+The `./piper:/app/piper:ro` bind mount then shadows it at runtime, which is what
+made the baked copy invisible.
+
+The defect is therefore the opposite of the one first recorded. Nothing is
+missing; too much is shipped, and none of it is intentional. Every deployment,
+including `minimal` with TTS disabled, carries 181 MB of someone else's voices,
+and the runtime's presence depends entirely on `COPY . .` staying broad — so any
+future narrowing of the build context would remove local TTS silently.
 
 ## 2. Goal
 
@@ -86,8 +104,9 @@ The wizard MUST reduce from its present ~15 prompts to 3–4 in `minimal`.
 ### R2 — Dashboard feature flag
 
 The dashboard MUST be disabled by default and gated at three layers. A runtime
-flag alone is insufficient: it prevents route registration but leaves the image
-at 3.13 GB, which does not address P3.
+flag alone is insufficient: it prevents route registration but leaves the build
+steps in place, and those steps — not the image size — are what fails on a small
+host (P1, specification §2.1).
 
 | Layer | Mechanism | Effect when off |
 |-------|-----------|-----------------|
@@ -121,8 +140,17 @@ Note: `.github/workflows/build.yml` today builds the image (`docker build -t
 helyx .`) but never pushes it, so the publishing step is new work, not a
 configuration change.
 
-The published image MUST also carry the Piper runtime (P5), or the `local`
-profile it enables is broken on arrival.
+The published image MUST carry the Piper runtime deliberately rather than as a
+side effect of `COPY . .` (P5), and MUST exclude `piper/voices`.
+
+The measured build results (§2.1) weaken this requirement's original
+justification and it must be restated honestly. Publishing was argued for as
+*enabling* deployment on a small host — "otherwise it will not build". That is
+no longer the claim: with the dashboard stages off (R2) a 256 MB builder
+succeeds, so almost any host can build. What publishing actually buys is time,
+the absence of a build toolchain, and not making a first-time user wait through
+a build to find out whether it worked. Those are convenience arguments, and R5
+should be prioritised as a convenience requirement.
 
 ## 5. Success Criteria
 
@@ -130,7 +158,8 @@ profile it enables is broken on arrival.
 |---|-----------|-------------|
 | S1 | Minimal profile runs on 2 GB RAM — bot and database only, excluding Claude Code sessions | Bot answers in Telegram; no OOM over 24 h |
 | S2 | No local build required | Install completes on a host with Docker and no build toolchain |
-| S3 | Dashboard-off image materially smaller | Published tag size, compared against the 3.13 GB baseline |
+| S3 | ~~Dashboard-off image materially smaller~~ — **withdrawn, measured false** | A dashboard-free build is 3.13 GB against 3.14 GB. The compiled dashboard is 1.02 MB. Replaced by S8 |
+| S8 | Image materially smaller than the 3.13 GB baseline | Achieved by excluding `piper/voices` (~181 MB) and fixing the 905 MB `chown -R` layer, not by the dashboard flag. See specification §2.2 and T6 |
 | S4 | Dashboard-off exposes no dashboard surface | Dashboard routes return 404; MCP endpoint unaffected |
 | S5 | Minimal profile asks ≤ 4 questions | Prompt count in a wizard transcript |
 | S6 | Unattended install works | `helyx setup` with flags succeeds under `setsid`, stdin closed |
@@ -154,15 +183,27 @@ after the build arg exists.
 
 ## 7. Recommendation
 
-Do all five, in the order given in [implementation-plan.md](implementation-plan.md),
-but understand that they are not equally valuable.
+**Revised 2026-07-30 after measurement.** The original recommendation named T5
+and T2 as the two tasks carrying the outcome, on the reasoning that together
+they removed the reason a small server could not build. Measurement kept half of
+that and overturned the other half.
 
-Task 5 (prebuilt image) and Task 2 (dashboard build flag) between them remove
-the entire reason a small server is currently insufficient — the build step and
-the components that make it heavy. Those two carry the outcome.
+**T2 is now clearly the highest-value task in the package, for a reason this
+document did not originally give.** Its stated benefit — a smaller image — is
+measurably false: a dashboard-free build is 3.13 GB against 3.14 GB. Its real
+benefit is memory. The dashboard webapp build is the single step that fails
+under constraint, and removing it takes the build floor from between 512 MB and
+1 GB down to 256 MB. T2 alone is what makes a small host viable.
 
-Tasks 1, 3, and 4 make the result approachable rather than possible: profiles
-reduce the decision surface, presets stop the user from choosing a model their
-host cannot run, and the unattended path opens automated provisioning. They are
-worth doing and should not be dropped, but if the work has to be cut short after
-two tasks, the two that matter are 5 and 2.
+**T5 drops from co-essential to convenience.** With T2 done, essentially any
+host can build, so publishing no longer *enables* anything — it saves time and
+removes the toolchain requirement. Still worth doing, no longer the thing the
+package rests on.
+
+**T6 is new and probably outranks T3, T4 and T5 on effort-to-benefit.** The
+905 MB `chown -R` layer is a third of the image, created by one line, and no
+task in the original package addressed it because nobody had looked at the layer
+breakdown.
+
+Revised order of value: T2, then T6, then T1, then T3 and T4, then T5. The
+dependency order in the implementation plan is unchanged.

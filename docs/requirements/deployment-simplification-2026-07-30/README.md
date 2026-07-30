@@ -1,6 +1,6 @@
 # Deployment Simplification
 
-Version: 1.0.1
+Version: 1.1.0
 
 ## Purpose
 
@@ -10,17 +10,29 @@ VPS, through one interactive install script — without a 3 GB image build, a
 
 ## Status
 
-`spec ready` — no part of this package is implemented, but all four open
-questions are decided and recorded in
-[implementation-plan.md](implementation-plan.md). Every claim about current
-behaviour in these documents is derived from measurements and code reads taken
-on 2026-07-30 against the running local stack; every claim about target
-behaviour is a proposal.
+`spec ready` — no part of this package is implemented; all four open questions
+are decided and recorded in [implementation-plan.md](implementation-plan.md).
 
-One pre-existing defect was found while resolving the open questions: local TTS
-has no installation path, because neither the Piper runtime nor the voices are
-in the image and the wizard downloads only the voices. It is recorded as PRD P5
-and folded into task T5.
+**Revised 2026-07-30 after the build was profiled.** The package was drafted on
+an unmeasured assumption — that a small host cannot deploy helyx because the
+build needs ~2 GB — and the measurement overturned a good deal of it. Three
+findings, in order of consequence:
+
+1. **The 2 GB figure was wrong by at least 2×.** The full build completes in
+   1 GB. It fails at 512 MB, precisely inside the dashboard webapp build, and
+   succeeds at 256 MB with the dashboard stages removed.
+2. **The dashboard does not inflate the image.** A dashboard-free build is
+   3.13 GB against 3.14 GB. Its real cost is memory, not bytes — which makes T2
+   the highest-value task in the package, for a reason the original draft did
+   not give. The image is instead dominated by a 905 MB layer created by a
+   single `chown -R`, now task T6.
+3. **Piper already ships, voices and all.** An earlier revision claimed the
+   opposite; that rested on `which piper`, which only shows the binary is not on
+   `PATH`. 233 MB arrives via `COPY . .`, hidden at runtime by a bind mount.
+
+Numbers and method in specification §2.1–2.2; revised task priority in PRD §7.
+Every claim about current behaviour is measured; every claim about target
+behaviour is a proposal.
 
 ## Document Index
 
@@ -40,6 +52,8 @@ In scope:
 - Lightweight local model presets with a host-memory precheck.
 - A non-interactive (unattended) install path.
 - Publishing a prebuilt image so end users never build locally.
+- Fixing image layering — the 905 MB `chown -R` layer and the voices shipped
+  inside every image (added after measurement; T6).
 
 ## Non-Goals
 

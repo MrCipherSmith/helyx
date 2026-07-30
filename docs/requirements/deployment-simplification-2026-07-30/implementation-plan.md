@@ -1,6 +1,6 @@
 # Implementation Plan: Deployment Simplification
 
-Version: 1.0.4
+Version: 1.1.0
 
 ## Ordering Rationale
 
@@ -9,17 +9,25 @@ Task 5 because CI cannot publish a dashboard-off variant until the build
 argument exists. Task 1 must precede Tasks 3 and 4 because presets and flags are
 both expressed in terms of profiles.
 
-The two tasks that carry the outcome — 2 and 5 — are also the two that unblock
-the rest, so the dependency order and the value order agree here.
-
 ```text
 T2 (build flag) ──┬──> T5 (publish image)
                   │
 T1 (profiles) ────┼──> T3 (model presets)
                   └──> T4 (unattended mode)
+
+T6 (image layering) — independent, any time
 ```
 
-T1 and T2 are independent and may run in parallel.
+T1, T2 and T6 are mutually independent and may run in parallel.
+
+**Value order, revised 2026-07-30 after measurement: T2, T6, T1, T3, T4, T5.**
+This no longer coincides with the dependency order, as it did when this plan was
+written.
+
+T2 moved to the top for a reason the original plan did not have: it is the only
+task that removes the build's memory wall (256 MB versus a failure at 512 MB).
+T6 is new. T5 moved down — it was justified as *enabling* small-host deployment,
+and measurement showed it does not, T2 does. Rationale in PRD §7.
 
 ---
 
@@ -72,13 +80,24 @@ subsystems.
    dashboard-off image does not throw at import time.
 5. Add the wizard question, default *no*, skipped entirely in `minimal`.
 
-**Acceptance.** A1, A2, A3, A4, A5.
+**Acceptance.** A1, A2, A3, A4, A5, A16.
 
-**Notes.** A runtime flag alone does not satisfy this task. It stops route
-registration but leaves the image at 3.13 GB, which is the actual constraint —
-the build argument is the part that matters. Risk K2 is the one to watch: verify
-the MCP endpoint independently, because dashboard and MCP share both the port
-and the request path.
+**Notes — revised 2026-07-30 after measurement.** This task's rationale was
+originally "the build argument shrinks the image". That is measurably false: a
+dashboard-free build is 3.13 GB against 3.14 GB, because the compiled dashboard
+is 1.02 MB (specification §2.2).
+
+The build argument still matters, for a different and better reason. The
+dashboard webapp build is the step that runs out of memory under constraint: the
+full build fails at 512 MB inside `bun run build`, while the same build with
+those stages removed succeeds at 256 MB. **This task is what makes a small host
+viable**, and on that basis it is now the highest-value task in the package.
+
+A runtime flag alone still does not satisfy it — the runtime flag stops route
+registration, but only the build argument removes the failing step.
+
+Risk K2 remains the one to watch: verify the MCP endpoint independently, because
+dashboard and MCP share both the port and the request path.
 
 **Effort.** Moderate. Small diffs in several files; the risk is in the shared
 request path, not in volume.
@@ -167,15 +186,22 @@ currently dictates the minimum server size.
    does not inherit from repository visibility — a new package is private even
    under a public repo, and every external `install.sh` run fails at pull with
    an unhelpful error until this one-time setting is changed.
-3. **Bake the Piper runtime (52 MB) into the image** and narrow the bind mount
-   from `./piper` to `./piper/voices` (specification §5A). Without the mount
-   change the baked runtime is shadowed and silently disappears; without the
-   baking, the `local` profile this task enables has no working TTS at all
-   (PRD P5).
+3. **Make the Piper runtime deliberate and drop the voices** (specification
+   §5A). The runtime is already in the image via `COPY . .` — replace that
+   accident with an explicit `COPY` of `piper/piper/`, add `piper/voices` to
+   `.dockerignore` (−181 MB from every image), and narrow the bind mount from
+   `./piper` to `./piper/voices` so it stops shadowing the runtime.
 4. Point `install.sh` at the published image, with `--build-local` to opt out.
 5. Allow `docker-compose.yml` to take a published image instead of `build: .`.
 
-**Acceptance.** A10, A11, A12, A13, A14.
+**Acceptance.** A10, A11, A12, A13, A14, A15.
+
+**Notes — revised 2026-07-30 after measurement.** This task was originally
+justified as removing the ~2 GB build-memory floor that dictated the minimum
+server size. That floor is not 2 GB, and once T2 lands it is 256 MB
+(specification §2.1) — so publishing no longer *enables* deployment on a small
+host, it only makes it faster and toolchain-free. Real value, lower priority
+than when this plan was written.
 
 **Notes.** `.github/workflows/build.yml` builds the image today but never
 pushes it, so registry authentication, tagging policy, and multi-variant build
@@ -186,10 +212,52 @@ diff is not the largest.
 
 ---
 
+## T6 — Fix image layering
+
+**Added 2026-07-30**, from the layer breakdown taken while measuring build
+memory. No task in the original package addressed image size at the layer level,
+because the package assumed the dashboard was responsible. It is not
+(specification §2.2).
+
+**Goal.** Cut the image roughly in half by fixing how layers are produced, not
+by removing features.
+
+**Files.** `Dockerfile`, `.dockerignore`.
+
+**Work.**
+
+1. **Eliminate the 905 MB `chown -R bun /app` layer.** It is a third of the
+   image, produced by one line: `chown -R` rewrites every file it touches, so
+   the layer is a full duplicate of everything copied above it. Use
+   `COPY --chown=bun` on the copies instead, or set ownership before the bulk
+   copy rather than after.
+2. **Exclude `piper/voices` from the build context** — 181 MB, shared with T5
+   step 3. Voices belong on the host, not in the image.
+3. Re-examine the 414 MB `COPY . .` against `.dockerignore`: `logs/` (15 MB) and
+   `graphify-out/` (4 MB) are in the context today and have no reason to ship.
+4. Measure after each change. The point of this task is a number, so an
+   unmeasured "improvement" does not count as done.
+
+**Acceptance.** S8 — image materially smaller than the 3.13 GB baseline. Item 1
+alone should account for most of it.
+
+**Notes.** Independent of every other task; can run at any time. Nothing here
+changes runtime behaviour, which makes it unusually cheap for its effect —
+though `--chown` on a large copy has its own cost, so item 1 must be measured
+rather than assumed.
+
+**Effort.** Small. A handful of Dockerfile lines, plus a build to verify each.
+
+---
+
 ## Verification Sequence
 
-Run after all five tasks, on a clean 2 GB host:
+Run after all six tasks, on a clean 2 GB host:
 
+0. Build the dashboard-off image under a 256 MB / 2 CPU builder; it must
+   complete with no OOM kill (A16). This is the claim T2 rests on — verify it
+   against the real build argument, not the simulated Dockerfile used to
+   establish it in §2.1.
 1. `install.sh` with no flags → interactive, `minimal`, no local build (A10, A6).
 2. Confirm dashboard routes 404 and `/mcp` connects (A1, A2).
 3. Re-run unattended with stdin closed (A8), then with a required flag removed
@@ -207,15 +275,18 @@ Step 4 is the one most easily forgotten and the one that breaks existing users.
 |---|----------|----------|------|
 | Q1 | Which registry — GHCR or Docker Hub? | **GHCR.** Auth uses the built-in `GITHUB_TOKEN`, so no separate account or stored PAT. Docker Hub's anonymous pull limit would hit exactly the first-time self-hoster this package exists to serve. Docker Hub's one advantage — a shorter, more recognisable name — does not apply, because the image reference lives inside `install.sh` and no user ever types it. | 2026-07-30 |
 | Q2 | Which concrete models back `tiny` and `small`? | **`qwen3:1.7b` and `qwen3:4b`.** Selected on multilingual competence, because the local model's harder job is summarizing Russian conversation history, not chat. Qwen3-4B also beats Gemma3-4B on every axis that matters here — smaller, double the context, no unused vision tower. Full rationale and the `<think>`-suppression caveat in specification §5.1–5.2. | 2026-07-30 |
-
 | Q3 | Should `local` default the dashboard on, since its host is larger? | **No — off everywhere except `full`.** Host size does not decide it: after T5 nobody builds locally, and the dashboard's runtime cost is negligible. Two other things decide it. Orthogonality — a profile answers where inference happens, not how much web UI you want. Exposure — `webhook` transport publishes the shared HTTP server through a tunnel, which makes dashboard routes publicly reachable behind only their own auth. `local` still *asks* (default no); `minimal` does not ask. See specification §4.4. | 2026-07-30 |
-
-| Q4 | Does the published image ship Piper voices, or download them at setup? | **Split them: runtime baked, voices downloaded.** The 52 MB runtime goes into the image — it is platform-matched and the user has no other way to get it. Voices stay a per-user download (60.3 MB each, six offered) kept on the host so they survive image upgrades. Requires narrowing the bind mount to `./piper/voices`, or the baked runtime is silently shadowed. A separate `-piper` image variant was rejected: two variants would become four. See specification §5A. | 2026-07-30 |
+| Q4 | Does the published image ship Piper voices, or download them at setup? | **Split them: runtime baked, voices downloaded.** Decision unchanged, premise corrected. Both runtime *and* voices are already in the image via `COPY . .` (233 MB) — the earlier finding that nothing was there rested on `which piper`, which only proves the binary is not on `PATH`. So the work is to make the runtime an explicit `COPY`, exclude `piper/voices` from the context (−181 MB), and narrow the bind mount so it stops shadowing the runtime. A separate `-piper` variant was rejected: two variants would become four. See specification §5A. | 2026-07-30 |
 
 ## Open Questions
 
 None. All four questions raised at package creation are decided.
 
-Answering Q4 surfaced a new defect rather than a new question — PRD P5, local
-TTS having no installation path — which is now folded into T5 as work rather
-than left open.
+Answering Q4 surfaced a defect rather than a new question — PRD P5, Piper
+shipping unintentionally with every voice — which is folded into T5 and T6 as
+work rather than left open.
+
+Profiling the build (specification §2.1–2.2) likewise produced corrections, not
+questions: it overturned the ~2 GB assumption, showed the dashboard costs memory
+rather than image size, and exposed the 905 MB `chown -R` layer that became T6.
+All are recorded in place; nothing was left unresolved.

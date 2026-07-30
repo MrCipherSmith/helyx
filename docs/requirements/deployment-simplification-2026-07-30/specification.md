@@ -1,6 +1,6 @@
 # Specification: Deployment Simplification
 
-Version: 1.0.4
+Version: 1.1.0
 
 ## 1. Identity
 
@@ -24,31 +24,67 @@ reference point for the acceptance criteria in §8.
 | Database | 32 MB logical (`memories` 14 MB), 145 MB volume |
 | `helyx-bot:latest` | 3.13 GB |
 | `pgvector/pgvector:pg16` | 621 MB |
-| `dashboard/` source | 246 MB |
+| `dashboard/` source | 246 MB on disk, but only 1.5 MB reaches the build context — `.dockerignore` excludes `dashboard/node_modules` |
 | Claude CLI sessions | ~1.5 GB RSS for 10 idle sessions (~150 MB mean, 263 MB max) |
 | `channel.ts` | 53 MB RSS |
 | `scripts/admin-daemon.ts` | 67 MB RSS |
-| Piper voices on disk | 233 MB |
+| `piper/` on disk | 233 MB total — 52 MB runtime + 181 MB voices; all of it reaches the image via `COPY . .` (§5A) |
 | `node_modules` | 580 MB |
 | Ollama models present | `gemma4:26b` 17 GB, `gemma4:e4b` 9.6 GB, `gemma4-coder` 7.4 GB, `nomic-embed-text` 274 MB |
 
 The container stack is not the cost driver. Claude Code sessions on the host and
 the image build are.
 
-### 2.1 Estimates, not measurements
+### 2.1 Build memory — measured 2026-07-30
 
-Three figures used throughout this package were **not** measured and must be
-treated as working assumptions until verified:
+The "~2 GB to build" figure this package was originally built on **was wrong by
+at least 2×**, and the reason a small host struggles is not the one this package
+assumed. Measured by confining a `docker-container` buildx builder to a hard
+memory limit and 2 CPUs — the `minimal` target host — building `--no-cache`:
 
-| Figure | Where used | Basis |
-|--------|-----------|-------|
-| ~2 GB free memory to build the image | PRD P3, T5 rationale | Inference from `bun install` plus two dashboard builds; no build was profiled |
-| ~12 GB to serve `gemma4:e4b` | PRD P2, preset table §5 | Inference from the 9.6 GB on-disk size |
-| Preset RAM requirements (`tiny` ~2 GB, `small` ~4 GB) | §5 | Parameter-count heuristics, no benchmark |
+| Build | 2 GB | 1 GB | 512 MB | 256 MB |
+|-------|------|------|--------|--------|
+| Full (with dashboard) | pass, 72 s | pass, 75 s | **fail** — OOM ×2 | — |
+| Dashboard stages removed | — | — | pass, 69 s | pass, 60 s |
 
-The first is load-bearing: it is the stated reason a small server currently
-fails, and therefore the justification for T5. It should be profiled before that
-task is scheduled, not after.
+Halving 2 GB → 1 GB cost three seconds. Reclaim events rose from 1 843 to 8 346,
+but nothing was ever killed. The failure at 512 MB is precise: `bun run build`
+in the `webapp-build` stage, `cannot allocate memory`.
+
+**The dashboard build is the memory wall.** Removing those two stages drops the
+floor from between 512 MB and 1 GB to at most 256 MB — a fourfold improvement,
+and the strongest argument for T2 in this document.
+
+Method caveat: the limit binds the builder container while the host underneath
+has 28 GB, so reclaimable page cache is cheap. This measures the build's own
+working set, not total host requirement — a real 2 GB VPS also carries dockerd
+and the OS. The honest statement is *the build itself needs 1 GB free, or
+256 MB with the dashboard stages off*.
+
+### 2.2 Image composition — measured 2026-07-30
+
+The assumption that the dashboard inflates the image is **false**. A
+dashboard-free build produces 3.13 GB against the full build's 3.14 GB. The
+compiled dashboard is 1.02 MB of `dist`; nothing else about it reaches the image
+beyond its 1.5 MB of source inside `COPY . .`.
+
+Where the 3.13 GB actually comes from:
+
+| Layer | Size | Note |
+|-------|------|------|
+| `RUN mkdir -p … && chown -R bun /app …` | **905 MB** | `chown -R` rewrites every file it touches into a new layer — a duplicate of everything copied above it |
+| `RUN bun install --production` | 492 MB | `node_modules` |
+| `COPY . .` | 414 MB | build context; **233 MB of it is `piper/`** |
+| `apt-get install git curl ca-certificates` | 144 MB | |
+| `COPY dashboard/dist` + `webapp/dist` | 1.02 MB | the entire dashboard contribution |
+
+The 905 MB `chown -R` layer is a plain Docker anti-pattern and is the single
+largest item in the image. It was not a task when this package was written; it
+is now T6.
+
+Two estimates remain unmeasured and are lower-stakes: ~12 GB to serve
+`gemma4:e4b` (PRD P2, §5) and the preset RAM figures in §5. Neither carries a
+task's justification.
 
 ## 3. Configuration Surface
 
@@ -196,31 +232,51 @@ does not guess (risk K5).
 
 ## 5A. Piper Packaging
 
-### 5A.1 Current state
+### 5A.1 Current state — corrected 2026-07-30
 
-Nothing Piper-related is in the image. `which piper` in the running container
-returns nothing; everything arrives through the `./piper:/app/piper:ro` bind
-mount declared in `docker-compose.yml`. The wizard downloads voices from
-HuggingFace but never the runtime, so the engine has no automated install path
-(PRD P5).
+An earlier revision of this section claimed nothing Piper-related was in the
+image. **That was wrong.** It rested on `which piper` returning nothing inside
+the container, which only shows the binary is not on `PATH` — it never is, since
+it is invoked by path from `PIPER_DIR=/app/piper`.
 
-| Component | Size | Contents |
-|-----------|------|----------|
-| `piper/piper/` — runtime | 52 MB | piper binary, `libonnxruntime.so` (15.6 MB), espeak-ng + data, `libpiper_phonemize.so`, `libtashkeel_model.ort` (9.8 MB) |
-| `piper/voices/` — voices | 181 MB | 3 voices at 60.3 MB each: `en_US-lessac-medium`, `ru_RU-dmitri-medium`, `ru_RU-irina-medium` |
+Inspecting the image directly, with no mounts: `/app/piper` contains 233 MB —
+the complete runtime *and* all three voices. `COPY . .` copies the whole `piper/`
+directory in, and the `./piper:/app/piper:ro` bind mount then shadows it at
+runtime, which is why the baked copy is invisible from a running container.
 
-The wizard offers six voices, so baking all of them would add roughly 360 MB of
-voices alone.
+So the runtime already ships, accidentally. Two real problems remain, and they
+are not the one originally recorded:
+
+1. Every image carries whichever voices the maintainer happened to have on disk
+   — 181 MB of them — including for `minimal` deployments with TTS off.
+2. The baking is incidental rather than declared: it survives only as long as
+   `COPY . .` stays broad and `piper/` stays out of `.dockerignore`. Nothing
+   states the intent, so a future context-narrowing change would silently remove
+   local TTS from the image.
+
+| Component | Size | Contents | In image today |
+|-----------|------|----------|----------------|
+| `piper/piper/` — runtime | 52 MB | piper binary, `libonnxruntime.so` (15.6 MB), espeak-ng + data, `libpiper_phonemize.so`, `libtashkeel_model.ort` (9.8 MB) | yes, via `COPY . .` |
+| `piper/voices/` — voices | 181 MB | 3 voices at 60.3 MB each: `en_US-lessac-medium`, `ru_RU-dmitri-medium`, `ru_RU-irina-medium` | yes, via `COPY . .` |
+
+The wizard offers six voices; a user who selected all of them would push this
+past 360 MB, all of it shipped to every deployment.
 
 ### 5A.2 Decision: split runtime from voices
 
-**The runtime is baked into the image.** 52 MB is tolerable even in `minimal`,
-where TTS is off, and it closes P5: the engine is then built for the same
-platform as the image, and the user has no other way to obtain it.
+The decision is unchanged by the correction above — but it is now a matter of
+making the split explicit and excluding voices, rather than adding a runtime
+that was missing.
 
-**Voices are not baked.** They are a per-user choice, downloaded at setup —
-selected ones only — and kept on the host, so they survive image upgrades.
-Someone who wants one Russian voice should not carry French and Spanish.
+**The runtime stays in the image, deliberately.** 52 MB is tolerable even in
+`minimal` where TTS is off, and it must be stated as intent (a dedicated `COPY`
+of `piper/piper/`) rather than left to a broad `COPY . .`, so that narrowing the
+build context later cannot silently break local TTS.
+
+**Voices leave the image.** `piper/voices/` goes into `.dockerignore` — that
+is 181 MB removed from every image, and it stops users inheriting the
+maintainer's personal voice set. Voices become what they always should have
+been: a per-user download at setup, kept on the host, surviving image upgrades.
 
 A separate `-piper` image variant was rejected: the dashboard flag already
 produces two variants and this would make four, which is not worth 52 MB.
@@ -233,15 +289,17 @@ produces two variants and this would make four, which is not worth 52 MB.
 - ./piper:/app/piper:ro
 ```
 
-That mount would shadow a baked runtime at the same path. It MUST be narrowed to
-the voices subdirectory:
+That mount already shadows the baked runtime — this is not a hypothetical, it is
+the current state, and it is why the runtime appeared to be missing (§5A.1). It
+MUST be narrowed to the voices subdirectory:
 
 ```yaml
 - ./piper/voices:/app/piper/voices:ro
 ```
 
-This failure mode is silent — the baked runtime simply disappears under the
-mount, and nothing reports it until the first synthesis attempt.
+The failure mode is silent in both directions: the baked runtime disappears
+under the mount with nothing reported, and on a host where `./piper` is empty or
+absent, synthesis fails despite a perfectly good copy sitting in the image.
 
 ### 5A.4 Voice source
 
@@ -311,9 +369,11 @@ they resolve from parsed flags instead of reading stdin. Command dispatch is the
 | A9 | Missing required flag fails by name | Exit non-zero, message identifies the flag |
 | A10 | `install.sh` completes without a local build | Run on a host with Docker only |
 | A11 | Minimal deployment survives 24 h on 2 GB | No OOM; bot answers |
-| A12 | Piper runtime present in the published image | `which piper` inside a container started from the published image |
+| A12 | Piper runtime present in the published image | `ls /app/piper/piper` in a container run from the image **with no mounts**. Not `which piper` — the binary is never on `PATH`, and that check is what produced the false finding corrected in §5A.1 |
 | A13 | Narrowed mount does not shadow the runtime | Start with a host `piper/voices` directory; synthesis succeeds |
 | A14 | Voice download failure is explicit | Block the HuggingFace host; setup reports it rather than half-configuring TTS |
+| A15 | Voices excluded from the image | `/app/piper/voices` is absent or empty in a freshly built image; image is ~181 MB smaller than the 3.13 GB baseline |
+| A16 | Dashboard-off build fits in 256 MB | Build under a 256 MB / 2 CPU builder; completes with no OOM kill (§2.1) |
 
 ## 9. Out of Scope
 
