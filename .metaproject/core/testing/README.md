@@ -1,6 +1,6 @@
 # Testing Core
 
-Local Testing Module service layer installed by `gd-metapro init`.
+Local Testing Module service layer installed by `keryx init`.
 
 Responsibilities:
 
@@ -8,4 +8,4 @@ Responsibilities:
 - write reusable testing context under `.metaproject/data/testing`;
 - run tests through the existing project runner;
 - normalize results into JSON/Markdown artifacts;
-- expose agent commands under `gd-metapro test`.
+- expose agent commands under `keryx test`.

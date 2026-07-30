@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "name": "helyx-metaproject",
-  "createdBy": "gd-metapro",
+  "createdBy": "keryx",
   "paths": {
     "root": ".metaproject",
     "core": ".metaproject/core",
@@ -162,6 +162,15 @@
     "root": [
       "CLAUDE.md",
       "AGENTS.md"
-    ]
-  }
+    ],
+    "metaproject": ".metaproject/index.md"
+  },
+  "standardVersion": "0.1.0",
+  "profiles": [
+    "minimal",
+    "agent",
+    "ci",
+    "full"
+  ],
+  "updatedAt": "2026-07-30T19:01:03.090Z"
 }

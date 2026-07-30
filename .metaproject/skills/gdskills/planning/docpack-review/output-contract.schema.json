@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "docpack-review-output-contract",
+  "title": "Requirements Package Reviewer Output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "verdict", "findings", "audit"],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["DONE", "DONE_WITH_CONCERNS"]
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["PASS", "PASS_WITH_WARNINGS", "FAIL"]
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "file", "message"],
+        "properties": {
+          "severity": { "type": "string", "enum": ["BLOCKER", "WARNING", "INFO"] },
+          "file": { "type": "string" },
+          "message": { "type": "string" },
+          "suggestedFix": { "type": "string" }
+        }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

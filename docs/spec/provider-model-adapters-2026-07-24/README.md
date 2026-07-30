@@ -6,11 +6,12 @@
 
 Managed-work package authored in the flow-orchestrator Phase-1 shape
 (`description` / `context` / `plan` / `tasks` / `acceptance-criteria`) but as
-plain docs — `gd-metapro` CLI is not installed in this environment, so no
-`flow.json`/Task-Manager state exists yet. When `gd-metapro` becomes available,
-this package can be adopted into a real flow:
-`gd-metapro flow init --title "Per-project provider & model switching"` then
-seed the flow files from here.
+plain docs, so no `flow.json`/Task-Manager state exists yet.
+
+The blocker recorded here is resolved: the CLI was renamed `gd-metapro` →
+`keryx` and is now installed. This package can be adopted into a real flow with
+`keryx flow init --title "Per-project provider & model switching"`, then seeding
+the flow files from here.
 
 ## Goal (one line)
 

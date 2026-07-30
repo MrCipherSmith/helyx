@@ -1,0 +1,103 @@
+---
+description: "Defines Metaproject requirements package structure, versioning, verification and review rules."
+alwaysApply: false
+---
+
+# Requirements Package Standard
+
+## Purpose
+
+Use this rule when creating or updating a requirements package under
+`docs/requirements/<module-or-topic>/`.
+
+## Required Core Files
+
+Every module-level documentation package must contain:
+
+```text
+docs/requirements/<name>/
+  README.md
+  prd.md
+  specification.md
+```
+
+Optional files are added only when the topic needs them:
+
+```text
+brainstorm.md
+policies.md
+agent-protocol.md
+ci-protocol.md
+artifact-lifecycle.md
+metrics-and-validation.md
+implementation-plan.md
+schemas/*.json
+```
+
+## Required Metadata
+
+Every Markdown document must include:
+
+```markdown
+Version: x.y.z
+```
+
+The field must be directly under the H1. Increment the version whenever the
+document changes.
+
+## README Contract
+
+`README.md` must state:
+
+- package purpose;
+- current status;
+- document index;
+- scope and non-goals;
+- related modules.
+
+## PRD Contract
+
+`prd.md` must state:
+
+- problem;
+- goal;
+- users;
+- requirements;
+- success criteria;
+- risks;
+- recommendation.
+
+## Specification Contract
+
+`specification.md` must state:
+
+- module identity;
+- storage structure;
+- manifest/config shape;
+- CLI or skill surface;
+- data contracts;
+- integration points;
+- acceptance criteria.
+
+## Verification Contract
+
+Before finishing:
+
+- verify required files exist;
+- verify all Markdown files have `Version`;
+- verify README links to all package files;
+- verify schemas are referenced from specification when present;
+- verify status is honest: `draft`, `spec ready`, `implemented`, or `future`;
+- update `docs/requirements/roadmap.md` when the package represents a module or
+  standard capability.
+
+## Review Contract
+
+Documentation review must check:
+
+- completeness against this rule;
+- contradictions across README/PRD/spec;
+- unsupported implementation claims;
+- missing integration points;
+- stale roadmap or version references;
+- unsafe overpromising versus current implementation.

@@ -11,4 +11,4 @@ Responsibilities:
 - run deterministic dedup/conflict checks.
 
 Only `accepted` entries influence skills. Findings are a decoupled, versioned
-contract consumed by gdskills via `gd-metapro skills learn --from-memory`.
+contract consumed by gdskills via `keryx skills learn --from-memory`.

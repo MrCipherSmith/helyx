@@ -14,13 +14,19 @@ Choose between gdgraph, gdctx, gdwiki, memory, health, and project-skills before
 - find files
 - understand code
 - collect context
+- what should I inspect
+- agent routing
 
 ## Workflow
 
-1. Use gdgraph for file relationships and affected context.
-2. Use gdctx for compact command, search, diff, log, and large-read output.
-3. Use gdwiki for architecture, domain, business rules, decisions, and scenarios.
-4. Use project-skills for known modules, components, stores, services, and domain entities.
+1. Start from the user's goal, not from command names.
+2. Use gdgraph for file relationships and affected context.
+3. Use gdctx for compact command, search, diff, log, and large-read output.
+4. Use gdwiki for architecture, domain, business rules, decisions, and scenarios.
+5. Use memory for historical decisions, known constraints, lessons, and repeated mistakes.
+6. Use health for normalized quality and gate status; use testing for test selection and test context.
+7. Prefer MCP tools/resources for these capabilities when connected; otherwise use the matching skill and CLI command.
+8. Use project-skills for known modules, components, stores, services, and domain entities.
 
 ## Local-First Rules
 

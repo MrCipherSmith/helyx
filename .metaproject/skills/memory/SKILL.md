@@ -10,19 +10,19 @@ constraints, known mistakes, lessons, and reusable patterns.
 
 ## Workflow
 
-1. Before planning/implementing, run `gd-metapro memory search "<topic>" --status accepted`.
+1. Before planning/implementing, run `keryx memory search "<topic>" --status accepted`.
 2. Read only the returned snippets, not the whole memory.
 3. Respect accepted decisions/constraints; treat `draft`/`conflict` as advisory.
-4. After a task/review, propose durable entries with `gd-metapro memory new` or `ingest`.
-5. Run `gd-metapro memory check` before relying on cross-entry links.
+4. After a task/review, propose durable entries with `keryx memory new` or `ingest`.
+5. Run `keryx memory check` before relying on cross-entry links.
 
 ## Commands
 
 ```bash
-gd-metapro memory search "<query>" --status accepted
-gd-metapro memory new lesson --title "<title>"
-gd-metapro memory ingest --from-review <path>
-gd-metapro memory check
+keryx memory search "<query>" --status accepted
+keryx memory new lesson --title "<title>"
+keryx memory ingest --from-review <path>
+keryx memory check
 ```
 
 ## Notes

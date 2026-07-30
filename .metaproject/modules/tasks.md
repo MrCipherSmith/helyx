@@ -9,14 +9,14 @@ strict status state machine, draft-PR completion gates, and tracker reporting.
 
 ## Commands
 
-- `gd-metapro flow init (--issue <url> | --title "<t>")`
-- `gd-metapro flow list | status <id>`
-- `gd-metapro flow freeze <id>` / `flow start <id>`
-- `gd-metapro flow task add|done ...`
-- `gd-metapro flow ac confirm|update ...`
-- `gd-metapro flow implemented <id> --pr <url>`
-- `gd-metapro flow complete <id> [--comment]`
-- `gd-metapro flow block|unblock <id>` / `flow check`
+- `keryx flow init (--issue <url> | --title "<t>")`
+- `keryx flow list | status <id>`
+- `keryx flow freeze <id>` / `flow start <id>`
+- `keryx flow task add|done ...`
+- `keryx flow ac confirm|update ...`
+- `keryx flow implemented <id> --pr <url>`
+- `keryx flow complete <id> [--comment]`
+- `keryx flow block|unblock <id>` / `flow check`
 
 ## Entry
 

@@ -131,6 +131,16 @@ If the orchestrator provided `JOB_NAME` and `CONTEXT_PATH`:
 - Use this context throughout Phase 2-4 to guide implementation decisions
 - If the file does not exist, proceed without it — context is optional
 
+**2.0b Verify the project-skill covering the target (see `rules/core/skill-lifecycle.mdc`):**
+
+Before you rely on a project-skill's guidance, confirm it still matches the code:
+- `keryx skills route <target_file>` — find the project-skill for this module/entity (if any).
+- If one exists: `keryx skills verify <module>/<skill>` — classifies it `fresh | stale | needs-review | blocked`.
+- If it is **not `fresh`**: do not follow it blindly. Verify each claim against the code you read in Phase 2, and note the drift in `notes` (Phase 6.1) so the orchestrator can trigger `skills learn`.
+- If no skill exists for a non-trivial module you had to reverse-engineer, note that too — it's a candidate for `skills create`.
+
+This step is read-only and inline; do not spawn a subagent for it.
+
 **2.1 Read all target files:**
 - Read each file from `target_files` in full
 - If a file does not exist yet, note it as "new file to create"
@@ -362,9 +372,12 @@ Write full JSON to `<JOBS_ROOT>/<JOB_NAME>/results/<task_id>.json`:
   "test_result": "<pass|N passed, M failed: details|skipped>",
   "story_result": "<pass|build error: details|not applicable>",
   "acceptance_criteria_met": "<all|partial: list of unmet criteria|none>",
+  "skill_drift": "<none | stale: <module>/<skill> — <what diverged> | missing: <module> should have a project-skill>",
   "notes": "<any warnings, blockers, or additional context>"
 }
 ```
+
+Set `skill_drift` from Phase 2.0b: if the project-skill you used was not `fresh`, or the code you wrote diverged from what a skill documents, name the skill and the divergence. The orchestrator uses this to decide whether to trigger `skills learn` (do NOT run `learn` yourself — it is a mutating step the orchestrator dispatches; see `rules/core/skill-lifecycle.mdc`).
 
 If `JOB_NAME` is not provided, skip the file write.
 

@@ -39,6 +39,8 @@ Proceed directly with your assigned task.
 
 Dynamic orchestrator that builds execution plans based on user intent. Unlike a fixed pipeline, the orchestrator adapts its workflow to what the user actually needs — from "just analyze this issue" to "implement, review, and create a PR". It dispatches sub-agents (`issue-analyzer`, `context-collector`, `task-implementer`, review skills) and persists all work via `job-documenter`.
 
+**Execution metrics (opt-in):** when a USER runs this orchestrator directly (not as a dispatched subagent), at the start ask "Collect execution statistics for this run? (yes/no)" per `.metaproject/rules/core/execution-metrics.md`. If yes, append the `## Execution Metrics` section at the end and save it under the job dir (`jobs/<job>/metrics/`). Never ask or emit it when dispatched as a subagent.
+
 **Key design principle** (from Anthropic's "Building Effective Agents"):
 > "The key difference from parallelization is its flexibility — subtasks aren't pre-defined, but determined by the orchestrator based on the specific input."
 
@@ -1071,6 +1073,34 @@ IF any modified file matches: *.tsx, *.jsx, *.css, *.scss, webpack.*, vite.*, ne
 
 Skip if no frontend files changed or no build output exists. Results are advisory — they don't block the PR.
 
+### 2.8.2 Step: SKILL LEARNING (conditional)
+
+Close the self-learning loop (see `rules/core/skill-lifecycle.mdc`). Collect the
+learning signals produced upstream:
+- `skill_drift` fields from each task-implementer result (`stale:`/`missing:`).
+- the `## Skill Learning` block from `review-orchestrator`.
+
+```
+IF no skill_drift and Skill Learning == none:
+  → skip this step (log "no skill drift")
+
+ELSE for each flagged project-skill:
+  1. Dispatch a subagent to build the learning proposal:
+     - Model: prefer a cheaper / non-flagship model if one is available in this
+       environment (run .metaproject/scripts/detect-models.sh; see
+       rules/core/model-selection.mdc). Otherwise use the session model.
+     - Command: keryx skills learn --from-review <review-report-path> \
+                  --skill <module>/<skill>
+       (or --from-test / --from-failure when the signal came from verification)
+     - The subagent returns the proposal path. It does NOT apply.
+  2. The orchestrator (flagship) reads the proposal and either:
+     - keryx skills learn apply <proposal.json>   (accept), or
+     - discards it and notes why in the report.
+```
+
+Never apply a proposal unread, and never run `learn` in a hook. Record applied
+skill updates in the Job Report under "Skill Updates".
+
 ### 2.9 Step: REPORT
 
 Aggregate all information into a human-readable summary.
@@ -1109,6 +1139,9 @@ Aggregate all information into a human-readable summary.
 - Lint: PASS
 - Type Check: PASS
 - Tests: 42 passed, 0 failed
+
+## Skill Updates
+- `<module>/<skill>` v1.2.0 → v1.3.0 (from review F-012; applied) | none
 
 ## Changes Summary
 ### Files Modified (<N>)

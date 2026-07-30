@@ -20,7 +20,7 @@ Select relevant project-skills for known modules, components, stores, services, 
 1. Check `.metaproject/project-skills` for matching module/entity skills.
 2. Use gdgraph affected context to find nearby entities when the target is a file.
 3. Load only the matching project-skill and directly referenced files.
-4. If no project-skill exists, suggest creating one with `gd-metapro skills generate`.
+4. If no project-skill exists, suggest creating one with `keryx skills generate`.
 
 ## Local-First Rules
 

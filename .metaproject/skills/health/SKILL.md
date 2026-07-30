@@ -12,20 +12,20 @@ complexity hot-spots.
 ## Workflow
 
 1. Prefer the curated summary `.metaproject/data/health/artifacts/latest.md`.
-2. If it is stale or missing, run `gd-metapro health run` (add `--strict` for CI-grade checks).
-3. Use `gd-metapro health explain <file-or-module>` for a specific scope.
-4. Use `gd-metapro health gate` for a CI exit code.
+2. If it is stale or missing, run `keryx health run` (add `--strict` for CI-grade checks).
+3. Use `keryx health explain <file-or-module>` for a specific scope.
+4. Use `keryx health gate` for a CI exit code.
 5. Treat findings as signals; verify against source code before acting.
 
 ## Commands
 
 ```bash
-gd-metapro health status
-gd-metapro health run --strict
-gd-metapro health gate --strict-warn
-gd-metapro health sources
-gd-metapro health explain src/example.ts
-gd-metapro health baseline update
+keryx health status
+keryx health run --strict
+keryx health gate --strict-warn
+keryx health sources
+keryx health explain src/example.ts
+keryx health baseline update
 ```
 
 ## Notes

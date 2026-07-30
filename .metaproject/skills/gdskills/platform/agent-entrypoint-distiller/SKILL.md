@@ -17,7 +17,7 @@ large project manuals and should be converted into local Metaproject knowledge.
 2. Run:
 
 ```bash
-gd-metapro rules distill
+keryx rules distill
 ```
 
 3. Verify the generated outputs:
@@ -30,8 +30,8 @@ gd-metapro rules distill
 5. Run focused verification:
 
 ```bash
-gd-metapro rules sync
-gd-metapro flow check 001
+keryx rules sync
+keryx flow check 001
 ```
 
 Skip `flow check` when the project has no Task Manager flow.

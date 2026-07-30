@@ -1,6 +1,6 @@
 # Metaproject Core
 
-This folder is reserved for local service scripts, module adapters, and generated tool scaffolds installed by `gd-metapro init`.
+This folder is reserved for local service scripts, module adapters, and generated tool scaffolds installed by `keryx init`.
 
 Runtime rule:
 

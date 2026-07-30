@@ -1,6 +1,6 @@
 ---
 name: flow-orchestrator
-description: "Use when Task Manager is enabled and a non-trivial feature, issue, or story should be driven through gd-metapro flow from initialization to done."
+description: "Use when Task Manager is enabled and a non-trivial feature, issue, or story should be driven through keryx flow from initialization to a user-selected completion, verified handoff, or open state."
 triggers:
   - "создай flow"
   - "создай фло"
@@ -12,7 +12,7 @@ triggers:
   - "managed implementation"
 metadata:
   author: "MrCipherSmith"
-  version: "1.1.0"
+  version: "1.2.0"
   category: "orchestration"
 license: "MIT"
 compatibility: "cursor,codex,zed,opencode,claude"
@@ -23,11 +23,12 @@ compatibility: "cursor,codex,zed,opencode,claude"
 ## Purpose
 
 Flow Orchestrator is the Task Manager-aware implementation orchestrator.
-It wraps the existing gdskills pipeline with `gd-metapro flow` state.
+It wraps the existing gdskills pipeline with `keryx flow` state.
 
 Use this skill instead of `job-orchestrator` when the user wants a managed
-story/issue lifecycle with frozen acceptance criteria, task state, draft PR
-gates, Code Health, and a durable flow package in `.metaproject/flows/`.
+story/issue lifecycle with frozen acceptance criteria, task state, an explicit
+completion choice, Code Health, and a durable flow package in
+`.metaproject/flows/`.
 
 Do not modify `job-orchestrator` or `task-implementer` behavior. They remain
 usable without Task Manager. This skill coordinates them through flow state.
@@ -41,7 +42,7 @@ usable without Task Manager. This skill coordinates them through flow state.
 3. If Task Manager is not enabled, stop and tell the user to run:
 
 ```bash
-gd-metapro update
+keryx update
 ```
 
 or initialize with the Task Manager module enabled. Do not emulate flow state by
@@ -54,10 +55,10 @@ Flow state lives in `.metaproject/flows/<flow-id>/`.
 CLI-owned files:
 
 - `flow.json` - never edit by hand.
-- status transitions - only through `gd-metapro flow ...`.
-- task status - only through `gd-metapro flow task done ...`.
+- status transitions - only through `keryx flow ...`.
+- task status - only through `keryx flow task done ...`.
 - frozen acceptance criteria changes - only through
-  `gd-metapro flow ac update <id> --reason "<why>"`.
+  `keryx flow ac update <id> --reason "<why>"`.
 
 Agent-editable files:
 
@@ -72,37 +73,40 @@ Agent-editable files:
 ```mermaid
 flowchart TD
   A["User issue / feature request"] --> B["flow-orchestrator"]
-  B --> C["gd-metapro flow init"]
+  B --> C["keryx flow init"]
   C --> D["flow-init context enrichment"]
   D --> E["freeze AC + start flow"]
   E --> F["dispatch tests-creator / task-implementer"]
   F --> G["code-verifier + review-orchestrator"]
   G --> H{"All tasks, checks, review OK?"}
   H -- "no" --> F
-  H -- "yes" --> I["draft PR"]
-  I --> J["gd-metapro flow implemented --pr"]
-  J --> K["confirm AC evidence"]
-  K --> L["gd-metapro flow complete"]
+  H -- "yes" --> I{"Ask user how to finish"}
+  I -- "draft PR" --> J["create or confirm draft PR"]
+  J --> K["keryx flow implemented --pr"]
+  K --> L["confirm AC evidence"]
+  L --> M["keryx flow complete"]
+  I -- "verified handoff" --> N["report completion; keep flow in-progress"]
+  I -- "keep open" --> O["journal next steps; keep flow in-progress"]
 ```
 
 ## Phase 0: Route And Resume
 
-1. Run `gd-metapro flow list`.
+1. Run `keryx flow list`.
 2. If an active flow obviously matches the user request, use it.
 3. If multiple active flows could match, ask one concise question.
 4. If no flow exists and the request is multi-step, create one:
 
 ```bash
-gd-metapro flow init --issue <url>
+keryx flow init --issue <url>
 ```
 
 or:
 
 ```bash
-gd-metapro flow init --title "<short formalized problem>"
+keryx flow init --title "<short formalized problem>"
 ```
 
-5. Run `gd-metapro flow status <id>` and read the flow package.
+5. Run `keryx flow status <id>` and read the flow package.
 
 ## Phase 1: Initialize The Flow Package
 
@@ -126,6 +130,13 @@ Required rules:
 - `.metaproject/rules/core/code-style-patterns.mdc`
 - `.metaproject/rules/core/error-handling.mdc`
 - `.metaproject/rules/core/implementation-doc-mandate.mdc`
+- `.metaproject/rules/core/execution-metrics.md`
+
+Execution metrics (opt-in): when a USER runs this orchestrator directly, at the
+start ask "Collect execution statistics for this run? (yes/no)" per
+`rules/core/execution-metrics.md`. If yes, append the `## Execution Metrics`
+section at the end and save it under the flow dir (`<flow-dir>/metrics/`). Never
+ask or emit it when dispatched as a subagent.
 
 Write or update:
 
@@ -138,8 +149,8 @@ Write or update:
 Then freeze and start:
 
 ```bash
-gd-metapro flow freeze <id>
-gd-metapro flow start <id>
+keryx flow freeze <id>
+keryx flow start <id>
 ```
 
 ## Phase 2: Execute Tasks
@@ -199,13 +210,13 @@ Dispatch payload, bound to the flow (map `target_skill` from the routing table):
 After a worker succeeds, the flow-orchestrator marks task progress:
 
 ```bash
-gd-metapro flow task done <id> <Tn>
+keryx flow task done <id> <Tn>
 ```
 
 If new work is discovered:
 
 ```bash
-gd-metapro flow task add <id> --title "<task>" --kind <kind>
+keryx flow task add <id> --title "<task>" --kind <kind>
 ```
 
 ### Interpreting worker results (STATUS protocol)
@@ -216,10 +227,10 @@ properly formatted `subagent-result`.
 
 | Worker `status` | flow-orchestrator action |
 |---|---|
-| `DONE` | Accept. `gd-metapro flow task done <id> <Tn>`. Continue. |
+| `DONE` | Accept. `keryx flow task done <id> <Tn>`. Continue. |
 | `DONE_WITH_CONCERNS` | Accept, record every concern in `journal.md`, decide continue vs. add a fix task, then `flow task done`. Never silently drop concerns. |
 | `NEEDS_CONTEXT` | Do not fail. Enrich `context_refs`/`files_to_read` from gdgraph/gdctx/wiki/memory, then re-dispatch the same `dispatch_id`. |
-| `BLOCKED` | `gd-metapro flow block <id> --reason "<worker reason>"`; resolve or escalate one concise question, then `flow unblock` and re-dispatch. |
+| `BLOCKED` | `keryx flow block <id> --reason "<worker reason>"`; resolve or escalate one concise question, then `flow unblock` and re-dispatch. |
 | `FAILED` | Retry once with the same dispatch. If it fails again, block the flow and surface the error to the user. |
 
 Carry `run_id`/`dispatch_id` across retries so the flow journal stays traceable.
@@ -230,28 +241,60 @@ Before accepting implementation:
 
 1. Run focused tests for touched scope.
 2. Run `code-verifier`.
-3. Run `gd-metapro health run` when Code Health is enabled.
+3. Run `keryx health run` when Code Health is enabled.
 4. Run `review-orchestrator` with relevant domains.
 5. If findings require code changes, dispatch fix work through `task-implementer`
    and record the fix task in the flow.
+6. Close the skill-learning loop (see `rules/core/skill-lifecycle.mdc`). Collect
+   the `skill_drift` fields from task-implementer results and the
+   `## Skill Learning` block from review-orchestrator. For each flagged
+   project-skill, dispatch a subagent — on a cheaper / non-flagship model if one
+   is available (`.metaproject/scripts/detect-models.sh`; see
+   `rules/core/model-selection.mdc`), otherwise the session model — to run
+   `keryx skills learn --from-review <report> --skill <m>/<s>` and return the
+   proposal. Then read the proposal and `skills learn apply` it, or discard it.
+   Never apply unread; never put `learn` in a hook.
 
 The implementer never self-accepts. Only flow-orchestrator decides whether the
-flow can move to `implemented`.
+flow can move to `implemented`. Record any applied skill updates in the
+completion report.
 
-## Phase 4: Draft PR Gate
+## Phase 4: Completion Choice
 
 When tasks, verification and review are complete:
 
-1. Create or confirm a draft PR in the author's name.
-2. Record it through the CLI:
+1. Stop before creating a PR or changing the flow to `implemented`.
+2. Ask the user how to finish. Do not infer that every flow needs a PR:
 
-```bash
-gd-metapro flow implemented <id> --pr <draft-pr-url>
+```text
+How should this flow end?
+
+  A) Create a draft PR and complete the managed flow
+  B) Finish with a verified handoff and no PR
+  C) Keep the flow open for more work
+
+> pick a letter (no default; wait for the user)
 ```
 
-Do not run `flow implemented` without a PR URL. If the user explicitly asks to
-skip PR creation, keep the flow in progress and explain that Task Manager's
-completion gate requires a PR record.
+3. Follow the selected outcome:
+
+- **A - Draft PR:** create or confirm a draft PR in the author's name, then
+  record it through the CLI:
+
+```bash
+keryx flow implemented <id> --pr <draft-pr-url>
+```
+
+- **B - Verified handoff without PR:** do not create a PR and do not run
+  `keryx flow implemented` or `keryx flow complete`. Produce the completion
+  report with verification and acceptance-criteria evidence, record that the
+  implementation work is finished, and leave the Task Manager flow
+  `in-progress`. Explain that the current CLI requires a recorded PR before it
+  can transition the flow to `done`.
+- **C - Keep open:** record remaining or deferred work in `journal.md`, report
+  the current verification state, and leave the flow `in-progress` for resume.
+
+Only continue to Phase 5 after the user selects A and the draft PR is recorded.
 
 ## Phase 5: Complete The Flow
 
@@ -260,13 +303,13 @@ Use `.metaproject/skills/flow/complete.md`.
 For every acceptance criterion, verify evidence and confirm:
 
 ```bash
-gd-metapro flow ac confirm <id> ACn --note "<evidence>"
+keryx flow ac confirm <id> ACn --note "<evidence>"
 ```
 
 Then run:
 
 ```bash
-gd-metapro flow complete <id>
+keryx flow complete <id>
 ```
 
 If gates fail, the CLI returns the flow to `in-progress`. Add a journal note,
@@ -277,11 +320,16 @@ create fix tasks, and repeat Phase 2.
 Finish with:
 
 - flow id and final status;
-- PR URL;
+- selected completion outcome;
+- PR URL when a PR was created;
 - tasks completed;
 - acceptance criteria evidence summary;
 - verification/review results;
 - unresolved risks or blocked gates.
+
+For a verified handoff without PR, distinguish "implementation work finished"
+from Task Manager status `done`: report the flow as `in-progress` and explain
+why it was intentionally not transitioned.
 
 ## Contracts
 
@@ -298,8 +346,8 @@ flow-orchestrator communicates through explicit schemas, not free prose:
 Validate a concrete worker message before trusting it:
 
 ```bash
-gd-metapro skills contracts validate <file> --schema subagent-dispatch
-gd-metapro skills contracts validate <file> --schema subagent-result
+keryx skills contracts validate <file> --schema subagent-dispatch
+keryx skills contracts validate <file> --schema subagent-result
 ```
 
 ## Boundaries

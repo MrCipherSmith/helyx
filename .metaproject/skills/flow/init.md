@@ -18,7 +18,7 @@ line is `STATUS:` (`.metaproject/rules/core/subagent-status-protocol.md`). Set
 
 ## Workflow
 
-1. Create the package: `gd-metapro flow init --issue <url>` or
+1. Create the package: `keryx flow init --issue <url>` or
    `--title "<problem>"`. The CLI scaffolds the package and collects
    deterministic context (issue body, memory search, gdgraph artifacts, health).
 2. Enrich context - dispatch `context-collector` with `context_refs` to the
@@ -30,12 +30,12 @@ line is `STATUS:` (`.metaproject/rules/core/subagent-status-protocol.md`). Set
    record the chosen approach and rejected alternatives in plan.md.
 5. If hard requirements are ambiguous, dispatch `interviewer`: focused
    questions with options and a recommendation. Do not guess hard requirements.
-6. Break work into tasks: `gd-metapro flow task add <id> --title ... --kind
+6. Break work into tasks: `keryx flow task add <id> --title ... --kind
    context|implement|test|review|docs` (defaults T1-T4 already exist; adjust).
 7. Write acceptance-criteria.md: hard, verifiable `- ACn:` criteria grounded in
    the collected evidence.
 8. Re-verify the whole package, then freeze and hand off:
-   `gd-metapro flow freeze <id>` -> `gd-metapro flow start <id>`.
+   `keryx flow freeze <id>` -> `keryx flow start <id>`.
 
 Read each worker's `STATUS:` first: `NEEDS_CONTEXT`/`BLOCKED` -> enrich and
 re-dispatch (do not mark done); `DONE`/`DONE_WITH_CONCERNS` -> fold the result

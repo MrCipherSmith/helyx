@@ -10,13 +10,13 @@ deterministic quality gate report.
 
 ## Commands
 
-- `gd-metapro health run [--strict] [--scope ...] [--source ...]`
-- `gd-metapro health status`
-- `gd-metapro health gate [--strict-warn]`
-- `gd-metapro health sources`
-- `gd-metapro health explain <file-or-module>`
-- `gd-metapro health baseline update [--scope ...]`
-- `gd-metapro health trend [--scope <scope-key>] [--limit <n>]`
+- `keryx health run [--strict] [--scope ...] [--source ...]`
+- `keryx health status`
+- `keryx health gate [--strict-warn]`
+- `keryx health sources`
+- `keryx health explain <file-or-module>`
+- `keryx health baseline update [--scope ...]`
+- `keryx health trend [--scope <scope-key>] [--limit <n>]`
 
 ## Config
 

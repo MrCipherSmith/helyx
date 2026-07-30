@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "docpack-orchestrator-input-contract",
+  "title": "Requirements Package Orchestrator Input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["request", "packageName"],
+  "properties": {
+    "request": { "type": "string", "minLength": 1 },
+    "packageName": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "packageKind": {
+      "type": "string",
+      "enum": ["module", "standard", "policy", "implementation-plan", "report"]
+    },
+    "targetPath": { "type": "string" },
+    "requiredDocs": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "sourceArtifacts": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "constraints": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

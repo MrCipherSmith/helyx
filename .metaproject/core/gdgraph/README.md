@@ -1,10 +1,10 @@
 # gdgraph Core
 
-Local gdgraph service layer installed by `gd-metapro init`.
+Local gdgraph service layer installed by `keryx init`.
 
 Files:
 
-- `cli.ts` - local runner used by `gd-metapro gdgraph ...`
+- `cli.ts` - local runner used by `keryx gdgraph ...`
 - `build.ts` - builds file dependency graph
 - `query.ts` - reads graph storage and answers built-in queries
 - `types.ts` - local graph schema

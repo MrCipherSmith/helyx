@@ -6,4 +6,4 @@ Rules:
 
 - treat files here as high-priority agent-readable mirrors of root instructions;
 - update the root entrypoint first when changing project-wide instructions;
-- rerun `gd-metapro rules sync`, `gd-metapro init`, or `gd-metapro update` to resync imported rule files.
+- rerun `keryx rules sync`, `keryx init`, or `keryx update` to resync imported rule files.

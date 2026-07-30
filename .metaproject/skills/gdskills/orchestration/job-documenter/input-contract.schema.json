@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://gd-metapro.local/schemas/job-documenter/input-contract.schema.json",
+  "$id": "https://keryx.local/schemas/job-documenter/input-contract.schema.json",
   "title": "Job Documenter Input Contract",
   "description": "Input for job-documenter actions. Called exclusively by job-orchestrator.",
   "type": "object",

@@ -1,10 +1,22 @@
 # Metaproject Hooks
 
-Hooks are local project scripts executed by selected `gd-metapro` lifecycle commands.
+Hooks are local project scripts executed by selected `keryx` lifecycle commands.
+
+Git hooks are installed as marked managed blocks:
+
+```sh
+# keryx:<hook-id>:begin
+...
+# keryx:<hook-id>:end
+```
+
+`keryx update --hooks` replaces only those managed blocks. Existing user
+content, Husky wrappers, Lefthook dispatchers, lint-staged calls, and other
+project-owned hook lines are preserved.
 
 ## git post-commit gdgraph hook
 
-When enabled during `gd-metapro init`, the Git `post-commit` hook detects commits that touched files relevant to the graph and prints the explicit refresh command.
+When enabled during `keryx init`, the Git `post-commit` hook detects commits that touched files relevant to the graph and prints the explicit refresh command.
 
 Purpose:
 
@@ -14,18 +26,18 @@ Purpose:
 
 ## git post-commit gdskills hook
 
-When enabled during `gd-metapro init`, the Git `post-commit` hook runs lightweight project-skill verification after relevant project or Metaproject context changes.
+When enabled during `keryx init`, the Git `post-commit` hook runs lightweight project-skill verification after relevant project or Metaproject context changes.
 
 Purpose:
 
 - keep generated project-skills from silently drifting after code/wiki/rule changes;
 - run non-mutating dry-run verification and report failures without changing files;
-- write verification reports only during explicit `gd-metapro skills verify` runs or orchestrator-controlled checks;
+- write verification reports only during explicit `keryx skills verify` runs or orchestrator-controlled checks;
 - keep the hook local, optional and non-blocking.
 
 ## git post-commit health hook
 
-When enabled during `gd-metapro init`, the Git `post-commit` hook detects relevant source/config changes and prints the explicit Code Health refresh command.
+When enabled during `keryx init`, the Git `post-commit` hook detects relevant source/config changes and prints the explicit Code Health refresh command.
 
 Purpose:
 
@@ -35,7 +47,7 @@ Purpose:
 
 ## git post-commit testing hook
 
-When enabled during `gd-metapro init`, the Git `post-commit` hook detects relevant source, test, config or documentation changes and prints the explicit testing refresh command.
+When enabled during `keryx init`, the Git `post-commit` hook detects relevant source, test, config or documentation changes and prints the explicit testing refresh command.
 
 Purpose:
 
@@ -49,13 +61,13 @@ When any Metaproject post-commit hook is enabled, a lightweight dashboard hook r
 
 Purpose:
 
-- keep `.metaproject/index.md` and `.metaproject/gd-metapro-dashboard.html` aligned through explicit `gd-metapro update` or `gd-metapro dashboard build`;
+- keep `.metaproject/index.md` and `.metaproject/keryx-dashboard.html` aligned through explicit `keryx update` or `keryx dashboard build`;
 - recover missing `.metaproject/metaproject.json` for older initialized projects;
 - avoid mutating service files after commit, especially from stale global CLI installations.
 
 ## git pre-push testing hook
 
-When enabled during `gd-metapro init`, the Git `pre-push` hook runs changed-scope tests and blocks the push on failure.
+When enabled during `keryx init`, the Git `pre-push` hook runs changed-scope tests and blocks the push on failure.
 
 Purpose:
 
@@ -65,7 +77,7 @@ Purpose:
 
 ## post-update.d
 
-Executable files in `post-update.d/` run only when `gd-metapro update --hooks` is requested.
+Executable files in `post-update.d/` run only when `keryx update --hooks` is requested.
 
 Rules:
 

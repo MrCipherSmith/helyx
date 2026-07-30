@@ -14,13 +14,13 @@ explicitly ask for testing context.
 2. Use related-test discovery before broad test search:
 
 ```bash
-gd-metapro test related <file>
+keryx test related <file>
 ```
 
 3. For focused verification, prefer:
 
 ```bash
-gd-metapro test run --changed
+keryx test run --changed
 ```
 
 4. Read `.metaproject/data/testing/artifacts/latest.md` before raw logs.
@@ -28,20 +28,20 @@ gd-metapro test run --changed
 6. If failures reveal a reusable lesson, feed it to gdskills:
 
 ```bash
-gd-metapro skills learn --from-test .metaproject/data/testing/artifacts/latest.json --skill <module>/<skill>
+keryx skills learn --from-test .metaproject/data/testing/artifacts/latest.json --skill <module>/<skill>
 ```
 
 ## Commands
 
 ```bash
-gd-metapro test analyze
-gd-metapro test run
-gd-metapro test run --changed
-gd-metapro test status
-gd-metapro test context
-gd-metapro test explain <file-or-scope>
-gd-metapro test related <file>
-gd-metapro test report latest
+keryx test analyze
+keryx test run
+keryx test run --changed
+keryx test status
+keryx test context
+keryx test explain <file-or-scope>
+keryx test related <file>
+keryx test report latest
 ```
 
 ## Rules
