@@ -108,6 +108,18 @@ const EnvSchema = z.object({
   // Leave empty to disable Telegram notifications (supervisor still monitors and logs).
   SUPERVISOR_CHAT_ID: z.string().default(""),
   SUPERVISOR_TOPIC_ID: z.coerce.number().int().default(0),
+
+  // Deployment profile — recorded by the setup wizard for diagnostics/upgrades.
+  HELYX_PROFILE: z.enum(["minimal", "local", "full"]).default("minimal"),
+
+  // Dashboard gate. The default is deliberately asymmetric: an .env written
+  // before this flag existed has no ENABLE_DASHBOARD, and must keep its
+  // dashboard. Only a fresh install writes ENABLE_DASHBOARD=false explicitly.
+  // So "absent" and "false" mean different things and must not be collapsed.
+  ENABLE_DASHBOARD: z
+    .string()
+    .default("true")
+    .transform((s) => s !== "false"),
 });
 
 const result = EnvSchema.safeParse(process.env);
@@ -129,6 +141,10 @@ if (!env.ALLOW_ALL_USERS && env.ALLOWED_USERS.length === 0 && process.env.NODE_E
 }
 
 export const CONFIG = {
+  // Deployment
+  HELYX_PROFILE: env.HELYX_PROFILE,
+  ENABLE_DASHBOARD: env.ENABLE_DASHBOARD,
+
   // Telegram
   TELEGRAM_BOT_TOKEN: env.TELEGRAM_BOT_TOKEN,
   ALLOWED_USERS: env.ALLOWED_USERS,
