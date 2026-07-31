@@ -1,5 +1,13 @@
 # PRD: Message Delivery Resilience When Target Session Is Offline
 
+**Status:** Implemented — verified against the code on 2026-07-31.
+
+Both gaps are closed. Voice is no longer dropped: `bot/text-handler.ts` queues the message
+into `message_queue` for a disconnected session and tells the user it will be delivered on
+restart. The queue has a timeout and an escalation path — `QUEUE_STUCK_MS` (5 min) plus
+`STUCK_QUEUE_FORWARD_MINUTES` forwarding in `scripts/supervisor.ts`. Undelivered replies
+survive a crash through the `pending_replies` table and `channel/recovery.ts`.
+
 ## 1. Overview
 
 Two related gaps in message delivery when a Claude Code session is restarting or unavailable:

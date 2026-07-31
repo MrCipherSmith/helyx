@@ -1,8 +1,24 @@
 # PRD: Session Stability Reform & tmux Audit Daemon
 
 **Date:** 2026-06-26  
-**Status:** Draft v3  
+**Status:** Implemented — verified against the code on 2026-07-31  
 **Scope:** Two independent deliverables packaged in one document
+
+### Verification, 2026-07-31
+
+All fifteen requirements are in the code. Part 1: automatic restarts are gone from both
+`checkHungSessions` and `checkStuckQueue` (REQ-1.1, REQ-1.2), `enqueueRestart` exists in
+`services/project-service.ts` with the signature this document specifies and is called from
+`bot/commands/supervisor-actions.ts` (REQ-1.4), `run-cli.sh` carries the restart limit and
+escalation (REQ-1.5), and alerts persist their `message_id` for later resolution (REQ-1.6).
+Part 2: `scripts/tmux-session-logger.ts` is 346 lines, started from `admin-daemon.ts`,
+writing daily JSONL — `logs/tmux-sessions/` holds live files. Supervisor alerts append the
+log path (REQ-2.8).
+
+One deviation worth fixing: REQ-2.8 specifies building that path from `BOT_DIR`, but
+`scripts/supervisor.ts` hardcodes `/home/altsay/bots/helyx/logs/tmux-sessions/` at lines 318
+and 413. It works on this machine and breaks on any other install path — which now matters,
+since the deployment package exists to put helyx on other machines.
 
 ---
 

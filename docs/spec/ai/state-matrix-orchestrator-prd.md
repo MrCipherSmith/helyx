@@ -1,9 +1,18 @@
 # PRD: State Matrix Orchestrator for Helyx
 
-**Status:** Draft  
+**Status:** Implemented — verified against the code on 2026-07-31  
 **Owner:** Helyx  
 **Created:** 2026-05-04  
-**Target:** Helyx feature branch `feature/state-matrix-orchestrator-prd`
+**Target:** Helyx feature branch `feature/state-matrix-orchestrator-prd` (merged into `main`)
+
+### Verification, 2026-07-31
+
+This document sat at `Draft` for three months while the feature was already shipped. The
+orchestrator lives in `orchestrator/gate.ts`, `orchestrator/matrix.ts` and
+`orchestrator/store.ts`, wired into `channel/permissions.ts` and `mcp/tools.ts`. Its branch
+is fully merged into `main` with nothing left outside it, and its final commit —
+"address all review findings (C1–C3, H1–H4, M1–M3)" — shows it went through review.
+`tests/unit/matrix-validator.test.ts` passes: 19 tests, 35 assertions.
 
 ## 1. Summary
 

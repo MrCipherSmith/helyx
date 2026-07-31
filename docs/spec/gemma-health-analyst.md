@@ -1,5 +1,11 @@
 # PRD: Gemma Health Analyst
 
+**Status:** Implemented — verified against the code on 2026-07-31
+
+`callGemmaForHealth` runs in `scripts/supervisor.ts` (line 1068), fed by the periodic
+snapshot at line 1111. The reasoning-block strip added on 2026-07-31 keeps a model's
+`<think>` output out of the incident text.
+
 ## Problem
 
 The current supervisor is reactive: it detects specific failures via hardcoded rules, then optionally calls Gemma/Qwen to *explain* what happened. There is no holistic, proactive health review of the whole system — no single loop that looks at everything together and makes a judgment call on overall state.

@@ -1,5 +1,11 @@
 # PRD: Session Context Injection on CLI Session Start
 
+**Status:** Implemented — verified against the code on 2026-07-31.
+
+Both context tiers are live in `channel/poller.ts`: `ContextTier = "summary" | "raw"`,
+the per-process `injectedSessions` guard, and injection into the first queued message
+delivered to a freshly started session.
+
 ## Overview
 
 When a Claude Code CLI session restarts (after crash, manual restart, or supervisor bounce), the new process starts with a blank context window. Messages queued via MDR-001 are delivered, but Claude has no memory of prior conversation. This feature injects a prior-session context block into the first delivered message so Claude has working context immediately.

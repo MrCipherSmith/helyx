@@ -1,5 +1,11 @@
 # PRD (AI-readable): Message Delivery Resilience
 
+## STATUS: IMPLEMENTED
+## VERIFIED_ON: 2026-07-31
+## EVIDENCE: bot/text-handler.ts (message_queue insert on disconnected session),
+##           scripts/supervisor.ts (QUEUE_STUCK_MS, STUCK_QUEUE_FORWARD_MINUTES),
+##           channel/recovery.ts + memory/db.ts (pending_replies)
+
 ## FEATURE_ID: MDR-001
 ## STATUS: Draft
 ## CREATED: 2026-06-25
