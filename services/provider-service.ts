@@ -48,7 +48,14 @@ const AUTH_SCHEMES: AuthScheme[] = ["bearer", "api_key"];
  */
 export const DEFAULT_PROVIDER_LABEL = "Default (Claude)";
 
-function validate(input: CreateProviderInput): { baseUrl: string; authScheme: AuthScheme } {
+/**
+ * Validate and normalise provider input. Exported so the rules can be tested
+ * without a database — every rejection here happens before any SQL runs.
+ *
+ * Normalisation matters as much as rejection: a trailing slash on base_url
+ * would produce a double slash once Claude Code appends its path.
+ */
+export function validateProviderInput(input: CreateProviderInput): { baseUrl: string; authScheme: AuthScheme } {
   const name = input.name.trim();
   if (!name) throw new Error("provider name is required");
 
@@ -102,7 +109,7 @@ export class ProviderService {
   }
 
   async create(input: CreateProviderInput): Promise<ProviderSummary> {
-    const { baseUrl, authScheme } = validate(input);
+    const { baseUrl, authScheme } = validateProviderInput(input);
     const [row] = await sql`
       INSERT INTO providers (name, base_url, auth_token, auth_scheme, models)
       VALUES (

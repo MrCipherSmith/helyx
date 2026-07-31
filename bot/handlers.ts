@@ -155,6 +155,10 @@ export function registerHandlers(b: Bot): void {
   b.command("remote_control", handleRemoteControl);
   b.command("monitor", handleMonitor);
   b.command("projects", handleProjects);
+  b.command("providers", async (ctx) => {
+    const { handleProviders } = await import("./commands/providers.ts");
+    await handleProviders(ctx);
+  });
   b.command("project_add", handleProjectAdd);
   b.command("project_facts", handleProjectFacts);
   b.command("project_scan", handleProjectScan);

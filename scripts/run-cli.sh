@@ -97,7 +97,15 @@ while true; do
       fi
       if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${SUPERVISOR_CHAT_ID:-}" ]; then
         _project_db_id=$(psql "${DATABASE_URL:-}" -t -c "SELECT id FROM projects WHERE path='${PROJECT_DIR}'" 2>/dev/null | tr -d ' \n' || true)
-        _tg_body="{\"chat_id\":\"${SUPERVISOR_CHAT_ID}\",\"text\":\"🚨 ${PROJECT_NAME}: Claude Code перезапустился ${_count} раз за ${RESTART_WINDOW_SECONDS}сек — остановлен.\\nТребуется ручной запуск.\""
+        # A restart loop on a project with a custom provider is most often a bad
+        # or expired token — the endpoint rejects auth, claude exits, the wrapper
+        # retries. Name the provider so the operator checks the key first
+        # instead of debugging the session.
+        _prov_hint=""
+        if [ -n "${ANTHROPIC_BASE_URL:-}" ]; then
+          _prov_hint="\\n\\nПроект использует провайдера: ${ANTHROPIC_BASE_URL}${ANTHROPIC_MODEL:+ (${ANTHROPIC_MODEL})}.\\nЧастая причина — неверный или истёкший ключ: проверь его в /providers."
+        fi
+        _tg_body="{\"chat_id\":\"${SUPERVISOR_CHAT_ID}\",\"text\":\"🚨 ${PROJECT_NAME}: Claude Code перезапустился ${_count} раз за ${RESTART_WINDOW_SECONDS}сек — остановлен.\\nТребуется ручной запуск.${_prov_hint}\""
         if [ -n "${SUPERVISOR_TOPIC_ID:-}" ]; then
           _tg_body="${_tg_body},\"message_thread_id\":${SUPERVISOR_TOPIC_ID}"
         fi

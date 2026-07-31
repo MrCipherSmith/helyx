@@ -140,6 +140,21 @@ async function addProject(ctx: Context, path: string): Promise<void> {
     await replyInThread(ctx, "⚠️ Не удалось записать CLAUDE.md — файловая система read-only. Добавь правила бота вручную.");
   }
 
+  // Offer a provider/model choice for a newly added project.
+  //
+  // Only for new ones, and only when providers exist: an operator who has
+  // registered none would just get a one-option menu, and re-adding an existing
+  // project should not silently reopen a settings dialog. Skipping the picker
+  // leaves provider_id NULL, which is the default Anthropic endpoint.
+  if (isNew) {
+    const { providerService } = await import("../../services/provider-service.ts");
+    const providers = await providerService.list();
+    if (providers.length > 0) {
+      const { showProviderPicker } = await import("./providers.ts");
+      await showProviderPicker(ctx, project.id, false);
+    }
+  }
+
   // Trigger async project knowledge scan (non-blocking)
   const { scanProjectKnowledge } = await import("../../memory/project-scanner.ts");
   scanProjectKnowledge(project.path).catch((err) =>

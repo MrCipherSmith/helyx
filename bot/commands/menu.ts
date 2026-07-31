@@ -36,6 +36,7 @@ const GROUPS: Group[] = [
     commands: [
       { name: "projects",      label: "📋 List" },
       { name: "project_add",   label: "➕ Add" },
+      { name: "providers",     label: "🔌 Providers" },
       { name: "project_facts", label: "🔍 Facts" },
       { name: "project_scan",  label: "🔄 Scan" },
     ],
@@ -259,6 +260,7 @@ async function dispatch(ctx: Context, name: string): Promise<void> {
     // Projects
     case "projects":      { const { handleProjects }     = await import("./projects.ts");      await handleProjects(ctx);     break; }
     case "project_add":   { const { handleProjectAdd }   = await import("./project-add.ts");   await handleProjectAdd(ctx);   break; }
+    case "providers":     { const { handleProviders }    = await import("./providers.ts");     await handleProviders(ctx);    break; }
     case "project_facts": { const { handleProjectFacts } = await import("./project-facts.ts"); await handleProjectFacts(ctx); break; }
     case "project_scan":  { const { handleProjectScan }  = await import("./project-facts.ts"); await handleProjectScan(ctx);  break; }
     // Monitoring

@@ -57,6 +57,7 @@ async function main() {
     await bot.api.setMyCommands([
       { command: "menu",        description: "All commands grouped by category" },
       { command: "projects",    description: "List projects (Start/Stop)" },
+      { command: "providers",   description: "LLM providers (add/remove)" },
       { command: "project_add", description: "Register a new project" },
       { command: "sessions",  description: "List sessions" },
       { command: "switch",    description: "Switch session" },

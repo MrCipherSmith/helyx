@@ -1,6 +1,7 @@
 import type { Context } from "grammy";
 import { InlineKeyboard } from "grammy";
 import { projectService } from "../../services/project-service.ts";
+import type { ProviderSelection } from "../../services/project-service.ts";
 import { sql } from "../../memory/db.ts";
 import { replyInThread } from "../format.ts";
 
@@ -18,11 +19,32 @@ async function getPendingActions(): Promise<Map<number, "start" | "stop">> {
   return map;
 }
 
+/** Provider/model selection per project, for the annotation in the list. */
+async function getSelections(ids: number[]): Promise<Map<number, ProviderSelection>> {
+  const map = new Map<number, ProviderSelection>();
+  if (ids.length === 0) return map;
+  const rows = await sql`
+    SELECT pr.id, pr.model, pv.id AS provider_id, pv.name AS provider_name
+    FROM projects pr
+    LEFT JOIN providers pv ON pv.id = pr.provider_id
+    WHERE pr.id = ANY(${ids})
+  `;
+  for (const row of rows) {
+    map.set(Number(row.id), {
+      providerId: row.provider_id ?? null,
+      providerName: row.provider_name ?? null,
+      model: row.model ?? null,
+    });
+  }
+  return map;
+}
+
 export async function handleProjects(ctx: Context): Promise<void> {
   const [projects, pending] = await Promise.all([
     projectService.list(),
     getPendingActions(),
   ]);
+  const selections = await getSelections(projects.map((p) => p.id));
 
   if (projects.length === 0) {
     await replyInThread(ctx, "No projects configured.\nUse /project-add to add one.");
@@ -40,11 +62,19 @@ export async function handleProjects(ctx: Context): Promise<void> {
     } else {
       const isActive = p.session_status === "active";
       const icon = isActive ? "🟢" : "⚪";
-      lines.push(`${icon} ${p.name}  (${p.path})`);
+      const cfg = selections.get(p.id);
+      // Only annotate a non-default configuration — a project on stock Claude
+      // should look exactly as it did before this feature existed.
+      const cfgLabel = cfg && (cfg.providerName || cfg.model)
+        ? `  · ${cfg.providerName ?? "Claude"}${cfg.model ? `/${cfg.model}` : ""}`
+        : "";
+      lines.push(`${icon} ${p.name}  (${p.path})${cfgLabel}`);
       if (isActive) {
-        kb.text(`⏹ Stop ${p.name}`, `proj:stop:${p.id}`).row();
+        kb.text(`⏹ Stop ${p.name}`, `proj:stop:${p.id}`)
+          .text("⚙️", `pmchg:${p.id}:prov`).row();
       } else {
-        kb.text(`▶️ Start ${p.name}`, `proj:start:${p.id}`).row();
+        kb.text(`▶️ Start ${p.name}`, `proj:start:${p.id}`)
+          .text("⚙️", `pmchg:${p.id}:prov`).row();
       }
     }
   }
@@ -127,6 +157,7 @@ export async function handleProjectCallback(ctx: Context): Promise<void> {
     projectService.list(),
     getPendingActions(),
   ]);
+  const selections = await getSelections(projects.map((p) => p.id));
 
   const kb = new InlineKeyboard();
   const lines: string[] = ["Projects:\n"];
@@ -139,11 +170,19 @@ export async function handleProjectCallback(ctx: Context): Promise<void> {
     } else {
       const isActive = p.session_status === "active";
       const icon = isActive ? "🟢" : "⚪";
-      lines.push(`${icon} ${p.name}  (${p.path})`);
+      const cfg = selections.get(p.id);
+      // Only annotate a non-default configuration — a project on stock Claude
+      // should look exactly as it did before this feature existed.
+      const cfgLabel = cfg && (cfg.providerName || cfg.model)
+        ? `  · ${cfg.providerName ?? "Claude"}${cfg.model ? `/${cfg.model}` : ""}`
+        : "";
+      lines.push(`${icon} ${p.name}  (${p.path})${cfgLabel}`);
       if (isActive) {
-        kb.text(`⏹ Stop ${p.name}`, `proj:stop:${p.id}`).row();
+        kb.text(`⏹ Stop ${p.name}`, `proj:stop:${p.id}`)
+          .text("⚙️", `pmchg:${p.id}:prov`).row();
       } else {
-        kb.text(`▶️ Start ${p.name}`, `proj:start:${p.id}`).row();
+        kb.text(`▶️ Start ${p.name}`, `proj:start:${p.id}`)
+          .text("⚙️", `pmchg:${p.id}:prov`).row();
       }
     }
   }

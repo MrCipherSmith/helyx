@@ -1,7 +1,7 @@
 # Implementation Package — Per-Project Provider & Model Switching
 
 **Created:** 2026-07-24
-**Status:** ready-for-implementation
+**Status:** Implemented — 2026-07-31 (see docs/providers.md)
 **Owner:** MrCipherSmith
 
 Managed-work package authored in the flow-orchestrator Phase-1 shape
