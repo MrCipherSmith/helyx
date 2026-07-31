@@ -2,8 +2,21 @@
 
 **Version:** 2.0  
 **Date:** 2026-06-29  
-**Status:** Draft — pending review  
+**Status:** Implemented — verified against the code on 2026-07-31  
 **Target:** `channel/status.ts`, `channel/poller.ts`, `channel/tools.ts`, `channel/permissions.ts`
+
+### Verification, 2026-07-31
+
+All six improvements shipped in `dbdf0be` — "feat(status): implement status UX improvements
+(SU-1 through SU-6) (#36)". The document was left at `Draft — pending review`.
+
+Checked individually in `channel/status.ts`: `computeSignature` with the early return on a
+matching `lastSentSignature` (SU-1); `chooseSpinnerInterval` and the recursive `scheduleTick`
+with `state.timer = setTimeout(...)` and `clearTimeout` on delete, no `clearInterval` left
+(SU-2); `detectPhase`, `PHASE_LABEL` and `StatusExtras` (SU-3); `accumulateTurnActivity`
+(SU-4); `pendingImmediateEdit` (SU-5); `nextEditDelay = 30_000` on a 429 or exhausted
+deadline (SU-6). Every new `StatusState` field from Section 4 is present and `timer` is typed
+`setTimeout`.
 
 ---
 
