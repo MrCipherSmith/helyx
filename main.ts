@@ -72,6 +72,8 @@ async function main() {
     ], { scope: { type: "all_private_chats" } }).catch((err) => console.error("[main] failed to set private commands:", err));
     await bot.api.setMyCommands([
       { command: "menu",          description: "All commands" },
+      { command: "projects",      description: "List projects (Start/Stop/⚙️)" },
+      { command: "providers",     description: "LLM providers (add/remove)" },
       { command: "project_add",   description: "Register a new project" },
       { command: "interrupt",     description: "Interrupt current Claude session" },
       { command: "project_facts", description: "Show project knowledge facts" },
