@@ -14,6 +14,13 @@ export interface ProjectWithSession extends Project {
   session_status: string | null;
 }
 
+/** A project's provider/model choice. All-null means the default Anthropic endpoint. */
+export interface ProviderSelection {
+  providerId: number | null;
+  providerName: string | null;
+  model: string | null;
+}
+
 export class ProjectService {
   async list(): Promise<ProjectWithSession[]> {
     return sql`
@@ -38,6 +45,44 @@ export class ProjectService {
   async getByPath(path: string): Promise<Project | null> {
     const rows = await sql`SELECT id, name, path, tmux_session_name, created_at FROM projects WHERE path = ${path}` as unknown as Project[];
     return rows[0] ?? null;
+  }
+
+  /** Current provider/model selection, with the provider's display name resolved. */
+  async getProviderSelection(id: number): Promise<ProviderSelection | null> {
+    const [row] = await sql`
+      SELECT pr.provider_id, pr.model, pv.name AS provider_name
+      FROM projects pr
+      LEFT JOIN providers pv ON pv.id = pr.provider_id
+      WHERE pr.id = ${id}
+    `;
+    if (!row) return null;
+    return {
+      providerId: row.provider_id ?? null,
+      providerName: row.provider_name ?? null,
+      model: row.model ?? null,
+    };
+  }
+
+  /** null clears the selection, returning the project to the default Anthropic endpoint. */
+  async setProvider(id: number, providerId: number | null): Promise<void> {
+    await sql`UPDATE projects SET provider_id = ${providerId} WHERE id = ${id}`;
+  }
+
+  /** null clears the model, letting the provider (or Claude) pick its default. */
+  async setModel(id: number, model: string | null): Promise<void> {
+    await sql`UPDATE projects SET model = ${model} WHERE id = ${id}`;
+  }
+
+  /**
+   * Restart a project so a provider/model change takes effect.
+   *
+   * Provider config is resolved at launch inside run-cli.sh, so a running
+   * session keeps its old endpoint until it is restarted — the DB write alone
+   * changes nothing visible. Delegates to enqueueRestart, which dedupes against
+   * an already-pending proj_start.
+   */
+  async restart(id: number, reason: string, requestedBy = "user:provider-change"): Promise<"queued" | "skipped_already_pending"> {
+    return enqueueRestart(sql, id, reason, requestedBy);
   }
 
   async create(name: string, path: string): Promise<Project | null> {

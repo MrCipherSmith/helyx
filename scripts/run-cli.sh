@@ -44,6 +44,24 @@ if [ "$PROJECT_DIR" != "$HELYX_DIR" ] && [ -f ".env" ]; then
   load_env ".env" && echo "[run-cli] Loaded project .env"
 fi
 
+# --- Provider / model resolution -------------------------------------------
+#
+# Must run AFTER the .env loads above, because its whole job is to override
+# what they set. helyx .env exports ANTHROPIC_API_KEY and load_env uses
+# "only if unset" semantics, so a project .env cannot override it — without
+# the explicit unset the helper emits, the real Anthropic key would be sent
+# to a third-party endpoint.
+#
+# Prints nothing for a project with no selection, so unconfigured projects
+# launch exactly as before. Never echo the evaluated output: it carries the
+# provider token.
+_provider_env="$(bun "$HELYX_DIR/scripts/resolve-provider-env.ts" "$(pwd -P)" 2>/dev/null)"
+if [ -n "$_provider_env" ]; then
+  eval "$_provider_env"
+  unset _provider_env
+  echo "[run-cli] Provider config applied: ${ANTHROPIC_BASE_URL:-anthropic default}${ANTHROPIC_MODEL:+ · $ANTHROPIC_MODEL}"
+fi
+
 MAX_RESTARTS_IN_WINDOW="${MAX_RESTARTS_IN_WINDOW:-3}"
 RESTART_WINDOW_SECONDS="${RESTART_WINDOW_SECONDS:-300}"
 PROJECT_NAME="$(basename "${PROJECT_DIR:-$(pwd)}")"

@@ -784,6 +784,39 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 46,
+    name: "providers table + per-project provider/model selection",
+    up: async (tx) => {
+      // Operator-registered Anthropic-compatible backends (GLM, Kimi, DeepSeek,
+      // OpenRouter, …). auth_token is a secret and lives only here and in the
+      // host process env at launch — never in admin_commands payloads, tmux
+      // command arguments, or logs.
+      await tx`
+        CREATE TABLE IF NOT EXISTS providers (
+          id          SERIAL PRIMARY KEY,
+          name        TEXT NOT NULL UNIQUE,
+          base_url    TEXT NOT NULL,
+          auth_token  TEXT NOT NULL,
+          auth_scheme TEXT NOT NULL DEFAULT 'bearer',
+          models      JSONB NOT NULL DEFAULT '[]'::jsonb,
+          created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `;
+
+      // provider_id NULL means the default Anthropic endpoint with the helyx
+      // key — the pre-existing behaviour, so untouched projects keep working.
+      // ON DELETE SET NULL: removing a provider falls those projects back to
+      // the default rather than orphaning or deleting them.
+      await tx`
+        ALTER TABLE projects ADD COLUMN IF NOT EXISTS provider_id INT
+          REFERENCES providers(id) ON DELETE SET NULL
+      `;
+      // NULL model = whatever the provider (or Claude) defaults to. May be set
+      // with provider_id still NULL, to switch Anthropic model tiers.
+      await tx`ALTER TABLE projects ADD COLUMN IF NOT EXISTS model TEXT`;
+    },
+  },
 ];
 
 // --- Public API ---
