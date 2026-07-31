@@ -1,6 +1,6 @@
 # PRD: Deployment Simplification
 
-Version: 1.1.0
+Version: 1.2.0
 
 ## 1. Problem
 
@@ -11,7 +11,8 @@ TTS. The wizard is not missing. What is missing is *restraint*: every heavy
 component is on by default, and the wizard offers no way to say "give me the
 small one".
 
-Five concrete defects, all measured on 2026-07-30 against the running stack:
+Six concrete defects. P1–P5 were measured on 2026-07-30 against the running
+stack; P6 was discovered during implementation.
 
 **P1 — The dashboard is mandatory, and it is what makes the build fail on a
 small host.** There is no feature flag anywhere: a grep for `ENABLE`/`DISABLE`
@@ -54,6 +55,17 @@ build in general. Full numbers and method in specification §2.1.
 `exec helyx setup < /dev/tty`. There is no flag-driven path, so the installer
 cannot be used from cloud-init, a Dockerfile, CI, or any provisioning tool.
 
+**P6 — Setup silently destroys a live installation.** Found by doing it: the
+wizard writes `.env` in the repository directory with no backup and no
+existence check, then runs `docker compose up -d --build` on its own. Run inside
+a configured install — a provisioning script pointed at the wrong path, a re-run
+to check something — it replaces the operator's credentials and restarts the bot
+with the new ones. `.env` is gitignored, so there is nothing to restore from.
+
+This was tolerable while the wizard was interactive, since a human watched it
+happen. R4 makes it dangerous: the whole point is to run it from scripts.
+Mitigating it is therefore part of R4, not a separate nicety.
+
 **P5 — Piper ships by accident, voices and all.** An earlier revision of this
 document stated that nothing Piper-related was in the image and that a published
 image would have no working TTS. **That was wrong**, and the correction is
@@ -73,7 +85,8 @@ future narrowing of the build context would remove local TTS silently.
 
 ## 2. Goal
 
-A newcomer runs one command, answers three or four questions, and has a working
+A newcomer runs one command, answers a handful of questions (five, in `minimal`),
+and has a working
 Helyx on a 2 GB / 2 vCPU VPS without building anything locally. An operator
 provisions the same thing from a script with no terminal attached.
 
@@ -99,7 +112,15 @@ downstream default, and MUST then ask only the questions that profile needs.
 | `local` | Ollama with lightweight models, Piper TTS, fully offline. | 6 GB / 4 vCPU / 40 GB |
 | `full` | Current behaviour: dashboard on, heavy models permitted. | 16 GB / 4 vCPU / 80 GB |
 
-The wizard MUST reduce from its present ~15 prompts to 3–4 in `minimal`.
+The wizard MUST sharply reduce its prompt count in `minimal`.
+
+**Implemented: five prompts** — profile, bot token, user id, provider, API key —
+down from roughly fifteen. The original target of 3–4 is not met and the
+criterion is restated rather than the count massaged: provider and key are two
+prompts however they are phrased, and dropping the provider choice to reach four
+would force every `minimal` user onto one vendor. Everything else `minimal` used
+to ask (deployment type, transport, Groq key, database password, port) is now
+decided by the profile and still overridable by flag.
 
 ### R2 — Dashboard feature flag
 
@@ -129,6 +150,13 @@ fits, it MUST say so and fall back to the API path.
 no controlling terminal. `install.sh` MUST forward those flags and skip the
 `< /dev/tty` exec when they are present. Missing required values MUST fail with
 a named error, never an interactive prompt.
+
+It MUST also be safe to run in the wrong place (P6):
+
+- setup MUST refuse to overwrite an existing `.env` unless `--force`, and
+  `--force` MUST keep the previous file as `.env.bak`;
+- an unattended run MUST NOT start or rebuild Docker services. It configures the
+  directory and stops; `--start` opts in.
 
 ### R5 — Prebuilt image
 
@@ -163,6 +191,7 @@ should be prioritised as a convenience requirement.
 | S4 | Dashboard-off exposes no dashboard surface | Dashboard routes return 404; MCP endpoint unaffected |
 | S5 | Minimal profile asks ≤ 4 questions | Prompt count in a wizard transcript |
 | S6 | Unattended install works | `helyx setup` with flags succeeds under `setsid`, stdin closed |
+| S9 | Setup cannot destroy a live installation | Re-running setup over an existing `.env` exits non-zero and changes nothing; unattended runs never start or rebuild services |
 | S7 | No regression when enabled | Dashboard-on deployment behaves as today |
 
 S3 is deliberately expressed as a comparison rather than a target number: the

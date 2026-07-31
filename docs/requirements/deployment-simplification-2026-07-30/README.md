@@ -1,6 +1,6 @@
 # Deployment Simplification
 
-Version: 1.1.0
+Version: 1.2.0
 
 ## Purpose
 
@@ -10,8 +10,18 @@ VPS, through one interactive install script — without a 3 GB image build, a
 
 ## Status
 
-`spec ready` — no part of this package is implemented; all four open questions
-are decided and recorded in [implementation-plan.md](implementation-plan.md).
+`implemented` — all six tasks are built on branch
+`feat/deployment-simplification`; all four open questions are decided and
+recorded in [implementation-plan.md](implementation-plan.md).
+
+Measured outcome: the image went 3.13 GB → 1.27 GB, and a dashboard-off build
+now completes under a 256 MB / 2 CPU builder where the full build died at
+512 MB. The `minimal` wizard asks five questions instead of roughly fifteen.
+
+One defect was found the hard way during implementation and is recorded as
+PRD P6: the wizard overwrote a live `.env` and restarted the bot with test
+credentials. Both behaviours are now guarded — setup refuses to overwrite
+without `--force`, and unattended runs never touch running services.
 
 **Revised 2026-07-30 after the build was profiled.** The package was drafted on
 an unmeasured assumption — that a small host cannot deploy helyx because the
@@ -41,7 +51,7 @@ behaviour is a proposal.
 | [README.md](README.md) | This file — purpose, status, scope |
 | [prd.md](prd.md) | Problem, goal, users, requirements, success criteria, risks |
 | [specification.md](specification.md) | Config surface, CLI surface, profile contracts, acceptance criteria |
-| [implementation-plan.md](implementation-plan.md) | Five tasks, sequencing, files touched, effort |
+| [implementation-plan.md](implementation-plan.md) | Six tasks, sequencing, files touched, effort |
 
 ## Scope
 

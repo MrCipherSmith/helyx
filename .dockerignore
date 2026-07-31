@@ -1,7 +1,14 @@
 node_modules
 dashboard/node_modules
-dashboard/dist
+dashboard/webapp/node_modules
 dist
+
+# Both dashboard build outputs. These must be excluded, not just `dashboard/dist`:
+# the image gets its dist from the build stages, and anything left here would be
+# copied in from the maintainer's working tree by `COPY . .` — which would put
+# stale webapp assets into a dashboard-off image.
+dashboard/dist
+dashboard/webapp/dist
 .env
 .env.*
 !.env.example
@@ -10,3 +17,16 @@ dist
 *.log
 downloads
 docs
+
+# Piper voices — 60.3 MB each, and the wizard offers six. They are a per-user
+# choice: downloaded at setup and bind-mounted from the host, so they survive
+# image upgrades and nobody inherits the maintainer's personal voice set.
+#
+# NOTE: piper/piper/ (the 52 MB runtime) is deliberately NOT excluded — it ships
+# in the image, platform-matched, because the user has no other way to get it.
+# See the COPY comment in Dockerfile before changing either line.
+piper/voices
+
+# Local run artifacts — no reason to ship.
+logs
+graphify-out

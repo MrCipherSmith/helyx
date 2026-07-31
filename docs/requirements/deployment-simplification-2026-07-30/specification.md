@@ -1,6 +1,6 @@
 # Specification: Deployment Simplification
 
-Version: 1.1.0
+Version: 1.2.0
 
 ## 1. Identity
 
@@ -8,7 +8,7 @@ Version: 1.1.0
 |-------|-------|
 | Package | `deployment-simplification-2026-07-30` |
 | Kind | implementation-plan |
-| Status | spec ready — all four open questions decided; nothing in this document is implemented |
+| Status | implemented — all six tasks built on branch feat/deployment-simplification |
 | Surface | `install.sh`, `cli.ts`, `config.ts`, `Dockerfile`, `mcp/server.ts`, `.github/workflows/` |
 | Evidence date | 2026-07-30 |
 

@@ -209,6 +209,10 @@ async function* ollamaStream(
       model: CONFIG.OLLAMA_CHAT_MODEL,
       messages: [{ role: "system", content: system }, ...toTextMessages(messages)],
       stream: true,
+      // Hybrid reasoning models (Qwen3 and friends) emit a <think> block by
+      // default. We do not want it: it is latency and tokens spent on output
+      // nobody reads. Older Ollama ignores this field, hence the stripping below.
+      think: false,
     }),
   });
 
@@ -219,7 +223,17 @@ async function* ollamaStream(
 
   const decoder = new TextDecoder();
   let buffer = "";
-  let thinkingDone = false;
+
+  // Reasoning-block state machine.
+  //
+  // The previous version skipped every chunk until it saw "</think>", which
+  // silently swallowed the entire answer from any model that does not emit a
+  // reasoning block — including the same models once `think: false` is honoured.
+  // So decide first whether a block is actually present, and only then skip.
+  let phase: "deciding" | "thinking" | "passthrough" = "deciding";
+  let pending = "";
+  const OPEN = "<think>";
+  const CLOSE = "</think>";
 
   while (true) {
     const { done, value } = await reader.read();
@@ -234,22 +248,48 @@ async function* ollamaStream(
       try {
         const data = JSON.parse(line);
         const content = data.message?.content ?? "";
-        if (content) {
-          if (!thinkingDone) {
-            if (content.includes("</think>")) {
-              thinkingDone = true;
-              const after = content.split("</think>").pop() ?? "";
-              if (after) yield after;
-            }
+        if (!content) continue;
+
+        if (phase === "passthrough") {
+          yield content;
+          continue;
+        }
+
+        pending += content;
+
+        if (phase === "deciding") {
+          const head = pending.trimStart();
+          if (!head) continue;
+          if (head.startsWith(OPEN)) {
+            phase = "thinking";
+          } else if (head.length < OPEN.length && OPEN.startsWith(head)) {
+            continue; // still ambiguous — could yet become "<think>"
+          } else {
+            phase = "passthrough";
+            yield pending;
+            pending = "";
             continue;
           }
-          yield content;
+        }
+
+        if (phase === "thinking") {
+          const idx = pending.indexOf(CLOSE);
+          if (idx !== -1) {
+            const after = pending.slice(idx + CLOSE.length);
+            phase = "passthrough";
+            pending = "";
+            if (after) yield after;
+          }
         }
       } catch (e) {
         console.warn("[client] failed to parse Ollama chunk:", (e as Error)?.message);
       }
     }
   }
+
+  // A reply shorter than "<think>" ends while still ambiguous; flush it rather
+  // than dropping it. An unterminated reasoning block is discarded on purpose.
+  if (phase === "deciding" && pending) yield pending;
 }
 
 async function ollamaGenerate(
@@ -263,6 +303,9 @@ async function ollamaGenerate(
       model: CONFIG.OLLAMA_CHAT_MODEL,
       messages: [{ role: "system", content: system }, ...toTextMessages(messages)],
       stream: false,
+      // See ollamaStream: suppress the reasoning block; the strip below is the
+      // fallback for Ollama versions that ignore this field.
+      think: false,
     }),
   });
 

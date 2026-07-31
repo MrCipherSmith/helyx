@@ -512,15 +512,21 @@ export function startMcpHttpServer(bot: Bot | null): ReturnType<typeof createSer
       return;
     }
 
-    // Dashboard API + static files
-    try {
-      const handled = await handleDashboardRequest(req, res, url);
-      if (handled) return;
-    } catch (err: any) {
-      console.error("[dashboard] error:", err);
-      res.writeHead(500, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: err?.message }));
-      return;
+    // Dashboard API + static files.
+    // Gated on ENABLE_DASHBOARD: when off, dashboard routes simply do not
+    // exist and fall through to the 404 below. The /mcp route beneath this
+    // block is deliberately outside the guard — dashboard and MCP share this
+    // server, and disabling one must not touch the other.
+    if (CONFIG.ENABLE_DASHBOARD) {
+      try {
+        const handled = await handleDashboardRequest(req, res, url);
+        if (handled) return;
+      } catch (err: any) {
+        console.error("[dashboard] error:", err);
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: err?.message }));
+        return;
+      }
     }
 
     if (url.pathname !== "/mcp") {
