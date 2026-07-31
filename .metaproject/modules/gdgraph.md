@@ -9,10 +9,13 @@ frontend/static outputs are skipped by default.
 
 ## Commands
 
-- `gd-metapro gdgraph build`
-- `gd-metapro gdgraph query "<query>"`
-- `gd-metapro gdgraph affected <target>`
-- `gd-metapro gdgraph explain <target>`
+- `keryx gdgraph build`
+- `keryx gdgraph find "<terms>"` — find files/symbols by concept (seed search)
+- `keryx gdgraph symbol "<name>" [--impact [--depth N]]` — definition + callers + callees; `--impact` = transitive-caller blast radius (symbol layer)
+- `keryx gdgraph path "<A>" "<B>"` — shortest connection between two files/symbols
+- `keryx gdgraph affected <file-or-symbol>` — blast radius
+- `keryx gdgraph query cycles | orphans`
+- `keryx gdgraph symbols <enable|disable|status>` — opt-in tree-sitter symbol layer
 
 ## Data
 

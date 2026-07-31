@@ -6,12 +6,13 @@ Runs common project context commands with token-aware filtering and stores raw o
 
 ## Commands
 
-- `gd-metapro ctx status`
-- `gd-metapro ctx diff`
-- `gd-metapro ctx rg "<pattern>"`
-- `gd-metapro ctx read <file>`
-- `gd-metapro ctx run -- <command...>`
-- `gd-metapro ctx show latest`
+- `keryx ctx status`
+- `keryx ctx diff`
+- `keryx ctx rg "<pattern>"`
+- `keryx ctx read <file>`
+- `keryx ctx run -- <command...>`
+- `keryx ctx show latest`
+- `keryx ctx install-hook` / `keryx ctx uninstall-hook` (opt-in routing guard)
 
 ## Data
 

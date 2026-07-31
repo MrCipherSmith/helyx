@@ -7,7 +7,7 @@ description: |
   "review --strict", "review --project-conventions", "review --legacy-profiles", "review --all". Routes to specialized reviewers in parallel and
   consolidates findings into one unified report.
   NOT for: running a single specialized reviewer — invoke it directly by name instead.
-version: "1.5.0"
+version: "1.6.0"
 triggers:
   - "review"
   - "code review"
@@ -35,7 +35,7 @@ triggers:
   - "review --mobx-store"
 metadata:
   author: "MrCipherSmith"
-  version: "1.5.0"
+  version: "1.6.0"
   category: "review"
 license: "MIT"
 compatibility: "cursor,codex,zed,opencode,claude"
@@ -80,8 +80,49 @@ Review Orchestrator Progress:
 | `context_mode` | string | no | `none`, `light`, or `full`. Default: `light` for PR review, `none` for small path reviews. `full` may call `context-collector` before dispatch. |
 | `token_budget` | object | no | Optional budget controls: `{total, per_reviewer, diff_max_chars, file_max_chars}`. |
 | `model_strategy` | string | no | `current`, `ask`, or `adaptive`. Default: `current`; do not switch models unless user or automation allows it. |
+| `managed_review` | object | no | Optional managed review mode: `{mode, target, target_ref, flow_id, reviewers}` where mode is `lightweight`, `attach-review`, `review-flow`, or `ingest`. |
 
 ---
+
+## Managed Review Feedback Loop
+
+Default behavior remains lightweight: emit the consolidated report only and do
+not create Task Manager artifacts. Use managed mode only when requested by the
+caller or when an unambiguous related flow is detected and the caller accepts
+attachment.
+
+Runtime CLI surface:
+
+```text
+keryx review attach --flow <id> --target <kind> --ref <ref>
+keryx review start --target <kind> --ref <ref>
+keryx review ingest --report <path> [--flow <id>] --ref <ref>
+keryx review status <review-id-or-path>
+keryx review complete <review-id-or-path>
+```
+
+Managed modes:
+
+- `lightweight`: report-only; no flow or managed review artifacts are created.
+- `attach-review`: write under
+  `.metaproject/flows/<flow-dir>/reviews/<review-id>/`.
+- `review-flow`: write under `.metaproject/reviews/<review-id>/`.
+- `ingest`: convert an existing review report into managed findings, decisions,
+  and learning handoff, attached to a flow when one is explicit or matched.
+
+Required artifacts for managed modes:
+
+- `manifest.json`
+- `scope.md`
+- `coverage.md`
+- `report.md`
+- `findings.json`
+- `learning.md`
+- `decisions.md`
+
+When attaching to a flow, resolve the flow by explicit `flow_id`, PR URL, issue
+URL, or branch metadata. Never mutate `.metaproject/flows/*/flow.json` from
+review code; Task Manager state changes remain owned by `keryx flow`.
 
 ## Review Context Pack
 
@@ -551,6 +592,34 @@ STATUS: DONE | DONE_WITH_CONCERNS
 ## Positive Notes
 <Optional. Highlight things done well. Keep brief.>
 ```
+
+---
+
+## Skill Learning Handoff
+
+After findings are consolidated, decide whether any of them should re-train a
+project-skill (see `rules/core/skill-lifecycle.mdc`). A review is the strongest
+learning signal: a finding that a project-skill *should have prevented* means the
+skill is stale or incomplete.
+
+1. For each blocker/major finding, `keryx skills route <finding-file>` to
+   see if a project-skill covers that module/entity.
+2. If a covered skill exists and the finding reflects a rule the skill omits or
+   contradicts — especially if the **same class of finding recurs** across files
+   or across reviews — flag it for learning.
+3. Do not mutate the skill yourself. Emit a `Skill Learning` block in the report
+   and hand it to the caller (`job-orchestrator` / `flow-orchestrator`), which
+   dispatches `skills learn` as a subagent (cheaper model if available):
+
+```markdown
+## Skill Learning
+- `<module>/<skill>` ← F-012, F-019 (missing null-guard convention). Suggested:
+  keryx skills learn --from-review <report-path> --skill <module>/<skill>
+```
+
+If no findings map to a project-skill, write `## Skill Learning\n- none`.
+Never run `skills learn apply` from the reviewer — proposal review and apply are
+the orchestrator's step.
 
 ---
 

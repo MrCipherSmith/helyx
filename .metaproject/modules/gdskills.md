@@ -24,7 +24,7 @@ Native bundled Metaproject working skills and orchestrators.
 - `code-verifier`: Run and summarize verification gates: typecheck, lint, tests, build, imports, and changed-scope checks.
 - `context-collector`: Build compact task context from graph, ctx, wiki, memory, health, project-skills, and selected files.
 - `feature-analyzer`: Analyze a feature, module, branch, or migration area and produce an implementation map.
-- `flow-orchestrator`: Run Task Manager-backed implementation flows through gd-metapro flow state, frozen acceptance criteria, PR gates, review, and Code Health.
+- `flow-orchestrator`: Run Task Manager-backed implementation flows through keryx flow state, frozen acceptance criteria, an explicit completion choice, review, and Code Health.
 - `issue-analyzer`: Convert GitHub or local issues into atomic implementation tasks with acceptance criteria.
 - `job-documenter`: Create and maintain persistent job documentation for orchestrated analysis, implementation, and review work.
 - `job-orchestrator`: Run full task pipelines: clarify, collect context, plan, implement, verify, review, and summarize.
@@ -33,6 +33,8 @@ Native bundled Metaproject working skills and orchestrators.
 ### planning
 
 - `brainstorm`: Explore architecture, product, or implementation options with trade-offs and recommendation.
+- `docpack-orchestrator`: Create or update Metaproject requirements packages under docs/requirements with PRD, specification, README, optional protocols/schemas, verification, review, and roadmap updates. Use autodoc-orchestrator instead for reverse-engineering current codebase documentation.
+- `docpack-review`: Review Metaproject requirements packages for completeness, versioning, consistency, schema references, roadmap updates, and unsupported implementation claims.
 - `interview`: Run implementation-specific structured interview used by job-orchestrator before planning.
 - `interviewer`: Ask focused clarification questions before expensive or ambiguous work.
 - `prd-creator`: Convert vague requests into structured PRD and acceptance criteria.
@@ -46,6 +48,7 @@ Native bundled Metaproject working skills and orchestrators.
 
 ### quality
 
+- `metaproject-security`: Check Metaproject Security policies for prompts, external content, memory/wiki/report writes, PII, secrets, prompt injection, and data exfiltration.
 - `perf-check`: Run or summarize performance, bundle, and complexity checks.
 - `pr-issue-documenter`: Create PR descriptions and linked issue documentation from branch changes.
 - `security-audit`: Run dependency and secret/security checks and normalize findings.
@@ -72,9 +75,9 @@ Native bundled Metaproject working skills and orchestrators.
 
 ## Commands
 
-- `gd-metapro skills status`
-- `gd-metapro skills catalog --profile recommended`
-- `gd-metapro skills install --profile recommended`
+- `keryx skills status`
+- `keryx skills catalog --profile recommended`
+- `keryx skills install --profile recommended`
 
 ## Storage
 

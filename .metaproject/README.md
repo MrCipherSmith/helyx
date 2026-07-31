@@ -16,25 +16,25 @@ This folder contains local Metaproject configuration, tools, generated data, and
 ## Common Commands
 
 ```bash
-gd-metapro status
-gd-metapro gdgraph build
-gd-metapro gdgraph query "module pipelines"
-gd-metapro ctx status
-gd-metapro ctx diff
-gd-metapro wiki status
-gd-metapro wiki collect
-gd-metapro wiki index
-gd-metapro skills status
-gd-metapro skills catalog --profile recommended
-gd-metapro skills install --profile recommended
-gd-metapro health run
-gd-metapro health gate
-gd-metapro test analyze
-gd-metapro test run --changed
-gd-metapro memory index
-gd-metapro memory search "project decisions"
-gd-metapro flow list
-gd-metapro flow init --title "..."
+keryx status
+keryx gdgraph build
+keryx gdgraph query "module pipelines"
+keryx ctx status
+keryx ctx diff
+keryx wiki status
+keryx wiki collect
+keryx wiki index
+keryx skills status
+keryx skills catalog --profile recommended
+keryx skills install --profile recommended
+keryx health run
+keryx health gate
+keryx test analyze
+keryx test run --changed
+keryx memory index
+keryx memory search "project decisions"
+keryx flow list
+keryx flow init --title "..."
 ```
 
 ## Editing Policy

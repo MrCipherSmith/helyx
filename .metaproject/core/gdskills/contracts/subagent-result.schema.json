@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://gd-metapro.local/schemas/gdskills/subagent-result.schema.json",
+  "$id": "https://keryx.local/schemas/gdskills/subagent-result.schema.json",
   "title": "Metaproject Subagent Result",
   "type": "object",
   "additionalProperties": false,

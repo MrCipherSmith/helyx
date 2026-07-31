@@ -24,14 +24,14 @@ Read this index first. Do not read every page unless necessary.
 ## Create A Page
 
 ```bash
-gd-metapro wiki new <type> <slug> --title "<title>"
-gd-metapro wiki collect
-gd-metapro wiki index
+keryx wiki new <type> <slug> --title "<title>"
+keryx wiki collect
+keryx wiki index
 ```
 
 ## Pages
 
-<!-- gd-metapro:wiki-index:begin -->
+<!-- keryx:wiki-index:begin -->
 <!-- generated: 2026-07-23T12:00:00.000Z | pages: 20 -->
 
 ### Architecture

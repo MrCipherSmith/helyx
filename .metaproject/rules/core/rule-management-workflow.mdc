@@ -35,7 +35,7 @@ Before creating or editing any rule, the agent MUST ask and confirm:
 After editing rules under `.metaproject/rules/` or `AGENTS.md`, sync to all targets:
 
 ```bash
-gd-metapro update
+keryx update
 ```
 
 ### Sync Targets

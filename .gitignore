@@ -19,7 +19,7 @@ piper/
 jobs/
 logs/
 
-# gd-metapro:begin
+# keryx:begin
 # Metaproject: keep agent-facing context versioned, ignore executable/generated internals.
 .metaproject/runtime/
 .metaproject/core/**/*.ts
@@ -38,7 +38,7 @@ logs/
 .metaproject/data/testing/artifacts/latest.md
 .metaproject/data/testing/artifacts/latest.json
 .metaproject/reports/
-# gd-metapro:end
+# keryx:end
 
 # graphify: generated knowledge-graph output (regenerate with /graphify)
 graphify-out/

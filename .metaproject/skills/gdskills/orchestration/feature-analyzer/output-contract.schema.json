@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://gd-metapro.local/schemas/feature-analyzer/output-contract.schema.json",
+  "$id": "https://keryx.local/schemas/feature-analyzer/output-contract.schema.json",
   "title": "Feature Analyzer Output Contract",
   "description": "Structured analysis output. Delivered as a Markdown report following SKILL.md output format.",
   "type": "object",

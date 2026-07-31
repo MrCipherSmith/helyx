@@ -7,14 +7,14 @@ and writes normalized test reports for agents, Code Health and gdskills.
 
 ## Commands
 
-- `gd-metapro test init`
-- `gd-metapro test analyze`
-- `gd-metapro test run [--changed]`
-- `gd-metapro test status`
-- `gd-metapro test context`
-- `gd-metapro test explain <file-or-scope>`
-- `gd-metapro test related <file>`
-- `gd-metapro test report latest [--json]`
+- `keryx test init`
+- `keryx test analyze`
+- `keryx test run [--changed]`
+- `keryx test status`
+- `keryx test context`
+- `keryx test explain <file-or-scope>`
+- `keryx test related <file>`
+- `keryx test report latest [--json]`
 
 ## Data
 

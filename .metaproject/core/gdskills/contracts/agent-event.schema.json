@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://gd-metapro.local/schemas/gdskills/agent-event.schema.json",
+  "$id": "https://keryx.local/schemas/gdskills/agent-event.schema.json",
   "title": "Metaproject Agent Event",
   "type": "object",
   "additionalProperties": false,

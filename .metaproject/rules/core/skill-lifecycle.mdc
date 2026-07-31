@@ -1,0 +1,55 @@
+---
+description: "When and how agents verify and re-learn project-skills during implementation and review. Verify/learn live in the agent loop, not in git hooks."
+alwaysApply: false
+---
+
+# Skill Lifecycle — verify & learn in the loop
+
+Project-skills (`.metaproject/project-skills/<module>/<entity>/`) capture how a
+module/component/store/service actually works. They drift as code changes.
+Keeping them true is an **agent-loop** responsibility: the implementer, reviewer,
+or orchestrator who is already in the code catches drift at the right moment,
+with context. It is NOT a git hook — the `gdskills` post-commit hook only runs
+`skills verify --all --dry-run` as an advisory staleness signal and never
+mutates.
+
+## Verify — cheap, inline, before you trust a skill
+
+Whoever is about to rely on a project-skill verifies it first:
+
+- Find it: `keryx skills route <target>`.
+- Check freshness: `keryx skills verify <module>/<skill>` (or
+  `skill-verify-skill`). It classifies the skill `fresh | stale | needs-review |
+  blocked` against current code, graph, wiki, health, memory, and tests.
+- If not `fresh`: do NOT follow it blindly — verify each claim against the code
+  and record the drift so it feeds the learn step below.
+
+Verification is read-only and inline; it does not need a subagent.
+
+## Learn — triggered by drift, produces a proposal, applied with review
+
+Trigger `learn` when drift is **confirmed**, not on every commit:
+
+- a reviewer finds a recurring issue a project-skill should have prevented;
+- an implementer's work diverged from what a skill documents;
+- `verify` reported `stale` / `needs-review` for a skill in scope.
+
+Flow:
+
+1. `keryx skills learn --from-review <report> --skill <m>/<s>` (or
+   `--from-health` / `--from-test` / `--from-failure` / `--from-memory`) — writes
+   a **proposal** (JSON). Nothing is mutated yet.
+2. Read the proposal, then `keryx skills learn apply <proposal.json>`
+   (version bump + `skill-changelog.md` with provenance, respects manual
+   sections, file-locked).
+
+`learn` is bounded, mechanical synthesis. **Dispatch it as a subagent; if a
+cheaper / non-flagship model is available in this environment, use it
+(see `model-selection.mdc`), otherwise use the session model.** The flagship's
+only job here is to review the proposal before apply.
+
+## Never
+
+- Do not put `learn` (or any mutation) in a hook.
+- Do not `apply` a proposal without reading it.
+- Do not trust a `stale` / `needs-review` skill as ground truth.

@@ -106,6 +106,47 @@
         "none"
       ],
       "default": "ask"
+    },
+    "managed_review": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "lightweight",
+            "attach-review",
+            "review-flow",
+            "ingest"
+          ],
+          "default": "lightweight"
+        },
+        "target": {
+          "type": "string",
+          "enum": [
+            "pr",
+            "issue",
+            "branch",
+            "path",
+            "report"
+          ]
+        },
+        "target_ref": {
+          "type": "string"
+        },
+        "flow_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reviewers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": true

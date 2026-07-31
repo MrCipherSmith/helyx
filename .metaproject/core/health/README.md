@@ -11,4 +11,4 @@ Responsibilities:
 - keep an accept-current baseline for regression detection.
 
 Findings are a decoupled contract: gdskills consumes
-`data/health/artifacts/latest.json` via `gd-metapro skills learn --from-health`.
+`data/health/artifacts/latest.json` via `keryx skills learn --from-health`.

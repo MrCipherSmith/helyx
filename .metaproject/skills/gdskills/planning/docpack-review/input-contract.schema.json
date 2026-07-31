@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "docpack-review-input-contract",
+  "title": "Requirements Package Reviewer Input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["packagePath"],
+  "properties": {
+    "packagePath": { "type": "string" },
+    "packageKind": {
+      "type": "string",
+      "enum": ["module", "standard", "policy", "implementation-plan", "report"]
+    },
+    "changedFiles": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "roadmapPath": { "type": "string" }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "docpack-orchestrator-output-contract",
+  "title": "Requirements Package Orchestrator Output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "packagePath", "files", "verification", "review"],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["DONE", "DONE_WITH_CONCERNS", "BLOCKED"]
+    },
+    "packagePath": { "type": "string" },
+    "files": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "verification": {
+      "type": "string",
+      "enum": ["pass", "pass_with_warnings", "fail"]
+    },
+    "review": {
+      "type": "string",
+      "enum": ["pass", "pass_with_warnings", "fail"]
+    },
+    "remainingGaps": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

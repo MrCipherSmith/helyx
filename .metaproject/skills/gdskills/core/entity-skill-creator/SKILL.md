@@ -21,9 +21,9 @@ Create canonical project-skills from a path, symbol, wiki page, module, componen
 
 1. Normalize the target into module, entity, files, symbols, and wiki references.
 2. Collect evidence from gdgraph, gdctx, gdwiki, health, and memory when available.
-3. Run `gd-metapro skills create <target> --module <module> --name <skill-name>`; infer module/name from the target when the user did not provide them.
-4. Run `gd-metapro skills route <target>` and `gd-metapro skills inspect <module>/<skill-name>` to confirm registration and routing.
-5. Run `gd-metapro skills verify <module>/<skill-name>` and finish with `gd-metapro skills status`.
+3. Run `keryx skills create <target> --module <module> --name <skill-name>`; infer module/name from the target when the user did not provide them.
+4. Run `keryx skills route <target>` and `keryx skills inspect <module>/<skill-name>` to confirm registration and routing.
+5. Run `keryx skills verify <module>/<skill-name>` and finish with `keryx skills status`.
 
 ## Agent Command Contract
 
@@ -32,11 +32,11 @@ When the user asks in natural language to create a skill, for example `созд�
 Required flow:
 
 ```bash
-gd-metapro skills create <target> --module <module> --name <skill-name>
-gd-metapro skills route <target>
-gd-metapro skills inspect <module>/<skill-name>
-gd-metapro skills verify <module>/<skill-name>
-gd-metapro skills status
+keryx skills create <target> --module <module> --name <skill-name>
+keryx skills route <target>
+keryx skills inspect <module>/<skill-name>
+keryx skills verify <module>/<skill-name>
+keryx skills status
 ```
 
 Inference rules:

@@ -8,12 +8,12 @@ Project knowledge base from business logic to implementation.
 
 ## Commands
 
-- `gd-metapro wiki status`
-- `gd-metapro wiki new <type> <slug> --title "<title>"`
-- `gd-metapro wiki collect [--force] [--limit <n>]`
-- `gd-metapro wiki index`
-- `gd-metapro wiki check-links`
-- `gd-metapro wiki validate`
+- `keryx wiki status`
+- `keryx wiki new <type> <slug> --title "<title>"`
+- `keryx wiki collect [--force] [--limit <n>]`
+- `keryx wiki index`
+- `keryx wiki check-links`
+- `keryx wiki validate`
 
 ## Page Types
 

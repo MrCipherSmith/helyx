@@ -9,11 +9,11 @@ gdskills learning signal.
 
 ## Commands
 
-- `gd-metapro memory new <type> --title "<title>"`
-- `gd-metapro memory index`
-- `gd-metapro memory search "<query>" [--module <m>] [--entity <e>] [--status <s>]`
-- `gd-metapro memory ingest --from-<source> <path>`
-- `gd-metapro memory check`
+- `keryx memory new <type> --title "<title>"`
+- `keryx memory index`
+- `keryx memory search "<query>" [--module <m>] [--entity <e>] [--status <s>]`
+- `keryx memory ingest --from-<source> <path>`
+- `keryx memory check`
 
 ## Config
 

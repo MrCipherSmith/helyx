@@ -6,7 +6,7 @@ Version: 0.1.0
 
 Long-term project memory: lessons learned, decisions, constraints, known
 mistakes, historical context, and reusable patterns. Markdown is the source of
-truth; `gd-metapro memory index` builds a searchable local index.
+truth; `keryx memory index` builds a searchable local index.
 
 ## Entry Types
 
@@ -25,9 +25,9 @@ truth; `gd-metapro memory index` builds a searchable local index.
 ## Usage
 
 ```bash
-gd-metapro memory new lesson --title "<title>"
-gd-metapro memory index
-gd-metapro memory search "<query>" --status accepted
+keryx memory new lesson --title "<title>"
+keryx memory index
+keryx memory search "<query>" --status accepted
 ```
 
 Only `accepted` entries influence skills. `draft` entries are advisory.

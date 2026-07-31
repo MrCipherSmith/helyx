@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://gd-metapro.local/schemas/flow-orchestrator/output-contract.schema.json",
+  "$id": "https://keryx.local/schemas/flow-orchestrator/output-contract.schema.json",
   "title": "FlowOrchestratorOutput",
   "type": "object",
   "additionalProperties": false,

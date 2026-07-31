@@ -5,10 +5,10 @@
 - Source files indexed: 163
 - Imported asset files indexed: 2
 - Total nodes: 165
-- Edges: 435
-- Import edges: 433
+- Edges: 427
+- Import edges: 425
 - Asset edges: 2
-- Unresolved relative imports: 0
+- Unresolved imports: 0
 - Import resolution: 100%
 - Skipped generated/static directories: 9
 
@@ -63,7 +63,7 @@
 ## Next Commands
 
 ```bash
-gd-metapro gdgraph query cycles
-gd-metapro gdgraph query orphans
-gd-metapro gdgraph affected <file>
+keryx gdgraph query cycles
+keryx gdgraph query orphans
+keryx gdgraph affected <file>
 ```

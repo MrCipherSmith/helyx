@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://gd-metapro.local/schemas/task-implementer/output-contract.schema.json",
+  "$id": "https://keryx.local/schemas/task-implementer/output-contract.schema.json",
   "title": "Task Implementer Output Contract",
   "description": "JSON result returned by task-implementer after executing a task. Replaces the previous Gherkin format.",
   "type": "object",

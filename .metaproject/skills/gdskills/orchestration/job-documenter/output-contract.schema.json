@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://gd-metapro.local/schemas/job-documenter/output-contract.schema.json",
+  "$id": "https://keryx.local/schemas/job-documenter/output-contract.schema.json",
   "title": "Job Documenter Output Contract",
   "description": "DOCUMENTER_RESULT returned by job-documenter for every action.",
   "type": "object",

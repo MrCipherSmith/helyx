@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://gd-metapro.local/schemas/gdskills/subagent-dispatch.schema.json",
+  "$id": "https://keryx.local/schemas/gdskills/subagent-dispatch.schema.json",
   "title": "Metaproject Subagent Dispatch",
   "type": "object",
   "additionalProperties": false,
@@ -59,7 +59,7 @@
       "type": "array",
       "items": {
         "type": "string",
-        "enum": ["read", "write", "run-command", "network", "git", "ask-user", "spawn-subagent"]
+        "enum": ["read", "write", "run-command", "network", "git", "ask-user", "spawn-subagent", "peer"]
       }
     },
     "output_contract": {
@@ -80,6 +80,16 @@
         "max_output_tokens": { "type": ["integer", "null"], "minimum": 500 },
         "max_runtime_ms": { "type": ["integer", "null"], "minimum": 1000 },
         "max_findings": { "type": ["integer", "null"], "minimum": 1 }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "provider": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "tier": { "type": "string", "minLength": 1 },
+        "inherit": { "type": "boolean" }
       }
     },
     "provenance": {

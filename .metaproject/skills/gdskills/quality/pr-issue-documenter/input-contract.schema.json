@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://gd-metapro.local/schemas/pr-issue-documenter/input-contract.schema.json",
+  "$id": "https://keryx.local/schemas/pr-issue-documenter/input-contract.schema.json",
   "title": "PR & Issue Documenter Input Contract",
   "type": "object",
   "additionalProperties": false,
