@@ -15,10 +15,12 @@ Part 2: `scripts/tmux-session-logger.ts` is 346 lines, started from `admin-daemo
 writing daily JSONL — `logs/tmux-sessions/` holds live files. Supervisor alerts append the
 log path (REQ-2.8).
 
-One deviation worth fixing: REQ-2.8 specifies building that path from `BOT_DIR`, but
-`scripts/supervisor.ts` hardcodes `/home/altsay/bots/helyx/logs/tmux-sessions/` at lines 318
-and 413. It works on this machine and breaks on any other install path — which now matters,
-since the deployment package exists to put helyx on other machines.
+One deviation was found and fixed the same day: REQ-2.8 specifies building that path from
+`BOT_DIR`, but `scripts/supervisor.ts` hardcoded `/home/altsay/bots/helyx/logs/tmux-sessions/`
+in two places. It worked on one machine and pointed every other installation at a path that
+does not exist — which matters now that the deployment package exists to put helyx on other
+machines. Both call sites now go through a `tmuxLogPath()` helper deriving `BOT_DIR` the same
+way the writer does, so the reader and writer cannot drift apart.
 
 ---
 

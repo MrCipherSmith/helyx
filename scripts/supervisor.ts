@@ -25,8 +25,25 @@
  */
 
 import type postgres from "postgres";
+import { join, resolve } from "node:path";
 import { forceSummarize } from "../memory/summarizer.ts";
 import { clearCache } from "../memory/short-term.ts";
+
+// Path to today's tmux session log, for the "see the log" line in alerts.
+//
+// Derived the same way the writer derives it — tmux-session-logger.ts uses
+// resolve(import.meta.dir, "..") — because the two must agree. Both files live
+// in scripts/, so the same expression yields the same directory.
+//
+// This was hardcoded to /home/altsay/bots/helyx until 2026-07-31, which worked
+// on exactly one machine and pointed every other installation at a path that
+// does not exist.
+const BOT_DIR = resolve(import.meta.dir, "..");
+
+function tmuxLogPath(): string {
+  const dateStr = new Date().toISOString().slice(0, 10);
+  return join(BOT_DIR, "logs", "tmux-sessions", `${dateStr}.jsonl`);
+}
 
 // --- Config (read from env, not from CONFIG to avoid circular imports in admin-daemon) ---
 const SUPERVISOR_CHAT_ID  = process.env.SUPERVISOR_CHAT_ID  ?? "";
@@ -314,8 +331,7 @@ async function checkHungSessions(sql: postgres.Sql, runShell?: RunShell): Promis
         continue;
       }
 
-      const dateStr = new Date().toISOString().slice(0, 10);
-      const logPath = `/home/altsay/bots/helyx/logs/tmux-sessions/${dateStr}.jsonl`;
+      const logPath = tmuxLogPath();
 
       const msgParts = [
         `⚠️ <b>Supervisor: сессия не отвечает</b>`,
@@ -409,8 +425,7 @@ async function checkStuckQueue(sql: postgres.Sql, runShell?: RunShell): Promise<
         continue;
       }
 
-      const dateStr = new Date().toISOString().slice(0, 10);
-      const logPath = `/home/altsay/bots/helyx/logs/tmux-sessions/${dateStr}.jsonl`;
+      const logPath = tmuxLogPath();
       const preview = firstMsgContent.slice(0, 120) + (firstMsgContent.length > 120 ? "…" : "");
 
       const msgParts = [
