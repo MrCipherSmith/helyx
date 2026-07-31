@@ -16,9 +16,9 @@
  *   bun cli.ts mcp-register   Register MCP servers in Claude Code
  */
 
-import { existsSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, statSync } from "fs";
 import { resolve, basename, dirname } from "path";
-import { homedir } from "os";
+import { homedir, tmpdir } from "os";
 
 // --- ANSI colors ---
 const c = {
@@ -828,8 +828,16 @@ Write as self-contained sentences. Good: \`"Port 3847 serves both MCP and dashbo
 
   // Register Stop hook for auto fact extraction
   step("Registering Stop hook for memory auto-save");
-  await setupStopHook();
-  done();
+  const hookResult = await setupStopHook();
+  if (hookResult.status === "skipped") {
+    console.log(` ${c.yellow(`skipped (${hookResult.reason})`)}`);
+  } else if (hookResult.status === "pruned") {
+    console.log(` ${c.yellow(`removed ${hookResult.removed} stale entr${hookResult.removed === 1 ? "y" : "ies"}`)}`);
+  } else if (hookResult.status === "present") {
+    console.log(` ${c.yellow("already registered")}`);
+  } else {
+    done();
+  }
 
   // Install systemd service (helyx@USER) for auto-start on boot
   step("Installing systemd service");
@@ -897,9 +905,56 @@ Write as self-contained sentences. Good: \`"Port 3847 serves both MCP and dashbo
 
 // --- Stop hook registration ---
 
-async function setupStopHook(): Promise<void> {
+const HOOK_SCRIPT_REL = "scripts/save-session-facts.sh";
+
+/**
+ * The Stop hook is registered globally in ~/.claude/settings.json with an absolute
+ * path derived from BOT_DIR. A checkout that only exists for the lifetime of one
+ * agent run (a linked git worktree, or a copy under the temp dir) would leave a
+ * dangling entry behind, so such checkouts never register.
+ */
+function isEphemeralCheckout(): string | null {
+  const tmpRoot = resolve(tmpdir());
+  const botDir = resolve(BOT_DIR);
+  if (botDir === tmpRoot || botDir.startsWith(`${tmpRoot}/`) || botDir.startsWith("/tmp/")) {
+    return "temporary directory";
+  }
+  // A linked worktree has .git as a file pointing at the real gitdir; the main
+  // checkout has it as a directory.
+  const gitPath = `${botDir}/.git`;
+  if (existsSync(gitPath) && statSync(gitPath).isFile()) return "git worktree";
+  return null;
+}
+
+/** Drop registrations of this hook whose script no longer exists on disk. */
+function pruneStaleStopHooks(stop: any[]): number {
+  let removed = 0;
+  for (let i = stop.length - 1; i >= 0; i--) {
+    const entry = stop[i];
+    if (!Array.isArray(entry?.hooks)) continue;
+    const kept = entry.hooks.filter((h: any) => {
+      const cmd = typeof h?.command === "string" ? h.command : "";
+      if (!cmd.endsWith(`/${HOOK_SCRIPT_REL}`)) return true;
+      if (existsSync(cmd)) return true;
+      removed++;
+      return false;
+    });
+    if (kept.length === entry.hooks.length) continue;
+    if (kept.length === 0) stop.splice(i, 1);
+    else entry.hooks = kept;
+  }
+  return removed;
+}
+
+type StopHookResult =
+  | { status: "registered" }
+  | { status: "present" }
+  | { status: "skipped"; reason: string }
+  | { status: "pruned"; removed: number };
+
+async function setupStopHook(): Promise<StopHookResult> {
   const settingsPath = `${process.env.HOME}/.claude/settings.json`;
-  const hookCmd = `${BOT_DIR}/scripts/save-session-facts.sh`;
+  const hookCmd = `${BOT_DIR}/${HOOK_SCRIPT_REL}`;
 
   let settings: Record<string, any> = {};
   if (existsSync(settingsPath)) {
@@ -911,17 +966,36 @@ async function setupStopHook(): Promise<void> {
   if (!settings.hooks) settings.hooks = {};
   if (!Array.isArray(settings.hooks.Stop)) settings.hooks.Stop = [];
 
+  // Clear out entries left behind by checkouts that are gone
+  const removed = pruneStaleStopHooks(settings.hooks.Stop);
+
+  const ephemeral = isEphemeralCheckout();
+  if (ephemeral) {
+    if (removed > 0) {
+      writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf-8");
+      return { status: "pruned", removed };
+    }
+    return { status: "skipped", reason: ephemeral };
+  }
+
   // Check if hook already registered
   const alreadyAdded = settings.hooks.Stop.some((entry: any) =>
     Array.isArray(entry.hooks) && entry.hooks.some((h: any) => h.command === hookCmd)
   );
-  if (alreadyAdded) return;
+  if (alreadyAdded) {
+    if (removed > 0) {
+      writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf-8");
+      return { status: "pruned", removed };
+    }
+    return { status: "present" };
+  }
 
   settings.hooks.Stop.push({
     hooks: [{ type: "command", command: hookCmd, timeout: 60 }],
   });
 
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf-8");
+  return { status: "registered" };
 }
 
 // --- Management commands ---
