@@ -81,6 +81,73 @@ export function validateProviderInput(input: CreateProviderInput): { baseUrl: st
   return { baseUrl, authScheme };
 }
 
+/**
+ * Parse a models-list response into our shape.
+ *
+ * Anthropic and OpenAI-compatible endpoints both answer with
+ * `{ data: [{ id, display_name? }] }`, so one parser covers the field. Exported
+ * separately from the fetch so the shape handling can be tested without a
+ * network call.
+ *
+ * Returns null rather than an empty array when the payload is not a model list
+ * at all — the caller needs to tell "provider says it has no models" apart from
+ * "that response was something else entirely".
+ */
+export function parseModelsResponse(body: unknown): ProviderModel[] | null {
+  const data = (body as { data?: unknown })?.data;
+  if (!Array.isArray(data)) return null;
+  const models = data
+    .map((entry) => {
+      const id = (entry as { id?: unknown })?.id;
+      if (typeof id !== "string" || !id) return null;
+      const label = (entry as { display_name?: unknown })?.display_name;
+      return { id, label: typeof label === "string" && label ? label : id };
+    })
+    .filter((m): m is ProviderModel => m !== null);
+  return models;
+}
+
+/**
+ * Ask the provider what models it has.
+ *
+ * Hardcoded model lists go stale the moment a vendor ships a new version — the
+ * GLM preset shipped naming 4.6 while z.ai had already moved to 5.2. Asking is
+ * the only way to stay current.
+ *
+ * Tries the Anthropic path first, then the OpenAI-compatible one, because a
+ * base URL ending in `/anthropic` usually still answers OpenAI-style routes on
+ * a sibling path. Returns null if nothing answers — the caller falls back to
+ * the preset suggestions rather than leaving the operator with no list.
+ */
+export async function fetchProviderModels(
+  baseUrl: string,
+  authToken: string,
+  authScheme: AuthScheme,
+): Promise<ProviderModel[] | null> {
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (authScheme === "api_key") {
+    headers["x-api-key"] = authToken;
+    headers["anthropic-version"] = "2023-06-01";
+  } else {
+    headers.authorization = `Bearer ${authToken}`;
+  }
+
+  const root = baseUrl.replace(/\/+$/, "");
+  const candidates = [`${root}/v1/models`, `${root}/models`];
+
+  for (const url of candidates) {
+    try {
+      const res = await fetch(url, { headers, signal: AbortSignal.timeout(8000) });
+      if (!res.ok) continue;
+      const parsed = parseModelsResponse(await res.json());
+      if (parsed?.length) return parsed;
+    } catch {
+      // Unreachable, timed out, or not JSON — try the next candidate.
+    }
+  }
+  return null;
+}
+
 export class ProviderService {
   /** Providers without their tokens — use for anything user-facing. */
   async list(): Promise<ProviderSummary[]> {

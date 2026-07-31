@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { validateProviderInput } from "../../services/provider-service.ts";
+import { validateProviderInput, parseModelsResponse } from "../../services/provider-service.ts";
 import { PROVIDER_PRESETS, findPreset } from "../../bot/providers/presets.ts";
 
 const ok = { name: "GLM", baseUrl: "https://api.z.ai/api/anthropic", authToken: "t" };
@@ -76,5 +76,34 @@ describe("provider presets", () => {
 
   test("findPreset returns undefined for an unknown key instead of throwing", () => {
     expect(findPreset("nope")).toBeUndefined();
+  });
+});
+
+describe("parseModelsResponse", () => {
+  test("reads the {data:[{id}]} shape both Anthropic and OpenAI use", () => {
+    expect(parseModelsResponse({ data: [{ id: "glm-5.2" }, { id: "glm-4.6" }] }))
+      .toEqual([{ id: "glm-5.2", label: "glm-5.2" }, { id: "glm-4.6", label: "glm-4.6" }]);
+  });
+
+  test("prefers display_name as the label when the provider supplies one", () => {
+    expect(parseModelsResponse({ data: [{ id: "glm-5.2", display_name: "GLM 5.2" }] }))
+      .toEqual([{ id: "glm-5.2", label: "GLM 5.2" }]);
+  });
+
+  test("drops entries with no usable id instead of rendering blanks", () => {
+    expect(parseModelsResponse({ data: [{ id: "ok" }, { id: "" }, { id: 42 }, {}] }))
+      .toEqual([{ id: "ok", label: "ok" }]);
+  });
+
+  test("returns null when the payload is not a model list at all", () => {
+    // The caller must tell "provider has no models" from "that was an error
+    // page", because only the second should fall back to the presets.
+    expect(parseModelsResponse({ error: "unauthorized" })).toBeNull();
+    expect(parseModelsResponse(null)).toBeNull();
+    expect(parseModelsResponse("nope")).toBeNull();
+  });
+
+  test("an empty data array is a real answer, not a failure", () => {
+    expect(parseModelsResponse({ data: [] })).toEqual([]);
   });
 });

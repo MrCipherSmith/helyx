@@ -1,6 +1,6 @@
 import type { Context } from "grammy";
 import { InlineKeyboard } from "grammy";
-import { providerService, DEFAULT_PROVIDER_LABEL } from "../../services/provider-service.ts";
+import { providerService, DEFAULT_PROVIDER_LABEL, fetchProviderModels } from "../../services/provider-service.ts";
 import type { ProviderSummary } from "../../services/provider-service.ts";
 import { projectService } from "../../services/project-service.ts";
 import { PROVIDER_PRESETS, findPreset } from "../providers/presets.ts";
@@ -97,17 +97,26 @@ async function startAddFlow(ctx: Context, presetKey: string): Promise<void> {
       const token = tokenCtx.message?.text?.trim();
       if (!token) return;
 
-      const suggested = preset.models.map((m) => m.id).join(", ");
+      // Ask the provider before offering anything hardcoded. A preset list is a
+      // snapshot of whatever was current when it was written, and vendors move:
+      // the GLM preset named 4.6 while z.ai was already shipping 5.2.
+      const fetched = await fetchProviderModels(baseUrl, token, preset.authScheme);
+      const offered = fetched ?? preset.models;
+      const source = fetched
+        ? `Models from ${preset.name}`
+        : `Could not reach the provider's model list — falling back to presets`;
+
+      const suggested = offered.map((m) => m.id).join(", ");
       await tokenCtx.reply(
         suggested
-          ? `Models, comma-separated.\nSend "ok" to accept: ${suggested}`
+          ? `${source}:\n${suggested}\n\nSend "ok" to accept, or your own comma-separated list.`
           : "Models, comma-separated (or \"none\"):",
       );
       setPendingInput(chatId, async (modelsCtx) => {
         const raw = modelsCtx.message?.text?.trim() ?? "";
         let models: ProviderModel[];
         if (!raw || raw.toLowerCase() === "none") models = [];
-        else if (raw.toLowerCase() === "ok") models = preset.models;
+        else if (raw.toLowerCase() === "ok") models = offered;
         else models = raw.split(",").map((s) => s.trim()).filter(Boolean).map((id) => ({ id, label: id }));
 
         try {
