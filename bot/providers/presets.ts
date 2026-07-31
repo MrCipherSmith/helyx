@@ -66,7 +66,11 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     key: "openrouter",
     name: "OpenRouter",
-    baseUrl: "https://openrouter.ai/api/v1",
+    // NOT /api/v1 — that is the OpenAI-compatible route and Claude Code cannot
+    // speak to it. The Anthropic Messages endpoint is /api, without a version
+    // segment. Getting this wrong yields opaque request failures rather than a
+    // clear "wrong protocol" error.
+    baseUrl: "https://openrouter.ai/api",
     authScheme: "bearer",
     models: [
       { id: "anthropic/claude-sonnet-4", label: "Claude Sonnet 4" },

@@ -44,6 +44,27 @@ expired token: the endpoint rejects auth, claude exits, the wrapper retries
 until the escalation limit stops it. The escalation message names the provider
 and points at `/providers`.
 
+## What can actually be plugged in
+
+The only requirement is that the endpoint speaks the **Anthropic Messages API**.
+Claude Code remains the agent runtime — helyx only tells it where to send
+requests, so anything that does not speak that protocol will not work no matter
+how it is configured.
+
+| Backend | Works | Note |
+|---------|-------|------|
+| Anthropic | yes | the default; no provider needed |
+| GLM (Z.ai) | yes | Anthropic-compatible endpoint |
+| Kimi / Moonshot | yes | Anthropic-compatible endpoint |
+| DeepSeek | yes | Anthropic-compatible endpoint |
+| OpenRouter | yes | **use `https://openrouter.ai/api`, not `/api/v1`** — the versioned path is their OpenAI-compatible route and Claude Code cannot speak to it |
+| OpenAI directly | **no** | Chat Completions is a different protocol; needs a translating proxy (LiteLLM, claude-code-router) registered as a Custom provider |
+| Any local server | only if it exposes Anthropic Messages | Ollama's native API does not; a translating front-end does |
+
+For anything in the "no" column the pattern is the same: run a proxy that
+translates to the Anthropic Messages API, then register the proxy's URL as a
+Custom provider. helyx does not care what is behind it.
+
 ## For developers
 
 ### Where the choice lives
