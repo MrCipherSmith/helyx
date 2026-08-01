@@ -447,9 +447,12 @@ export function registerTools(
         // Telegram rate-limits editMessageText (can block for 60+ seconds otherwise).
         status.deleteStatusMessage(chatId).catch((err) => channelLogger.warn({ err }, "deleteStatusMessage failed"));
         // Fire-and-forget recap: a short spoken summary closes the reply, sent as
-        // a blockquote and then as voice. Only replies carrying enough prose earn
-        // one — a bare diff has nothing a voice track can say. The quote bar keeps
-        // the aside from reading as a second answer.
+        // a collapsed blockquote and then as voice. Only replies carrying enough
+        // prose earn one — a bare diff has nothing a voice track can say. The
+        // quote bar keeps the aside from reading as a second answer.
+        //
+        // Sent as HTML, not through sendReplyText: the collapsed quote is an HTML
+        // attribute the rich-markdown path has no syntax for.
         const recapApplies = (ctx.forceVoice?.() ?? false) || shouldSummarize(replyText);
         if (recapApplies) {
           void (async () => {
@@ -457,9 +460,11 @@ export function registerTools(
             if (!summary) return;
             const chunks = splitForVoice(summary);
             const sendQuoted = (chunk: string) =>
-              sendReplyText(token, chatId, asRecapQuote(chunk), forumExtra).then(() => {});
-            await sendReplyText(token, chatId, asRecapQuote(`🔊 ${chunks[0]!}`), forumExtra)
-              .catch(() => {});
+              sendTelegramMessage(token, chatId, asRecapQuote(chunk), {
+                parse_mode: "HTML",
+                ...forumExtra,
+              }).then(() => {});
+            await sendQuoted(`🔊 ${chunks[0]!}`).catch(() => {});
             await sendVoicedReply(token, chatId, chunks, forumTopicId ?? null, sendQuoted);
           })();
         }

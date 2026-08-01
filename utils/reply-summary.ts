@@ -1,4 +1,5 @@
 import { callAuxLlm } from "./aux-llm-client.ts";
+import { escapeHtml } from "./html.ts";
 import { channelLogger } from "../logger.ts";
 
 /**
@@ -74,18 +75,23 @@ Rules:
 }
 
 /**
- * Render a recap as a Telegram blockquote.
+ * Render a recap as a collapsed Telegram blockquote.
  *
  * The recap is an aside, not an answer. Without the quote bar it arrives as
  * another message in the same voice as the reply, and reads as if the assistant
  * said the same thing twice.
+ *
+ * `expandable` is what keeps it out of the way: the operator has just read the
+ * reply this summarises, so at full height it only costs scrolling. Telegram
+ * collapses it to a few lines behind a "show more" tail — how many lines is the
+ * client's decision, not a value we can set.
+ *
+ * HTML rather than the rich-markdown path the reply itself takes: GFM has no
+ * expandable-quote syntax, so this one message opts out of it. The summary
+ * prompt forbids markdown, so escaping is all the text needs.
  */
 export function asRecapQuote(text: string): string {
-  return text
-    .trim()
-    .split("\n")
-    .map((line) => `>${line ? ` ${line}` : ""}`)
-    .join("\n");
+  return `<blockquote expandable>${escapeHtml(text.trim())}</blockquote>`;
 }
 
 /**

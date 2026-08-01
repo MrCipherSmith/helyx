@@ -145,12 +145,17 @@ describe("proseOf", () => {
 });
 
 describe("asRecapQuote", () => {
-  test("marks every line, so the aside cannot read as a second answer", () => {
-    const quoted = asRecapQuote("первая строка\nвторая строка");
-    for (const line of quoted.split("\n")) expect(line.startsWith(">")).toBe(true);
+  test("quotes the recap, so the aside cannot read as a second answer", () => {
+    expect(asRecapQuote("первая строка\nвторая строка"))
+      .toBe("<blockquote expandable>первая строка\nвторая строка</blockquote>");
   });
 
-  test("keeps blank lines inside the quote without trailing spaces", () => {
-    expect(asRecapQuote("один\n\nдва")).toBe("> один\n>\n> два");
+  test("collapses by default — a recap of a reply already read must not cost scrolling", () => {
+    expect(asRecapQuote("текст")).toContain("expandable");
+  });
+
+  test("escapes the summary, so a stray angle bracket cannot break the quote", () => {
+    expect(asRecapQuote("сравнил a < b & b > c"))
+      .toBe("<blockquote expandable>сравнил a &lt; b &amp; b &gt; c</blockquote>");
   });
 });
