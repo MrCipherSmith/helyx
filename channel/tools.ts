@@ -76,13 +76,11 @@ async function sendReplyText(
   return res;
 }
 
-export function registerTools(
-  ctx: ToolContext,
-  status: StatusManager,
-  touchIdleTimer: () => void,
-): void {
-  ctx.mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: [
+/**
+ * The tool list is static — it never depends on session state, so it is built
+ * once here instead of being rebuilt on every ListTools request.
+ */
+const TOOL_DEFINITIONS = [
       {
         name: "reply",
         description: "Send a message to a Telegram chat",
@@ -296,18 +294,31 @@ export function registerTools(
           properties: { limit: { type: "number", description: "Number of runs (default 10)" } },
         },
       },
-    ],
-  }));
+];
 
-  ctx.mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
-    const { name, arguments: args } = req.params;
-    const sessionId = ctx.sessionId();
+type ToolResult = ReturnType<typeof text>;
 
-    if (sessionId !== null) {
-      ctx.sql`UPDATE sessions SET last_active = now() WHERE id = ${sessionId}`.catch(() => {});
-    }
+/** What every tool group needs from the registering call. */
+type ToolDeps = {
+  ctx: ToolContext;
+  status: StatusManager;
+  touchIdleTimer: () => void;
+  sessionId: number | null;
+};
 
-    switch (name) {
+/**
+ * Everything that puts something in front of the user: replies, photos,
+ * reactions, edits and polls.
+ *
+ * Returns null when the name belongs to another group, so the dispatcher can
+ * keep asking down the chain.
+ */
+async function handleTelegramTool(
+  name: string,
+  args: Record<string, unknown> | undefined,
+  { ctx, status, touchIdleTimer, sessionId }: ToolDeps,
+): Promise<ToolResult | null> {
+  switch (name) {
       case "reply": {
         const chatId = String(args!.chat_id);
         channelLogger.info({ phase: "tools", step: "reply-called", chatId, t: Date.now() }, "perf");
@@ -619,7 +630,23 @@ export function registerTools(
         channelLogger.info({ pollSessionId: pollSession.id, chatId, questionCount: questions.length, forumTopicId }, "poll session created");
         return text(`Poll session created (id=${pollSession.id}). Waiting for user answers.`);
       }
+  }
+  return null;
+}
 
+/**
+ * Long-term memory, project context and the status line — the tools that
+ * read or write what the session knows rather than what it says.
+ *
+ * Returns null when the name belongs to another group, so the dispatcher can
+ * keep asking down the chain.
+ */
+async function handleMemoryTool(
+  name: string,
+  args: Record<string, unknown> | undefined,
+  { ctx, status, sessionId }: ToolDeps,
+): Promise<ToolResult | null> {
+  switch (name) {
       case "remember": {
         const content = String(args!.content);
         const embedding = await embed(content, ctx.ollamaUrl, ctx.embeddingModel);
@@ -738,7 +765,22 @@ export function registerTools(
         const count = await scanProjectKnowledge(resolvedScanPath, forceRescan);
         return text(`Scanned ${resolvedScanPath}: ${count} knowledge facts saved`);
       }
+  }
+  return null;
+}
 
+/**
+ * The skill lifecycle: viewing, proposing, saving and listing.
+ *
+ * Returns null when the name belongs to another group, so the dispatcher can
+ * keep asking down the chain.
+ */
+async function handleSkillTool(
+  name: string,
+  args: Record<string, unknown> | undefined,
+  { ctx }: ToolDeps,
+): Promise<ToolResult | null> {
+  switch (name) {
       case "skill_view": {
         return text(await handleSkillView(args!.name, { sql: ctx.sql }));
       }
@@ -810,7 +852,16 @@ export function registerTools(
         const formatted = rows.map((r) => `${r.name}: ${r.description} (${r.status})`).join("\n");
         return text(formatted || "No active skills");
       }
+  }
+  return null;
+}
 
+/** Curator runs and their history. Needs nothing from the session. */
+async function handleCuratorTool(
+  name: string,
+  args: Record<string, unknown> | undefined,
+): Promise<ToolResult | null> {
+  switch (name) {
       case "curator_run": {
         const result = await runCurator();
         return text(JSON.stringify({
@@ -828,9 +879,32 @@ export function registerTools(
         const formatted = rows.map((r) => `#${r.id} [${r.status}] ${r.started_at}: ${r.skills_examined} examined, ${r.skills_pinned} pinned, ${r.skills_archived} archived`).join("\n");
         return text(formatted || "No curator runs");
       }
+  }
+  return null;
+}
 
-      default:
-        return text(`Unknown tool: ${name}`);
+export function registerTools(
+  ctx: ToolContext,
+  status: StatusManager,
+  touchIdleTimer: () => void,
+): void {
+  ctx.mcp.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOL_DEFINITIONS }));
+
+  ctx.mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
+    const { name, arguments: args } = req.params;
+    const sessionId = ctx.sessionId();
+
+    if (sessionId !== null) {
+      ctx.sql`UPDATE sessions SET last_active = now() WHERE id = ${sessionId}`.catch(() => {});
     }
+
+    const deps: ToolDeps = { ctx, status, touchIdleTimer, sessionId };
+    return (
+      (await handleTelegramTool(name, args, deps)) ??
+      (await handleMemoryTool(name, args, deps)) ??
+      (await handleSkillTool(name, args, deps)) ??
+      (await handleCuratorTool(name, args)) ??
+      text(`Unknown tool: ${name}`)
+    );
   });
 }
