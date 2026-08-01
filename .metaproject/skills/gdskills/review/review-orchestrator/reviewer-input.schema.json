@@ -99,7 +99,143 @@
         "string",
         "null"
       ]
+    },
+    "round": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Which review round this dispatch is. Round 1 is the first review of a change; every later round is reviewing work produced in response to the previous one."
+    },
+    "is_fix_round": {
+      "type": "boolean",
+      "default": false,
+      "description": "True when the diff under review was produced to answer earlier findings. A fix round without the earlier findings is the failure this field exists to stop: the reviewer cannot tell whether a fix is complete when it does not know what the fix was answering."
+    },
+    "prior_findings": {
+      "type": "array",
+      "description": "Every finding from earlier rounds on this change, with what the fix claimed about each. Eleven rounds across two flows were dispatched without this, and twice in a row the fix repaired the site the finding named while leaving its siblings — which the NEXT round then found. A reviewer that can see the earlier finding and the claimed disposition can check the claim.",
+      "items": {
+        "type": "object",
+        "required": [
+          "round",
+          "finding",
+          "claimed_disposition"
+        ],
+        "properties": {
+          "round": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "finding": {
+            "$ref": "review-finding.schema.json",
+            "description": "The finding as reported, including its class_scope when it carried one. Deliberately the normalized contract in src/gdskills/contracts/, not the bundled reviewer-output shape: a prior finding is one finding, and it is the same object the learning and ingest paths already consume."
+          },
+          "claimed_disposition": {
+            "type": "string",
+            "enum": [
+              "fixed",
+              "partially-fixed",
+              "wont-fix",
+              "disputed",
+              "deferred"
+            ],
+            "description": "What the fix round claimed. A claim, not a verified state — verifying it is the reviewer's job."
+          },
+          "claimed_evidence": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What the fix offered as proof: the test added, the mutation that went red, the command run."
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "metaproject": {
+      "type": "object",
+      "description": "Shared project context, the same context `keryx flow init` already collects for an implementation flow. The review pipeline collected none of it for eleven rounds, which is why a recorded lesson naming the exact recurring failure never reached a reviewer.",
+      "properties": {
+        "memory": {
+          "type": "array",
+          "description": "Accepted memory entries whose recorded scope intersects the changed files or modules. Accepted only: a draft entry is a hypothesis, and putting one in front of a reviewer as project truth is how a wrong hypothesis becomes a wrong finding.",
+          "items": {
+            "type": "object",
+            "required": [
+              "path",
+              "type",
+              "status",
+              "title"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "accepted"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "summary": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "wiki": {
+          "type": "array",
+          "description": "Wiki pages covering the architecture, domain rules or decisions the changed files participate in.",
+          "items": {
+            "type": "object",
+            "required": [
+              "path",
+              "title"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "graph": {
+          "type": "object",
+          "description": "Blast radius from `keryx gdgraph affected`, so a reviewer can see what a changed symbol reaches without reading the tree.",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
     }
   },
-  "additionalProperties": true
+  "additionalProperties": true,
+  "if": {
+    "required": [
+      "is_fix_round"
+    ],
+    "properties": {
+      "is_fix_round": {
+        "const": true
+      }
+    }
+  },
+  "then": {
+    "required": [
+      "prior_findings",
+      "metaproject"
+    ]
+  }
 }

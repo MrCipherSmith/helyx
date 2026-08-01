@@ -29,6 +29,31 @@
     "dedupe_key": { "type": ["string", "null"] },
     "blocking_merge": { "type": "boolean", "default": false },
     "related_skill": { "type": ["string", "null"] },
-    "learning_candidate": { "type": "boolean", "default": false }
-  }
+    "learning_candidate": { "type": "boolean", "default": false },
+    "class_scope": {
+      "title": "Every site of this shape, and how the set was derived",
+      "description": "A finding anchored to one file:line is a claim about one site. Repeatedly, a fix repaired that site and left its siblings — one writer of five, one operator instruction of four, six readers of eight — and the next review round found them. Required for blocker and major; optional below, because enumerating the class for every info finding is theatre.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sites", "enumeration_method"],
+      "properties": {
+        "sites": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" },
+          "description": "Every location carrying the shape, including ones already correct. A single-entry list is a claim that the class has one member."
+        },
+        "enumeration_method": {
+          "type": "string",
+          "minLength": 1,
+          "description": "How the set was derived: the grep or query run, the source-level guard that enumerates it, or why the list is exhaustive. 'I checked the others' is not a method."
+        }
+      }
+    }
+  },
+  "if": {
+    "required": ["severity"],
+    "properties": { "severity": { "enum": ["blocker", "major"] } }
+  },
+  "then": { "required": ["class_scope"] }
 }

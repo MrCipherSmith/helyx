@@ -1,6 +1,6 @@
 # Testing Context
 
-generatedAt: 2026-07-07T20:12:59.363Z
+generatedAt: 2026-08-01T20:35:53.038Z
 
 ## Frameworks
 
@@ -35,13 +35,18 @@ generatedAt: 2026-07-07T20:12:59.363Z
 - tests/global-setup.ts
 - tests/playwright.config.ts
 - tests/unit/aux-llm-prompt.test.ts
+- tests/unit/chunk-markdown.test.ts
 - tests/unit/curator-prompt.test.ts
 - tests/unit/forum-topics.test.ts
 - tests/unit/jsonb-cast-v1.32.test.ts
 - tests/unit/matrix-validator.test.ts
 - tests/unit/memory-reconciliation.test.ts
 - tests/unit/migration-registry.test.ts
+- tests/unit/pending-scope.test.ts
 - tests/unit/permission-flow.test.ts
+- tests/unit/provider-service.test.ts
+- tests/unit/requeue.test.ts
+- tests/unit/resolve-provider-env.test.ts
 - tests/unit/session-lifecycle.test.ts
 - tests/unit/skill-distiller.test.ts
 - tests/unit/skill-handlers.test.ts
@@ -54,16 +59,17 @@ generatedAt: 2026-07-07T20:12:59.363Z
 ## CI
 
 - .github/workflows/build.yml
+- .github/workflows/publish.yml
 
 ## Conventions
 
 - AGENTS.md: For commands, search, diff, test logs, lint/build output, and large file reads that can produce long output, use the Metaproject gdctx skill by default before loading raw command output into context.
 - AGENTS.md: For creating, changing, debugging, reviewing, or running tests, use the Metaproject testing skill and read .metaproject/data/testing/context.md before broad test search or raw logs.
-- CLAUDE.md: Naming or coding conventions specific to this project
-- CLAUDE.md: You: run `npx @openai/codex "review the latest changes on this branch"` and relay the output.
 - CLAUDE.md: For commands, search, diff, test logs, lint/build output, and large file reads that can produce long output, use the Metaproject gdctx skill by default before loading raw command output into context.
 - CLAUDE.md: For creating, changing, debugging, reviewing, or running tests, use the Metaproject testing skill and read .metaproject/data/testing/context.md before broad test search or raw logs.
-- docs/ROADMAP.md: v1.50.0 (Latest) — Session Stability Reform & Context Injection
+- CLAUDE.md: Naming or coding conventions specific to this project
+- CLAUDE.md: You: run `npx @openai/codex "review the latest changes on this branch"` and relay the output.
+- docs/ROADMAP.md: v1.52.0 (Latest) — Per-Project Providers, Verbatim Replies & Spoken Recap
 - docs/ROADMAP.md: E2E test scaffolding** — Playwright config + API and dashboard test projects in `tests/`
 - docs/ROADMAP.md: Fix**: `load_env()` function now loads `helyx/.env` first, then overlays the project-specific `.env`. Already-set vars (e.g. Docker-injected `DATABASE_URL`) are never overridden.
 - docs/ROADMAP.md: 34 new unit tests in `tests/unit/forum-topics.test.ts`

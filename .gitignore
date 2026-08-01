@@ -19,6 +19,11 @@ piper/
 jobs/
 logs/
 
+
+
+# graphify: generated knowledge-graph output (regenerate with /graphify)
+graphify-out/
+
 # keryx:begin
 # Metaproject: keep agent-facing context versioned, ignore executable/generated internals.
 .metaproject/runtime/
@@ -37,8 +42,14 @@ logs/
 .metaproject/data/testing/logs/
 .metaproject/data/testing/artifacts/latest.md
 .metaproject/data/testing/artifacts/latest.json
+.metaproject/data/tasks/runtime/
+.metaproject/data/tasks/logs/
+.metaproject/flows/.flow-init.lock/
+.metaproject/flows/.flow-lock-*/
+# Security: local-only HMAC key, self-protect state, and local hash report must never be committed.
+.metaproject/data/security/raw/
+.metaproject/data/security/raw/**
+.metaproject/data/security/artifacts/latest.md
+.metaproject/data/security/artifacts/latest.json
 .metaproject/reports/
 # keryx:end
-
-# graphify: generated knowledge-graph output (regenerate with /graphify)
-graphify-out/

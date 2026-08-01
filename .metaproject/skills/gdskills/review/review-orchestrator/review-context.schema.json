@@ -71,6 +71,62 @@
         "type": "string"
       }
     },
+    "memory": {
+      "type": "object",
+      "required": [
+        "query",
+        "entries"
+      ],
+      "description": "Result of the accepted-memory search the Context Pack step runs against the changed paths. Recorded here rather than only inlined into reviewer prompts so that a round which found NO relevant memory is distinguishable from a round that never searched.",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "What was searched, so the search can be reproduced."
+        },
+        "status_filter": {
+          "type": "string",
+          "enum": [
+            "accepted"
+          ],
+          "default": "accepted",
+          "description": "Only accepted memory may be inlined. A draft entry is a hypothesis; presenting one to a reviewer as project truth turns a wrong hypothesis into a wrong finding."
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "path",
+              "title"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "score": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "searched": {
+          "type": "boolean",
+          "default": true,
+          "description": "False only when the memory module is disabled. An empty `entries` with `searched: true` means the search ran and matched nothing."
+        }
+      },
+      "additionalProperties": true
+    },
     "routing": {
       "type": "object",
       "required": [

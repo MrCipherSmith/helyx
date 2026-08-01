@@ -86,10 +86,24 @@ Review Orchestrator Progress:
 
 ## Managed Review Feedback Loop
 
-Default behavior remains lightweight: emit the consolidated report only and do
-not create Task Manager artifacts. Use managed mode only when requested by the
+A **first-pass** review is lightweight by default: emit the consolidated report
+only and create no Task Manager artifacts. Use managed mode when requested by the
 caller or when an unambiguous related flow is detected and the caller accepts
 attachment.
+
+**A fix round is managed, not optional.** Before dispatching reviewers on any
+round where `is_fix_round: true`, run `keryx review start --target <kind> --ref
+<ref>`; after synthesis, run `keryx review ingest --report <path> --ref <ref>`.
+A round whose findings were never ingested cannot be cited as a completed round,
+because nothing durable records what it found.
+
+The reason is measured, not theoretical: eleven review rounds across flows 127
+and 128 ran without this. `.metaproject/data/reviews/` did not exist afterwards.
+Every finding lived in a chat transcript and, later, in hand-written journal
+prose — so round N+1 had nothing to diff against, `prior_findings` could not be
+populated from anything but memory, and `keryx memory ingest --from-review` had
+no input. The loop that produced "reviewers keep finding problems in fixes"
+starts here.
 
 Runtime CLI surface:
 
@@ -134,9 +148,38 @@ Required content:
 - Scope summary: changed files grouped by domain, high-risk files, generated/ignored files.
 - Requirements: issue URL, linked task docs, acceptance criteria extracted from `context_doc` when available.
 - Rules: matched repository rules and convention docs by path.
+- **Memory: accepted project memory intersecting the changed paths.** See below — this step is required, not best-effort.
 - Decisions: why each reviewer was selected or skipped.
 - Token policy: effective budget, truncation decisions, files summarized instead of fully inlined.
 - Legacy/profile reviewer availability and selection state.
+
+### Memory (required)
+
+Run, once, per review:
+
+```bash
+keryx memory search "<changed modules and the concepts they touch>" --status accepted
+```
+
+Put the matched entries in `review_context.memory` and in each reviewer's
+`metaproject.memory`. Record `query` alongside them so the search is
+reproducible, and set `searched: false` **only** when the memory module is
+disabled — an empty `entries` with `searched: true` means the search ran and
+matched nothing, which is a different fact and must stay distinguishable.
+
+Two rules, both load-bearing:
+
+- **`--status accepted` only.** A draft entry is a hypothesis. Handing one to a
+  reviewer as project truth is how a wrong hypothesis becomes a wrong finding.
+- **Scope it to the change.** The whole memory index is not context; entries
+  whose recorded scope does not intersect the changed files or modules are noise
+  that costs budget in every reviewer prompt.
+
+Why this is required rather than advisory: `keryx flow init` already collects
+memory automatically for an implementation flow, and the review pipeline
+collected none for eleven rounds across flows 127 and 128. A recorded lesson
+naming the exact failure those rounds kept repeating existed the whole time and
+never reached a reviewer.
 
 Context modes:
 - `none`: no additional context collection; use only diff/path and local rules.
@@ -206,6 +249,34 @@ Rules:
 ---
 
 ## Scope Detection
+
+### Step 0: Is this a fix round?
+
+A **fix round** is any review of work produced to answer earlier findings. Set
+`is_fix_round: true` on every reviewer input, and populate `prior_findings` with
+the earlier findings and the disposition the fix claimed for each — the schema
+rejects the dispatch otherwise. A reviewer that cannot see what the fix was
+answering cannot tell whether the fix is complete.
+
+Two scope rules apply, and they exist because breaking them is what produced
+seven rounds on PR #215 and four on PR #216:
+
+1. **Review `merge-base..HEAD`, never the fix commit alone.** Narrowing to the
+   newest commit is the intuitive move and it is wrong: it hides the blast
+   radius. A fix that changes a guard, an instruction, a refusal or a helper
+   makes every *other* site that names it wrong, and those sites are outside the
+   fix commit by construction.
+
+2. **Enumerate what NAMES the thing the fix changed.** For each guard,
+   instruction, message, refusal or helper the fix touched, grep for its callers
+   and for the text that recommends it, and record the result in
+   `review_context.scope.files`. On PR #216 a round corrected one operator
+   instruction of four; the correction silently broke the other three, and
+   nothing looked for them because nothing was asked to.
+
+Recording the enumeration matters as much as doing it: a round that searched and
+found nothing is a different fact from a round that never searched, and only the
+recorded list distinguishes them.
 
 ### Step 1: Determine Review Mode
 
@@ -506,6 +577,31 @@ Before consolidation, validate every reviewer result:
 ---
 
 ## Finding Format
+
+### Class scope — required for `blocker` and `major`
+
+Every `blocker` and `major` finding must carry `class_scope`: **every** site that
+holds the shape you found, and **how you enumerated them** — the grep or query
+you ran, or the guard that derives the set.
+
+A finding anchored to one `file:line` is a claim about one site. The recorded
+history of this repository is that a fix then repairs that site and leaves its
+siblings: one writer of five, one operator instruction of four, six readers of
+eight. Each was found by the *next* review round, which is why reviews here have
+run to seven and four rounds instead of one.
+
+```yaml
+class_scope:
+  sites: ["src/lib/shell-config.ts:60", "src/session/store.ts:133"]
+  enumeration_method: "grep for the config-path resolvers; 7 writers, 2 unguarded"
+```
+
+"I checked the others" is not an enumeration method. A single-entry `sites` list
+is a claim that the class has exactly one member — make it deliberately, because
+`review-finding.schema.json` accepts it and the next round tests it.
+
+`minor` and `info` may omit it: enumerating the class for every low-severity
+observation is theatre, not rigour.
 
 All findings from all sub-reviewers must be normalized to this format before consolidation:
 

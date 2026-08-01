@@ -79,3 +79,53 @@ _No pages yet._
 ### Decision
 
 _No pages yet._
+
+<!-- keryx:wiki-index:begin -->
+<!-- generated: 2026-08-01T20:35:50.808Z | pages: 16 -->
+
+### Architecture
+
+- [Project Map](architecture/project-map.md) (enriched) - Deterministic map of 163 code files, 2 assets, and 435 import edges across 26 top-level modules. The system is a Telegram bot that routes messages to Claude Code CLI sessions or standalone Claude API, with a web dashboard, MCP server, memory system, and supporting infrastructure.
+- [Testing Map](architecture/testing-map.md) (draft) - Test infrastructure overview: 17 unit tests (bun test) and 4 Playwright E2E specs across 3 projects (api, dashboard). Unit tests cover core business logic; E2E tests validate dashboard rendering and API endpoints.
+
+### Domain Model
+
+_No pages yet._
+
+### Business Rule
+
+_No pages yet._
+
+### User Scenario
+
+_No pages yet._
+
+### Component
+
+- [adapters](components/adapters.md) (enriched)
+- [bot](components/bot.md) (enriched)
+- [channel](components/channel.md) (enriched)
+- [claude](components/claude.md) (enriched)
+- [cleanup](components/cleanup.md) (enriched)
+- [dashboard](components/dashboard.md) (enriched)
+- [mcp](components/mcp.md) (enriched)
+- [memory](components/memory.md) (enriched)
+- [orchestrator](components/orchestrator.md) (enriched)
+- [scripts](components/scripts.md) (enriched)
+- [services](components/services.md) (enriched)
+- [sessions](components/sessions.md) (enriched)
+- [tests](components/tests.md) (enriched)
+- [utils](components/utils.md) (enriched)
+
+### Service
+
+_No pages yet._
+
+### Integration
+
+_No pages yet._
+
+### Decision
+
+_No pages yet._
+<!-- keryx:wiki-index:end -->

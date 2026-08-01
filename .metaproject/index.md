@@ -18,12 +18,13 @@ Human dashboard: [keryx-dashboard.html](keryx-dashboard.html)
 | testing | Test context, related tests, execution reports, and test intelligence | modules/testing.md |
 | memory | Long-lived project memory: lessons, decisions, constraints, known mistakes | modules/memory.md |
 | tasks | Agent-first flow lifecycle: frozen acceptance criteria, status gates, PR completion | modules/tasks.md |
+| security | Policy-based scanning, redaction, guardrails, and audit reports for agent inputs/outputs and artifacts | modules/security.md |
 ## Rules
 
 | Source | Priority | Purpose | Entry |
 |--------|----------|---------|-------|
-| CLAUDE.md | high | Imported root agent-entrypoint rules; apply before module-specific guidance | rules/claude-md.md |
 | AGENTS.md | high | Imported root agent-entrypoint rules; apply before module-specific guidance | rules/agents-md.md |
+| CLAUDE.md | high | Imported root agent-entrypoint rules; apply before module-specific guidance | rules/claude-md.md |
 | rules/core | reference | Shared engineering rules library (error-handling, tdd-workflow, subagent-status-protocol, subagent-context-construction, security-baseline, api-contracts, clean-architecture, solid-principles, …) | rules/core/ |
 
 ## Skills
@@ -61,6 +62,7 @@ Human dashboard: [keryx-dashboard.html](keryx-dashboard.html)
 | Recall past decisions, lessons, constraints, repeated mistakes, or project history | `memory` | `skills/memory/SKILL.md`; MCP `memory.search` if available | Search accepted memory before broad docs or assumptions. |
 | Create/change/debug tests or decide what tests to run | `testing` | `skills/testing/SKILL.md`; `data/testing/context.md` | Use test context and related-test intelligence before raw logs. |
 | Check quality, gate, regressions, complexity, lint/type/test status | `health` | `skills/health/SKILL.md`; MCP `health.*` if available | Read normalized health artifacts before claiming quality. |
+| Check secrets, PII, prompt injection, egress, unsafe external/tool output | `security` | `modules/security.md`; MCP `security.*` if available | Scan or check content before writing it into project artifacts. |
 | Implement, review, refactor, document, plan, analyze, or verify | `gdskills` | `skills/catalog.md`; `project-skills/`; `skills/gdskills/` | Route to local orchestrators/reviewers/quality skills before global skills. |
 | Start, resume, track, or finish managed work | `flow` / `flow-orchestrator` | `skills/flow/SKILL.md`; `skills/gdskills/orchestration/flow-orchestrator/SKILL.md` | Use Task Manager state and never edit flow files by hand. |
 
@@ -86,11 +88,12 @@ Human dashboard: [keryx-dashboard.html](keryx-dashboard.html)
 18. For creating, changing, debugging, reviewing, or running tests, read `data/testing/context.md` and use `skills/testing/SKILL.md`; read `data/testing/artifacts/latest.md` before raw test logs.
 19. For lessons learned, known decisions, constraints, repeated mistakes, historical context, or skill verification signals, use `skills/memory/SKILL.md` and `keryx memory search` before broad documentation reads.
 20. When the user asks to start, create, track, or finish a managed piece of work, use `skills/flow/SKILL.md` for state/status commands and use `skills/gdskills/orchestration/flow-orchestrator/SKILL.md` for non-trivial implementation through Task Manager. Never edit flow.json or frozen acceptance criteria by hand.
-21. Use relevant skills from `skills/`.
-22. Discover tools: each `modules/*.md` manifest lists that module's `keryx` commands; run `keryx --help` for the full CLI surface.
-23. Use module manifests before reading raw generated data.
-24. Prefer curated artifacts in `data/*/artifacts`.
-25. Run module CLI commands when generated data is stale.
+21. Before writing external/tool content into memory, wiki, reports, or task context, or when scanning artifacts for secrets/PII/prompt-injection/egress, use `modules/security.md` and `keryx security check-output`/`security scan`; read `data/security/artifacts/latest.md` before claiming security status.
+22. Use relevant skills from `skills/`.
+23. Discover tools: each `modules/*.md` manifest lists that module's `keryx` commands; run `keryx --help` for the full CLI surface.
+24. Use module manifests before reading raw generated data.
+25. Prefer curated artifacts in `data/*/artifacts`.
+26. Run module CLI commands when generated data is stale.
 
 ## Data
 
@@ -113,6 +116,7 @@ Human dashboard: [keryx-dashboard.html](keryx-dashboard.html)
 - `data/memory/index/index.json`
 - `data/memory/artifacts/latest.md`
 - `flows/` (flow packages)
+- `data/security/artifacts/latest.md`
 
 ## Refresh
 

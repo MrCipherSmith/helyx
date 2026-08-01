@@ -2,11 +2,11 @@
 
 ## Stats
 
-- Source files indexed: 163
+- Source files indexed: 174
 - Imported asset files indexed: 2
-- Total nodes: 165
-- Edges: 427
-- Import edges: 425
+- Total nodes: 176
+- Edges: 457
+- Import edges: 455
 - Asset edges: 2
 - Unresolved imports: 0
 - Import resolution: 100%
@@ -16,15 +16,15 @@
 
 | Module | Source Files |
 |---|---:|
-| bot | 35 |
+| bot | 37 |
 | dashboard | 35 |
-| tests | 22 |
-| utils | 19 |
+| tests | 27 |
+| utils | 21 |
 | channel | 9 |
-| services | 8 |
+| services | 9 |
 | mcp | 6 |
 | memory | 6 |
-| scripts | 4 |
+| scripts | 5 |
 | sessions | 4 |
 | adapters | 3 |
 | orchestrator | 3 |

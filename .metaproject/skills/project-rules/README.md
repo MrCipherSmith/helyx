@@ -4,8 +4,8 @@ Use this skill before planning, implementing, or reviewing work in this reposito
 
 ## Sources
 
-- `CLAUDE.md`
 - `AGENTS.md`
+- `CLAUDE.md`
 
 ## Workflow
 

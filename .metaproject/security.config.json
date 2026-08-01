@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "mode": "advisory",
+  "rawRetention": "off",
+  "storeHashes": true,
+  "storeRedactedSamples": true,
+  "policies": {
+    "secrets": {
+      "enabled": true,
+      "action": "block"
+    },
+    "pii": {
+      "enabled": true,
+      "action": "redact"
+    },
+    "promptInjection": {
+      "enabled": true,
+      "action": "require-approval"
+    },
+    "egress": {
+      "enabled": true,
+      "action": "block"
+    },
+    "artifactSafety": {
+      "enabled": true,
+      "action": "redact"
+    }
+  },
+  "backends": {
+    "rules": {
+      "enabled": true
+    },
+    "entropy": {
+      "enabled": true
+    },
+    "piiModel": {
+      "enabled": false,
+      "provider": "custom",
+      "assetId": "pii-ner"
+    },
+    "externalApi": {
+      "enabled": false
+    },
+    "injectionModel": {
+      "enabled": false,
+      "provider": "prompt-guard-2",
+      "size": "22M",
+      "assetId": "prompt-guard-2-22m",
+      "minConfidence": 0.5
+    }
+  },
+  "gate": {
+    "failOn": "critical",
+    "minConfidence": 0.5
+  },
+  "configChecksum": "db18809163cde08146a0e548dbe14a82288eddbbca99142239e9812ef484f007"
+}

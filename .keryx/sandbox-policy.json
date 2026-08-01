@@ -1,0 +1,7 @@
+{
+  "_comment": "Non-secret project sandbox policy. API keys: use `keryx shell` → /connect (user-global auth.json), never put secrets here.",
+  "maskMode": "manual",
+  "tlsTerminate": false,
+  "extraMasks": [],
+  "allowedDomains": []
+}

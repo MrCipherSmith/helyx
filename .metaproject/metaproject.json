@@ -1,7 +1,14 @@
 {
   "schemaVersion": 1,
+  "standardVersion": "0.1.0",
   "name": "helyx-metaproject",
   "createdBy": "keryx",
+  "profiles": [
+    "minimal",
+    "agent",
+    "ci",
+    "full"
+  ],
   "paths": {
     "root": ".metaproject",
     "core": ".metaproject/core",
@@ -19,7 +26,8 @@
       "commands": [
         "build",
         "query",
-        "affected"
+        "affected",
+        "repomap"
       ],
       "hooks": {
         "gitPostCommit": ".git/hooks/post-commit",
@@ -154,23 +162,43 @@
         "gitPostCommit": ".git/hooks/post-commit",
         "postUpdate": ".metaproject/hooks/post-update.d"
       }
+    },
+    "security": {
+      "enabled": true,
+      "version": "0.1.0",
+      "core": ".metaproject/core/security",
+      "data": ".metaproject/data/security",
+      "manifest": ".metaproject/modules/security.md",
+      "config": ".metaproject/security.config.json",
+      "commands": [
+        "status",
+        "scan",
+        "check-input",
+        "check-output",
+        "redact",
+        "report",
+        "policy",
+        "incidents"
+      ],
+      "capabilities": [
+        "security.secrets",
+        "security.pii",
+        "security.prompt-injection",
+        "security.egress-control"
+      ],
+      "hooks": {
+        "prePush": ".git/hooks/pre-push",
+        "agent": ".claude/settings.json"
+      }
     }
   },
+  "updatedAt": "2026-08-01T20:35:39.374Z",
   "agentEntrypoints": {
     "index": ".metaproject/index.md",
     "readme": ".metaproject/README.md",
     "root": [
-      "CLAUDE.md",
-      "AGENTS.md"
-    ],
-    "metaproject": ".metaproject/index.md"
-  },
-  "standardVersion": "0.1.0",
-  "profiles": [
-    "minimal",
-    "agent",
-    "ci",
-    "full"
-  ],
-  "updatedAt": "2026-07-30T19:01:03.090Z"
+      "AGENTS.md",
+      "CLAUDE.md"
+    ]
+  }
 }

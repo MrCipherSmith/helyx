@@ -103,6 +103,31 @@ When dispatched by `review-orchestrator`, follow the provided `reviewer-input.sc
 
 ## Finding Format
 
+### Class scope — required for `blocker` and `major`
+
+Every `blocker` and `major` finding must carry `class_scope`: **every** site that
+holds the shape you found, and **how you enumerated them** — the grep or query
+you ran, or the guard that derives the set.
+
+A finding anchored to one `file:line` is a claim about one site. The recorded
+history of this repository is that a fix then repairs that site and leaves its
+siblings: one writer of five, one operator instruction of four, six readers of
+eight. Each was found by the *next* review round, which is why reviews here have
+run to seven and four rounds instead of one.
+
+```yaml
+class_scope:
+  sites: ["src/lib/shell-config.ts:60", "src/session/store.ts:133"]
+  enumeration_method: "grep for the config-path resolvers; 7 writers, 2 unguarded"
+```
+
+"I checked the others" is not an enumeration method. A single-entry `sites` list
+is a claim that the class has exactly one member — make it deliberately, because
+`review-finding.schema.json` accepts it and the next round tests it.
+
+`minor` and `info` may omit it: enumerating the class for every low-severity
+observation is theatre, not rigour.
+
 ```markdown
 ### [F-NNN] Title
 

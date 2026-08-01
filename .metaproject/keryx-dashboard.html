@@ -180,7 +180,7 @@
     <aside class="side">
       <div class="brand">
         <div class="logo">gd</div>
-        <div><b>Metaproject</b><span>8 modules</span></div>
+        <div><b>Metaproject</b><span>9 modules</span></div>
       </div>
       <nav class="nav" aria-label="Sections">
         <a href="#top"><span class="dot"></span>Overview</a><a href="#attention"><span class="dot"></span>Attention</a><a href="#modules"><span class="dot"></span>Modules</a><a href="#health"><span class="dot"></span>Code Health</a><a href="#graph"><span class="dot"></span>Graph</a><a href="#testing"><span class="dot"></span>Testing</a><a href="#wiki"><span class="dot"></span>Knowledge</a><a href="#memory"><span class="dot"></span>Memory</a><a href="#tasks"><span class="dot"></span>Tasks</a>
@@ -205,34 +205,55 @@
       </div>
 
       <section class="hero" aria-label="Overview">
-        <div class="ring ring-bad">
-          <svg width="112" height="112" viewBox="0 0 112 112" role="img" aria-label="Health score 0">
+        <div class="ring ring-muted">
+          <svg width="112" height="112" viewBox="0 0 112 112" role="img" aria-label="Health score unavailable">
             <circle cx="56" cy="56" r="46" fill="none" stroke="var(--line)" stroke-width="9"></circle>
-            <circle class="rc" cx="56" cy="56" r="46" fill="none" stroke-width="9" stroke-linecap="round" stroke-dasharray="289" stroke-dashoffset="289.0"></circle>
+            <circle class="rc" cx="56" cy="56" r="46" fill="none" stroke-width="9" stroke-linecap="round" stroke-dasharray="289" stroke-dashoffset="289"></circle>
           </svg>
-          <div class="val"><div><b>0</b><span>HEALTH</span></div></div>
+          <div class="val"><div><b>—</b><span>HEALTH</span></div></div>
         </div>
         <div class="heroinfo">
-          <span class="gate bad"><span class="g"></span>fail gate · 472 finding(s)</span>
+          <span class="gate "><span class="g"></span>no report yet</span>
           <div class="kpis">
-            <div class="kpi warn"><b>472</b><span>findings</span></div>
-            <div class="kpi"><b>163</b><span>graph files</span></div>
-            <div class="kpi"><b>18</b><span>wiki pages</span></div>
+            <div class="kpi "><b>—</b><span>findings</span></div>
+            <div class="kpi"><b>—</b><span>graph files</span></div>
+            <div class="kpi"><b>—</b><span>wiki pages</span></div>
             <div class="kpi"><b>—</b><span>memory entries</span></div>
           </div>
         </div>
       </section>
 
       <section class="sec" id="attention">
-        <div class="sec-h"><h2>What needs attention</h2><span class="count">2 signals</span><span class="rule"></span></div>
+        <div class="sec-h"><h2>What needs attention</h2><span class="count">5 signals</span><span class="rule"></span></div>
         <div class="attention-grid">
 
-          <article class="attention-card bad">
+          <article class="attention-card warn">
             <div>
-              <b>Code Health gate is failing</b>
-              <p>411 P0 finding(s), 472 finding(s) total. Resolve blockers before trusting the project score.</p>
+              <b>Code Health report is missing</b>
+              <p>Quality gates and file scores are unavailable until a health report is generated.</p>
             </div>
-            <code>keryx health explain &lt;file&gt;</code>
+            <code>keryx health run</code>
+          </article>
+          <article class="attention-card warn">
+            <div>
+              <b>Graph storage is missing</b>
+              <p>Project navigation and affected-context queries need a built graph.</p>
+            </div>
+            <code>keryx gdgraph build</code>
+          </article>
+          <article class="attention-card warn">
+            <div>
+              <b>Testing context is missing</b>
+              <p>Agents need the testing context before creating or changing tests.</p>
+            </div>
+            <code>keryx test analyze</code>
+          </article>
+          <article class="attention-card warn">
+            <div>
+              <b>Wiki has no curated pages</b>
+              <p>Generate draft knowledge pages so agents can use architecture and domain context before broad code reads.</p>
+            </div>
+            <code>keryx wiki collect</code>
           </article>
           <article class="attention-card warn">
             <div>
@@ -245,7 +266,7 @@
       </section>
 
       <section class="sec" id="modules">
-        <div class="sec-h"><h2>Modules</h2><span class="count">8 enabled</span><span class="rule"></span></div>
+        <div class="sec-h"><h2>Modules</h2><span class="count">9 enabled</span><span class="rule"></span></div>
         <div class="cards">
 
         <article class="card" style="--c: #2563eb" tabindex="0">
@@ -367,6 +388,21 @@
             <code>keryx flow list</code><code>keryx flow init --title &quot;...&quot;</code><code>keryx flow complete &lt;id&gt;</code>
           </div>
         </article>
+
+        <article class="card" style="--c: #b91c1c" tabindex="0">
+          <div class="card-head">
+            <span class="card-ic">▪</span>
+            <span class="card-name">security</span>
+            <span class="card-role">Guardrails & audit</span>
+          </div>
+          <p>Policy-based scanning, redaction, guardrails, and audit reports for agent inputs/outputs and artifacts.</p>
+          <div class="card-links">
+            <a href="modules/security.md">Manifest</a><a href="core/security/README.md">Core README</a><a href="security.config.json">Config</a>
+          </div>
+          <div class="card-cmds">
+            <code>keryx security status</code><code>keryx security scan &lt;path&gt;</code><code>keryx security report</code>
+          </div>
+        </article>
         </div>
       </section>
 
@@ -376,472 +412,16 @@
       </section>
 
       <section class="sec" id="health">
-        <div class="sec-h"><h2>Code Health</h2><span class="count">fail</span><span class="rule"></span></div>
+        <div class="sec-h"><h2>Code Health</h2><span class="count">missing</span><span class="rule"></span></div>
         <div class="panel">
-          
-          <div class="note"><b>Score is contextual</b><p>Gate is failing: 411 P0 finding(s), 472 finding(s) total. Treat the score as blocked until P0 items are resolved.</p></div>
-          <div class="kpis" style="margin-bottom:14px">
-            <div class="kpi bad"><b>0</b><span>score</span></div>
-            <div class="kpi"><b><span class="pill bad">fail</span></b><span>gate</span></div>
-            <div class="kpi warn"><b>472</b><span>findings</span></div>
-            <div class="kpi bad"><b>411/0/61</b><span>P0 / P1 / P2</span></div>
-            <div class="kpi bad"><b>41405</b><span>risk</span></div>
-            <div class="kpi bad"><b>146</b><span>max complexity</span></div>
-            <div class="kpi"><b>33435</b><span>LOC</span></div>
-            <div class="kpi good"><b>0</b><span>unmapped findings</span></div>
-          </div>
-          <div class="health-explain">
-            <div>
-              <h3>Why this score?</h3>
-              <p>Formula: risk = P0*100 + P1*20 + P2*5 + P3*1. Score = clamp(100 - ((risk + coverage penalty + complexity penalty) * 1000 / max(LOC, 1000)), 0, 100). Gate is stricter than score and can fail on blockers even when module scores look high.</p>
-              <div class="table-wrap compact"><table data-gdm-table="health-risk">
-                <thead><tr><th><button type="button" data-sort-col="0">Priority</button></th><th><button type="button" data-sort-col="1">Findings</button></th><th><button type="button" data-sort-col="2">Weight</button></th><th><button type="button" data-sort-col="3">Risk</button></th></tr></thead>
-                <tbody>
-            <tr class="health-row" data-search="P0 411 100 41100">
-              <td>P0</td>
-              <td><span class="metric warn">411</span></td>
-              <td>100</td>
-              <td><span class="metric bad">41100</span></td>
-            </tr>
-            <tr class="health-row" data-search="P1 0 20 0">
-              <td>P1</td>
-              <td><span class="metric good">0</span></td>
-              <td>20</td>
-              <td><span class="metric good">0</span></td>
-            </tr>
-            <tr class="health-row" data-search="P2 61 5 305">
-              <td>P2</td>
-              <td><span class="metric warn">61</span></td>
-              <td>5</td>
-              <td><span class="metric bad">305</span></td>
-            </tr>
-            <tr class="health-row" data-search="P3 0 1 0">
-              <td>P3</td>
-              <td><span class="metric good">0</span></td>
-              <td>1</td>
-              <td><span class="metric good">0</span></td>
-            </tr></tbody>
-              </table></div>
-            </div>
-            <div>
-              <h3>What to fix first</h3>
-              
-            <div class="fix bad">
-              <b>Fix P0 blockers first</b>
-              <p>411 blocker finding(s) are present. Gate is expected to fail until these are resolved.</p>
-              <code>keryx health explain bot/commands/menu.ts</code>
-            </div>
-            <div class="fix warn">
-              <b>Reduce complexity in bot</b>
-              <p>233 finding(s), risk 21685. Start with the top files table and split branch-heavy functions into smaller helpers.</p>
-              <code>keryx health explain bot</code>
-            </div>
-            <div class="fix bad">
-              <b>Inspect the highest-risk file</b>
-              <p>bot/commands/menu.ts has 51 finding(s), risk 5005, max complexity 50.</p>
-              <code>keryx health explain bot/commands/menu.ts</code>
-            </div>
-            <div class="fix warn">
-              <b>Connect testing evidence</b>
-              <p>The health report did not import or run a compatible testing report, so the score does not prove tests are green.</p>
-              <code>keryx test run &amp;&amp; keryx health run</code>
-            </div>
-            <div class="fix warn">
-              <b>Connect coverage evidence</b>
-              <p>Coverage is missing, so the score does not reflect test coverage risk.</p>
-              <code>keryx health sources</code>
-            </div>
-            </div>
-          </div>
-          <div class="health-explain">
-            <div>
-              <h3>Priority legend</h3>
-              <div class="table-wrap compact"><table>
-                <thead><tr><th>Priority</th><th>Meaning</th><th>Typical signals</th><th>Default action</th></tr></thead>
-                <tbody>
-            <tr>
-              <td>P0</td>
-              <td>Blocker</td>
-              <td>Failing tests, TypeScript errors, critical/high dependency issues. Gate fails by default.</td>
-              <td>Fix before merge/release.</td>
-            </tr>
-            <tr>
-              <td>P1</td>
-              <td>High</td>
-              <td>Serious lint/security/coverage signals. Usually not gate-blocking by default, but should be handled quickly.</td>
-              <td>Fix in the current workstream.</td>
-            </tr>
-            <tr>
-              <td>P2</td>
-              <td>Medium</td>
-              <td>Maintainability and warning-level debt such as complexity over threshold.</td>
-              <td>Prioritize by affected scope and churn.</td>
-            </tr>
-            <tr>
-              <td>P3</td>
-              <td>Info</td>
-              <td>Advisory signals and low-risk observations.</td>
-              <td>Track or batch later.</td>
-            </tr></tbody>
-              </table></div>
-            </div>
-            <div>
-              <h3>Report diagnostics</h3>
-              
-            <div class="diag warn">Coverage is missing. The score currently reflects lint/type/test/audit/complexity only.</div>
-              <div class="table-wrap compact"><table data-gdm-table="health-source-breakdown">
-                <thead><tr><th><button type="button" data-sort-col="0">Finding source</button></th><th><button type="button" data-sort-col="1">Findings</button></th></tr></thead>
-                <tbody>
-            <tr class="health-row" data-search="typescript 411">
-              <td>typescript</td>
-              <td><span class="metric warn">411</span></td>
-            </tr>
-            <tr class="health-row" data-search="complexity 61">
-              <td>complexity</td>
-              <td><span class="metric warn">61</span></td>
-            </tr></tbody>
-              </table></div>
-            </div>
-          </div>
-          <div class="table-tools">
-            <input id="gdmHealthFilter" type="search" placeholder="Filter health tables by file, scope, source, score..." aria-label="Filter health tables">
-            <span>Click table headings to sort visible rows.</span>
-          </div>
-          <h3>Top scopes</h3>
-          <div class="table-wrap"><table data-gdm-table="health-scopes">
-            <thead><tr><th><button type="button" data-sort-col="0">Scope</button></th><th><button type="button" data-sort-col="1">Kind</button></th><th><button type="button" data-sort-col="2">Score</button></th><th><button type="button" data-sort-col="3">Findings</button></th><th><button type="button" data-sort-col="4">Risk</button></th><th><button type="button" data-sort-col="5">Complexity</button></th></tr></thead>
-            <tbody>
-            <tr class="health-row" data-search="bot module 0 233 21685 50">
-              <td>bot</td>
-              <td>module</td>
-              <td><span class="metric bad">0</span></td>
-              <td><span class="metric warn">233</span></td>
-              <td><span class="metric bad">21685</span></td>
-              <td><span class="metric bad">50</span></td>
-            </tr>
-            <tr class="health-row" data-search="bot/commands component 0 133 12160 50">
-              <td>bot/commands</td>
-              <td>component</td>
-              <td><span class="metric bad">0</span></td>
-              <td><span class="metric warn">133</span></td>
-              <td><span class="metric bad">12160</span></td>
-              <td><span class="metric bad">50</span></td>
-            </tr>
-            <tr class="health-row" data-search="mcp module 0 43 4110 119">
-              <td>mcp</td>
-              <td>module</td>
-              <td><span class="metric bad">0</span></td>
-              <td><span class="metric warn">43</span></td>
-              <td><span class="metric bad">4110</span></td>
-              <td><span class="metric bad">119</span></td>
-            </tr>
-            <tr class="health-row" data-search="channel module 0 47 4035 146">
-              <td>channel</td>
-              <td>module</td>
-              <td><span class="metric bad">0</span></td>
-              <td><span class="metric warn">47</span></td>
-              <td><span class="metric bad">4035</span></td>
-              <td><span class="metric bad">146</span></td>
-            </tr>
-            <tr class="health-row" data-search="services module 0 19 1900 7">
-              <td>services</td>
-              <td>module</td>
-              <td><span class="metric bad">0</span></td>
-              <td><span class="metric warn">19</span></td>
-              <td><span class="metric bad">1900</span></td>
-              <td><span class="metric good">7</span></td>
-            </tr>
-            <tr class="health-row" data-search="memory module 0 18 1610 12">
-              <td>memory</td>
-              <td>module</td>
-              <td><span class="metric bad">0</span></td>
-              <td><span class="metric warn">18</span></td>
-              <td><span class="metric bad">1610</span></td>
-              <td><span class="metric warn">12</span></td>
-            </tr>
-            <tr class="health-row" data-search="utils module 0 23 1540 27">
-              <td>utils</td>
-              <td>module</td>
-              <td><span class="metric bad">0</span></td>
-              <td><span class="metric warn">23</span></td>
-              <td><span class="metric bad">1540</span></td>
-              <td><span class="metric bad">27</span></td>
-            </tr>
-            <tr class="health-row" data-search="tests module 0 15 1500 9">
-              <td>tests</td>
-              <td>module</td>
-              <td><span class="metric bad">0</span></td>
-              <td><span class="metric warn">15</span></td>
-              <td><span class="metric bad">1500</span></td>
-              <td><span class="metric good">9</span></td>
-            </tr>
-            <tr class="health-row" data-search="tests/unit component 0 15 1500 6">
-              <td>tests/unit</td>
-              <td>component</td>
-              <td><span class="metric bad">0</span></td>
-              <td><span class="metric warn">15</span></td>
-              <td><span class="metric bad">1500</span></td>
-              <td><span class="metric good">6</span></td>
-            </tr>
-            <tr class="health-row" data-search="scripts module 0 14 1020 50">
-              <td>scripts</td>
-              <td>module</td>
-              <td><span class="metric bad">0</span></td>
-              <td><span class="metric warn">14</span></td>
-              <td><span class="metric bad">1020</span></td>
-              <td><span class="metric bad">50</span></td>
-            </tr>
-            <tr class="health-row" data-search="sessions module 0 10 1000 10">
-              <td>sessions</td>
-              <td>module</td>
-              <td><span class="metric bad">0</span></td>
-              <td><span class="metric warn">10</span></td>
-              <td><span class="metric bad">1000</span></td>
-              <td><span class="metric good">10</span></td>
-            </tr>
-            <tr class="health-row" data-search="cleanup module 0 7 700 10">
-              <td>cleanup</td>
-              <td>module</td>
-              <td><span class="metric bad">0</span></td>
-              <td><span class="metric warn">7</span></td>
-              <td><span class="metric bad">700</span></td>
-              <td><span class="metric good">10</span></td>
-            </tr></tbody>
-          </table></div>
-          <h3>Top files</h3>
-          <div class="table-wrap"><table data-gdm-table="health-files">
-            <thead><tr><th><button type="button" data-sort-col="0">File</button></th><th><button type="button" data-sort-col="1">Score</button></th><th><button type="button" data-sort-col="2">Findings</button></th><th><button type="button" data-sort-col="3">Risk</button></th><th><button type="button" data-sort-col="4">Complexity</button></th></tr></thead>
-            <tbody>
-            <tr class="health-row" data-search="bot/commands/menu.ts 0 51 5005 50">
-              <td>bot/commands/menu.ts</td>
-              <td><span class="metric bad">0</span></td>
-              <td><span class="metric warn">51</span></td>
-              <td><span class="metric bad">5005</span></td>
-              <td><span class="metric bad">50</span></td>
-            </tr>
-            <tr class="health-row" data-search="bot/handlers.ts 0 25 2500 6">
-              <td>bot/handlers.ts</td>
-              <td><span class="metric bad">0</span></td>
-              <td><span class="metric warn">25</span></td>
-              <td><span class="metric bad">2500</span></td>
-              <td><span class="metric good">6</span></td>
-            </tr>
-            <tr class="health-row" data-search="bot/callbacks.ts 0 22 2105 30">
-              <td>bot/callbacks.ts</td>
-              <td><span class="metric bad">0</span></td>
-              <td><span class="metric warn">22</span></td>
-              <td><span class="metric bad">2105</span></td>
-              <td><span class="metric bad">30</span></td>
-            </tr>
-            <tr class="health-row" data-search="bot/media.ts 0 18 1705 41">
-              <td>bot/media.ts</td>
-              <td><span class="metric bad">0</span></td>
-              <td><span class="metric warn">18</span></td>
-              <td><span class="metric bad">1705</span></td>
-              <td><span class="metric bad">41</span></td>
-            </tr>
-            <tr class="health-row" data-search="mcp/tools.ts 0 16 1600 1">
-              <td>mcp/tools.ts</td>
-              <td><span class="metric bad">0</span></td>
-              <td><span class="metric warn">16</span></td>
-              <td><span class="metric bad">1600</span></td>
-              <td><span class="metric good">1</span></td>
-            </tr>
-            <tr class="health-row" data-search="bot/text-handler.ts 0 16 1505 38">
-              <td>bot/text-handler.ts</td>
-              <td><span class="metric bad">0</span></td>
-              <td><span class="metric warn">16</span></td>
-              <td><span class="metric bad">1505</span></td>
-              <td><span class="metric bad">38</span></td>
-            </tr>
-            <tr class="health-row" data-search="channel/tools.ts 0 12 1105 146">
-              <td>channel/tools.ts</td>
-              <td><span class="metric bad">0</span></td>
-              <td><span class="metric warn">12</span></td>
-              <td><span class="metric bad">1105</span></td>
-              <td><span class="metric bad">146</span></td>
-            </tr>
-            <tr class="health-row" data-search="mcp/dashboard-api.ts 0 12 1105 119">
-              <td>mcp/dashboard-api.ts</td>
-              <td><span class="metric bad">0</span></td>
-              <td><span class="metric warn">12</span></td>
-              <td><span class="metric bad">1105</span></td>
-              <td><span class="metric bad">119</span></td>
-            </tr>
-            <tr class="health-row" data-search="mcp/server.ts 0 12 1105 79">
-              <td>mcp/server.ts</td>
-              <td><span class="metric bad">0</span></td>
-              <td><span class="metric warn">12</span></td>
-              <td><span class="metric bad">1105</span></td>
-              <td><span class="metric bad">79</span></td>
-            </tr>
-            <tr class="health-row" data-search="bot/commands/project-add.ts 0 10 905 19">
-              <td>bot/commands/project-add.ts</td>
-              <td><span class="metric bad">0</span></td>
-              <td><span class="metric warn">10</span></td>
-              <td><span class="metric bad">905</span></td>
-              <td><span class="metric warn">19</span></td>
-            </tr>
-            <tr class="health-row" data-search="main.ts 0 10 905 12">
-              <td>main.ts</td>
-              <td><span class="metric bad">0</span></td>
-              <td><span class="metric warn">10</span></td>
-              <td><span class="metric bad">905</span></td>
-              <td><span class="metric warn">12</span></td>
-            </tr>
-            <tr class="health-row" data-search="bot/commands/session.ts 0 8 800 10">
-              <td>bot/commands/session.ts</td>
-              <td><span class="metric bad">0</span></td>
-              <td><span class="metric warn">8</span></td>
-              <td><span class="metric bad">800</span></td>
-              <td><span class="metric good">10</span></td>
-            </tr>
-            <tr class="health-row" data-search="channel/index.ts 0 8 705 22">
-              <td>channel/index.ts</td>
-              <td><span class="metric bad">0</span></td>
-              <td><span class="metric warn">8</span></td>
-              <td><span class="metric bad">705</span></td>
-              <td><span class="metric bad">22</span></td>
-            </tr>
-            <tr class="health-row" data-search="scripts/admin-daemon.ts 0 8 705 50">
-              <td>scripts/admin-daemon.ts</td>
-              <td><span class="metric bad">0</span></td>
-              <td><span class="metric warn">8</span></td>
-              <td><span class="metric bad">705</span></td>
-              <td><span class="metric bad">50</span></td>
-            </tr>
-            <tr class="health-row" data-search="services/index.ts 0 7 700 -">
-              <td>services/index.ts</td>
-              <td><span class="metric bad">0</span></td>
-              <td><span class="metric warn">7</span></td>
-              <td><span class="metric bad">700</span></td>
-              <td><span class="metric ">-</span></td>
-            </tr></tbody>
-          </table></div>
-          <h3>Sources</h3>
-          <div class="table-wrap"><table data-gdm-table="health-sources">
-            <thead><tr><th><button type="button" data-sort-col="0">Source</button></th><th><button type="button" data-sort-col="1">Status</button></th><th><button type="button" data-sort-col="2">Findings</button></th><th><button type="button" data-sort-col="3">Required</button></th></tr></thead>
-            <tbody>
-            <tr class="health-row" data-search="eslint skipped 0">
-              <td>eslint</td>
-              <td><span class="pill ">skipped</span></td>
-              <td><span class="metric good">0</span></td>
-              <td>yes</td>
-            </tr>
-            <tr class="health-row" data-search="typescript available 411">
-              <td>typescript</td>
-              <td><span class="pill good">available</span></td>
-              <td><span class="metric warn">411</span></td>
-              <td>yes</td>
-            </tr>
-            <tr class="health-row" data-search="tests missing 0">
-              <td>tests</td>
-              <td><span class="pill warn">missing</span></td>
-              <td><span class="metric good">0</span></td>
-              <td>no</td>
-            </tr>
-            <tr class="health-row" data-search="dependencyAudit available 0">
-              <td>dependencyAudit</td>
-              <td><span class="pill good">available</span></td>
-              <td><span class="metric good">0</span></td>
-              <td>no</td>
-            </tr>
-            <tr class="health-row" data-search="sonarqube skipped 0">
-              <td>sonarqube</td>
-              <td><span class="pill ">skipped</span></td>
-              <td><span class="metric good">0</span></td>
-              <td>no</td>
-            </tr>
-            <tr class="health-row" data-search="coverage missing 0">
-              <td>coverage</td>
-              <td><span class="pill warn">missing</span></td>
-              <td><span class="metric good">0</span></td>
-              <td>no</td>
-            </tr>
-            <tr class="health-row" data-search="complexity available 61">
-              <td>complexity</td>
-              <td><span class="pill good">available</span></td>
-              <td><span class="metric warn">61</span></td>
-              <td>no</td>
-            </tr></tbody>
-          </table></div>
+          <div class="empty">No health report found. Run <code>keryx health run</code>.</div>
         </div>
       </section>
 
       <section class="sec" id="graph">
-        <div class="sec-h"><h2>Graph</h2><span class="count">163 files</span><span class="rule"></span></div>
+        <div class="sec-h"><h2>Graph</h2><span class="count">missing</span><span class="rule"></span></div>
         <div class="panel">
-          
-          <div class="kpis" style="margin-bottom:14px">
-            <div class="kpi"><b>163</b><span>files</span></div>
-            <div class="kpi"><b>2</b><span>assets</span></div>
-            <div class="kpi"><b>435</b><span>edges</span></div>
-            <div class="kpi good"><b>0</b><span>unresolved</span></div>
-          </div>
-          <div class="table-wrap"><table>
-            <thead><tr><th>Module</th><th>Files</th><th>Outgoing edges</th></tr></thead>
-            <tbody>
-            <tr>
-              <td>bot</td>
-              <td>35</td>
-              <td>180</td>
-            </tr>
-            <tr>
-              <td>dashboard</td>
-              <td>35</td>
-              <td>62</td>
-            </tr>
-            <tr>
-              <td>tests</td>
-              <td>22</td>
-              <td>12</td>
-            </tr>
-            <tr>
-              <td>utils</td>
-              <td>19</td>
-              <td>15</td>
-            </tr>
-            <tr>
-              <td>channel</td>
-              <td>9</td>
-              <td>44</td>
-            </tr>
-            <tr>
-              <td>mcp</td>
-              <td>6</td>
-              <td>39</td>
-            </tr>
-            <tr>
-              <td>memory</td>
-              <td>6</td>
-              <td>16</td>
-            </tr>
-            <tr>
-              <td>sessions</td>
-              <td>4</td>
-              <td>11</td>
-            </tr>
-            <tr>
-              <td>scripts</td>
-              <td>4</td>
-              <td>8</td>
-            </tr>
-            <tr>
-              <td>adapters</td>
-              <td>3</td>
-              <td>4</td>
-            </tr>
-            <tr>
-              <td>orchestrator</td>
-              <td>3</td>
-              <td>3</td>
-            </tr>
-            <tr>
-              <td>cleanup</td>
-              <td>2</td>
-              <td>7</td>
-            </tr></tbody>
-          </table></div>
+          <div class="empty">No graph storage found. Run <code>keryx gdgraph build</code>.</div>
         </div>
       </section>
 
@@ -850,111 +430,19 @@
         <div class="grid2">
           <div class="panel" id="testing">
             <h3 style="margin-top:0">Testing</h3>
-            
-            <div class="kpis">
-              <div class="kpi"><b style="font-size:14px">context</b><span>status</span></div>
-              <div class="kpi"><b style="font-size:14px">—</b><span>runner</span></div>
-              <div class="kpi"><b>—</b><span>tests</span></div>
-              <div class="kpi good"><b>—</b><span>failures</span></div>
-            </div>
-            <div class="card-links" style="margin-top:12px">
-              <a href="data/testing/context.md">Testing context</a>
-              
-            </div>
+            <div class="empty">No testing context/report found. Run <code>keryx test analyze</code>.</div>
           </div>
           <div class="panel" id="wiki">
-            <h3 style="margin-top:0">Wiki <span style="color:var(--faint);font-weight:500;text-transform:none;letter-spacing:0">· 18 pages</span></h3>
-            <div class="table-wrap"><table><thead><tr><th>Page</th><th>Group</th><th>Path</th></tr></thead><tbody>
-            <tr>
-              <td><a href="wiki/architecture/project-map.md">Project Map</a></td>
-              <td>architecture</td>
-              <td>wiki/architecture/project-map.md</td>
-            </tr>
-            <tr>
-              <td><a href="wiki/architecture/testing-map.md">Testing Map</a></td>
-              <td>architecture</td>
-              <td>wiki/architecture/testing-map.md</td>
-            </tr>
-            <tr>
-              <td><a href="wiki/components/adapters.md">Module adapters</a></td>
-              <td>components</td>
-              <td>wiki/components/adapters.md</td>
-            </tr>
-            <tr>
-              <td><a href="wiki/components/bot.md">Module bot</a></td>
-              <td>components</td>
-              <td>wiki/components/bot.md</td>
-            </tr>
-            <tr>
-              <td><a href="wiki/components/channel.md">Module channel</a></td>
-              <td>components</td>
-              <td>wiki/components/channel.md</td>
-            </tr>
-            <tr>
-              <td><a href="wiki/components/claude.md">Module claude</a></td>
-              <td>components</td>
-              <td>wiki/components/claude.md</td>
-            </tr>
-            <tr>
-              <td><a href="wiki/components/cleanup.md">Module cleanup</a></td>
-              <td>components</td>
-              <td>wiki/components/cleanup.md</td>
-            </tr>
-            <tr>
-              <td><a href="wiki/components/dashboard.md">Module dashboard</a></td>
-              <td>components</td>
-              <td>wiki/components/dashboard.md</td>
-            </tr>
-            <tr>
-              <td><a href="wiki/components/mcp.md">Module mcp</a></td>
-              <td>components</td>
-              <td>wiki/components/mcp.md</td>
-            </tr>
-            <tr>
-              <td><a href="wiki/components/memory.md">Module memory</a></td>
-              <td>components</td>
-              <td>wiki/components/memory.md</td>
-            </tr>
-            <tr>
-              <td><a href="wiki/components/orchestrator.md">Module orchestrator</a></td>
-              <td>components</td>
-              <td>wiki/components/orchestrator.md</td>
-            </tr>
-            <tr>
-              <td><a href="wiki/components/scripts.md">Module scripts</a></td>
-              <td>components</td>
-              <td>wiki/components/scripts.md</td>
-            </tr>
-            <tr>
-              <td><a href="wiki/components/services.md">Module services</a></td>
-              <td>components</td>
-              <td>wiki/components/services.md</td>
-            </tr>
-            <tr>
-              <td><a href="wiki/components/sessions.md">Module sessions</a></td>
-              <td>components</td>
-              <td>wiki/components/sessions.md</td>
-            </tr>
-            <tr>
-              <td><a href="wiki/components/tests.md">Module tests</a></td>
-              <td>components</td>
-              <td>wiki/components/tests.md</td>
-            </tr>
-            <tr>
-              <td><a href="wiki/components/utils.md">Module utils</a></td>
-              <td>components</td>
-              <td>wiki/components/utils.md</td>
-            </tr>
-            <tr>
-              <td><a href="wiki/testing/README.md">Testing</a></td>
-              <td>testing</td>
-              <td>wiki/testing/README.md</td>
-            </tr>
-            <tr>
-              <td><a href="wiki/testing/conventions.md">Testing Conventions</a></td>
-              <td>testing</td>
-              <td>wiki/testing/conventions.md</td>
-            </tr></tbody></table></div>
+            <h3 style="margin-top:0">Wiki <span style="color:var(--faint);font-weight:500;text-transform:none;letter-spacing:0">· needs content</span></h3>
+            <div class="empty-state">
+            <b>Wiki has no curated pages yet</b>
+            <p>Create architecture, domain, scenario, integration, or decision pages so agents can read product knowledge before scanning code.</p>
+            <div class="action-grid">
+              <code>keryx wiki collect</code>
+              <code>keryx wiki new decision &lt;slug&gt;</code>
+              <code>keryx wiki index</code>
+            </div>
+          </div>
           </div>
           <div class="panel" id="memory">
             <h3 style="margin-top:0">Memory <span style="color:var(--faint);font-weight:500;text-transform:none;letter-spacing:0">· needs content</span></h3>
@@ -984,7 +472,7 @@
 
       <section class="sec">
         <div class="sec-h"><h2>Disabled modules</h2><span class="rule"></span></div>
-        <div class="disabled"><span>security</span></div>
+        <div class="disabled"><span>none</span></div>
       </section>
     </main>
   </div>
@@ -1031,7 +519,7 @@
     .markdown strong { color:var(--ink); }
     .markdown blockquote { margin:.6em 0; padding:.3em 0 .3em 12px; border-left:3px solid var(--line); color:var(--faint); }
   </style>
-  <script id="gdm-docs" type="application/json">{"index.md":"# Metaproject Index\n\n## Purpose\n\nThis `.metaproject` folder contains agent-readable context, tools (module CLIs), rules (`rules/`), skill/worker schemas (`core/gdskills/contracts/`), generated data, and module manifests for this codebase.\n\nHuman dashboard: [keryx-dashboard.html](keryx-dashboard.html)\n\n## Enabled Modules\n\n| Module | Purpose | Entry |\n|--------|---------|-------|\n| gdgraph | Code graph, dependencies, symbols, affected context | modules/gdgraph.md |\n| gdctx | Token-aware command output and context compression | modules/gdctx.md |\n| gdwiki | Project knowledge base: architecture, domain, rules, decisions | modules/gdwiki.md |\n| gdskills | Native bundled working skills, orchestration, review, and project-skill lifecycle | modules/gdskills.md |\n| health | Code quality aggregation, scoring, and quality gate | modules/health.md |\n| testing | Test context, related tests, execution reports, and test intelligence | modules/testing.md |\n| memory | Long-lived project memory: lessons, decisions, constraints, known mistakes | modules/memory.md |\n| tasks | Agent-first flow lifecycle: frozen acceptance criteria, status gates, PR completion | modules/tasks.md |\n## Rules\n\n| Source | Priority | Purpose | Entry |\n|--------|----------|---------|-------|\n| CLAUDE.md | high | Imported root agent-entrypoint rules; apply before module-specific guidance | rules/claude-md.md |\n| AGENTS.md | high | Imported root agent-entrypoint rules; apply before module-specific guidance | rules/agents-md.md |\n| rules/core | reference | Shared engineering rules library (error-handling, tdd-workflow, subagent-status-protocol, subagent-context-construction, security-baseline, api-contracts, clean-architecture, solid-principles, …) | rules/core/ |\n\n## Skills\n\n| Skill | Purpose | Entry |\n|-------|---------|-------|\n| project-rules | Use imported repository rules before planning or editing | skills/project-rules/ |\n\n| gdgraph | Default navigation layer for finding relevant project files before broad raw search | skills/gdgraph/SKILL.md |\n| gdctx | Use compact command/search/read outputs before loading large raw output | skills/gdctx/SKILL.md |\n| gdwiki | Read wiki/index.md first for architecture, domain, business rules, and decisions | skills/gdwiki/SKILL.md |\n| gdskills | Use project-local bundled working skills and project-skill routing before external/global skills | skills/catalog.md |\n| health | Read data/health/artifacts/latest.md before claiming quality status or gate results | skills/health/SKILL.md |\n| testing | Read testing context before creating/changing tests and normalized reports before raw test logs | skills/testing/SKILL.md |\n| memory | Search accepted project memory before historical, decision, and repeated-mistake questions | skills/memory/SKILL.md |\n| flow | Start/track/finish managed work items (создай фло, create a flow from an issue) | skills/flow/SKILL.md |\n| flow-orchestrator | Task Manager implementation orchestrator: flow state + gdskills workers + completion choice/health gates | skills/gdskills/orchestration/flow-orchestrator/SKILL.md |\n\n## Agent Operating Model\n\n- The user does not need to know keryx command names. Treat natural-language requests as intents and route them through this index.\n- First choose the capability: graph/navigation, compact context, wiki/domain knowledge, memory, testing, health, security, skills/orchestration, or flow lifecycle.\n- If the same capability is available through MCP tools/resources, prefer MCP because it preserves structured inputs and outputs. If MCP is unavailable, use the module skill and `keryx` CLI fallback.\n- Load the narrowest relevant skill/rule before reading broad source files. Do not ask the user which internal command to run unless multiple user-level outcomes are genuinely possible.\n- When reporting results, name the Metaproject sources used at a high level (for example: graph, wiki, memory, health), not every internal command.\n\n## Intent Router\n\n| User intent | Capability | Primary entry | Agent action |\n|-------------|------------|---------------|--------------|\n| Any repository task / unclear request | `metaproject-router` | `skills/gdskills/core/metaproject-router/SKILL.md` | Classify the intent first, then route to the narrowest capability. |\n| Need context / where to start | `context-router` | `skills/gdskills/core/context-router/SKILL.md` | Choose graph, wiki, memory, health, testing, or project-skills before raw reads. |\n| Find related files, dependencies, blast radius, cycles, or orphans | `gdgraph` | `skills/gdgraph/SKILL.md`; MCP `gdgraph.*` if available | Start with graph/affected context before broad search. |\n| Understand architecture, domain behavior, business rules, scenarios, integrations, or decisions | `gdwiki` | `skills/gdwiki/SKILL.md`; `wiki/index.md`; MCP `wiki.*` if available | Use knowledge pages first, then jump from wiki concepts to code. |\n| Recall past decisions, lessons, constraints, repeated mistakes, or project history | `memory` | `skills/memory/SKILL.md`; MCP `memory.search` if available | Search accepted memory before broad docs or assumptions. |\n| Create/change/debug tests or decide what tests to run | `testing` | `skills/testing/SKILL.md`; `data/testing/context.md` | Use test context and related-test intelligence before raw logs. |\n| Check quality, gate, regressions, complexity, lint/type/test status | `health` | `skills/health/SKILL.md`; MCP `health.*` if available | Read normalized health artifacts before claiming quality. |\n| Implement, review, refactor, document, plan, analyze, or verify | `gdskills` | `skills/catalog.md`; `project-skills/`; `skills/gdskills/` | Route to local orchestrators/reviewers/quality skills before global skills. |\n| Start, resume, track, or finish managed work | `flow` / `flow-orchestrator` | `skills/flow/SKILL.md`; `skills/gdskills/orchestration/flow-orchestrator/SKILL.md` | Use Task Manager state and never edit flow files by hand. |\n\n## Agent Workflow\n\n1. Read this file first.\n2. Treat the user's request as a natural-language intent; do not require the user to remember internal module, skill, MCP tool, or CLI names.\n3. Check enabled modules.\n4. Load relevant rules from `rules/`.\n5. For any non-trivial repository task, start with `skills/gdskills/core/metaproject-router/SKILL.md`; for context selection, use `skills/gdskills/core/context-router/SKILL.md`.\n6. Prefer MCP tools/resources for enabled Metaproject capabilities when the connected agent exposes them; otherwise use the matching skill and `keryx` CLI command.\n7. Route by question type: structural questions go to gdgraph first; conceptual questions go to gdwiki first; gdctx runs in parallel to keep output compact.\n8. Any text, symbol, or pattern search over project code goes through `keryx ctx rg`, never a bare `rg`/`grep` — even a single targeted search, and even when gdgraph/gdwiki are skipped. Raw `rg`/`grep` is a last resort only, with a stated reason.\n9. `keryx ctx rg` and the agent's `search_code` tool require ripgrep (`rg`) on PATH — install it with `brew install ripgrep` (macOS) or `apt install ripgrep` (Debian/Ubuntu). Without it, code search is unavailable; fall back to reading files directly.\n10. For structural questions (where is X, what files are related, what breaks if I change Y, usages, cycles, orphans) use `skills/gdgraph/SKILL.md` first, before any raw file search. The user does not need to request graph usage explicitly.\n11. For conceptual questions (how does X work, why, architecture, domain models, business rules, user scenarios, auth and other flows, integrations, known decisions) read `wiki/index.md` first via `skills/gdwiki/SKILL.md`, then use gdgraph to jump from the wiki page to code.\n12. In parallel, use `skills/gdctx/SKILL.md` for commands, search, diff, test logs, lint/build output, and large file reads that can produce long output. The user does not need to request compact context usage explicitly.\n13. For implementation, review, refactoring, planning, documentation, or quality tasks, check `skills/catalog.md` and project-local gdskills before any external/global skill set.\n14. For Metaproject requirements packages under `docs/requirements` (README, PRD, specification, policies, schemas), use `skills/gdskills/planning/docpack-orchestrator/SKILL.md`; for current-codebase reverse-engineering documentation, use `autodoc-orchestrator` from `skills/catalog.md`.\n15. For known modules/components/stores/services/domain entities, check generated project skills under `project-skills/\u003cmodule>/\u003centity>/` before generic guidance.\n16. When orchestrating multi-agent work, dispatch gdskills workers through the schema contracts in `core/gdskills/contracts/` (subagent-dispatch -> subagent-result) and read `rules/core/subagent-status-protocol.md`; validate a concrete message with `keryx skills contracts validate \u003cfile> --schema \u003cname>`.\n17. For code quality status (lint, type, test, coverage, complexity, gate, regressions), read `data/health/artifacts/latest.md` or run `keryx health run`; do not claim quality status from raw logs.\n18. For creating, changing, debugging, reviewing, or running tests, read `data/testing/context.md` and use `skills/testing/SKILL.md`; read `data/testing/artifacts/latest.md` before raw test logs.\n19. For lessons learned, known decisions, constraints, repeated mistakes, historical context, or skill verification signals, use `skills/memory/SKILL.md` and `keryx memory search` before broad documentation reads.\n20. When the user asks to start, create, track, or finish a managed piece of work, use `skills/flow/SKILL.md` for state/status commands and use `skills/gdskills/orchestration/flow-orchestrator/SKILL.md` for non-trivial implementation through Task Manager. Never edit flow.json or frozen acceptance criteria by hand.\n21. Use relevant skills from `skills/`.\n22. Discover tools: each `modules/*.md` manifest lists that module's `keryx` commands; run `keryx --help` for the full CLI surface.\n23. Use module manifests before reading raw generated data.\n24. Prefer curated artifacts in `data/*/artifacts`.\n25. Run module CLI commands when generated data is stale.\n\n## Data\n\n- `data/gdgraph/artifacts/summary.md`\n- `data/gdgraph/artifacts/module-map.json`\n- `data/gdgraph/queries/latest.md`\n- `data/gdctx/artifacts/latest.md`\n- `wiki/index.md`\n- `skills/catalog.md`\n- `skills/gdskills/`\n- `project-skills/`\n- `core/gdskills/contracts/` (skill/worker communication schemas: subagent-dispatch, subagent-result, agent-event, orchestrator-state, review-finding)\n- `rules/core/` (shared engineering rules library)\n- `data/gdskills/artifacts/latest.md`\n- `data/health/artifacts/latest.md`\n- `data/testing/context.md`\n- `data/testing/recommendations.md`\n- `data/testing/artifacts/latest.md`\n- `memory/index.md`\n- `data/memory/index/index.json`\n- `data/memory/artifacts/latest.md`\n- `flows/` (flow packages)\n\n## Refresh\n\n```bash\n# Use only supported refresh commands:\nkeryx gdgraph build\nkeryx wiki index\nkeryx test analyze\nkeryx memory index\n```\n","README.md":"# Project Metaproject\n\nThis folder contains local Metaproject configuration, tools, generated data, and agent instructions.\n\n## Installed Modules\n\n- `gdgraph`: code graph and affected context.\n- `gdctx`: compact command/search/read output and raw output archive.\n- `gdwiki`: local project knowledge base from business logic to implementation.\n- `gdskills`: project-local bundled working skills, orchestration, review, and project-skill lifecycle.\n- `health`: code quality aggregation, scoring, and quality gate.\n- `testing`: test context, related tests, and normalized test reports.\n- `memory`: long-lived lessons, decisions, constraints, and known mistakes.\n- `tasks`: agent-first flow lifecycle with frozen acceptance criteria and PR gates.\n\n## Common Commands\n\n```bash\nkeryx status\nkeryx gdgraph build\nkeryx gdgraph query \"module pipelines\"\nkeryx ctx status\nkeryx ctx diff\nkeryx wiki status\nkeryx wiki collect\nkeryx wiki index\nkeryx skills status\nkeryx skills catalog --profile recommended\nkeryx skills install --profile recommended\nkeryx health run\nkeryx health gate\nkeryx test analyze\nkeryx test run --changed\nkeryx memory index\nkeryx memory search \"project decisions\"\nkeryx flow list\nkeryx flow init --title \"...\"\n```\n\n## Editing Policy\n\n- Edit module manifests and skills manually when needed.\n- Do not manually edit generated files under `data/*/storage`.\n- Regenerate artifacts with CLI commands.\n","modules/gdgraph.md":"# gdgraph\n\n## Purpose\n\nBuilds code graph, symbol graph, dependency map, and affected context.\n\nCurrent MVP builds a file dependency graph plus imported asset nodes. Generated\nfrontend/static outputs are skipped by default.\n\n## Commands\n\n- `keryx gdgraph build`\n- `keryx gdgraph find \"\u003cterms>\"` — find files/symbols by concept (seed search)\n- `keryx gdgraph symbol \"\u003cname>\" [--impact [--depth N]]` — definition + callers + callees; `--impact` = transitive-caller blast radius (symbol layer)\n- `keryx gdgraph path \"\u003cA>\" \"\u003cB>\"` — shortest connection between two files/symbols\n- `keryx gdgraph affected \u003cfile-or-symbol>` — blast radius\n- `keryx gdgraph query cycles | orphans`\n- `keryx gdgraph symbols \u003cenable|disable|status>` — opt-in tree-sitter symbol layer\n\n## Data\n\n- `data/gdgraph/artifacts/summary.md`\n- `data/gdgraph/artifacts/module-map.json`\n- `data/gdgraph/storage/nodes.jsonl`\n- `data/gdgraph/storage/edges.jsonl`\n- `data/gdgraph/artifacts/summary.md`\n\n## Skills\n\n- `skills/gdgraph/`\n\n## Frontend Defaults\n\n- skips `storybook-static`, `public`, `.docusaurus`, `.next`, `out`, `dist`, `build`, `coverage`, and `generated`;\n- resolves imported CSS, JSON, SVG, handlebars/raw templates, images and fonts as asset nodes;\n- reports source files, asset nodes, import resolution, skipped directories, top modules, and unresolved imports by type.\n","modules/gdctx.md":"# gdctx\n\n## Purpose\n\nRuns common project context commands with token-aware filtering and stores raw output separately.\n\n## Commands\n\n- `keryx ctx status`\n- `keryx ctx diff`\n- `keryx ctx rg \"\u003cpattern>\"`\n- `keryx ctx read \u003cfile>`\n- `keryx ctx run -- \u003ccommand...>`\n- `keryx ctx show latest`\n- `keryx ctx install-hook` / `keryx ctx uninstall-hook` (opt-in routing guard)\n\n## Data\n\n- `data/gdctx/artifacts/latest.md`\n- `data/gdctx/raw/`\n- `data/gdctx/queries/`\n\n## Config\n\n- `gdctx.config.json`\n\n## Skills\n\n- `skills/gdctx/`\n","modules/gdwiki.md":"# gdwiki\n\nVersion: 0.1.0\n\n## Purpose\n\nProject knowledge base from business logic to implementation.\n\n## Commands\n\n- `keryx wiki status`\n- `keryx wiki new \u003ctype> \u003cslug> --title \"\u003ctitle>\"`\n- `keryx wiki collect [--force] [--limit \u003cn>]`\n- `keryx wiki index`\n- `keryx wiki check-links`\n- `keryx wiki validate`\n\n## Page Types\n\n- `architecture` (`wiki/architecture/`) - system or module architecture\n- `domain-model` (`wiki/domain-models/`) - entities, invariants, relationships\n- `business-rule` (`wiki/business-rules/`) - business constraints and decisions\n- `user-scenario` (`wiki/user-scenarios/`) - user workflows and expected outcomes\n- `component` (`wiki/components/`) - UI/component behavior and ownership\n- `service` (`wiki/services/`) - backend/service responsibility and APIs\n- `integration` (`wiki/integrations/`) - external systems and contracts\n- `decision` (`wiki/decisions/`) - known decisions and ADR-like records\n\n## Data\n\n- `wiki/index.md`\n- `data/gdwiki/link-check/latest.md`\n\n## Entry\n\n- `wiki/index.md`\n\n## Skills\n\n- `skills/gdwiki/`\n","modules/gdskills.md":"# gdskills\n\n## Purpose\n\nNative bundled Metaproject working skills and orchestrators.\n\n## Install Profile\n\n`recommended`\n\n## Installed Skills\n\n### core\n\n- `context-router`: Choose between gdgraph, gdctx, gdwiki, memory, health, and project-skills before raw file reads.\n- `entity-skill-creator`: Create canonical project-skills from a path, symbol, wiki page, module, component, store, service, or domain entity.\n- `entity-skill-learner`: Update project-skills from review findings, test failures, health reports, memory entries, and verifier reports.\n- `entity-skill-router`: Select relevant project-skills for known modules, components, stores, services, and domain entities.\n- `entity-skill-verifier`: Verify project-skills against current code, graph, wiki, health, memory, tests, and review lessons.\n- `metaproject-router`: Choose which Metaproject module, working skill, or project-skill should be used for a user request.\n\n### orchestration\n\n- `code-verifier`: Run and summarize verification gates: typecheck, lint, tests, build, imports, and changed-scope checks.\n- `context-collector`: Build compact task context from graph, ctx, wiki, memory, health, project-skills, and selected files.\n- `feature-analyzer`: Analyze a feature, module, branch, or migration area and produce an implementation map.\n- `flow-orchestrator`: Run Task Manager-backed implementation flows through keryx flow state, frozen acceptance criteria, an explicit completion choice, review, and Code Health.\n- `issue-analyzer`: Convert GitHub or local issues into atomic implementation tasks with acceptance criteria.\n- `job-documenter`: Create and maintain persistent job documentation for orchestrated analysis, implementation, and review work.\n- `job-orchestrator`: Run full task pipelines: clarify, collect context, plan, implement, verify, review, and summarize.\n- `task-implementer`: Implement one atomic task end to end using local project context and verification.\n\n### planning\n\n- `brainstorm`: Explore architecture, product, or implementation options with trade-offs and recommendation.\n- `docpack-orchestrator`: Create or update Metaproject requirements packages under docs/requirements with PRD, specification, README, optional protocols/schemas, verification, review, and roadmap updates. Use autodoc-orchestrator instead for reverse-engineering current codebase documentation.\n- `docpack-review`: Review Metaproject requirements packages for completeness, versioning, consistency, schema references, roadmap updates, and unsupported implementation claims.\n- `interview`: Run implementation-specific structured interview used by job-orchestrator before planning.\n- `interviewer`: Ask focused clarification questions before expensive or ambiguous work.\n- `prd-creator`: Convert vague requests into structured PRD and acceptance criteria.\n\n### platform\n\n- `agent-entrypoint-distiller`: Split large AGENTS.md/CLAUDE.md files into high-priority Metaproject rules and project-specific skills.\n- `agent-entrypoint-manager`: Maintain AGENTS.md, CLAUDE.md, and local-first Metaproject references.\n- `hook-manager`: Create and verify lightweight git hooks for graph, health, and skill verification.\n- `skill-catalog-manager`: Generate `.metaproject/skills/catalog.md` and machine-readable skill registry.\n\n### quality\n\n- `metaproject-security`: Check Metaproject Security policies for prompts, external content, memory/wiki/report writes, PII, secrets, prompt injection, and data exfiltration.\n- `perf-check`: Run or summarize performance, bundle, and complexity checks.\n- `pr-issue-documenter`: Create PR descriptions and linked issue documentation from branch changes.\n- `security-audit`: Run dependency and secret/security checks and normalize findings.\n- `test-gen`: Generate tests for a file or module using local patterns and existing test stack.\n- `tests-creator`: Create test scenarios before implementation from acceptance criteria and project patterns.\n\n### review\n\n- `review-architecture`: Review boundaries, dependency direction, layering, and abstraction stability.\n- `review-backend`: Review backend services, API contracts, DTOs, validation, persistence, and integration boundaries.\n- `review-clean-code`: Review function and class maintainability, SOLID issues, cohesion, naming, and complexity.\n- `review-core-boundaries`: Review shared/core module coupling, public API stability, and dependency minimization.\n- `review-flow-graph`: Review graph or flow UI abstractions, graph surfaces, layout lifecycle, and large-graph behavior.\n- `review-frontend`: Review frontend components, state boundaries, rendering behavior, and UI integration patterns.\n- `review-frontend-conventions`: Review frontend code against repository-local frontend conventions and agent entrypoints.\n- `review-highload`: Review concurrency, retries, queues, idempotency, resource pools, and high-traffic risks.\n- `review-logic`: Review logic correctness, contracts, edge cases, nullability, and async behavior.\n- `review-orchestrator`: Route review requests to specialized reviewers and consolidate findings.\n- `review-performance`: Review hot paths, unnecessary work, bundle/perf regressions, blocking operations, and memory risk.\n- `review-security-code`: Review code-level security risks, injections, authorization gaps, unsafe secrets, and data exposure.\n- `review-strict`: Perform a strict meta-review over findings, weak assumptions, and residual risk.\n- `review-style`: Review naming, readability, duplication, dead code, and maintainability.\n- `review-testing-practices`: Review test structure, coverage quality, determinism, and repository test conventions.\n\n## Commands\n\n- `keryx skills status`\n- `keryx skills catalog --profile recommended`\n- `keryx skills install --profile recommended`\n\n## Storage\n\n- `skills/gdskills/` - installed working skills.\n- `project-skills/` - generated entity/project skills.\n- `data/gdskills/` - reports, proposals, and artifacts.\n","modules/health.md":"# health\n\nVersion: 0.1.0\n\n## Purpose\n\nAggregates code quality signals (lint, type, tests, coverage, dependency audit),\nnormalizes findings, computes project/module/file metrics, and produces a\ndeterministic quality gate report.\n\n## Commands\n\n- `keryx health run [--strict] [--scope ...] [--source ...]`\n- `keryx health status`\n- `keryx health gate [--strict-warn]`\n- `keryx health sources`\n- `keryx health explain \u003cfile-or-module>`\n- `keryx health baseline update [--scope ...]`\n- `keryx health trend [--scope \u003cscope-key>] [--limit \u003cn>]`\n\n## Config\n\n- `health.config.json`\n\n## Data\n\n- `data/health/artifacts/latest.md`\n- `data/health/artifacts/latest.json`\n- `health/baselines/scores.json`\n\n## Skills\n\n- `skills/health/`\n","modules/testing.md":"# Testing Module\n\n## Purpose\n\nBuilds project testing context, runs tests through the existing project runner,\nand writes normalized test reports for agents, Code Health and gdskills.\n\n## Commands\n\n- `keryx test init`\n- `keryx test analyze`\n- `keryx test run [--changed]`\n- `keryx test status`\n- `keryx test context`\n- `keryx test explain \u003cfile-or-scope>`\n- `keryx test related \u003cfile>`\n- `keryx test report latest [--json]`\n\n## Data\n\n- `data/testing/context.md`\n- `data/testing/context.json`\n- `data/testing/recommendations.md`\n- `data/testing/artifacts/latest.md`\n- `data/testing/artifacts/latest.json`\n\n## Skills\n\n- `skills/testing/SKILL.md`\n","modules/memory.md":"# memory\n\nVersion: 0.1.0\n\n## Purpose\n\nLong-term, typed project memory with deterministic ranked search and a\ngdskills learning signal.\n\n## Commands\n\n- `keryx memory new \u003ctype> --title \"\u003ctitle>\"`\n- `keryx memory index`\n- `keryx memory search \"\u003cquery>\" [--module \u003cm>] [--entity \u003ce>] [--status \u003cs>]`\n- `keryx memory ingest --from-\u003csource> \u003cpath>`\n- `keryx memory check`\n\n## Config\n\n- `memory.config.json`\n\n## Data\n\n- `memory/index.md`\n- `data/memory/artifacts/latest.md`\n\n## Skills\n\n- `skills/memory/`\n","modules/tasks.md":"# tasks (Task Manager)\n\nVersion: 0.1.0\n\n## Purpose\n\nAgent-first flow lifecycle: initialization with frozen acceptance criteria,\nstrict status state machine, draft-PR completion gates, and tracker reporting.\n\n## Commands\n\n- `keryx flow init (--issue \u003curl> | --title \"\u003ct>\")`\n- `keryx flow list | status \u003cid>`\n- `keryx flow freeze \u003cid>` / `flow start \u003cid>`\n- `keryx flow task add|done ...`\n- `keryx flow ac confirm|update ...`\n- `keryx flow implemented \u003cid> --pr \u003curl>`\n- `keryx flow complete \u003cid> [--comment]`\n- `keryx flow block|unblock \u003cid>` / `flow check`\n\n## Entry\n\n- `flows/` (flow packages)\n- `skills/flow/SKILL.md`\n","core/gdgraph/README.md":"# gdgraph Core\n\nLocal gdgraph service layer installed by `keryx init`.\n\nFiles:\n\n- `cli.ts` - local runner used by `keryx gdgraph ...`\n- `build.ts` - builds file dependency graph\n- `query.ts` - reads graph storage and answers built-in queries\n- `types.ts` - local graph schema\n\nResponsibilities:\n\n- build file dependency graph;\n- resolve local imported assets as graph asset nodes;\n- skip generated/static frontend output by default;\n- write graph storage to `.metaproject/data/gdgraph/storage`;\n- write curated artifacts to `.metaproject/data/gdgraph/artifacts`;\n- expose service functions for future CLI and MCP commands.\n","core/gdctx/README.md":"# gdctx Core\n\nLocal gdctx service layer installed by `keryx init`.\n\nResponsibilities:\n\n- run project context commands through `keryx ctx ...`;\n- preserve raw stdout/stderr under `.metaproject/data/gdctx/raw`;\n- write compact curated summaries under `.metaproject/data/gdctx/artifacts`;\n- use gdgraph artifacts for narrowing when graph context is available;\n- expose a service layer for future CLI and MCP commands.\n\nMVP note: executable gdctx scripts are added after the requirements/spec phase. This directory is reserved now so project-local overrides have a stable location.\n","core/health/README.md":"# health Core\n\nLocal Code Health service layer.\n\nResponsibilities:\n\n- run/import quality sources through the `SourceAdapter` contract;\n- normalize findings into the versioned finding schema;\n- compute project/module/file metrics, scoring, and the quality gate;\n- write layered outputs (Markdown summary, JSON report, raw logs);\n- keep an accept-current baseline for regression detection.\n\nFindings are a decoupled contract: gdskills consumes\n`data/health/artifacts/latest.json` via `keryx skills learn --from-health`.\n","core/testing/README.md":"# Testing Core\n\nLocal Testing Module service layer installed by `keryx init`.\n\nResponsibilities:\n\n- detect test stack, scripts, configs, CI and test files;\n- write reusable testing context under `.metaproject/data/testing`;\n- run tests through the existing project runner;\n- normalize results into JSON/Markdown artifacts;\n- expose agent commands under `keryx test`.\n","core/memory/README.md":"# memory Core\n\nLocal Documentation Memory service layer.\n\nResponsibilities:\n\n- read typed Markdown entries under `.metaproject/memory` (source of truth);\n- build a deterministic inverted index under `.metaproject/data/memory/index`;\n- rank search by relevance + recency + confidence + status + scope;\n- ingest source artifacts as `draft` entries with provenance;\n- run deterministic dedup/conflict checks.\n\nOnly `accepted` entries influence skills. Findings are a decoupled, versioned\ncontract consumed by gdskills via `keryx skills learn --from-memory`.\n","skills/catalog.md":"# Metaproject Skills Catalog\n\nProfile: recommended\nGenerated By: keryx\n\nThis catalog lists project-local working skills installed by `keryx`.\n\nResolution order:\n\n1. `.metaproject/index.md`\n2. `.metaproject/skills/catalog.md`\n3. `.metaproject/project-skills/**`\n4. `.metaproject/skills/gdskills/**`\n5. Explicitly allowed global fallback skills\n\n## Agent Shortcuts\n\n- User says `создай скил для \u003cpath>`, `создай скилл для \u003cfile>`, or `create a skill for \u003ctarget>`: load `gdskills/core/entity-skill-creator/SKILL.md` and run the create-route-inspect-verify-status CLI flow yourself.\n- User asks which project skill applies to a file/task: run `keryx skills route \u003cquery-or-target>` before reading broad files.\n- User asks whether a project skill is still valid: run `keryx skills verify \u003cskill-or-target>`.\n- User asks to create/update a Metaproject requirements package, PRD/spec package, or `docs/requirements/\u003cname>` documentation: load `gdskills/planning/docpack-orchestrator/SKILL.md`; use `autodoc-orchestrator` instead only for reverse-engineering documentation from the current codebase.\n\n| Skill | Category | Purpose | Entry |\n|---|---|---|---|\n| context-router | core | Choose between gdgraph, gdctx, gdwiki, memory, health, and project-skills before raw file reads. | gdskills/core/context-router/SKILL.md |\n| entity-skill-creator | core | Create canonical project-skills from a path, symbol, wiki page, module, component, store, service, or domain entity. | gdskills/core/entity-skill-creator/SKILL.md |\n| entity-skill-learner | core | Update project-skills from review findings, test failures, health reports, memory entries, and verifier reports. | gdskills/core/entity-skill-learner/SKILL.md |\n| entity-skill-router | core | Select relevant project-skills for known modules, components, stores, services, and domain entities. | gdskills/core/entity-skill-router/SKILL.md |\n| entity-skill-verifier | core | Verify project-skills against current code, graph, wiki, health, memory, tests, and review lessons. | gdskills/core/entity-skill-verifier/SKILL.md |\n| metaproject-router | core | Choose which Metaproject module, working skill, or project-skill should be used for a user request. | gdskills/core/metaproject-router/SKILL.md |\n| code-verifier | orchestration | Run and summarize verification gates: typecheck, lint, tests, build, imports, and changed-scope checks. | gdskills/orchestration/code-verifier/SKILL.md |\n| context-collector | orchestration | Build compact task context from graph, ctx, wiki, memory, health, project-skills, and selected files. | gdskills/orchestration/context-collector/SKILL.md |\n| feature-analyzer | orchestration | Analyze a feature, module, branch, or migration area and produce an implementation map. | gdskills/orchestration/feature-analyzer/SKILL.md |\n| flow-orchestrator | orchestration | Run Task Manager-backed implementation flows through keryx flow state, frozen acceptance criteria, an explicit completion choice, review, and Code Health. | gdskills/orchestration/flow-orchestrator/SKILL.md |\n| issue-analyzer | orchestration | Convert GitHub or local issues into atomic implementation tasks with acceptance criteria. | gdskills/orchestration/issue-analyzer/SKILL.md |\n| job-documenter | orchestration | Create and maintain persistent job documentation for orchestrated analysis, implementation, and review work. | gdskills/orchestration/job-documenter/SKILL.md |\n| job-orchestrator | orchestration | Run full task pipelines: clarify, collect context, plan, implement, verify, review, and summarize. | gdskills/orchestration/job-orchestrator/SKILL.md |\n| task-implementer | orchestration | Implement one atomic task end to end using local project context and verification. | gdskills/orchestration/task-implementer/SKILL.md |\n| brainstorm | planning | Explore architecture, product, or implementation options with trade-offs and recommendation. | gdskills/planning/brainstorm/SKILL.md |\n| docpack-orchestrator | planning | Create or update Metaproject requirements packages under docs/requirements with PRD, specification, README, optional protocols/schemas, verification, review, and roadmap updates. Use autodoc-orchestrator instead for reverse-engineering current codebase documentation. | gdskills/planning/docpack-orchestrator/SKILL.md |\n| docpack-review | planning | Review Metaproject requirements packages for completeness, versioning, consistency, schema references, roadmap updates, and unsupported implementation claims. | gdskills/planning/docpack-review/SKILL.md |\n| interview | planning | Run implementation-specific structured interview used by job-orchestrator before planning. | gdskills/planning/interview/SKILL.md |\n| interviewer | planning | Ask focused clarification questions before expensive or ambiguous work. | gdskills/planning/interviewer/SKILL.md |\n| prd-creator | planning | Convert vague requests into structured PRD and acceptance criteria. | gdskills/planning/prd-creator/SKILL.md |\n| agent-entrypoint-distiller | platform | Split large AGENTS.md/CLAUDE.md files into high-priority Metaproject rules and project-specific skills. | gdskills/platform/agent-entrypoint-distiller/SKILL.md |\n| agent-entrypoint-manager | platform | Maintain AGENTS.md, CLAUDE.md, and local-first Metaproject references. | gdskills/platform/agent-entrypoint-manager/SKILL.md |\n| hook-manager | platform | Create and verify lightweight git hooks for graph, health, and skill verification. | gdskills/platform/hook-manager/SKILL.md |\n| skill-catalog-manager | platform | Generate `.metaproject/skills/catalog.md` and machine-readable skill registry. | gdskills/platform/skill-catalog-manager/SKILL.md |\n| metaproject-security | quality | Check Metaproject Security policies for prompts, external content, memory/wiki/report writes, PII, secrets, prompt injection, and data exfiltration. | gdskills/quality/metaproject-security/SKILL.md |\n| perf-check | quality | Run or summarize performance, bundle, and complexity checks. | gdskills/quality/perf-check/SKILL.md |\n| pr-issue-documenter | quality | Create PR descriptions and linked issue documentation from branch changes. | gdskills/quality/pr-issue-documenter/SKILL.md |\n| security-audit | quality | Run dependency and secret/security checks and normalize findings. | gdskills/quality/security-audit/SKILL.md |\n| test-gen | quality | Generate tests for a file or module using local patterns and existing test stack. | gdskills/quality/test-gen/SKILL.md |\n| tests-creator | quality | Create test scenarios before implementation from acceptance criteria and project patterns. | gdskills/quality/tests-creator/SKILL.md |\n| review-architecture | review | Review boundaries, dependency direction, layering, and abstraction stability. | gdskills/review/review-architecture/SKILL.md |\n| review-backend | review | Review backend services, API contracts, DTOs, validation, persistence, and integration boundaries. | gdskills/review/review-backend/SKILL.md |\n| review-clean-code | review | Review function and class maintainability, SOLID issues, cohesion, naming, and complexity. | gdskills/review/review-clean-code/SKILL.md |\n| review-core-boundaries | review | Review shared/core module coupling, public API stability, and dependency minimization. | gdskills/review/review-core-boundaries/SKILL.md |\n| review-flow-graph | review | Review graph or flow UI abstractions, graph surfaces, layout lifecycle, and large-graph behavior. | gdskills/review/review-flow-graph/SKILL.md |\n| review-frontend | review | Review frontend components, state boundaries, rendering behavior, and UI integration patterns. | gdskills/review/review-frontend/SKILL.md |\n| review-frontend-conventions | review | Review frontend code against repository-local frontend conventions and agent entrypoints. | gdskills/review/review-frontend-conventions/SKILL.md |\n| review-highload | review | Review concurrency, retries, queues, idempotency, resource pools, and high-traffic risks. | gdskills/review/review-highload/SKILL.md |\n| review-logic | review | Review logic correctness, contracts, edge cases, nullability, and async behavior. | gdskills/review/review-logic/SKILL.md |\n| review-orchestrator | review | Route review requests to specialized reviewers and consolidate findings. | gdskills/review/review-orchestrator/SKILL.md |\n| review-performance | review | Review hot paths, unnecessary work, bundle/perf regressions, blocking operations, and memory risk. | gdskills/review/review-performance/SKILL.md |\n| review-security-code | review | Review code-level security risks, injections, authorization gaps, unsafe secrets, and data exposure. | gdskills/review/review-security-code/SKILL.md |\n| review-strict | review | Perform a strict meta-review over findings, weak assumptions, and residual risk. | gdskills/review/review-strict/SKILL.md |\n| review-style | review | Review naming, readability, duplication, dead code, and maintainability. | gdskills/review/review-style/SKILL.md |\n| review-testing-practices | review | Review test structure, coverage quality, determinism, and repository test conventions. | gdskills/review/review-testing-practices/SKILL.md |\n","skills/project-rules/README.md":"# project-rules Skill\n\nUse this skill before planning, implementing, or reviewing work in this repository.\n\n## Sources\n\n- `CLAUDE.md`\n- `AGENTS.md`\n\n## Workflow\n\n1. Start from `.metaproject/index.md`.\n2. Treat imported files in `.metaproject/rules/` as high-priority rules.\n3. Apply those rules before module-specific guidance.\n4. If root instructions changed, rerun `keryx rules sync` to refresh this mirror.\n","skills/gdgraph/SKILL.md":"---\nname: gdgraph\ndescription: Use by default for project navigation and file discovery before broad raw search, especially when the user asks where something is, what files are related, what might be affected, or needs implementation, review, refactoring, debugging, architecture, dependency, module relationship, import cycle, or orphan-file context.\n---\n\n# gdgraph Skill\n\nUse this skill by default for project navigation and file discovery. The user does not need to explicitly ask for graph usage.\n\nWhen command output, search results, diff, logs, or large file reads may be long, pair this with `skills/gdctx/SKILL.md` so graph narrows the file set and gdctx compresses the output.\n\nRun gdgraph before raw file search when the task involves finding relevant files, understanding project structure, implementation, review, refactoring, debugging, code understanding, impact analysis, architecture, dependencies, or navigation. A \"targeted\" `rg` does not exempt you: any text, symbol, or pattern search over project code is a search step and goes through the routing layer, not a bare `rg`/`grep`.\n\nSkip gdgraph only when the request is clearly unrelated to project files, asks for a single known file's literal contents, or when gdgraph is unavailable. Skipping gdgraph is NOT permission to run raw `rg`: when the graph cannot seed the first hop (unknown symbol, no known file), do the text search with `keryx ctx rg \"\u003cpattern>\"`, then feed the seed file back into `keryx gdgraph affected \u003cfile>`. Raw `rg`/`grep` is a last resort only, and only with a stated reason.\n\n## Trigger Examples\n\n- \"Добавь обработку ошибки в init.\"\n- \"Проверь этот модуль.\"\n- \"Почему этот импорт ломается?\"\n- \"Где лучше изменить эту логику?\"\n- \"Где лежит логика инициализации?\"\n- \"Какие файлы связаны с модулем gdgraph?\"\n- \"Найди, где описаны rules/skills.\"\n- \"Что затронет изменение этого файла?\"\n- \"Где используется этот модуль?\"\n- \"Как связаны эти части кода?\"\n- \"Есть ли циклы импортов?\"\n- \"С чего начать читать этот модуль?\"\n- \"Проанализируй архитектуру этой области.\"\n\n## Workflow\n\n1. Check whether `.metaproject/modules/gdgraph.md` exists.\n2. If the task requires finding relevant project files or understanding relationships, use graph context before any `rg` or reading many files. When you do need a text/symbol search, run it as `keryx ctx rg`, not raw `rg`.\n3. Do not rebuild the graph on every user question. Prefer existing graph storage and curated artifacts.\n4. Run build only when graph storage is missing, obviously stale, or the user explicitly asks to refresh it:\n\n```bash\nkeryx gdgraph build\n```\n\n5. Choose the graph command:\n\n- Find files/symbols by concept (unknown location — use this instead of a raw `rg` for a seed):\n\n```bash\nkeryx gdgraph find \"\u003cterms>\"\n```\n\n- Known file path or changed file (blast radius). Accepts a symbol name too:\n\n```bash\nkeryx gdgraph affected \u003cfile-or-symbol>\n```\n\n- Where is a symbol defined / who calls it (needs the symbol layer). Add\n  `--impact [--depth N]` for the transitive-caller blast radius of a symbol:\n\n```bash\nkeryx gdgraph symbol \"\u003cname>\"\nkeryx gdgraph symbol \"\u003cname>\" --impact\n```\n\n- How are two files/symbols connected:\n\n```bash\nkeryx gdgraph path \"\u003cA>\" \"\u003cB>\"\n```\n\n- Dependency cycle / orphan questions:\n\n```bash\nkeryx gdgraph query cycles\nkeryx gdgraph query orphans\n```\n\nNote: `gdgraph query` does NOT do natural-language search — use `find`. The\nsymbol layer (`symbol`/`path` def+call data) is opt-in: `keryx gdgraph symbols\nenable` then `keryx gdgraph build` (needs the `web-tree-sitter` dep + grammars;\ndegrades to file-level otherwise).\n\n6. Use graph output to select the smallest relevant file set.\n7. Read those files directly and verify any conclusion against source code.\n8. If gdgraph is unavailable or cannot answer the question, state that graph context is unavailable and continue with targeted search.\n\n## Refresh Policy\n\nGraph refresh should happen through one of these paths:\n\n- user or agent explicitly runs `keryx gdgraph build`;\n- Git `post-commit` hook refreshes graph after relevant file changes;\n- graph storage is missing and the task needs graph context.\n\n## Always-on orientation (optional)\n\nGraph usage is advisory by default. Unlike a raw `rg` (which the gdctx guard can\ndeterministically re-route), a broad search or deep read is not reliably a\nviolation — so the enforcement analogue here is AVAILABILITY, not blocking:\n\n```bash\nkeryx orient install-hook [--runtime \u003cid|all>]   # inject graph map + wiki index at turn start\nkeryx gdgraph context                            # the graph half of that orientation\n```\n\nThe injector adds a compact, freshness-aware code-graph map + wiki index to the\nagent's context each turn, so the graph is always in front of you before you\nreach for broad search. Supported where the harness has a context-injection hook\n(claude, codex, cursor); Windsurf/Zed have none — use their rules/memories.\n\n## Reporting\n\nWhen answering a non-trivial navigation, debugging, review, or investigation task, include a routing audit. It is not optional; an omitted layer must be justified, not silently skipped:\n\n- `graph_used`: commands run, or `unavailable`/`not-relevant` with the reason;\n- `ctx_used`: `keryx ctx` commands run (search/read/diff), or the reason none were;\n- `raw_rg_used`: `yes`/`no` — if `yes`, why the routing layer could not cover it.\n\nGraph output is navigation context, not proof. Verify behavior in actual code before making claims.\n","skills/gdctx/SKILL.md":"---\nname: gdctx\ndescription: Use for commands, search, diff, test logs, lint/build output, and large file reads that can produce long output; prefer compact keryx ctx output before loading raw command output into agent context.\n---\n\n# gdctx Skill\n\nUse this skill by default when a task needs command output, search results, git diff/status, test logs, lint/build output, or large file reads that may produce more context than the agent should load directly. The user does not need to explicitly ask for gdctx usage.\n\n**Search rule (hard):** any text, symbol, or pattern search over project code goes through `keryx ctx rg \"\u003cpattern>\"`, never a bare `rg`/`grep`. This holds even for a single \"targeted\" search and even when you skip gdgraph/gdwiki — `ctx rg` compresses the output while raw `rg` dumps it into context. Raw `rg`/`grep` is allowed only as a last resort when `keryx ctx rg` is unavailable or demonstrably cannot express the query, and the reason must be stated in the routing audit.\n\n## Workflow\n\n1. Check whether `.metaproject/modules/gdctx.md` exists.\n2. For potentially long output, prefer `keryx ctx ...` over raw shell output by default.\n3. For project navigation or file relationship questions, use gdgraph first when available, then use gdctx for compact command/file output.\n4. Treat gdctx summaries as navigation context. Verify important claims against source files before editing or reporting.\n5. Use raw output only when the compact summary is insufficient.\n\n## Commands\n\n```bash\nkeryx ctx status\nkeryx ctx diff\nkeryx ctx rg \"\u003cpattern>\"\nkeryx ctx read \u003cfile> --mode outline\nkeryx ctx read \u003cfile> --mode compact\nkeryx ctx run -- \u003ccommand...>\nkeryx ctx show latest\n```\n\n## Enforcement (optional)\n\nThe search rule above is advisory by default. To make it a hard gate, install the\nrouting guard — a pre-shell-execution hook for your agent harness:\n\n```bash\nkeryx ctx install-hook                       # default: claude\nkeryx ctx install-hook --runtime all         # every supported harness\nkeryx ctx install-hook --runtime cursor,codex\nkeryx ctx uninstall-hook [--runtime \u003cid|all>]\n```\n\nSupported harnesses: `claude`, `codex`, `cursor`, `windsurf` (verified),\n`antigravity`, `opencode` (experimental — verify on a live install). Zed has no\nscriptable pre-exec hook yet (use its static tool_permissions).\n\nThe guard blocks raw `rg`/`grep`/`cat`/`head`/`tail`/`git diff|log|show` (deny +\nfeedback) and points the agent to the `keryx ctx` equivalent. It is routing-only:\nany other command passes through, so a generic output-compressing proxy can\ncoexist. When a raw command is genuinely required, append an escape marker with a\nreason: `rg \"\u003cpcre>\" # keryx:raw \u003cwhy>`. The guard fails open on unparseable input.\n\n## Skip When\n\n- The command output is already tiny and exact raw output is more useful (a single-line status, a one-line command whose result you already know is short).\n- The user explicitly asks for literal full file contents.\n- `keryx ctx` is unavailable.\n\nNote: \"the output is already tiny\" is a judgement about a specific known command, not a blanket exemption. A code search whose result size is unknown up front is not tiny by default — route it through `keryx ctx rg`.\n\n## Reporting\n\nWhen gdctx is used, mention the commands run and whether raw output was saved. For non-trivial tasks, report `ctx_used` and `raw_rg_used: yes/no` as part of the routing audit (see the gdgraph skill's Reporting section), justifying any raw `rg`/`grep`.\n","skills/gdwiki/SKILL.md":"---\nname: gdwiki\ndescription: Use FIRST for conceptual questions - how something works, why, architecture, domain models, business rules, user scenarios, auth and other flows, integrations, and known decisions. Read wiki/index.md, then use gdgraph to reach code.\n---\n\n# gdwiki Skill\n\nUse this skill for project knowledge that is not a literal code detail:\narchitecture, domain models, business rules, user scenarios, service/component\nresponsibilities, integrations, and known decisions. The user does not need to\nexplicitly ask for wiki usage.\n\n## Routing (which skill first)\n\nPick the entry point by question type:\n\n- Conceptual question - \"how does X work\", \"why\", architecture, domain, business rules, user scenarios, auth and other flows, integrations, known decisions - **use gdwiki first**: read `wiki/index.md`, open the relevant page, then use gdgraph to jump from that page to code.\n- Structural question - \"where is X\", \"what files are related\", \"what breaks if I change Y\", usages, cycles, orphans - **use gdgraph first**; wiki is optional.\n- gdctx runs **in parallel** in either case to keep command/search/file-read output compact. It is not a step in the sequence.\n\n## Trigger Examples\n\n- \"Как работает авторизация?\"\n- \"Где описан флоу логина / регистрации?\"\n- \"Какие бизнес-правила у платежей?\"\n- \"Объясни архитектуру этого модуля.\"\n- \"Какая доменная модель у заказа?\"\n- \"Какие пользовательские сценарии при оплате?\"\n- \"Почему приняли такое решение по интеграции?\"\n- \"За что отвечает этот сервис и какие у него контракты?\"\n\n## Workflow\n\n1. Read `.metaproject/wiki/index.md` first. It is short and lists every page by type with a summary.\n2. Open only the specific pages relevant to the task. Do not read the whole wiki.\n3. To move from a wiki concept to code, use `skills/gdgraph/SKILL.md` (each page has a `Related Code` section).\n4. For compact command/search/read output while working, use `skills/gdctx/SKILL.md`.\n5. Treat wiki pages as curated context. Verify important claims against source code before editing or reporting.\n\n## Commands\n\n```bash\nkeryx wiki status\nkeryx wiki new \u003ctype> \u003cslug> --title \"\u003ctitle>\"\nkeryx wiki collect\nkeryx wiki index\nkeryx wiki check-links\nkeryx wiki validate\n```\n\n## Maintenance\n\n- New pages start at `Version: 0.1.0`; bump `Version` on every edit.\n- Run `keryx wiki index` after adding or renaming pages.\n- Run `keryx wiki collect` to generate safe draft pages from gdgraph, health, and testing context.\n- Run `keryx wiki check-links` before relying on cross-page links.\n\n## Enriching Collected Drafts (the wiki part)\n\n`keryx wiki collect` is deterministic and needs no model: it fills the\n`## Reference` section of each page (Public API, Key files, real dependencies)\nfrom the graph and source. The `## Overview`, `## How it works`,\n`## Key concepts`, and `## Main flows` sections are left as `Draft -`\nplaceholders. Those are the actual wiki - the understanding the graph cannot\nexpress - and they are filled by **this skill**, not by the CLI.\n\n### Model policy - use a cheap model\n\nThis is **bounded, mechanical synthesis**: read a module's key files and write\nstructured prose into fixed sections. It is NOT deep reasoning. Run it on a\n**non-flagship / cheap model** (e.g. Haiku, or Sonnet at most) - do not spend a\nflagship model on it. If you orchestrate, dispatch **one subagent per page on\nthe cheap model**; the flagship's job is only to review a sample at the end.\n\n### Work-front\n\nThe scaffold is graph-driven and covers the WHOLE project — a page per module at\nevery nesting depth (`src/pipelines`, `src/pipelines/store`,\n`src/pipelines/features/pipeline-variables`, …), so there can be many draft\npages. Do NOT try to enrich all at once — work in priority batches, incrementally.\n\n### Procedure\n\n0. Prepare (deterministic, do this yourself — no subagents):\n   ```bash\n   keryx gdgraph build     # fresh symbols + cross-file links (feeds Public API)\n   keryx wiki collect      # full scaffold; read its final line:\n                           #   \"enrichment needed: N component page(s) still Status: draft\"\n   keryx wiki index\n   ```\n   That `enrichment needed` count is your work-front. On later commits,\n   `keryx wiki collect --changed --since HEAD~1` re-scaffolds only the modules\n   whose graph shape moved — enrich exactly those.\n1. List + order the drafts to enrich:\n   ```bash\n   grep -rl \"Status: draft\" .metaproject/wiki/components .metaproject/wiki/architecture\n   ```\n   Order by importance - most-depended-on modules first (they anchor the Project\n   Map). Use the page's `Reference` -> `Depended on by`. Take a batch (e.g. 20);\n   leave the rest for the next pass.\n2. For each draft page, read the files listed under `Reference` -> `Key files`\n   (they are the highest-connectivity files, i.e. the module's core). Read a few\n   more if needed. Do NOT read the whole module.\n3. Fill the prose sections from what you read:\n   - `## Overview` - 2-4 sentences: what the module owns and its purpose.\n   - `## How it works` - the internal architecture: layers, key abstractions,\n     how they relate. Explain the design, do not re-list files.\n   - `## Key concepts` - the domain vocabulary and core objects.\n   - `## Main flows` - trace 1-3 concrete flows through the key files.\n4. Leave the `## Reference` section untouched (it is graph-owned and\n   regenerated). Update `## Summary` if the overview sharpened it.\n5. Set `Status: accepted` and bump `Version` (e.g. to `1.0.0`). This marks the\n   page human-owned; `keryx wiki collect --force` will never overwrite it.\n6. Ground every claim in code you read - write \"appears to\" rather than\n   inventing. When you link related pages, link ONLY to pages that ACTUALLY\n   exist - never guess a slug. Verify the target first\n   (`ls .metaproject/wiki/components` or the wiki index); a module's page slug\n   is its path slugified (`src/lineage` -> `src-lineage.md`, NOT\n   `lineage-graph.md`). Do not invent `Related Wiki` entries or link to\n   non-wiki files (e.g. `CLAUDE.md`). The graph-derived `## Reference` /\n   `Related Code` links are already correct - reuse those. Broken links from\n   guessed slugs are the #1 enrichment defect; run `keryx wiki check-links` and\n   fix any you introduced.\n7. As orchestrator you do NOT read code or write prose yourself — only subagents\n   do (one per page, cheap model). When the batch is done, review a sample\n   (prose accurate, real symbol names, `## Reference` untouched), then run\n   `keryx wiki index` and `keryx wiki check-links`. Report: pages enriched,\n   pages still draft, next batch.\n\n`--force` regenerates only unmodified drafts, so collect and enrich compose:\nre-run collect after code changes, then enrich the newly created drafts.\n\n## Always-on orientation (optional)\n\nTo make wiki knowledge always available (not just when the agent remembers to\nread the index), install the orientation injector — it adds the wiki index +\ncode-graph map to the agent's context each turn:\n\n```bash\nkeryx orient install-hook [--runtime \u003cid|all>]   # claude, codex, cursor\nkeryx wiki context                               # the wiki half of that orientation\n```\n\n## Skip When\n\n- The request is a pure code lookup with no architectural/domain/business context. Skipping the wiki is fine here — but it does not license raw `rg`: the code lookup itself still goes through gdgraph and `keryx ctx rg` (see the gdgraph and gdctx skills).\n- `keryx wiki` is unavailable.\n\n## Reporting\n\nWhen wiki context is used, mention which pages were read. For non-trivial tasks, record `wiki_used: pages / not-relevant / unavailable` as part of the routing audit (see the gdgraph skill's Reporting section).\n","skills/health/SKILL.md":"---\nname: health\ndescription: Use for code quality state - lint, type, test, coverage, dependency, and complexity health of the project, a module, or a file. Read the health report before claiming quality status or gate results.\n---\n\n# health Skill\n\nUse this skill when a task needs the code quality state of the project, a\nmodule, or a file: gate status, findings by priority, regressions, coverage, or\ncomplexity hot-spots.\n\n## Workflow\n\n1. Prefer the curated summary `.metaproject/data/health/artifacts/latest.md`.\n2. If it is stale or missing, run `keryx health run` (add `--strict` for CI-grade checks).\n3. Use `keryx health explain \u003cfile-or-module>` for a specific scope.\n4. Use `keryx health gate` for a CI exit code.\n5. Treat findings as signals; verify against source code before acting.\n\n## Commands\n\n```bash\nkeryx health status\nkeryx health run --strict\nkeryx health gate --strict-warn\nkeryx health sources\nkeryx health explain src/example.ts\nkeryx health baseline update\n```\n\n## Notes\n\n- Sources are required or optional; missing required sources fail the gate under `--strict`.\n- Baseline is accept-current on first run; update it explicitly.\n- The report is a versioned contract consumed by gdskills.\n","skills/testing/SKILL.md":"---\nname: testing\ndescription: Use before creating, changing, debugging, or reviewing tests. Read testing context and normalized reports before raw test logs.\n---\n\n# testing Skill\n\nUse this skill by default for test-related work. The user does not need to\nexplicitly ask for testing context.\n\n## Workflow\n\n1. Read `.metaproject/data/testing/context.md` before creating or changing tests.\n2. Use related-test discovery before broad test search:\n\n```bash\nkeryx test related \u003cfile>\n```\n\n3. For focused verification, prefer:\n\n```bash\nkeryx test run --changed\n```\n\n4. Read `.metaproject/data/testing/artifacts/latest.md` before raw logs.\n5. Use raw log only when summary and JSON are insufficient.\n6. If failures reveal a reusable lesson, feed it to gdskills:\n\n```bash\nkeryx skills learn --from-test .metaproject/data/testing/artifacts/latest.json --skill \u003cmodule>/\u003cskill>\n```\n\n## Commands\n\n```bash\nkeryx test analyze\nkeryx test run\nkeryx test run --changed\nkeryx test status\nkeryx test context\nkeryx test explain \u003cfile-or-scope>\nkeryx test related \u003cfile>\nkeryx test report latest\n```\n\n## Rules\n\n- Do not infer test conventions from one file when testing context exists.\n- Do not load raw test logs first.\n- Do not install dependencies or create a new test stack unless explicitly requested.\n- Treat Testing Module reports as the source for test execution status; Code Health consumes them.\n","skills/memory/SKILL.md":"---\nname: memory\ndescription: Use for durable project knowledge - past decisions, constraints, known mistakes, lessons, and patterns. Search memory before planning or implementing to avoid repeating mistakes; propose durable entries after tasks.\n---\n\n# memory Skill\n\nUse this skill for long-term project experience: accepted decisions,\nconstraints, known mistakes, lessons, and reusable patterns.\n\n## Workflow\n\n1. Before planning/implementing, run `keryx memory search \"\u003ctopic>\" --status accepted`.\n2. Read only the returned snippets, not the whole memory.\n3. Respect accepted decisions/constraints; treat `draft`/`conflict` as advisory.\n4. After a task/review, propose durable entries with `keryx memory new` or `ingest`.\n5. Run `keryx memory check` before relying on cross-entry links.\n\n## Commands\n\n```bash\nkeryx memory search \"\u003cquery>\" --status accepted\nkeryx memory new lesson --title \"\u003ctitle>\"\nkeryx memory ingest --from-review \u003cpath>\nkeryx memory check\n```\n\n## Notes\n\n- Only `accepted` entries influence skills; `draft` are advisory.\n- Markdown is the source of truth; never hand-edit generated indexes.\n","skills/flow/SKILL.md":"---\nname: flow\ndescription: Use whenever the user asks to start, create, track, or finish a managed piece of work - \"создай фло\", \"заведи флоу из этой ишью\", \"create a flow\", \"start a story\", \"какой статус по фло\", \"заверши фло/стори\", or pastes an issue link asking to work on it. All flow state changes go through the keryx flow CLI; never edit flow.json or frozen acceptance criteria by hand.\n---\n\n# flow Skill (router)\n\nA flow is a story from initialization to completion. The user does NOT need to\nknow CLI commands - recognize the intent and route it yourself.\n\n## Trigger Examples -> Intent\n\n| User says (RU/EN) | Intent | Do |\n|---|---|---|\n| \"Создай фло: \u003cописание проблемы>\" / \"create a flow for ...\" | init from description | `keryx flow init --title \"\u003cформализованный заголовок>\"`, then follow [init.md](init.md) |\n| \"Создай фло на основании \u003cissue URL>\" / \"make a flow from this issue\" / вставил issue-ссылку + \"сделай\" | init from issue | `keryx flow init --issue \u003curl>`, then [init.md](init.md) |\n| \"Заведи стори / инициализируй задачу / start a story\" | init | ask for a problem description or issue link if missing, then init |\n| \"Какие фло активны? / статус по фло / where are we on 003\" | status | `keryx flow list` / `flow status \u003cid>` |\n| \"Отметь задачу T2 / добавь задачу в фло\" | manage | [manage.md](manage.md): `flow task done/add` |\n| \"Имплементация готова, PR создан\" | accept implementation | [manage.md](manage.md): verify draft PR, `flow implemented --pr \u003curl>` |\n| \"Заверши фло / закрой стори / finish the flow\" | complete | [complete.md](complete.md): confirm ACs, `flow complete` |\n| \"Фло застрял / поставь на паузу\" | block | `flow block \u003cid> --reason` / `flow unblock` |\n\nAmbiguous (\"сделай эту фичу\" without flow context): if the work is\nnon-trivial and multi-step, propose starting a flow; for one-liners just do\nthe work.\n\n## Roles\n\n- Starting new work: [init.md](init.md) - flow-init.\n- Orchestrating/implementing an active flow: [manage.md](manage.md) -\n  flow-manager (embeds into the orchestrator).\n- Finishing a flow whose draft PR exists: [complete.md](complete.md) -\n  flow-complete.\n\n## Hard policy (all roles)\n\n- flow.json is CLI-owned. Never edit it by hand.\n- Acceptance criteria are frozen after `flow freeze`; edits only via\n  `keryx flow ac update \u003cid> --reason`. Implementors NEVER touch them.\n- Status changes only through the CLI; invalid transitions are rejected.\n- Only flow-manager declares implementation complete (`flow implemented`),\n  and only when a draft PR exists.\n","skills/flow/init.md":"# flow-init Skill (initialization orchestrator)\n\nInitialize a flow from a problem description or a GitHub issue URL. Runs as\nPhase 1 of the gdskills `flow-orchestrator`, or standalone. Non-trivial\ninitialization is decomposed by dispatching gdskills workers; trivial flows can\nbe filled inline.\n\n## Worker communication (schema-governed)\n\nWorkers inherit no session state - construct each dispatch explicitly\n(`.metaproject/rules/core/subagent-context-construction.md`). Every dispatch is\na `subagent-dispatch` object\n(`.metaproject/core/gdskills/contracts/subagent-dispatch.schema.json`) and every\nworker reply is a `subagent-result`\n(`.metaproject/core/gdskills/contracts/subagent-result.schema.json`) whose first\nline is `STATUS:` (`.metaproject/rules/core/subagent-status-protocol.md`). Set\n`run_id` to the flow id and `dispatch_id` to `\u003cflow-id>-\u003cstep>`.\n\n## Workflow\n\n1. Create the package: `keryx flow init --issue \u003curl>` or\n   `--title \"\u003cproblem>\"`. The CLI scaffolds the package and collects\n   deterministic context (issue body, memory search, gdgraph artifacts, health).\n2. Enrich context - dispatch `context-collector` with `context_refs` to the\n   flow package; it writes compact findings, not raw dumps. For an issue also\n   dispatch `issue-analyzer`; for a described feature, `feature-analyzer`.\n   Fold each `subagent-result` into context.md.\n3. Formalize description.md: problem, expected outcome, out of scope.\n4. Brainstorm approaches - dispatch `brainstorm` (2-3 options, trade-offs);\n   record the chosen approach and rejected alternatives in plan.md.\n5. If hard requirements are ambiguous, dispatch `interviewer`: focused\n   questions with options and a recommendation. Do not guess hard requirements.\n6. Break work into tasks: `keryx flow task add \u003cid> --title ... --kind\n   context|implement|test|review|docs` (defaults T1-T4 already exist; adjust).\n7. Write acceptance-criteria.md: hard, verifiable `- ACn:` criteria grounded in\n   the collected evidence.\n8. Re-verify the whole package, then freeze and hand off:\n   `keryx flow freeze \u003cid>` -> `keryx flow start \u003cid>`.\n\nRead each worker's `STATUS:` first: `NEEDS_CONTEXT`/`BLOCKED` -> enrich and\nre-dispatch (do not mark done); `DONE`/`DONE_WITH_CONCERNS` -> fold the result\nin and journal any concerns. After freeze, the implementor works the plan and\nmust not modify acceptance criteria or flow state directly.\n","flows/README.md":"# Flows\n\nEach directory is one flow: `\u003cNNN>-\u003cYYYY-MM-DD>-\u003cslug>/`.\n\nA flow is a story's journey from initialization to completion, managed by the\nTask Manager module (`keryx flow ...`). flow.json is CLI-owned state -\ndo not edit it by hand. Acceptance criteria are checksum-frozen after\n`flow freeze`.\n\nStatuses: initializing -> ready -> in-progress -> implemented -> completing ->\ndone (+ blocked). See `.metaproject/skills/flow/SKILL.md`.\n","data/testing/context.md":"# Testing Context\n\ngeneratedAt: 2026-07-07T20:12:59.363Z\n\n## Frameworks\n\n- bun\n- playwright\n\n## Scripts\n\n- `test`: `bun test tests/unit/`\n- `test:coverage`: `bun test --coverage tests/unit/`\n- `test:e2e`: `cd tests && npx playwright test --config=playwright.config.ts`\n- `test:e2e:api`: `cd tests && npx playwright test --config=playwright.config.ts --project=api`\n- `test:e2e:dashboard`: `cd tests && npx playwright test --config=playwright.config.ts --project=dashboard`\n- `test:unit`: `bun test tests/unit/`\n\n## Configs\n\n- dashboard/tsconfig.app.json\n- dashboard/tsconfig.json\n- dashboard/tsconfig.node.json\n- dashboard/webapp/tsconfig.json\n- tests/playwright.config.ts\n- tsconfig.json\n\n## Test Files\n\n- tests/e2e/api/git.spec.ts\n- tests/e2e/api/sessions.spec.ts\n- tests/e2e/auth.setup.ts\n- tests/e2e/dashboard/overview.spec.ts\n- tests/e2e/fixtures.ts\n- tests/global-setup.ts\n- tests/playwright.config.ts\n- tests/unit/aux-llm-prompt.test.ts\n- tests/unit/curator-prompt.test.ts\n- tests/unit/forum-topics.test.ts\n- tests/unit/jsonb-cast-v1.32.test.ts\n- tests/unit/matrix-validator.test.ts\n- tests/unit/memory-reconciliation.test.ts\n- tests/unit/migration-registry.test.ts\n- tests/unit/permission-flow.test.ts\n- tests/unit/session-lifecycle.test.ts\n- tests/unit/skill-distiller.test.ts\n- tests/unit/skill-handlers.test.ts\n- tests/unit/skill-preprocessor-regex.test.ts\n- tests/unit/skill-preprocessor.test.ts\n- tests/unit/supervisor-actions.test.ts\n- tests/unit/tmux-watchdog.test.ts\n\n\n## CI\n\n- .github/workflows/build.yml\n\n## Conventions\n\n- AGENTS.md: For commands, search, diff, test logs, lint/build output, and large file reads that can produce long output, use the Metaproject gdctx skill by default before loading raw command output into context.\n- AGENTS.md: For creating, changing, debugging, reviewing, or running tests, use the Metaproject testing skill and read .metaproject/data/testing/context.md before broad test search or raw logs.\n- CLAUDE.md: Naming or coding conventions specific to this project\n- CLAUDE.md: You: run `npx @openai/codex \"review the latest changes on this branch\"` and relay the output.\n- CLAUDE.md: For commands, search, diff, test logs, lint/build output, and large file reads that can produce long output, use the Metaproject gdctx skill by default before loading raw command output into context.\n- CLAUDE.md: For creating, changing, debugging, reviewing, or running tests, use the Metaproject testing skill and read .metaproject/data/testing/context.md before broad test search or raw logs.\n- docs/ROADMAP.md: v1.50.0 (Latest) — Session Stability Reform & Context Injection\n- docs/ROADMAP.md: E2E test scaffolding** — Playwright config + API and dashboard test projects in `tests/`\n- docs/ROADMAP.md: Fix**: `load_env()` function now loads `helyx/.env` first, then overlays the project-specific `.env`. Already-set vars (e.g. Docker-injected `DATABASE_URL`) are never overridden.\n- docs/ROADMAP.md: 34 new unit tests in `tests/unit/forum-topics.test.ts`\n- docs/ROADMAP.md: Unit Test Suite (43 tests)\n- docs/ROADMAP.md: Pure unit tests with no DB, no network, no Telegram dependencies\n- docs/ROADMAP.md: `tests/unit/session-lifecycle.test.ts` — 15 tests: state transitions, `sessionDisplayName`, disconnect rules per source type\n- docs/ROADMAP.md: `tests/unit/permission-flow.test.ts` — 15 tests: valid transitions, terminal state blocking, idempotency, auto-approve patterns\n- docs/ROADMAP.md: `tests/unit/memory-reconciliation.test.ts` — 13 tests: `parseReconcileDecision()` ADD/NOOP/UPDATE/DELETE parsing, similarity threshold logic\n- docs/ROADMAP.md: `bun test tests/unit/` runs in ~24ms (all pure functions, no I/O)\n- docs/ROADMAP.md: `package.json` scripts: `test` → unit only, `test:unit` → explicit, `test:e2e` → Playwright\n- docs/ROADMAP.md: Files changed:** `tests/unit/session-lifecycle.test.ts` (new), `tests/unit/permission-flow.test.ts` (new), `tests/unit/memory-reconciliation.test.ts` (new), `package.json`\n- docs/ROADMAP.md: Hourly cleanup job now supports `CLEANUP_DRY_RUN=true` for safe inspection without deleting\n- docs/ROADMAP.md: Auto-refresh every 5s; auto-scrolls to latest on first load\n- docs/ROADMAP.md: Session-end extraction: second LLM pass after `summarizeWork()` extracts durable project facts (not session-specific events)\n- docs/ROADMAP.md: E2E Test Suite + CI Workflow\n- docs/ROADMAP.md: Playwright test suite: 20 tests across API (sessions, git, auth) and dashboard (static serving, cache)\n- docs/ROADMAP.md: `bun test` / `bun test:api` in root `package.json`\n- docs/ROADMAP.md: Full spec: `dashboard/webapp/SPEC.md`\n- docs/ROADMAP.md: `TEST_BASE_URL` — `https://helyx.mrciphersmith.com`\n- docs/ROADMAP.md: After:** E2E tests run automatically on every push to main and PRs\n- docs/ROADMAP.md: Latest commits:** `git log --oneline -40`\n- docs/ROADMAP.md: [Architecture](../guides/architecture.md)** — Module map, service layer, logging, testing internals\n- docs/ROADMAP.md: [Human Spec](spec/en/spec.md)** — Full project specification for developers\n\n## Recommendations\n\n- none\n","wiki/architecture/project-map.md":"# Project Map\n\nVersion: 1.0.0\nType: architecture\nStatus: enriched\n\n## Summary\n\nDeterministic map of 163 code files, 2 assets, and 435 import edges across 26 top-level modules. The system is a Telegram bot that routes messages to Claude Code CLI sessions or standalone Claude API, with a web dashboard, MCP server, memory system, and supporting infrastructure.\n\n## Architecture Overview\n\nHelyx follows a layered architecture:\n\n```\nTelegram ──► bot/ ──► sessions/ ──► channel/ ──► Claude Code CLI\n  │             │         │              │\n  │             ▼         ▼              ▼\n  │         services/  memory/       orchestrator/\n  │             │\n  ▼             ▼\nmcp/ ──────► dashboard/ (React SPA)\n  │\n  └── claude/ (LLM gateway)\n       └── adapters/ (provider registry)\n```\n\n## Graph snapshot\n\n- Nodes: 165\n- Code files: 163\n- Assets: 2\n- Edges: 435\n- Imports: 433\n- Unresolved edges: 0\n\n## Largest modules\n\n- `bot` - 35 files, 96 cross-module imports\n- `dashboard` - 35 files, 1 cross-module imports\n- `tests` - 22 files, 9 cross-module imports\n- `utils` - 19 files, 9 cross-module imports\n- `channel` - 9 files, 29 cross-module imports\n- `services` - 8 files, 11 cross-module imports\n- `mcp` - 6 files, 33 cross-module imports\n- `memory` - 6 files, 8 cross-module imports\n- `sessions` - 4 files, 9 cross-module imports\n- `scripts` - 4 files, 5 cross-module imports\n- `adapters` - 3 files, 1 cross-module imports\n- `orchestrator` - 3 files, 0 cross-module imports\n- `cleanup` - 2 files, 6 cross-module imports\n- `claude` - 2 files, 6 cross-module imports\n\n## Module dependencies\n\n- `bot` -> `memory`, `sessions`, `utils`, `logger.ts`, `config.ts`, `claude`\n- `dashboard` -> `config.ts`\n- `tests` -> `utils`, `memory`, `sessions`, `orchestrator`, `bot`\n- `utils` -> `memory`, `config.ts`, `channel`, `logger.ts`\n- `channel` -> `utils`, `logger.ts`, `orchestrator`, `memory`, `sessions`, `bot`\n- `services` -> `memory`, `sessions`, `logger.ts`, `config.ts`\n- `mcp` -> `memory`, `utils`, `sessions`, `config.ts`, `dashboard`\n- `memory` -> `config.ts`, `claude`, `logger.ts`\n- `sessions` -> `memory`, `logger.ts`, `mcp`, `utils`, `adapters`\n- `scripts` -> `utils`, `memory`\n- `adapters` -> `memory`\n- `orchestrator` -> (no cross-module imports)\n- `cleanup` -> `sessions`, `memory`, `config.ts`\n- `claude` -> `config.ts`, `utils/stats`, `memory`, `sessions`\n\n## Related Wiki\n\n- [Wiki Index](../index.md)\n- [Module services](../components/services.md)\n- [Module claude](../components/claude.md)\n\n## Changelog\n\n- 1.0.0 - Enriched with model-generated architecture description and module descriptions.\n- 0.1.0 - Generated by `keryx wiki collect` at 2026-07-07T20:12:54.664Z.\n","wiki/architecture/testing-map.md":"# Testing Map\n\nVersion: 1.0.0\nType: architecture\nStatus: draft\n\n## Summary\n\nTest infrastructure overview: 17 unit tests (bun test) and 4 Playwright E2E specs across 3 projects (api, dashboard). Unit tests cover core business logic; E2E tests validate dashboard rendering and API endpoints.\n\n## Frameworks\n\n- bun test (unit tests)\n- Playwright (E2E tests)\n\n## Test Scripts\n\n- `test`: `bun test tests/unit/`\n- `test:coverage`: `bun test --coverage tests/unit/`\n- `test:e2e`: `cd tests && npx playwright test --config=playwright.config.ts`\n- `test:e2e:api`: `cd tests && npx playwright test --config=playwright.config.ts --project=api`\n- `test:e2e:dashboard`: `cd tests && npx playwright test --config=playwright.config.ts --project=dashboard`\n- `test:unit`: `bun test tests/unit/`\n\n## Test Categories\n\n- **Unit tests** (17 files): matrix-validator, jsonb-cast-v1.32, permission-flow, session-lifecycle, memory-reconciliation, migration-registry, forum-topics, skill-distiller, skill-handlers, skill-preprocessor, skill-preprocessor-regex, supervisor-actions, tmux-watchdog, curator-prompt, aux-llm-prompt\n- **E2E API tests** (2 specs): git operations, sessions\n- **E2E Dashboard tests** (1 spec): overview rendering\n\n## Configs\n\n- `tests/playwright.config.ts`\n- `dashboard/tsconfig.app.json`\n- `dashboard/tsconfig.json`\n- `dashboard/tsconfig.node.json`\n- `dashboard/webapp/tsconfig.json`\n\n## Related Reports\n\n- `.metaproject/data/testing/context.md`\n- `.metaproject/data/testing/artifacts/latest.md`\n\n## Related Wiki\n\n- [Wiki Index](../index.md)\n- [Module tests](../components/tests.md)\n- [Testing Conventions](../testing/conventions.md)\n\n## Changelog\n\n- 1.0.0 - Enriched with test counts and categories.\n- 0.1.0 - Generated by `keryx wiki collect` at 2026-07-07T20:12:54.664Z.\n","wiki/components/adapters.md":"# Module adapters\n\nVersion: 1.0.0\nType: component\nStatus: enriched\n\n## Summary\n\nAdapter abstraction layer for LLM provider registration and resolution. Provides a plugin-style registry pattern where different LLM adapters can be registered and retrieved by name, enabling multi-provider flexibility.\n\n## Responsibility\n\nOwns the adapter registry pattern for LLM provider abstraction. Defines the `ClaudeAdapter` interface contract, exposes `registerAdapter()` for runtime provider registration, and `getAdapter()` for lookup. Currently ships with the primary `claudeAdapter` that wraps the `claude/` module, but the architecture supports future providers (OpenAI, local models, etc.) without modifying adapter consumers.\n\n## Public API\n\n- `claudeAdapter`\n- `getAdapter`\n- `registerAdapter`\n\n## Key files\n\n- `adapters/claude.ts` - imported by 1, imports 2\n- `adapters/index.ts` - imported by 1, imports 2\n- `adapters/types.ts` - imported by 3, imports 0\n\n## Depends on\n\n- `memory` - 1 import(s)\n\n## Depended on by\n\n- `main.ts` - 1 import(s)\n- `sessions` - 1 import(s)\n\n## Entry points\n\n- `adapters/index.ts`\n\n## Graph signals\n\n- Files: 3\n- Cross-module imports: 1\n\n## Related Wiki\n\n- [Wiki Index](../index.md)\n- [Module claude](claude.md)\n\n## Changelog\n\n- 1.0.0 - Enriched with model-generated content based on code analysis.\n- 0.1.0 - Generated by `keryx wiki collect` at 2026-07-07T20:12:54.664Z.\n","wiki/components/bot.md":"# Module bot\n\nVersion: 1.0.0\nType: component\nStatus: enriched\n\n## Summary\n\nTelegram frontend of the Helyx system. Receives all Telegram updates (text, media, commands, callback queries, poll answers), authenticates via access guard, routes to the appropriate backend (Claude Code CLI sessions or standalone Claude API), and streams responses back to Telegram. Acts as the bridge between the user's Telegram interface and the underlying session/memory/LLM infrastructure.\n\n## Responsibility\n\nOwns the entire Telegram user-facing layer. Handles 23+ commands across session management, project control, memory operations, monitoring, and system administration. Implements multi-step command flows via a pending-input pattern, inline tool/skill launchers with argument collection, permission approval callbacks (Allow/Deny/Always-Allow), curator action approval, and agent-created skill approval (save/reject/edit-name). Provides a streaming response experience with incremental edits, typing indicators, HTML formatting, and continuation chunks. Manages dual-mode operation: CLI mode (messages routed via `message_queue` DB table to tmux-based Claude Code sessions) and standalone mode (direct Claude API with per-topic sequential queue). Supports voice message pipeline (download → transcribe → queue with progress), image vision via Claude API, session switching with context briefing, and text-to-speech attachment.\n\n## Public API\n\n- `pendingInput`\n- `PendingTool`\n- `pendingToolInput`\n- `setPendingTool`\n- `clearPendingTool`\n- `setPendingInput`\n- `clearPendingInput`\n- `setBotRef`\n- `getBotRef`\n- `registerHandlers`\n- `handleMenu`\n- `handleMenuCallback`\n\n## Key files\n\n- `bot/handlers.ts` - imported by 8, imports 24\n- `bot/commands/menu.ts` - imported by 2, imports 20\n- `bot/callbacks.ts` - imported by 1, imports 20\n- `bot/media.ts` - imported by 1, imports 17\n- `bot/text-handler.ts` - imported by 3, imports 14\n- `bot/commands/session.ts` - imported by 3, imports 8\n\n## Depends on\n\n- `memory` - 32 import(s)\n- `sessions` - 17 import(s)\n- `utils` - 14 import(s)\n- `logger.ts` - 12 import(s)\n- `config.ts` - 7 import(s)\n- `claude` - 4 import(s)\n\n## Depended on by\n\n- `channel` - 2 import(s)\n- `mcp` - 2 import(s)\n- `main.ts` - 1 import(s)\n- `tests` - 1 import(s)\n\n## Graph signals\n\n- Files: 35\n- Cross-module imports: 96\n\n## Related Wiki\n\n- [Wiki Index](../index.md)\n- [Module services](../components/services.md)\n- [Module claude](../components/claude.md)\n- [Module sessions](../components/sessions.md)\n\n## Changelog\n\n- 1.0.0 - Enriched with model-generated content based on code analysis.\n- 0.1.0 - Generated by `keryx wiki collect` at 2026-07-07T20:12:54.664Z.\n","wiki/components/channel.md":"# Module channel\n\nVersion: 1.0.0\nType: component\nStatus: enriched\n\n## Summary\n\nThe communication channel subsystem that bridges Telegram webhook updates into the bot's internal processing pipeline. Provides session affinity, recovery, status monitoring, permission validation, and tool routing for ephemeral Claude Code sessions.\n\n## Responsibility\n\nOwns the channel abstraction for Claude Code CLI session communication. Manages session-to-chat mapping with recovery from disconnects, polls session health and reconnects stale sessions, evaluates and routes skill/tool execution permissions, tracks session status transitions, and provides the Telegram message delivery bridge. The poller ensures sessions remain healthy by periodic checks and triggers reconnection when a session dies. The skill-evaluator gates tool execution through the permission system.\n\n## Key files\n\n- `channel/tools.ts` - imported by 1, imports 12\n- `channel/status.ts` - imported by 4, imports 6\n- `channel/index.ts` - imported by 1, imports 7\n- `channel/permissions.ts` - imported by 1, imports 6\n- `channel/poller.ts` - imported by 1, imports 6\n- `channel/telegram.ts` - imported by 6, imports 1\n\n## Depends on\n\n- `utils` - 10 import(s)\n- `logger.ts` - 9 import(s)\n- `orchestrator` - 3 import(s)\n- `memory` - 2 import(s)\n- `sessions` - 2 import(s)\n- `bot` - 2 import(s)\n\n## Depended on by\n\n- `channel.ts` - 1 import(s)\n- `main.ts` - 1 import(s)\n- `utils` - 1 import(s)\n\n## Entry points\n\n- `channel/index.ts`\n\n## Graph signals\n\n- Files: 9\n- Cross-module imports: 29\n\n## Related Wiki\n\n- [Wiki Index](../index.md)\n- [Module orchestrator](../components/orchestrator.md)\n- [Module sessions](../components/sessions.md)\n\n## Changelog\n\n- 1.0.0 - Enriched with model-generated content based on code analysis.\n- 0.1.0 - Generated by `keryx wiki collect` at 2026-07-07T20:12:54.664Z.\n","wiki/components/claude.md":"# Module claude\n\nVersion: 1.0.0\nType: component\nStatus: enriched\n\n## Summary\n\nLLM interaction layer providing a unified multi-provider API client with streaming and non-streaming modes, automatic retry with exponential backoff, token usage tracking, and a prompt composer that assembles session context from short-term and long-term memory.\n\n## Responsibility\n\nOwns all LLM communication. Split into two files with clear separation of concerns:\n\n- **`client.ts`** — LLM gateway that abstracts four providers (Anthropic SDK, Google AI via OpenAI-compatible proxy, OpenRouter/OpenAI-compatible, local Ollama) behind a single `streamResponse()`/`generateResponse()` interface. Handles retry with exponential backoff (3 attempts, 429/5xx only), strips reasoning tokens (`\u003cthink>...\u003c/think>`) from non-Anthropic providers, and automatically records API call statistics (timing, tokens, status) to the database.\n\n- **`prompt.ts`** — Context assembler that builds the full prompt for each turn. Gathers session metadata via `SessionManager`, retrieves up to 5 relevant long-term memories via vector similarity search, fetches recent conversation history from short-term memory, and falls back to cross-session project history when the current conversation is thin (\u003c3 messages). Returns `{ system, messages }` ready for the LLM client.\n\nProvider priority: Anthropic > Google AI > OpenRouter > Ollama (based on available API keys).\n\n## Public API\n\n- `ContentBlock`\n- `MessageParam`\n- `StreamContext`\n- `getProviderInfo`\n- `streamResponse`\n- `generateResponse`\n- `summarizeConversation`\n- `composePrompt`\n\n## Key files\n\n- `claude/client.ts` - imported by 12, imports 4\n- `claude/prompt.ts` - imported by 3, imports 4\n\n## Depends on\n\n- `@anthropic-ai/sdk`\n- `config.ts`\n- `utils/stats.ts` (recordApiRequest)\n- `memory/long-term.ts` (recall)\n- `memory/short-term.ts` (getContext, getProjectHistory)\n- `sessions/manager.ts` (sessionManager)\n\n## Depended on by\n\n- `memory/summarizer.ts`\n- `bot/streaming.ts`\n- `utils/curator.ts`\n\n## Graph signals\n\n- Files: 2\n- Cross-module imports: 6\n\n## Related Wiki\n\n- [Wiki Index](../index.md)\n- [Module adapters](../components/adapters.md)\n- [Module memory](../components/memory.md)\n- [Module sessions](../components/sessions.md)\n- [Module bot](../components/bot.md)\n\n## Changelog\n\n- 1.0.0 - Created from code analysis.\n","wiki/components/cleanup.md":"# Module cleanup\n\nVersion: 1.0.0\nType: component\nStatus: enriched\n\n## Summary\n\nHousekeeping subsystem that runs periodic maintenance jobs: message queue cleanup, log rotation, stale session archival, orphan CLI session cleanup, and memory TTL enforcement. Designed for cron or daemon-driven execution.\n\n## Responsibility\n\nOwns all routine data maintenance. Provides a registry of `CleanupJob` definitions (`ALL_JOBS`) that can be run individually or all at once via `runAllCleanupJobs()` or `runCleanup()`. Jobs cover: draining stale message queues, rotating logs, expiring archived messages past TTL, removing orphan CLI sessions, archiving stale sessions, and cleaning up old status messages. The runner orchestrates execution and collects results.\n\n## Public API\n\n- `CleanupJob`\n- `messageQueueCleanup`\n- `logRotation`\n- `archivedMessagesTTL`\n- `memoryTTL`\n- `orphanCliSessionCleanup`\n- `staleSessionArchival`\n- `staleStatusMessages`\n- `ALL_JOBS`\n- `RunAllResult`\n- `runAllCleanupJobs`\n- `runCleanup`\n\n## Key files\n\n- `cleanup/jobs.ts` - imported by 2, imports 5\n- `cleanup/runner.ts` - imported by 1, imports 2\n\n## Depends on\n\n- `sessions` - 3 import(s)\n- `memory` - 2 import(s)\n- `config.ts` - 1 import(s)\n\n## Depended on by\n\n- `bot` - 1 import(s)\n- `main.ts` - 1 import(s)\n\n## Graph signals\n\n- Files: 2\n- Cross-module imports: 6\n\n## Related Wiki\n\n- [Wiki Index](../index.md)\n- [Module sessions](../components/sessions.md)\n\n## Changelog\n\n- 1.0.0 - Enriched with model-generated content based on code analysis.\n- 0.1.0 - Generated by `keryx wiki collect` at 2026-07-07T20:12:54.664Z.\n","wiki/components/dashboard.md":"# Module dashboard\n\nVersion: 1.0.0\nType: component\nStatus: enriched\n\n## Summary\n\nA mobile-first Telegram Mini App for monitoring Claude Code sessions, viewing API stats and logs, managing memories, handling permissions, and exploring projects — all from a phone. Built with React + TypeScript + Vite, split into two webapps sharing an API client.\n\n## Responsibility\n\nProvides the rich Web UI layer for the Helyx system. Contains two independently-built web applications sharing a common API client: a full-featured dashboard (`dashboard/src/`) with pages for Overview, Sessions, SessionDetail, Logs, Memories, Permissions, Projects, Monitor, and Stats — and a lighter webapp (`dashboard/webapp/src/`) with Git browsing, message history, permission management, session monitoring, and PR management. Uses Telegram login for auth, i18n for localization, and hooks like `useEventStream` for real-time updates. Connected to the backend via `mcp/dashboard-api.ts`.\n\n## Public API\n\n- `api`\n- `AuthUser`\n- `TelegramLoginData`\n- `Overview`\n- `Session`\n- `SessionDetail`\n- `Message`\n- `PaginatedMessages`\n- `Stats`\n- `DailyStats`\n- `LogEntry`\n- `LogsParams`\n- `PaginatedLogs`\n- `Memory`\n- `MemoriesParams`\n- `PaginatedMemories`\n- `MemoryTag`\n- `Project`\n- `PendingPermission`\n- `ProcessHealthRow`\n\n## Key files\n\n- `dashboard/src/main.tsx` - imported by 0, imports 14\n- `dashboard/src/api/client.ts` - imported by 12, imports 0\n- `dashboard/src/i18n.ts` - imported by 11, imports 0\n- `dashboard/webapp/src/api.ts` - imported by 8, imports 0\n- `dashboard/webapp/src/App.tsx` - imported by 1, imports 6\n- `dashboard/src/pages/Layout.tsx` - imported by 1, imports 5\n\n## Depends on\n\n- `config.ts` - 1 import(s)\n\n## Depended on by\n\n- `mcp` - 2 import(s)\n\n## Graph signals\n\n- Files: 35\n- Cross-module imports: 1\n\n## Related Wiki\n\n- [Wiki Index](../index.md)\n- [Module mcp](../components/mcp.md)\n\n## Changelog\n\n- 1.0.0 - Enriched with model-generated content based on code analysis.\n- 0.1.0 - Generated by `keryx wiki collect` at 2026-07-07T20:12:54.664Z.\n","wiki/components/mcp.md":"# Module mcp\n\nVersion: 1.0.0\nType: component\nStatus: enriched\n\n## Summary\n\nModel Context Protocol (MCP) server implementation that exposes bot functionality as tools consumable by Claude Code and other MCP clients. Acts as the API bridge between the bot's internal services and external AI agents.\n\n## Responsibility\n\nOwns the MCP server lifecycle and tool definitions. Implements the Model Context Protocol for bidirectional communication between the bot and Claude Code CLI. Provides tool definitions (`TOOL_DEFINITIONS`) for session management, project management, permission control, and knowledge operations. The MCP bridge routes tool execution requests to internal services. Includes a notification broadcaster for real-time events and a dashboard API bridge that exposes service-layer CRUD (sessions, projects, permissions, stats) as HTTP endpoints consumable by the dashboard webapp. Manages pending expectations for Claude Code tool responses.\n\n## Public API\n\n- `TOOL_DEFINITIONS`\n- `executeTool`\n- `handleDashboardRequest`\n\n## Key files\n\n- `mcp/tools.ts` - imported by 1, imports 14\n- `mcp/dashboard-api.ts` - imported by 1, imports 11\n- `mcp/server.ts` - imported by 1, imports 11\n- `mcp/pending-expects.ts` - imported by 2, imports 3\n- `mcp/notification-broadcaster.ts` - imported by 3, imports 0\n- `mcp/bridge.ts` - imported by 1, imports 0\n\n## Depends on\n\n- `memory` - 9 import(s)\n- `utils` - 8 import(s)\n- `sessions` - 4 import(s)\n- `config.ts` - 2 import(s)\n- `dashboard` - 2 import(s)\n- `logger.ts` - 2 import(s)\n\n## Depended on by\n\n- `sessions` - 2 import(s)\n- `main.ts` - 1 import(s)\n\n## Graph signals\n\n- Files: 6\n- Cross-module imports: 33\n\n## Related Wiki\n\n- [Wiki Index](../index.md)\n- [Module services](../components/services.md)\n- [Module dashboard](../components/dashboard.md)\n- [Module sessions](../components/sessions.md)\n\n## Changelog\n\n- 1.0.0 - Enriched with model-generated content based on code analysis.\n- 0.1.0 - Generated by `keryx wiki collect` at 2026-07-07T20:12:54.664Z.\n","wiki/components/memory.md":"# Module memory\n\nVersion: 1.0.0\nType: component\nStatus: enriched\n\n## Summary\n\nPersistence and knowledge management subsystem — the data backbone of the bot. Provides PostgreSQL-based storage (via `postgres` tagged template literals), vector embeddings for semantic memory recall, short-term conversation history, long-term project knowledge extraction, and conversation summarization.\n\n## Responsibility\n\nOwns all data persistence and retrieval. Provides the `sql` tagged template literal (from the `postgres` library) used as the universal database connection across the entire codebase. Implements two-tier memory: short-term (recent conversation history scoped to session+chat with configurable window) and long-term (vector-based semantic memory stored as embeddings in PostgreSQL with recall by similarity search). Handles project knowledge extraction — automatically extracts and stores durable facts from completed conversation summaries. Provides conversation summarization with idle-timer triggering, overflow detection, and disconnect-time summarization. Manages embedding generation via Ollama or other configured providers.\n\n## Public API\n\n- `sql`\n- `validateMigrationRegistry`\n- `migrate`\n- `extractProjectKnowledge`\n- `touchIdleTimer`\n- `checkOverflow`\n- `forceSummarize`\n- `summarizeOnDisconnect`\n- `cleanupStaleTimers`\n- `stopAllTimers`\n- `summarizeWork`\n- `extractFactsFromTranscript`\n\n## Key files\n\n- `memory/db.ts` - imported by 46, imports 1\n- `memory/summarizer.ts` - imported by 8, imports 6\n- `memory/long-term.ts` - imported by 9, imports 3\n- `memory/short-term.ts` - imported by 8, imports 2\n- `memory/project-scanner.ts` - imported by 4, imports 3\n- `memory/embeddings.ts` - imported by 2, imports 1\n\n## Depends on\n\n- `config.ts` - 5 import(s)\n- `claude` - 2 import(s)\n- `logger.ts` - 1 import(s)\n\n## Depended on by\n\n- `bot` - 32 import(s)\n- `mcp` - 9 import(s)\n- `utils` - 4 import(s)\n- `sessions` - 3 import(s)\n- `channel` - 2 import(s)\n- `claude` - 2 import(s)\n\n## Graph signals\n\n- Files: 6\n- Cross-module imports: 8\n\n## Related Wiki\n\n- [Wiki Index](../index.md)\n- [Module claude](../components/claude.md)\n- [Module services](../components/services.md)\n\n## Changelog\n\n- 1.0.0 - Enriched with model-generated content based on code analysis.\n- 0.1.0 - Generated by `keryx wiki collect` at 2026-07-07T20:12:54.664Z.\n","wiki/components/orchestrator.md":"# Module orchestrator\n\nVersion: 1.0.0\nType: component\nStatus: enriched\n\n## Summary\n\nValidation and state management for the Claude Code reply gate and session state matrix. Ensures that Claude Code CLI outputs conform to expected formats before they reach Telegram users.\n\n## Responsibility\n\nOwns the reply gate validation layer and session state matrix logic. The reply gate (`gate.ts`) validates Claude Code CLI output against expected patterns, ensuring tool calls, permission requests, and status updates are properly formatted before forwarding to users. The state matrix (`matrix.ts`) defines valid session state transitions and validates matrix artifacts for consistency. The store (`store.ts`) provides persistence for matrix state. Used primarily by the channel module to validate Claude Code responses before they appear in Telegram.\n\n## Public API\n\n- `ReplyGateResult`\n- `validateReplyGate`\n- `MatrixArtifact`\n- `MatrixViolation`\n- `MatrixValidationResult`\n- `StateMatrix`\n- `MatrixLoadError`\n- `loadStateMatrix`\n- `validateMatrixArtifact`\n- `buildCorrectionPrompt`\n\n## Key files\n\n- `orchestrator/gate.ts` - imported by 2, imports 2\n- `orchestrator/matrix.ts` - imported by 4, imports 0\n- `orchestrator/store.ts` - imported by 3, imports 1\n\n## Depended on by\n\n- `channel` - 3 import(s)\n- `mcp` - 2 import(s)\n- `tests` - 1 import(s)\n\n## Graph signals\n\n- Files: 3\n- Cross-module imports: 0\n\n## Related Wiki\n\n- [Wiki Index](../index.md)\n- [Module channel](../components/channel.md)\n\n## Changelog\n\n- 1.0.0 - Enriched with model-generated content based on code analysis.\n- 0.1.0 - Generated by `keryx wiki collect` at 2026-07-07T20:12:54.664Z.\n","wiki/components/scripts.md":"# Module scripts\n\nVersion: 1.0.0\nType: component\nStatus: enriched\n\n## Summary\n\nBackground daemon scripts that run outside the main bot process: admin daemon (command execution, health monitoring), supervisor (process lifecycle), tmux session logger, and tmux watchdog (health checks and recovery).\n\n## Responsibility\n\nOwns all auxiliary process infrastructure. The admin-daemon picks up commands from the `admin_commands` DB table and executes them (project start/stop, bot restart, channel kill). The supervisor monitors Claude Code session health and triggers recovery actions on failure. The tmux-session-logger captures tmux session output for debugging. The tmux-watchdog periodically checks session health and restarts dead sessions. These scripts run as separate processes, communicating with the main bot through the database.\n\n## Public API\n\n- `forwardStuckMessages`\n\n## Key files\n\n- `scripts/admin-daemon.ts` - imported by 0, imports 5\n- `scripts/supervisor.ts` - imported by 2, imports 2\n- `scripts/tmux-watchdog.ts` - imported by 1, imports 1\n- `scripts/tmux-session-logger.ts` - imported by 1, imports 0\n\n## Depends on\n\n- `utils` - 3 import(s)\n- `memory` - 2 import(s)\n\n## Depended on by\n\n- `bot` - 1 import(s)\n\n## Graph signals\n\n- Files: 4\n- Cross-module imports: 5\n\n## Related Wiki\n\n- [Wiki Index](../index.md)\n\n## Changelog\n\n- 1.0.0 - Enriched with model-generated content based on code analysis.\n- 0.1.0 - Generated by `keryx wiki collect` at 2026-07-07T20:12:54.664Z.\n","wiki/components/services.md":"# Module services\n\nVersion: 1.0.0\nType: component\nStatus: enriched\n\n## Summary\n\nService layer — facades that encapsulate database operations and business logic behind a clean API for bot commands and MCP endpoints. Provides seven singleton services: Session, Project, Permission, Forum, Message, Memory, and Summarization services.\n\n## Responsibility\n\nOwns the database-facing business logic layer. Each service wraps one domain area behind an async class with a singleton export, providing a simplified API for consumers in `bot/commands/` and `mcp/`. Follows a consistent pattern: class + singleton + barrel re-export.\n\n- **SessionService** — CRUD for Claude Code sessions, session-to-chat affinity, activity tracking.\n- **ProjectService** — Project CRUD, lifecycle (start/stop via admin command queue), session-to-project linking, restart enqueue.\n- **PermissionService** — Permission request state machine (pending→approved/rejected/expired), stale expiry on startup.\n- **ForumService** — Telegram Forum topic management: setup, sync, orphan cleanup, topic creation per project with color rotation.\n- **MessageService** — Short-term message storage delegation, message queue for injecting content into running sessions.\n- **MemoryService** — Thin facade over long-term memory recall/store/list.\n- **SummarizationService** — Thin facade over summarization: idle timer, overflow check, force summarize, disconnect save, project knowledge extraction.\n\n## Public API\n\n- `sessionService`\n- `SessionService`\n- `permissionService`\n- `PermissionService`\n- `memoryService`\n- `MemoryService`\n- `projectService`\n- `ProjectService`\n- `messageService`\n- `MessageService`\n- `summarizationService`\n- `SummarizationService`\n- `forumService`\n- `ForumService`\n- `FORUM_ICON_COLORS`\n\n## Key files\n\n- `services/session-service.ts` - imported by 2, imports 2\n- `services/project-service.ts` - imported by 4, imports 3\n- `services/forum-service.ts` - imported by 2, imports 2\n- `services/message-service.ts` - imported by 1, imports 3\n- `services/permission-service.ts` - imported by 2, imports 1\n- `services/memory-service.ts` - imported by 0, imports 1\n- `services/summarization-service.ts` - imported by 0, imports 1\n\n## Depends on\n\n- `memory` (sql, short-term, long-term, summarizer)\n- `sessions` (delete.ts)\n- `logger.ts`\n- `config.ts`\n\n## Depended on by\n\n- `bot/commands/session.ts`\n- `bot/commands/project-add.ts`\n- `bot/commands/projects.ts`\n- `bot/commands/forum.ts`\n- `bot/commands/supervisor-actions.ts`\n- `bot/commands/resume.ts`\n- `bot/callbacks.ts`\n- `mcp/dashboard-api.ts`\n- `main.ts`\n\n## Entry points\n\n- `services/index.ts`\n\n## Graph signals\n\n- Files: 8\n- Cross-module imports: 11\n\n## Related Wiki\n\n- [Wiki Index](../index.md)\n- [Module bot](../components/bot.md)\n- [Module mcp](../components/mcp.md)\n\n## Changelog\n\n- 1.0.0 - Created from code analysis. Replaces the autogenerated component draft.\n","wiki/components/sessions.md":"# Module sessions\n\nVersion: 1.0.0\nType: component\nStatus: enriched\n\n## Summary\n\nSession lifecycle management — creation, routing, state machine, and cleanup of Claude Code CLI sessions. Provides the core session manager that tracks session state (connecting, connected, disconnected, terminating) and routes messages to the correct session.\n\n## Responsibility\n\nOwns the session lifecycle. The `SessionManager` (`manager.ts`) maintains in-memory session state, handles session creation with tmux integration, manages reconnection, and provides the `sessionManager` singleton used across the codebase. The router (`router.ts`) routes incoming messages to the appropriate session based on chat context and session mode (CLI vs standalone). The state machine (`state-machine.ts`) defines valid state transitions (connecting → connected → disconnected → terminating) and enforces lifecycle invariants. The session delete module (`delete.ts`) handles cascading cleanup of session resources including tmux sessions, DB records, and forum topic unbinding.\n\n## Public API\n\n- `TerminationCallback`\n- `setTerminationCallback`\n- `Session`\n- `sessionDisplayName`\n- `SessionManager`\n- `sessionManager`\n- `RouteTarget`\n- `routeMessage`\n\n## Key files\n\n- `sessions/manager.ts` - imported by 22, imports 5\n- `sessions/router.ts` - imported by 4, imports 3\n- `sessions/delete.ts` - imported by 4, imports 1\n- `sessions/state-machine.ts` - imported by 2, imports 2\n\n## Depends on\n\n- `memory` - 3 import(s)\n- `logger.ts` - 2 import(s)\n- `mcp` - 2 import(s)\n- `utils` - 1 import(s)\n- `adapters` - 1 import(s)\n\n## Depended on by\n\n- `bot` - 17 import(s)\n- `mcp` - 4 import(s)\n- `cleanup` - 3 import(s)\n- `channel` - 2 import(s)\n- `claude` - 1 import(s)\n- `services/project-service.ts` - 1 import(s)\n\n## Graph signals\n\n- Files: 4\n- Cross-module imports: 9\n\n## Related Wiki\n\n- [Wiki Index](../index.md)\n- [Module channel](../components/channel.md)\n- [Module mcp](../components/mcp.md)\n- [Module cleanup](../components/cleanup.md)\n\n## Changelog\n\n- 1.0.0 - Enriched with model-generated content based on code analysis.\n- 0.1.0 - Generated by `keryx wiki collect` at 2026-07-07T20:12:54.664Z.\n","wiki/components/tests.md":"# Module tests\n\nVersion: 1.0.0\nType: component\nStatus: enriched\n\n## Summary\n\nTest suite covering unit tests (bun test) and end-to-end tests (Playwright) for both the dashboard web UI and the API layer. Tests session lifecycle, permission flows, memory reconciliation, forum topics, matrix validation, supervisor actions, and dashboard rendering.\n\n## Responsibility\n\nCovers two test domains. Unit tests (under `tests/unit/`) validate core business logic: matrix validator, JSONB cast compatibility, permission flow, session lifecycle, skill distiller, skill handlers, skill preprocessors, supervisor actions, tmux watchdog, memory reconciliation, migration registry, forum topics, curator prompt, and auxiliary LLM prompt. E2E tests (under `tests/e2e/`) use Playwright to verify the dashboard overview page renders correctly, API endpoints for git operations and sessions work, and auth setup is functional. Uses shared fixtures and a global setup for test dependencies.\n\n## Public API\n\n- `test`\n- `expect`\n\n## Key files\n\n- `tests/e2e/fixtures.ts` - imported by 3, imports 0\n- `tests/unit/jsonb-cast-v1.32.test.ts` - imported by 0, imports 2\n- `tests/e2e/api/git.spec.ts` - imported by 0, imports 1\n- `tests/e2e/api/sessions.spec.ts` - imported by 0, imports 1\n- `tests/e2e/dashboard/overview.spec.ts` - imported by 0, imports 1\n- `tests/unit/matrix-validator.test.ts` - imported by 0, imports 1\n\n## Depends on\n\n- `utils` - 4 import(s)\n- `memory` - 2 import(s)\n- `sessions` - 1 import(s)\n- `orchestrator` - 1 import(s)\n- `bot` - 1 import(s)\n\n## Graph signals\n\n- Files: 22\n- Cross-module imports: 9\n\n## Related Wiki\n\n- [Wiki Index](../index.md)\n- [Testing Map](../architecture/testing-map.md)\n- [Testing Conventions](../testing/conventions.md)\n\n## Changelog\n\n- 1.0.0 - Enriched with model-generated content based on code analysis.\n- 0.1.0 - Generated by `keryx wiki collect` at 2026-07-07T20:12:54.664Z.\n","wiki/components/utils.md":"# Module utils\n\nVersion: 1.0.0\nType: component\nStatus: enriched\n\n## Summary\n\nShared utility library providing API/transcription statistics recording, conversation curator (automated cleanup of stalled or low-value conversations), skill management (distillation, approval, handler registration, preprocessing), file helpers, HTML formatting, CLI config management, Claude usage tracking, TTS (text-to-speech via Kokoro), audio transcription, tmux monitoring, stream JSON parsing, and output monitoring.\n\n## Responsibility\n\nOwns all cross-cutting utilities that don't belong to a specific domain module. The skills subsystem handles the full lifecycle: preprocessing user input for skill trigger matching, distilling agent-created skills from conversations, managing user approval flows, and routing executed skills to handlers. The curator periodically reviews active conversations and suggests actions (pause, summarize, close) on stalled or degenerate loops. Stats utilities record API request metrics, transcription metrics, and error logs to the database for the monitoring dashboard. Also provides HTML sanitization, file I/O helpers, tmux session monitoring, and audio utilities (TTS synthesis and transcription).\n\n## Public API\n\n- `ApiRequestStat`\n- `recordApiRequest`\n- `TranscriptionStat`\n- `recordTranscription`\n- `appendLog`\n- `getApiStats`\n- `getTranscriptionStats`\n- `getRecentErrors`\n- `getSessionLogs`\n- `getRecentLogs`\n- `getMessageStats`\n- `CuratorRun`\n- `runCurator`\n- `getCuratorRuns`\n- `getLastCuratorRun`\n- `getPendingCuratorActions`\n\n## Key files\n\n- `utils/stats.ts` - imported by 8, imports 1\n- `utils/curator.ts` - imported by 3, imports 3\n- `utils/skill-distiller.ts` - imported by 4, imports 2\n- `utils/tts.ts` - imported by 4, imports 2\n- `utils/skill-approval.ts` - imported by 4, imports 1\n- `utils/skill-handlers.ts` - imported by 3, imports 1\n\n## Depends on\n\n- `memory` - 4 import(s)\n- `config.ts` - 3 import(s)\n- `channel` - 1 import(s)\n- `logger.ts` - 1 import(s)\n\n## Depended on by\n\n- `bot` - 14 import(s)\n- `channel` - 10 import(s)\n- `mcp` - 8 import(s)\n- `tests` - 4 import(s)\n- `scripts` - 3 import(s)\n- `claude` - 1 import(s)\n\n## Graph signals\n\n- Files: 19\n- Cross-module imports: 9\n\n## Related Wiki\n\n- [Wiki Index](../index.md)\n- [Module bot](../components/bot.md)\n- [Module channel](../components/channel.md)\n- [Module mcp](../components/mcp.md)\n\n## Changelog\n\n- 1.0.0 - Enriched with model-generated content based on code analysis.\n- 0.1.0 - Generated by `keryx wiki collect` at 2026-07-07T20:12:54.664Z.\n","wiki/testing/README.md":"# Testing\n\nVersion: 0.1.0\n\nProject testing knowledge base.\n\n## References\n\n- `../index.md`\n- `../../data/testing/context.md`\n- `../../data/testing/recommendations.md`\n- `../../skills/testing/SKILL.md`\n","wiki/testing/conventions.md":"# Testing Conventions\n\nVersion: 0.1.0\n\nThis page stores human-maintained testing conventions. Machine-generated\ndiscovery lives in `.metaproject/data/testing/context.md`.\n\n## Current Conventions\n\n- Review `.metaproject/data/testing/context.md` before editing this page.\n- Keep project-specific testing rules here when they become stable.\n"}</script>
+  <script id="gdm-docs" type="application/json">{}</script>
   <script>
     (function () {
       var root = document.documentElement;
