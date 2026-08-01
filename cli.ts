@@ -1301,12 +1301,30 @@ function windowName(p: Project): string {
   return p.name;
 }
 
+/**
+ * Prefix that puts the tmux server in its own transient scope.
+ *
+ * Without it the server inherits the cgroup of whoever ran `helyx up` — in
+ * practice helyx-admin.service. `systemctl restart helyx-admin` then kills the
+ * whole control group, taking every CLI pane with it, and Telegram messages
+ * pile up in message_queue with nothing left to consume them.
+ */
+async function tmuxServerScope(): Promise<string[]> {
+  if (process.platform !== "linux") return [];
+  const available = await run(["which", "systemd-run"], { silent: true });
+  if (!available.ok) return [];
+  // Clear a lingering unit from a previous server so --unit does not collide.
+  await run(["systemctl", "--user", "reset-failed", "helyx-tmux.scope"], { silent: true });
+  return ["systemd-run", "--user", "--scope", "--unit=helyx-tmux", "--collect", "--quiet"];
+}
+
 async function startWindow(p: Project, first: boolean, usePanes: boolean, paneCount: number): Promise<void> {
   const wname = windowName(p);
   const cmd = `${BOT_DIR}/scripts/run-cli.sh ${p.path}`;
 
   if (first) {
-    await run(["tmux", "new-session", "-d", "-s", TMUX_SESSION, "-n", wname, "-c", p.path]);
+    const scope = await tmuxServerScope();
+    await run([...scope, "tmux", "new-session", "-d", "-s", TMUX_SESSION, "-n", wname, "-c", p.path]);
     // Use window index 0 to avoid race with shell renaming the window title
     await run(["tmux", "send-keys", "-t", `${TMUX_SESSION}:0`, cmd, "Enter"]);
   } else if (usePanes) {
@@ -1354,12 +1372,21 @@ async function tmuxStart() {
   if (exists.ok) {
     // Session already running — start any missing windows
     console.log(`\n  ${c.bold("Session")} ${c.cyan(TMUX_SESSION)} ${c.dim("already running — starting missing windows...")}\n`);
+    // `tmux has-session -t sess:name` resolves the window by prefix, so a project
+    // named "goodai" matched the existing "goodai-base" window and was silently
+    // never started. Compare against the real window names instead.
+    const windowList = await run(
+      ["tmux", "list-windows", "-t", TMUX_SESSION, "-F", "#{window_name}"],
+      { silent: true },
+    );
+    const existingWindows = new Set(
+      windowList.output.split("\n").map(l => l.trim()).filter(Boolean),
+    );
     let started = 0;
     for (const p of projects) {
       if (!existsSync(p.path)) continue;
       const wname = windowName(p);
-      const winExists = await run(["tmux", "has-session", "-t", `${TMUX_SESSION}:${wname}`], { silent: true });
-      if (winExists.ok) {
+      if (existingWindows.has(wname)) {
         console.log(`  ${c.dim("·")} ${wname} — already running`);
       } else {
         await run(["tmux", "new-window", "-t", TMUX_SESSION, "-n", wname, "-c", p.path]);

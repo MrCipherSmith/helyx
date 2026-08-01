@@ -363,6 +363,7 @@ async function checkStuckQueue(sql: postgres.Sql, runShell?: RunShell): Promise<
     const rows = await sql`
       SELECT
         mq.session_id,
+        p.id AS project_id,
         s.project,
         s.project_path,
         MIN(mq.created_at) AS oldest_pending,
@@ -373,12 +374,15 @@ async function checkStuckQueue(sql: postgres.Sql, runShell?: RunShell): Promise<
       JOIN projects p ON p.id = s.project_id AND p.tmux_session_name = 'bots'
       WHERE mq.delivered = false
         AND mq.created_at < NOW() - INTERVAL '5 minutes'
-      GROUP BY mq.session_id, s.project, s.project_path
+      GROUP BY mq.session_id, p.id, s.project, s.project_path
     `;
 
     for (const row of rows) {
       const project = String(row.project ?? "unknown");
       const sessionId = Number(row.session_id);
+      // enqueueRestart takes a project id, not a session id — passing sessionId
+      // here made the restart button throw "project <n> not found" every time.
+      const projectId = Number(row.project_id);
       const oldestMs = Date.now() - new Date(row.oldest_pending).getTime();
       const oldestSec = Math.round(oldestMs / 1000);
       const stuckCount = Number(row.stuck_count ?? 1);
@@ -436,7 +440,7 @@ async function checkStuckQueue(sql: postgres.Sql, runShell?: RunShell): Promise<
       const messageId = await sendAlertWithButtons(msg, [
         [
           { text: "📬 Принудительно доставить", callback_data: `sup:force_deliver:${sessionId}` },
-          { text: spinnerActive ? "⚠️ Перезапустить (Claude работает!)" : "🔄 Перезапустить сессию", callback_data: `sup:restart_session:${sessionId}` },
+          { text: spinnerActive ? "⚠️ Перезапустить (Claude работает!)" : "🔄 Перезапустить сессию", callback_data: `sup:restart_session:${projectId}` },
         ],
         [
           { text: "🔇 Заглушить на 1 ч", callback_data: `sup:ack:session_problem:${project}:${sessionId}` },

@@ -7,8 +7,10 @@ Wants=network-online.target
 Type=forking
 User=%i
 WorkingDirectory=/home/%i/bots/helyx
-ExecStartPre=/home/%i/.local/bin/helyx up
 ExecStart=/usr/bin/env bun /home/%i/bots/helyx/scripts/admin-daemon.ts
+# After ExecStart, not before: `helyx up` starts an admin-daemon itself when it
+# does not find one running, so running it first left two daemons alive.
+ExecStartPost=-/home/%i/.local/bin/helyx up
 Restart=on-failure
 RestartSec=5
 
