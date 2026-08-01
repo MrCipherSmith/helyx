@@ -1,7 +1,12 @@
 import type { Context } from "grammy";
 import { InlineKeyboard } from "grammy";
-import { providerService, DEFAULT_PROVIDER_LABEL, fetchProviderModels } from "../../services/provider-service.ts";
-import type { ProviderSummary } from "../../services/provider-service.ts";
+import {
+  providerService,
+  DEFAULT_PROVIDER_LABEL,
+  fetchProviderModels,
+  describeRefreshFailure,
+} from "../../services/provider-service.ts";
+import type { ProviderSummary, RefreshResult } from "../../services/provider-service.ts";
 import { projectService } from "../../services/project-service.ts";
 import { PROVIDER_PRESETS, findPreset } from "../providers/presets.ts";
 import type { ProviderModel } from "../providers/presets.ts";
@@ -20,23 +25,45 @@ import { logger } from "../../logger.ts";
  *   pmchg:<projectId>:prov|model              open a change submenu
  *   pmsel:<projectId>:prov:<providerId|def>   select provider
  *   pmsel:<projectId>:model:<pid|def>:<idx>   select model by index
+ *   pmref:<projectId>:<providerId|def>        refetch that provider's models
  *
  * Models are selected by index rather than id because a model id can exceed
  * the callback-data budget on its own.
  */
 
-/** Anthropic tiers offered when a project stays on the default endpoint. */
-const DEFAULT_MODELS: ProviderModel[] = [
-  { id: "", label: "Provider default" },
+/**
+ * Last-resort tiers for the default endpoint.
+ *
+ * Only reached when the default has never been refreshed and no key is
+ * configured to refresh it with. Any hardcoded list goes stale, so this exists
+ * to keep the picker usable, not to be correct.
+ */
+export const FALLBACK_DEFAULT_MODELS: ProviderModel[] = [
   { id: "claude-sonnet-4-20250514", label: "Sonnet 4" },
   { id: "claude-opus-4-20250514", label: "Opus 4" },
   { id: "claude-3-5-haiku-20241022", label: "Haiku 3.5" },
 ];
 
-function modelsFor(provider: ProviderSummary | null): ProviderModel[] {
-  if (!provider) return DEFAULT_MODELS;
-  const own = (provider.models ?? []) as ProviderModel[];
-  return [{ id: "", label: "Provider default" }, ...own];
+/**
+ * The models to offer for a provider, default included.
+ *
+ * Both cases render a stored list that `refreshModels` writes — the default's
+ * from `bot_config` (passed in as `storedDefaults`), a registered provider's
+ * from its own row — so refreshing behaves identically whichever is selected.
+ * The hardcoded tiers appear only for a default that has never been refreshed.
+ */
+export function modelsFor(
+  provider: ProviderSummary | null,
+  storedDefaults: ProviderModel[] = [],
+): ProviderModel[] {
+  const own = provider ? ((provider.models ?? []) as ProviderModel[]) : storedDefaults;
+  const offered = own.length ? own : provider ? [] : FALLBACK_DEFAULT_MODELS;
+  return [{ id: "", label: "Provider default" }, ...offered];
+}
+
+/** Stored default-provider models, or [] when a real provider is selected. */
+async function storedDefaultsFor(providerId: number | null): Promise<ProviderModel[]> {
+  return providerId === null ? providerService.getDefaultModels() : [];
 }
 
 // --- /providers ------------------------------------------------------------
@@ -217,13 +244,19 @@ export async function showProviderPicker(ctx: Context, projectId: number, edit =
   }
 }
 
-async function showModelPicker(ctx: Context, projectId: number, providerId: number | null): Promise<void> {
-  const [providers, selection] = await Promise.all([
+async function showModelPicker(
+  ctx: Context,
+  projectId: number,
+  providerId: number | null,
+  note = "",
+): Promise<void> {
+  const [providers, selection, storedDefaults] = await Promise.all([
     providerService.list(),
     projectService.getProviderSelection(projectId),
+    storedDefaultsFor(providerId),
   ]);
   const provider = providerId === null ? null : providers.find((p) => p.id === providerId) ?? null;
-  const models = modelsFor(provider);
+  const models = modelsFor(provider, storedDefaults);
   const current = selection?.model ?? "";
 
   const kb = new InlineKeyboard();
@@ -231,10 +264,12 @@ async function showModelPicker(ctx: Context, projectId: number, providerId: numb
     const mark = m.id === current ? "✅ " : "";
     kb.text(`${mark}${m.label}`, `pmsel:${projectId}:model:${providerId ?? "def"}:${idx}`).row();
   });
+  kb.text("🔄 Refresh list", `pmref:${projectId}:${providerId ?? "def"}`).row();
 
   const label = provider?.name ?? DEFAULT_PROVIDER_LABEL;
-  await ctx.editMessageText(`Model for ${label}:`, { reply_markup: kb }).catch(async () => {
-    await replyInThread(ctx, `Model for ${label}:`, { reply_markup: kb });
+  const text = `Model for ${label}:${note ? `\n${note}` : ""}`;
+  await ctx.editMessageText(text, { reply_markup: kb }).catch(async () => {
+    await replyInThread(ctx, text, { reply_markup: kb });
   });
 }
 
@@ -290,6 +325,35 @@ export async function handleProjectModelCallback(ctx: Context): Promise<void> {
     return;
   }
 
+  // pmref:<projectId>:<providerId|def> — refetch and redraw
+  if (parts[0] === "pmref") {
+    const projectId = Number(parts[1]);
+    if (!projectId) {
+      await ctx.answerCallbackQuery({ text: "Invalid" });
+      return;
+    }
+    const providerId = parts[2] === "def" ? null : Number(parts[2]);
+    if (providerId !== null && !providerId) {
+      await ctx.answerCallbackQuery({ text: "Invalid" });
+      return;
+    }
+
+    await ctx.answerCallbackQuery({ text: "Asking the provider…" });
+    const result: RefreshResult = await providerService.refreshModels(providerId).catch((err) => {
+      logger.warn({ err, providerId }, "model refresh failed");
+      return { ok: false, reason: "unreachable" } as const;
+    });
+    const note = result.ok
+      ? `↻ ${result.models.length} model(s) from the provider`
+      : `⚠️ ${describeRefreshFailure(result.reason)} — showing the stored list`;
+    logger.info(
+      { projectId, providerId, ok: result.ok, count: result.ok ? result.models.length : 0 },
+      "model list refresh",
+    );
+    await showModelPicker(ctx, projectId, providerId, note);
+    return;
+  }
+
   // pmsel:<projectId>:prov:<id|def> | pmsel:<projectId>:model:<pid|def>:<idx>
   const projectId = Number(parts[1]);
   const kind = parts[2];
@@ -314,9 +378,12 @@ export async function handleProjectModelCallback(ctx: Context): Promise<void> {
     const rawProvider = parts[3];
     const providerId = rawProvider === "def" ? null : Number(rawProvider);
     const idx = Number(parts[4]);
-    const providers = await providerService.list();
+    const [providers, storedDefaults] = await Promise.all([
+      providerService.list(),
+      storedDefaultsFor(providerId),
+    ]);
     const provider = providerId === null ? null : providers.find((p) => p.id === providerId) ?? null;
-    const models = modelsFor(provider);
+    const models = modelsFor(provider, storedDefaults);
     const chosen = models[idx];
     if (!chosen) {
       await ctx.answerCallbackQuery({ text: "Unknown model" });

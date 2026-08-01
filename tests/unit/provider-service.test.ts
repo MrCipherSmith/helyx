@@ -7,8 +7,13 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { validateProviderInput, parseModelsResponse } from "../../services/provider-service.ts";
+import {
+  validateProviderInput,
+  parseModelsResponse,
+  describeRefreshFailure,
+} from "../../services/provider-service.ts";
 import { PROVIDER_PRESETS, findPreset } from "../../bot/providers/presets.ts";
+import { modelsFor, FALLBACK_DEFAULT_MODELS } from "../../bot/commands/providers.ts";
 
 const ok = { name: "GLM", baseUrl: "https://api.z.ai/api/anthropic", authToken: "t" };
 
@@ -105,5 +110,68 @@ describe("parseModelsResponse", () => {
 
   test("an empty data array is a real answer, not a failure", () => {
     expect(parseModelsResponse({ data: [] })).toEqual([]);
+  });
+});
+
+describe("modelsFor", () => {
+  const provider = {
+    id: 1,
+    name: "GLM",
+    base_url: "https://api.z.ai/api/anthropic",
+    auth_scheme: "bearer" as const,
+    models: [{ id: "glm-5.2", label: "GLM 5.2" }],
+    created_at: new Date(0),
+  };
+
+  test("always offers 'Provider default' first, so a project can defer the choice", () => {
+    expect(modelsFor(provider)[0]).toEqual({ id: "", label: "Provider default" });
+    expect(modelsFor(null, [])[0]).toEqual({ id: "", label: "Provider default" });
+  });
+
+  test("renders a registered provider's own stored list", () => {
+    expect(modelsFor(provider)).toEqual([
+      { id: "", label: "Provider default" },
+      { id: "glm-5.2", label: "GLM 5.2" },
+    ]);
+  });
+
+  test("renders the default's fetched list once it has been refreshed", () => {
+    // The point of the refresh button: the hardcoded tiers must not win over
+    // what the provider actually reported.
+    const fetched = [{ id: "claude-opus-5", label: "Claude Opus 5" }];
+    expect(modelsFor(null, fetched)).toEqual([{ id: "", label: "Provider default" }, ...fetched]);
+    expect(modelsFor(null, fetched)).not.toContainEqual(FALLBACK_DEFAULT_MODELS[0]);
+  });
+
+  test("falls back to hardcoded tiers only for a default that was never refreshed", () => {
+    expect(modelsFor(null, [])).toEqual([
+      { id: "", label: "Provider default" },
+      ...FALLBACK_DEFAULT_MODELS,
+    ]);
+  });
+
+  test("a registered provider with no models offers only 'Provider default' — never Claude tiers", () => {
+    // Offering Anthropic model ids for a GLM endpoint would produce a launch
+    // the provider rejects.
+    expect(modelsFor({ ...provider, models: [] })).toEqual([{ id: "", label: "Provider default" }]);
+  });
+
+  test("selection is by index, so the callback data stays inside Telegram's 64-byte budget", () => {
+    const models = modelsFor(null, [{ id: "claude-opus-4-1-20250805-extra-long-id", label: "x" }]);
+    models.forEach((_, idx) => {
+      expect(`pmsel:9999:model:def:${idx}`.length).toBeLessThanOrEqual(64);
+    });
+    expect(`pmref:9999:def`.length).toBeLessThanOrEqual(64);
+  });
+});
+
+describe("describeRefreshFailure", () => {
+  test("names the fixable case, so the operator knows to set a key", () => {
+    expect(describeRefreshFailure("no_credentials")).toMatch(/ANTHROPIC_API_KEY/);
+  });
+
+  test("distinguishes a deleted provider from an unreachable one", () => {
+    expect(describeRefreshFailure("unknown_provider")).toMatch(/no longer exists/);
+    expect(describeRefreshFailure("unreachable")).toMatch(/did not answer/);
   });
 });

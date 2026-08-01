@@ -47,9 +47,9 @@ export async function handleCallbackQuery(ctx: Context): Promise<void> {
     const { handleProviderCallback } = await import("./commands/providers.ts");
     return handleProviderCallback(ctx);
   }
-  // Per-project provider/model selection. Both prefixes route to the same
+  // Per-project provider/model selection. All three prefixes route to the same
   // handler; it distinguishes them by the first segment.
-  if (data.startsWith("pmsel:") || data.startsWith("pmchg:")) {
+  if (data.startsWith("pmsel:") || data.startsWith("pmchg:") || data.startsWith("pmref:")) {
     const { handleProjectModelCallback } = await import("./commands/providers.ts");
     return handleProjectModelCallback(ctx);
   }
