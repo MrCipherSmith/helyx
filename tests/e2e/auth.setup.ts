@@ -32,7 +32,7 @@ async function generateTestJwt(): Promise<string> {
     .sign(secret);
 }
 
-setup("authenticate", async ({ request }) => {
+setup("authenticate", async () => {
   mkdirSync(AUTH_DIR, { recursive: true });
 
   console.log("BOT_TOKEN present:", !!BOT_TOKEN, "len:", BOT_TOKEN?.length);

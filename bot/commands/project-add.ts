@@ -32,7 +32,6 @@ export async function handleProjectAdd(ctx: Context): Promise<void> {
   if (arg) {
     await addProject(ctx, arg);
   } else {
-    const chatId = String(ctx.chat!.id);
     const hostProjects = CONFIG.HOST_PROJECTS_DIR ?? "/home/user";
     await replyInThread(ctx, `Enter project path:\ne.g. ${join(hostProjects, "my-project")}`);
     setPendingInput(ctx, async (replyCtx) => {

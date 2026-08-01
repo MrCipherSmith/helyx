@@ -6,7 +6,7 @@
  * usage.cache_creation_input_tokens, usage.cache_read_input_tokens, usage.output_tokens
  */
 
-import { readdir, open } from "fs/promises";
+import { readdir } from "fs/promises";
 import { join } from "path";
 
 export interface ClaudeModelUsage {

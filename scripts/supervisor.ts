@@ -59,9 +59,6 @@ const STUCK_QUEUE_FORWARD_MINUTES = Math.max(1, Number(process.env.STUCK_QUEUE_F
 // Claude Code doing long-running work (git analysis, deep reasoning) can go silent for 3-4 min
 // naturally — 2 min was too aggressive and caused constant false-positive restarts.
 const SESSION_STALE_MS  = Number(process.env.SESSION_STALE_MS ?? String(5 * 60 * 1000));   // 5 min — heartbeat timeout
-const QUEUE_STUCK_MS    = 5 * 60 * 1000;   // 5 min — queue unprocessed
-const VOICE_STALE_MS    = 3 * 60 * 1000;   // 3 min — voice download timeout
-const ESCALATE_MS       = 30 * 60 * 1000;  // 30 min — escalation threshold
 
 // Alert dedup: key → last alerted timestamp
 const alertedAt = new Map<string, number>();
@@ -89,14 +86,10 @@ async function refreshAcks(sql: postgres.Sql): Promise<void> {
   }
 }
 
-// Incident recovery attempt tracking: sessionId → { attempts, firstDetected }
-const recoveryAttempts = new Map<string, { attempts: number; firstDetected: number }>();
-
 // Supervisor start time for uptime tracking
 const SUPERVISOR_START = Date.now();
 let incidentCount = 0;
 let lastIncidentAt: number | null = null;
-let lastHealthyAt: number | null = null;
 
 // Shell util signature (injected from admin-daemon)
 type RunShell = (cmd: string) => Promise<{ ok: boolean; output: string }>;
@@ -160,6 +153,11 @@ async function editTelegramMsg(chatId: string, messageId: number, text: string, 
 
 // --- LLM diagnosis ---
 
+// ORPHANED: nothing calls this. The gemma-health-analyst spec is recorded as
+// implemented, but no alert path asks for the explanation, so no incident has
+// ever carried one. Kept rather than deleted because the spec still wants it —
+// wiring it into sendAlertWithButtons is the open work.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function getLlmExplanation(
   incidentType: string,
   project: string,
@@ -214,21 +212,9 @@ function shouldAlert(key: string): boolean {
   return true;
 }
 
-// --- Verify session recovery (poll active_status_messages heartbeat) ---
-
-async function verifyRecovery(sql: postgres.Sql, sessionId: number): Promise<boolean> {
-  const deadline = Date.now() + 60_000; // wait up to 60s
-  while (Date.now() < deadline) {
-    await new Promise(r => setTimeout(r, 5_000));
-    const [row] = await sql`
-      SELECT 1 FROM active_status_messages
-      WHERE session_id = ${sessionId}
-        AND updated_at > NOW() - INTERVAL '30 seconds'
-    `;
-    if (row) return true;
-  }
-  return false;
-}
+// verifyRecovery lived here: it polled the heartbeat after the supervisor
+// restarted a session. The Restart Control Reform removed both auto-restarts,
+// so there is no restart left to verify.
 
 // --- Send alert with inline keyboard buttons ---
 
@@ -437,6 +423,12 @@ async function checkStuckQueue(sql: postgres.Sql, runShell?: RunShell): Promise<
       ];
       if (spinnerActive) {
         msgParts.push(`⚙️ Claude сейчас работает — ждёт завершения задачи`);
+      }
+      // The pane was captured above and, unlike the hung-session alert, never
+      // reached the message — the operator lost the one piece of context that
+      // says what the session is actually doing.
+      if (paneLines.length > 0) {
+        msgParts.push(`Пане (последние 5 строк):\n<pre>${paneLines.join("\n")}</pre>`);
       }
       msgParts.push(`📁 Лог: ${logPath}`);
       const msg = msgParts.join("\n");

@@ -14,6 +14,9 @@ function getToken(): string {
 }
 
 export const test = base.extend<{ authHeaders: Record<string, string> }>({
+  // Playwright reads this destructuring pattern to decide which fixtures to
+  // build; an empty one means "needs none". It has to stay literal.
+  // eslint-disable-next-line no-empty-pattern
   authHeaders: async ({}, use) => {
     const token = getToken();
     await use({ Authorization: `Bearer ${token}` });

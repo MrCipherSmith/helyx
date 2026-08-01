@@ -411,6 +411,7 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
       }
 
       case "proj_stop": {
+        // eslint-disable-next-line prefer-const -- `name` is reassigned below
         let { name, project_id } = payload;
         if (!name && project_id) {
           const prows = await sql`SELECT name FROM projects WHERE id = ${project_id}`;

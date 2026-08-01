@@ -16,6 +16,9 @@
     "dev": "bun --watch main.ts",
     "migrate": "bun memory/db.ts",
     "cli": "bun cli.ts",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "tsc --noEmit",
     "test": "bun test tests/unit/",
     "test:unit": "bun test tests/unit/",
     "test:e2e": "cd tests && npx playwright test --config=playwright.config.ts",
@@ -35,7 +38,11 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/bun": "latest",
-    "typescript": "^6.0.3"
+    "eslint": "^10.8.0",
+    "globals": "^17.8.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.65.0"
   }
 }

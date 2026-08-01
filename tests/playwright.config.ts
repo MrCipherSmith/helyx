@@ -1,5 +1,4 @@
 import { defineConfig, devices } from "@playwright/test";
-import { resolve, join } from "path";
 
 const BASE_URL = process.env.TEST_BASE_URL ?? "https://helyx.mrciphersmith.com";
 

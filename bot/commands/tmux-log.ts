@@ -51,10 +51,6 @@ function parseDuration(s: string): number {
   return n * mult;
 }
 
-function fmtTime(iso: string): string {
-  return iso.replace("T", " ").slice(0, 19) + " UTC";
-}
-
 async function queryLogs(opts: {
   sinceMs: number;
   events?: string[];

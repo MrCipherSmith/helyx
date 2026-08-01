@@ -299,10 +299,6 @@ export async function handleRemove(ctx: Context): Promise<void> {
   await ctx.reply(`Deleted session #${sessionId} (${sessionDisplayName(session)}) with all data.`);
 }
 
-async function cleanupSession(id: number): Promise<void> {
-  await deleteSessionCascade(id);
-}
-
 export async function handleCleanup(ctx: Context): Promise<void> {
   // Run structured cleanup jobs (message queue, logs, archived messages, memory TTL, orphan sessions)
   const results = await runAllCleanupJobs(false);

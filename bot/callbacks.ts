@@ -126,7 +126,6 @@ async function handleSkillApprovalCallback(ctx: Context): Promise<void> {
       await ctx.answerCallbackQuery({ text: "Reject failed" });
     }
   } else if (action === "editname") {
-    const chatIdStr = String(ctx.chat?.id ?? "");
     setPendingInput(ctx, async (textCtx) => {
       const newName = (textCtx.message?.text ?? "").trim();
       if (!/^[a-z][a-z0-9-]{0,63}$/.test(newName)) {

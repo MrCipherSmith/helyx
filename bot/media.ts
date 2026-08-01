@@ -6,7 +6,6 @@ import { streamToTelegram } from "./streaming.ts";
 import { routeMessage } from "../sessions/router.ts";
 import { downloadFile, toHostPath } from "../utils/files.ts";
 import { transcribe } from "../utils/transcribe.ts";
-import { CONFIG } from "../config.ts";
 import { touchIdleTimer } from "../memory/summarizer.ts";
 import { sql } from "../memory/db.ts";
 import { logger } from "../logger.ts";

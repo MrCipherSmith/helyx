@@ -1,5 +1,4 @@
 import type { Context } from "grammy";
-import { InlineKeyboard } from "grammy";
 import { listMemories, forget } from "../../memory/long-term.ts";
 import { sessionManager } from "../../sessions/manager.ts";
 import { sql } from "../../memory/db.ts";

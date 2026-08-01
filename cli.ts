@@ -1339,7 +1339,7 @@ async function ensureAdminDaemon(): Promise<void> {
 async function tmuxStart() {
   const exists = await run(["tmux", "has-session", "-t", TMUX_SESSION], { silent: true });
 
-  let projects = await loadProjects();
+  const projects = await loadProjects();
   if (projects.length === 0) {
     console.log(`\n  ${c.yellow("No projects configured.")}`);
     console.log(`  Add projects first:\n`);
@@ -1669,7 +1669,6 @@ async function installMcpSharedServices(): Promise<void> {
   const home = process.env.HOME ?? homedir();
   const npx = await run(["which", "npx"], { silent: true });
   const npxBin = npx.output?.trim() || "/usr/bin/npx";
-  const nodeBin = basename(dirname(npxBin));
   const nodeDir = dirname(npxBin);
 
   const systemdDir = `${home}/.config/systemd/user`;

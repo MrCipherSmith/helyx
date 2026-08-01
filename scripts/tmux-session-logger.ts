@@ -255,7 +255,7 @@ export function startTmuxSessionLogger(sql: postgres.Sql, runShell: RunShell): v
 async function runQuery(): Promise<void> {
   const args = process.argv.slice(3);
   const flags: Record<string, string | boolean | string[]> = {};
-  let eventFilter: string[] = [];
+  const eventFilter: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
     const a = args[i];

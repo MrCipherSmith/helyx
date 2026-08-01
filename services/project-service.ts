@@ -1,5 +1,4 @@
 import { sql } from "../memory/db.ts";
-import { deleteSessionCascade } from "../sessions/delete.ts";
 
 export interface Project {
   id: number;

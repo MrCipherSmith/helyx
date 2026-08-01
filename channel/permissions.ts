@@ -365,7 +365,7 @@ export class PermissionHandler {
     originalMsgText: string,
     desc: string,
     timeoutMs = 600_000,
-    forumExtra: Record<string, unknown> = {},
+    _forumExtra: Record<string, unknown> = {},
   ): Promise<void> {
     const startTime = Date.now();
     let resolved = false;

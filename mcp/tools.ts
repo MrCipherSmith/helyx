@@ -12,7 +12,6 @@ import { distillSkill, listAgentSkills, approveSkill, rejectSkill, validateSkill
 import { sendSkillApprovalMessage } from "../utils/skill-approval.ts";
 import { runCurator, getCuratorRuns } from "../utils/curator.ts";
 import { validateReplyGate } from "../orchestrator/gate.ts";
-import { enqueueCorrection } from "../orchestrator/store.ts";
 
 // Tool definitions for MCP registration
 export const TOOL_DEFINITIONS = [

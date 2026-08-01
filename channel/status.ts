@@ -266,7 +266,9 @@ export class StatusManager {
       const stageText = state.stage ?? "";
       const lastActivity = this.lastMonitorActivity.get(key) ?? 0;
       const hadRecentMonitorActivity = (Date.now() - lastActivity) < this.RESPONSE_GUARD_MS;
-      const looksActive = hadRecentMonitorActivity || /[·●⏳🔄⎿]/.test(stageText) || /Brewing|Thinking|Running|agents?/i.test(stageText);
+      // The `u` flag matters: ⏳ and 🔄 are surrogate pairs, and without it the
+      // class matches their halves individually rather than the emoji.
+      const looksActive = hadRecentMonitorActivity || /[·●⏳🔄⎿]/u.test(stageText) || /Brewing|Thinking|Running|agents?/i.test(stageText);
 
       // Case 1: tmux was active very recently — Claude is alive, just working slowly.
       // Re-arm silently so the guard keeps watching without alarming the user.

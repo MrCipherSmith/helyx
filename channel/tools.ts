@@ -14,7 +14,6 @@ import { chunkMarkdown } from "../utils/chunk.ts";
 import { asRecapQuote, shouldSummarize, summarizeForSpeech } from "../utils/reply-summary.ts";
 import { channelLogger } from "../logger.ts";
 import { scanProjectKnowledge } from "../memory/project-scanner.ts";
-import { CONFIG } from "../config.ts";
 import { handleSkillView } from "../utils/skill-handlers.ts";
 import { distillSkill, listAgentSkills, approveSkill, rejectSkill, validateSkillInput } from "../utils/skill-distiller.ts";
 import { sendSkillApprovalMessage } from "../utils/skill-approval.ts";

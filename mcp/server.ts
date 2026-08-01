@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { type Bot } from "grammy";
 import { randomUUID } from "crypto";
-import { basename, resolve as resolvePath } from "path";
+import { resolve as resolvePath } from "path";
 import { z } from "zod";
 import { executeTool } from "./tools.ts";
 import { registerMcpSession, unregisterMcpSession } from "./bridge.ts";
@@ -367,7 +367,8 @@ export function startMcpHttpServer(bot: Bot | null): ReturnType<typeof createSer
         });
         const parsed = JSON.parse(body);
         const { projectPath, name } = parsed;
-        const cliType = parsed.cliType ?? "claude";
+        // parsed.cliType is accepted by callers but has never been stored or
+        // acted on; only cliConfig reaches the project record.
         const rawConfig = parsed.cliConfig ?? {};
 
         if (!projectPath || typeof projectPath !== "string") {

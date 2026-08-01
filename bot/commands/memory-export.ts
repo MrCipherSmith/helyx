@@ -32,11 +32,8 @@ export async function handleMemoryExport(ctx: Context): Promise<void> {
   const text = ctx.message?.text ?? "";
   const arg = text.replace(/^\/memory_export\s*/, "").trim() || null;
 
-  const chatId = String(ctx.chat!.id);
-  const activeSessionId = await sessionManager.getActiveSession(chatId);
-  const session = activeSessionId ? await sessionManager.get(activeSessionId) : null;
-
-  // If no arg given and session has a project_path, offer to filter by it
+  // Filtering by the active session's project_path was never wired up; the
+  // argument is the only filter.
   const projectFilter = arg ?? null;
 
   const conditions = [sql`archived_at IS NULL`];

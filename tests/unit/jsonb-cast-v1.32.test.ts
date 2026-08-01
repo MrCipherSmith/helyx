@@ -24,7 +24,7 @@ interface Seed {
   cleanupSessionIds: number[];
   cleanupAdminCommandIds: bigint[];
 }
-let seed: Seed = { cleanupSessionIds: [], cleanupAdminCommandIds: [] };
+const seed: Seed = { cleanupSessionIds: [], cleanupAdminCommandIds: [] };
 
 async function getSql() {
   const { sql } = await import("../../memory/db.ts");

@@ -1,6 +1,6 @@
 import { sql } from "./db.ts";
 import { remember, rememberSmart } from "./long-term.ts";
-import { getCachedMessages, clearCache, type Message } from "./short-term.ts";
+import { getCachedMessages } from "./short-term.ts";
 import { summarizeConversation, generateResponse } from "../claude/client.ts";
 import { CONFIG } from "../config.ts";
 import { logger } from "../logger.ts";

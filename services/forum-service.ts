@@ -194,14 +194,13 @@ export class ForumService {
 
     const missing = projects.filter((p) => p.forum_topic_id === null);
     const existing = projects.filter((p) => p.forum_topic_id !== null);
-    const existingTopicIds = new Set(existing.map((p) => p.forum_topic_id!));
 
     // Count of topics in forum that don't match any project
     // (we can't enumerate all topics, so we only close known orphan topics from DB)
     // For now: create missing, skip closing (Telegram API doesn't list topics)
 
     let created = 0;
-    let closed = 0;
+    const closed = 0;
     const errors: string[] = [];
 
     // Create topics for projects without one

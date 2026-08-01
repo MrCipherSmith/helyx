@@ -1,7 +1,6 @@
 import type { Context } from "grammy";
 import { InlineKeyboard } from "grammy";
 import { sql } from "../../memory/db.ts";
-import { sessionDisplayName } from "../../sessions/manager.ts";
 
 export async function handleRemoteControl(ctx: Context): Promise<void> {
   const [active, pending] = await Promise.all([

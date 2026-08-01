@@ -108,7 +108,6 @@ export async function handleForget(ctx: Context): Promise<void> {
 
   if (!idStr || isNaN(Number(idStr))) {
     await ctx.reply("Enter memory ID:");
-    const chatId = String(ctx.chat!.id);
     setPendingInput(ctx, async (replyCtx) => {
       const id = Number(replyCtx.message?.text?.trim());
       if (isNaN(id)) { await replyCtx.reply("Invalid ID."); return; }
