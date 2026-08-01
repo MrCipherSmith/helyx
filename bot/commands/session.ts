@@ -142,7 +142,7 @@ export async function handleSwitch(ctx: Context): Promise<void> {
       return `${s.id}. ${sessionDisplayName(s)}${status}${marker}`;
     });
     await ctx.reply("Enter session ID:\n\n" + lines.join("\n"));
-    setPendingInput(chatId, async (replyCtx) => {
+    setPendingInput(ctx, async (replyCtx) => {
       const id = Number(replyCtx.message?.text?.trim());
       if (isNaN(id)) {
         await replyCtx.reply("Invalid ID.");

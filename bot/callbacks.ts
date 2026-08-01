@@ -127,7 +127,7 @@ async function handleSkillApprovalCallback(ctx: Context): Promise<void> {
     }
   } else if (action === "editname") {
     const chatIdStr = String(ctx.chat?.id ?? "");
-    setPendingInput(chatIdStr, async (textCtx) => {
+    setPendingInput(ctx, async (textCtx) => {
       const newName = (textCtx.message?.text ?? "").trim();
       if (!/^[a-z][a-z0-9-]{0,63}$/.test(newName)) {
         await textCtx.reply("Invalid name — must be kebab-case, 1-64 chars, lowercase + digits + hyphens.");
@@ -220,7 +220,7 @@ async function handleToolCallback(ctx: Context): Promise<void> {
   }
 
   // Ask for arguments — show description too
-  setPendingTool(chatId, { type, name });
+  setPendingTool(ctx, { type, name });
   await ctx.answerCallbackQuery();
   const desc = tool?.description ? `\n<i>${tool.description.slice(0, 120)}</i>\n` : "";
   await ctx.reply(`${icon} <b>/${name}</b>${desc}\nEnter arguments:`, { parse_mode: "HTML" });

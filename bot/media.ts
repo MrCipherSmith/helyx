@@ -155,7 +155,7 @@ async function handleMedia(
     const fileLabel = filename ? `\`${filename}\`` : description;
     await replyInThread(ctx, `📎 ${fileLabel} сохранён. Что с ним сделать?`);
     const origMessageId = ctx.message?.message_id;
-    setPendingInput(chatId, async (replyCtx) => {
+    setPendingInput(ctx, async (replyCtx) => {
       const userCaption = replyCtx.message?.text ?? "";
       await deliverMedia(
         replyCtx, route, filePath, hostPath, description,

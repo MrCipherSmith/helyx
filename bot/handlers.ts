@@ -2,7 +2,32 @@ import type { Bot, Context } from "grammy";
 
 // === Shared state ===
 
-// Pending input: chatId -> handler that processes the next text message
+/**
+ * The conversation a pending step belongs to.
+ *
+ * Every topic in a forum shares one chat id, so keying a step by chat alone let
+ * a prompt opened in one topic swallow the next message typed in another: an
+ * add-flow left waiting in one topic ate ordinary chat somewhere else entirely,
+ * and that text reached the provider list instead of the session.
+ *
+ * A forum topic is separated by its thread id. A plain group also carries
+ * `message_thread_id` on replies, but there it only marks a reply chain — which
+ * the operator is under no obligation to answer inside — so the chat has to be
+ * a forum before the thread narrows anything.
+ *
+ * `chat.is_forum` rather than `message.is_topic_message`: the prompt and the
+ * answer to it have to land on the same key, and the two messages are not
+ * guaranteed to be flagged alike. The chat's own nature is the same for both.
+ * A forum's General topic carries no thread id and scopes to the chat, again
+ * from either side.
+ */
+export function pendingScope(ctx: Context): string {
+  const chatId = String(ctx.chat?.id ?? "");
+  const threadId = ctx.chat?.is_forum ? ctx.msg?.message_thread_id : undefined;
+  return threadId ? `${chatId}:${threadId}` : chatId;
+}
+
+// Pending input: scope -> handler that processes the next text message
 export const pendingInput = new Map<string, (ctx: Context) => Promise<void>>();
 const pendingInputTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -14,41 +39,45 @@ export interface PendingTool {
 export const pendingToolInput = new Map<string, PendingTool>();
 const pendingToolTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-export function setPendingTool(chatId: string, tool: PendingTool): void {
-  const existing = pendingToolTimers.get(chatId);
+export function setPendingTool(ctx: Context, tool: PendingTool): void {
+  const scope = pendingScope(ctx);
+  const existing = pendingToolTimers.get(scope);
   if (existing) clearTimeout(existing);
-  pendingToolInput.set(chatId, tool);
-  pendingToolTimers.set(chatId, setTimeout(() => {
-    pendingToolInput.delete(chatId);
-    pendingToolTimers.delete(chatId);
+  pendingToolInput.set(scope, tool);
+  pendingToolTimers.set(scope, setTimeout(() => {
+    pendingToolInput.delete(scope);
+    pendingToolTimers.delete(scope);
   }, 5 * 60_000)); // 5 min TTL
 }
 
-export function clearPendingTool(chatId: string): void {
-  pendingToolInput.delete(chatId);
-  const t = pendingToolTimers.get(chatId);
-  if (t) { clearTimeout(t); pendingToolTimers.delete(chatId); }
+export function clearPendingTool(ctx: Context): void {
+  const scope = pendingScope(ctx);
+  pendingToolInput.delete(scope);
+  const t = pendingToolTimers.get(scope);
+  if (t) { clearTimeout(t); pendingToolTimers.delete(scope); }
 }
 
 export function setPendingInput(
-  chatId: string,
+  ctx: Context,
   handler: (ctx: Context) => Promise<void>,
   ttlMs = 60_000,
 ): void {
-  const existing = pendingInputTimers.get(chatId);
+  const scope = pendingScope(ctx);
+  const existing = pendingInputTimers.get(scope);
   if (existing) clearTimeout(existing);
 
-  pendingInput.set(chatId, handler);
-  pendingInputTimers.set(chatId, setTimeout(() => {
-    pendingInput.delete(chatId);
-    pendingInputTimers.delete(chatId);
+  pendingInput.set(scope, handler);
+  pendingInputTimers.set(scope, setTimeout(() => {
+    pendingInput.delete(scope);
+    pendingInputTimers.delete(scope);
   }, ttlMs));
 }
 
-export function clearPendingInput(chatId: string): void {
-  pendingInput.delete(chatId);
-  const timer = pendingInputTimers.get(chatId);
-  if (timer) { clearTimeout(timer); pendingInputTimers.delete(chatId); }
+export function clearPendingInput(ctx: Context): void {
+  const scope = pendingScope(ctx);
+  pendingInput.delete(scope);
+  const timer = pendingInputTimers.get(scope);
+  if (timer) { clearTimeout(timer); pendingInputTimers.delete(scope); }
 }
 
 // Bot reference set from bot.ts
@@ -86,10 +115,50 @@ import { handleVoice, handlePhoto, handleDocument, handleVideo, handleVideoNote,
 import { handleCallbackQuery } from "./callbacks.ts";
 import { handleText } from "./text-handler.ts";
 import { handlePollAnswer } from "./poll-handler.ts";
+import { replyInThread } from "./format.ts";
 
 // === Register all handlers ===
 
+/**
+ * Whether grammY will hand this text to a command handler.
+ *
+ * Deliberately narrower than "starts with a slash": /project_add prompts for an
+ * absolute path, and `/home/altsay/thing` has to reach the step that asked for
+ * it rather than read as a command and cancel it. grammY only matches a bare
+ * `/name` or `/name@bot` closed by whitespace or end of text, so that is the
+ * line drawn here — anything it would not route as a command falls through to
+ * the waiting step, exactly as before.
+ */
+const BARE_COMMAND = /^\/[A-Za-z0-9_]+(@[A-Za-z0-9_]+)?(\s|$)/;
+
+export function looksLikeCommand(text: string): boolean {
+  return BARE_COMMAND.test(text);
+}
+
 export function registerHandlers(b: Bot): void {
+  // A command abandons whatever prompt is open, so retire the prompt here —
+  // before any command handler runs.
+  //
+  // grammY matches commands ahead of the text handler and a command handler
+  // does not call next(), so the step that was waiting never saw the message
+  // and never got to clear itself. It stayed armed for the rest of its TTL and
+  // then swallowed the operator's next ordinary message: typing /projects in
+  // the middle of adding a provider silently dropped the add-flow, and the
+  // message after that went to the abandoned flow instead of the session.
+  b.on("message:text", async (ctx, next) => {
+    if (!looksLikeCommand(ctx.message?.text ?? "")) return next();
+
+    const scope = pendingScope(ctx);
+    const abandoned = pendingInput.has(scope) || pendingToolInput.has(scope);
+    clearPendingInput(ctx);
+    clearPendingTool(ctx);
+    if (abandoned) {
+      await replyInThread(ctx, "↩️ Dropped the step that was waiting — running the command instead.")
+        .catch(() => {});
+    }
+    return next();
+  });
+
   // Session commands
   b.command("sessions", handleSessions);
   b.command("switch", handleSwitch);

@@ -153,7 +153,6 @@ async function startAddFlow(ctx: Context, presetKey: string): Promise<void> {
     await ctx.answerCallbackQuery({ text: "Unknown preset" });
     return;
   }
-  const chatId = String(ctx.chat!.id);
 
   const askToken = async (baseUrl: string) => {
     await replyInThread(
@@ -162,7 +161,7 @@ async function startAddFlow(ctx: Context, presetKey: string): Promise<void> {
         `⚠️ Delete your message afterwards — Telegram keeps it otherwise.`,
       { parse_mode: "HTML" },
     );
-    setPendingInput(chatId, async (tokenCtx) => {
+    setPendingInput(ctx, async (tokenCtx) => {
       const token = tokenCtx.message?.text?.trim();
       if (!token) return;
 
@@ -185,7 +184,7 @@ async function startAddFlow(ctx: Context, presetKey: string): Promise<void> {
           ? `${source}:\n${previewModels(offered)}\n\nSend "ok" to accept all, or your own comma-separated list.`
           : "Models, comma-separated (or \"none\"):",
       );
-      setPendingInput(chatId, async (modelsCtx) => {
+      setPendingInput(tokenCtx, async (modelsCtx) => {
         const raw = modelsCtx.message?.text?.trim() ?? "";
         let models: ProviderModel[];
         if (!raw || raw.toLowerCase() === "none") models = [];
@@ -214,7 +213,7 @@ async function startAddFlow(ctx: Context, presetKey: string): Promise<void> {
 
   if (preset.key === "custom") {
     await replyInThread(ctx, "Send the base URL (e.g. https://api.example.com/anthropic):");
-    setPendingInput(chatId, async (urlCtx) => {
+    setPendingInput(ctx, async (urlCtx) => {
       const baseUrl = urlCtx.message?.text?.trim();
       if (!baseUrl) return;
       await askToken(baseUrl);

@@ -7,7 +7,7 @@ import { logger } from "../logger.ts";
 import { touchIdleTimer, checkOverflow } from "../memory/summarizer.ts";
 import { sql } from "../memory/db.ts";
 import { appendLog } from "../utils/stats.ts";
-import { pendingInput, clearPendingInput, pendingToolInput, clearPendingTool, getBotRef } from "./handlers.ts";
+import { pendingInput, clearPendingInput, pendingToolInput, clearPendingTool, pendingScope, getBotRef } from "./handlers.ts";
 import { getSwitchContext, clearSwitchContext } from "./switch-cache.ts";
 import { replyInThread, escapeHtml } from "./format.ts";
 import { getForumChatId } from "./forum-cache.ts";
@@ -44,17 +44,18 @@ export async function handleText(ctx: Context): Promise<void> {
   if (!text) return;
 
   // Check for pending input (e.g. waiting for session ID after /switch)
-  const handler = pendingInput.get(chatId);
+  const scope = pendingScope(ctx);
+  const handler = pendingInput.get(scope);
   if (handler) {
-    clearPendingInput(chatId);
+    clearPendingInput(ctx);
     await handler(ctx);
     return;
   }
 
   // Check for pending tool invocation (waiting for arguments)
-  const pendingTool = pendingToolInput.get(chatId);
+  const pendingTool = pendingToolInput.get(scope);
   if (pendingTool) {
-    clearPendingTool(chatId);
+    clearPendingTool(ctx);
     const command = `/${pendingTool.name} ${text}`.trim();
     await enqueueToolCommand(chatId, ctx.from?.username ?? ctx.from?.first_name ?? "user", command, ctx);
     return;

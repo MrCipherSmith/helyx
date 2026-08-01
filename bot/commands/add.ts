@@ -26,7 +26,7 @@ export async function handleAdd(ctx: Context): Promise<void> {
     "<i>Tip: use <code>helyx add .</code> from the shell to register current directory</i>",
     { parse_mode: "HTML" },
   );
-  setPendingInput(chatId, async (ctx2) => {
+  setPendingInput(ctx, async (ctx2) => {
     const path = ctx2.message?.text?.trim();
     if (!path || !path.startsWith("/")) {
       await ctx2.reply("❌ Please enter a valid absolute path (starting with /)");

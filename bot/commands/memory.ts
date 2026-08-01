@@ -14,7 +14,7 @@ export async function handleRemember(ctx: Context): Promise<void> {
 
   if (!content) {
     await ctx.reply("What to remember?");
-    setPendingInput(chatId, async (replyCtx) => {
+    setPendingInput(ctx, async (replyCtx) => {
       const input = replyCtx.message?.text?.trim();
       if (!input) return;
       const session = await sessionManager.get(activeSessionId);
@@ -49,7 +49,7 @@ export async function handleRecall(ctx: Context): Promise<void> {
 
   if (!query) {
     await ctx.reply("What to search?");
-    setPendingInput(chatId, async (replyCtx) => {
+    setPendingInput(ctx, async (replyCtx) => {
       const input = replyCtx.message?.text?.trim();
       if (!input) return;
       const results = await recall(input, { limit: 5, projectPath });
@@ -109,7 +109,7 @@ export async function handleForget(ctx: Context): Promise<void> {
   if (!idStr || isNaN(Number(idStr))) {
     await ctx.reply("Enter memory ID:");
     const chatId = String(ctx.chat!.id);
-    setPendingInput(chatId, async (replyCtx) => {
+    setPendingInput(ctx, async (replyCtx) => {
       const id = Number(replyCtx.message?.text?.trim());
       if (isNaN(id)) { await replyCtx.reply("Invalid ID."); return; }
       const deleted = await forget(id);
