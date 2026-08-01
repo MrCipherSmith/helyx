@@ -14,7 +14,16 @@
 
 ## ✅ Implemented
 
-### v1.52.0 (Latest) — Per-Project Providers, Verbatim Replies & Spoken Recap
+### v1.53.0 (Latest) — Session Survival, Honest Quality Gate & Lint
+
+- **tmux survives an admin-daemon restart** — the tmux server starts in its own transient systemd scope instead of inheriting the service cgroup, where systemd's control-group kill took every CLI pane down with the daemon and left Telegram messages piling up in `message_queue` with no consumer (`0abfe8d`)
+- **`helyx up` matches window names exactly** — the prefix-resolving `has-session -t sess:name` matched `goodai` against the existing `goodai-base` window, so that project was never started; `helyx up` also moved from `ExecStartPre` to `ExecStartPost`, since running it first spawned a second admin-daemon before systemd started its own. The stuck-queue restart button now gets `projectId` rather than `sessionId` — `enqueueRestart` threw "project not found" on every click (`0abfe8d`)
+- **eslint actually runs** — health had listed eslint as a required source and reported it "skipped": there was no config and no lint script, so score 87 rested on complexity alone. Flat config with js + typescript-eslint recommended; errors outside `dashboard/` went 57 → 0. Two defects surfaced by the pass are fixed: `supervisor.ts` captured the tmux pane in `checkStuckQueue` and never put it in the alert, and `channel/status.ts` matched `[·●⏳🔄⎿]` without the `u` flag, so the surrogate-pair emoji matched half-characters (`ef77907`)
+- **Tests and coverage feed the gate** — health was reading two of six configured sources; a project with 284 passing tests scored as though it had none. `keryx test run` normalizes the project's own runner (the built-in fallback would have pulled in the Playwright e2e suite), and `scripts/coverage-summary.ts` bridges Bun's output to the Istanbul summary health reads. First honest reading: 15.71% line coverage against a soft floor of 60 — a warn, and it should be. Baseline re-recorded, since the old one was taken while four sources were silent (`ff66cb3`)
+- **`registerTools` split by tool family** — a single ~750-line function, cyclomatic 145, the most complex thing in the codebase. Case bodies move verbatim into `handleTelegramTool`, `handleMemoryTool`, `handleSkillTool` and `handleCuratorTool`, each returning `null` for a name it does not own so the dispatcher can chain them; `TOOL_DEFINITIONS` becomes a module constant instead of being rebuilt on every ListTools request. `channel/tools.ts` drops 145 → 80 (`9d55f87`)
+- **Metaproject re-initialized on keryx 345eaa5** — modules 8 → 9 with `security` joining (advisory mode; the pre-push guard warns and never blocks). `keryx update` could not have added it: its backfill is written for the `tasks` module only, so a workspace initialized before `security` existed would have skipped it silently, forever (`3bc26bc`)
+
+### v1.52.0 — Per-Project Providers, Verbatim Replies & Spoken Recap
 
 - **Per-project provider & model switching** — `/providers` registers an Anthropic-compatible endpoint (GLM / Kimi / DeepSeek / OpenRouter presets, or Custom); `/projects` → ⚙️ picks provider, then model, and restarts that project. A project with nothing configured behaves exactly as it did before the feature existed. (`3e110c2`, `e672a6e`; see `docs/providers.md`)
 - **Security-critical launch fix** — `run-cli.sh` unsets `ANTHROPIC_API_KEY` before launching a third-party provider. helyx `.env` sets that key and `run-cli.sh` loads it with "only if unset" semantics, so without the unset a project `.env` cannot override it and the real Anthropic key is sent to the third-party endpoint (spec task T-LAUNCH-2)
@@ -626,4 +635,4 @@ Features identified as valuable but without PRDs yet.
 
 ---
 
-**Last updated:** 2026-05-02 (v1.47.0)
+**Last updated:** 2026-08-01 (v1.53.0)
