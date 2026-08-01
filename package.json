@@ -24,7 +24,7 @@
     "test:e2e": "cd tests && npx playwright test --config=playwright.config.ts",
     "test:e2e:api": "cd tests && npx playwright test --config=playwright.config.ts --project=api",
     "test:e2e:dashboard": "cd tests && npx playwright test --config=playwright.config.ts --project=dashboard",
-    "test:coverage": "bun test --coverage tests/unit/",
+    "test:coverage": "bun test --coverage --coverage-reporter=text --coverage-reporter=lcov tests/unit/ && bun scripts/coverage-summary.ts",
     "cleanup:dry-run": "DRY_RUN=true bun cleanup/runner.ts"
   },
   "dependencies": {

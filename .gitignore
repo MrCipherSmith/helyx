@@ -19,6 +19,9 @@ piper/
 jobs/
 logs/
 
+# Coverage output — regenerate with `bun run test:coverage`
+coverage/
+
 
 
 # graphify: generated knowledge-graph output (regenerate with /graphify)
