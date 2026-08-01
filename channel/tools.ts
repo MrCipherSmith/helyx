@@ -9,7 +9,9 @@ import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprot
 import { markdownToTelegramHtml } from "../bot/format.ts";
 import type { StatusManager } from "./status.ts";
 import { sendTelegramMessage, sendRichTelegramMessage, setTelegramReaction, editTelegramMessage, editRichTelegramMessage, sendTelegramPoll, deleteTelegramMessage, sendTelegramPhoto } from "./telegram.ts";
-import { shouldSendVoice, splitForVoice, sendVoicedReply } from "../utils/tts.ts";
+import { splitForVoice, sendVoicedReply } from "../utils/tts.ts";
+import { chunkMarkdown } from "../utils/chunk.ts";
+import { asRecapQuote, shouldSummarize, summarizeForSpeech } from "../utils/reply-summary.ts";
 import { channelLogger } from "../logger.ts";
 import { scanProjectKnowledge } from "../memory/project-scanner.ts";
 import { CONFIG } from "../config.ts";
@@ -418,21 +420,24 @@ export function registerTools(
           ...(replyMarkup && { reply_markup: replyMarkup }),
         };
 
-        // Decide whether this reply is voiced, and split into ≤50s ⟨text+voice⟩ chunks.
-        // The first text chunk is the "anchor" message (carries reactions/markup); the
-        // rest are interleaved with their voice clips by sendVoicedReply below.
-        const voiceApplies = (ctx.forceVoice?.() ?? false) || shouldSendVoice(replyText);
-        const voiceChunks = voiceApplies ? splitForVoice(replyText) : [replyText];
+        // The reply goes out as written — code fences, tables and links intact —
+        // split only where Telegram's own length limit forces it, and never
+        // through a fence. What cannot be spoken is not removed from the text;
+        // a separate recap is spoken instead (below).
+        const textChunks = chunkMarkdown(replyText);
 
-        // Send the anchor chunk via the rich (GFM) → HTML → plain fallback chain.
-        const res = await sendReplyText(token, chatId, voiceChunks[0]!, commonExtra);
+        // The first chunk is the "anchor" message and carries reactions/markup.
+        const res = await sendReplyText(token, chatId, textChunks[0]!, commonExtra);
         if (!res.ok) {
           channelLogger.warn({ error: res.errorBody }, "reply: Telegram API error");
           status.deleteStatusMessage(chatId).catch(() => {});
           return text(`Telegram API error`);
         }
+        for (const chunk of textChunks.slice(1)) {
+          await sendReplyText(token, chatId, chunk, forumExtra);
+        }
 
-        channelLogger.info({ phase: "tools", step: "reply-sent", chatId, chunks: voiceChunks.length, t: Date.now() }, "perf");
+        channelLogger.info({ phase: "tools", step: "reply-sent", chatId, chunks: textChunks.length, t: Date.now() }, "perf");
         // 💯 — Claude replied successfully (replaces ⚡)
         const incomingMsgId = ctx.incomingTgMsgId?.(chatId);
         if (incomingMsgId) {
@@ -441,17 +446,22 @@ export function registerTools(
         // Delete status non-blocking — don't await, avoids holding up reply return when
         // Telegram rate-limits editMessageText (can block for 60+ seconds otherwise).
         status.deleteStatusMessage(chatId).catch((err) => channelLogger.warn({ err }, "deleteStatusMessage failed"));
-        // Fire-and-forget TTS: voice for the anchor chunk, then ⟨text, voice⟩ for each
-        // later chunk so a long reply arrives as ≤50s clips paired with their text.
-        // Subsequent text chunks drop the switch-button markup (forumExtra only).
-        if (voiceApplies) {
-          void sendVoicedReply(
-            token,
-            chatId,
-            voiceChunks,
-            forumTopicId ?? null,
-            (chunk) => sendReplyText(token, chatId, chunk, forumExtra).then(() => {}),
-          );
+        // Fire-and-forget recap: a short spoken summary closes the reply, sent as
+        // a blockquote and then as voice. Only replies carrying enough prose earn
+        // one — a bare diff has nothing a voice track can say. The quote bar keeps
+        // the aside from reading as a second answer.
+        const recapApplies = (ctx.forceVoice?.() ?? false) || shouldSummarize(replyText);
+        if (recapApplies) {
+          void (async () => {
+            const summary = await summarizeForSpeech(replyText).catch(() => null);
+            if (!summary) return;
+            const chunks = splitForVoice(summary);
+            const sendQuoted = (chunk: string) =>
+              sendReplyText(token, chatId, asRecapQuote(chunk), forumExtra).then(() => {});
+            await sendReplyText(token, chatId, asRecapQuote(`🔊 ${chunks[0]!}`), forumExtra)
+              .catch(() => {});
+            await sendVoicedReply(token, chatId, chunks, forumTopicId ?? null, sendQuoted);
+          })();
         }
         if (sessionId) {
           await ctx.sql`
