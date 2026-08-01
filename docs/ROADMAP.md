@@ -14,7 +14,26 @@
 
 ## ✅ Implemented
 
-### v1.50.0 (Latest) — Session Stability Reform & Context Injection
+### v1.52.0 (Latest) — Per-Project Providers, Verbatim Replies & Spoken Recap
+
+- **Per-project provider & model switching** — `/providers` registers an Anthropic-compatible endpoint (GLM / Kimi / DeepSeek / OpenRouter presets, or Custom); `/projects` → ⚙️ picks provider, then model, and restarts that project. A project with nothing configured behaves exactly as it did before the feature existed. (`3e110c2`, `e672a6e`; see `docs/providers.md`)
+- **Security-critical launch fix** — `run-cli.sh` unsets `ANTHROPIC_API_KEY` before launching a third-party provider. helyx `.env` sets that key and `run-cli.sh` loads it with "only if unset" semantics, so without the unset a project `.env` cannot override it and the real Anthropic key is sent to the third-party endpoint (spec task T-LAUNCH-2)
+- **Live model lists** — providers are asked for their own model list (`61b826c`), refreshed on demand (`6f463a5`), and the Anthropic default list is refreshed from the Claude session (`d70925f`); a ~320-model OpenRouter list no longer bursts Telegram's 4096-char limit — the list is truncated and sorted free-models-first (`c309ec0`)
+- **Verbatim replies + separate spoken recap** — the Telegram message is the model's text unchanged; a summarized recap (≥ 200 prose chars) is generated only for voice and collapsed behind a show-more blockquote (`57a1ded`, `97e7644`)
+- **Guard no longer eats the question** — when the response guard gives up on a turn, the unanswered question is put back in the queue instead of dropped (`d0bd9fa`)
+- **A slash command no longer strands a pending step** — issuing a command mid-flow cancels the input step that was waiting; pending scopes moved from chat-level to `chat_id:thread_id` so forum topics stop interfering with each other (`aac61c1`)
+- **Fixes** — OpenRouter preset pointed at the wrong protocol (`4838ac8`); `/providers` and `/projects` registered for group chats (`b2d4a12`); the Stop hook is no longer registered from ephemeral checkouts (`45341f7`)
+
+### v1.51.0 — Deployment Simplification
+
+- **Deployment profiles** — `HELYX_PROFILE` = `minimal` | `local` | `full`; the `minimal` wizard asks five questions instead of roughly fifteen (`8962a42`)
+- **Dashboard gated at build time and runtime** — `ENABLE_DASHBOARD`; the default is deliberately asymmetric, so an `.env` written before the flag keeps its dashboard and only a fresh install writes `false` (`24cea17`)
+- **Image layering fixed** — a single `chown -R` was creating a 905 MB layer; image went 3.13 GB → 1.27 GB. The dashboard's real cost turned out to be build *memory*, not bytes: a dashboard-off build completes under a 256 MB / 2 CPU builder where the full build OOM'd at 512 MB
+- **Unattended install path** — `helyx setup --profile=minimal … < /dev/null` completes with stdin closed; setup refuses to overwrite a live `.env` without `--force` and never touches running services unattended (defect PRD P6, found the hard way)
+- **Prebuilt images on GHCR** — `.github/workflows/publish.yml` publishes them and `install.sh` pulls instead of building locally (`aa33276`)
+- **Package status sweep** — five requirement packages that had shipped more than they claimed were re-verified against the code and restated (`3eba60d`); the one deviation found — tmux log path hardcoded instead of derived from `BOT_DIR` (REQ-2.8) — was fixed (`1581942`)
+
+### v1.50.0 — Session Stability Reform & Context Injection
 
 - **Session Context Injection** — on CLI restart, first delivered message includes prior context block (LLM summary → raw messages fallback); guard key `sessionId:clientId` resets on every new Claude Code process; fail-open (DB errors are logged and skipped)
 - **Restart Control Reform** — `checkHungSessions` and `checkStuckQueue` no longer auto-restart; both use unified dedup key `session_problem:<project>`; alerts include pane tail and spinner detection
@@ -540,10 +559,10 @@ Features identified as valuable but without PRDs yet.
 - **Why:** Currently memories are flat records with no explicit connections.
 - **Effort:** Very High — requires schema redesign (separate relationships table, graph query logic)
 
-### Multi-Provider Model Switching at Message Time
-- Easy switching between providers mid-session
-- Per-message provider override (`/use google-ai`, then send message)
-- **Why:** Currently provider is fixed at setup; swapping requires `.env` edit + restart.
+### Per-Message Provider Override
+- ~~Easy switching between providers mid-session~~ — ✅ shipped in v1.52.0: `/projects` → ⚙️ switches provider and model for a running project
+- Remaining: per-message override (`/use google-ai`, then send message) without changing the project's configured provider
+- **Why:** provider and model are now per-project and switchable on the fly, but a single message still cannot borrow a different provider.
 - **Effort:** Medium — routing logic in message handler + provider config per session
 
 ### Remote Access via SSH Tunnel (Automated)
