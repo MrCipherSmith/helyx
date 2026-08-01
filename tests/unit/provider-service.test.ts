@@ -113,6 +113,44 @@ describe("parseModelsResponse", () => {
   test("an empty data array is a real answer, not a failure", () => {
     expect(parseModelsResponse({ data: [] })).toEqual([]);
   });
+
+  test("puts free models first — OpenRouter buries them among hundreds of paid ones", () => {
+    const parsed = parseModelsResponse({
+      data: [
+        { id: "anthropic/claude-sonnet-4" },
+        { id: "qwen/qwen3-8b:free" },
+        { id: "openai/gpt-4o" },
+        { id: "meta/llama-3.3-70b:free" },
+      ],
+    });
+    expect(parsed?.map((m) => m.id)).toEqual([
+      "qwen/qwen3-8b:free",
+      "meta/llama-3.3-70b:free",
+      "anthropic/claude-sonnet-4",
+      "openai/gpt-4o",
+    ]);
+  });
+
+  test("reads zero pricing as free, for providers that do not mark the id", () => {
+    const parsed = parseModelsResponse({
+      data: [
+        { id: "paid", pricing: { prompt: "0.000003", completion: "0.000015" } },
+        { id: "gratis", pricing: { prompt: "0", completion: "0" } },
+      ],
+    });
+    expect(parsed?.[0]).toEqual({ id: "gratis", label: "gratis", free: true });
+    expect(parsed?.[1]?.free).toBeUndefined();
+  });
+
+  test("a priced model with an unreadable rate is not free — the flag must never be a guess", () => {
+    const parsed = parseModelsResponse({ data: [{ id: "m", pricing: { prompt: "unknown", completion: "0" } }] });
+    expect(parsed?.[0]?.free).toBeUndefined();
+  });
+
+  test("keeps the provider's own order within each group", () => {
+    const parsed = parseModelsResponse({ data: [{ id: "b" }, { id: "a" }, { id: "c" }] });
+    expect(parsed?.map((m) => m.id)).toEqual(["b", "a", "c"]);
+  });
 });
 
 describe("modelsFor", () => {

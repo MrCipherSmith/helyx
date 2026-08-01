@@ -16,6 +16,12 @@ export type AuthScheme = "bearer" | "api_key";
 export interface ProviderModel {
   id: string;
   label: string;
+  /**
+   * Set only on models the provider charges nothing for. Absent rather than
+   * false so a list stored before this existed still compares equal to one
+   * fetched after it.
+   */
+  free?: boolean;
 }
 
 export interface ProviderPreset {

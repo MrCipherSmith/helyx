@@ -38,6 +38,36 @@ import { logger } from "../../logger.ts";
  * configured to refresh it with. Any hardcoded list goes stale, so this exists
  * to keep the picker usable, not to be correct.
  */
+/**
+ * How long each add-flow step waits for the operator's message.
+ *
+ * Two minutes was too short for the step that matters: the token prompt sends
+ * the operator off to the provider's dashboard to mint a key, and by the time
+ * they paste it back the pending handler has expired — so the message falls
+ * through to the session as ordinary text and the flow appears to have ignored
+ * it. Ten minutes covers a detour through a login page.
+ */
+const ADD_FLOW_TTL_MS = 10 * 60_000;
+
+/**
+ * How many model ids the add-flow echoes back for confirmation.
+ *
+ * OpenRouter answers with several hundred; joining all their ids runs past
+ * Telegram's 4096-character message limit and the send fails outright, which is
+ * indistinguishable from the bot having dropped the token. Accepting with "ok"
+ * still stores the full list — only the preview is trimmed.
+ */
+const PREVIEW_MODEL_LIMIT = 30;
+
+/**
+ * How many models the picker draws buttons for.
+ *
+ * One row per model does not survive a provider with hundreds of them: the
+ * keyboard is rejected and the operator gets no picker at all. Free models sort
+ * first, so the cut falls on the paid tail.
+ */
+const PICKER_MODEL_LIMIT = 40;
+
 export const FALLBACK_DEFAULT_MODELS: ProviderModel[] = [
   { id: "claude-sonnet-4-20250514", label: "Sonnet 4" },
   { id: "claude-opus-4-20250514", label: "Opus 4" },
@@ -59,6 +89,18 @@ export function modelsFor(
   const own = provider ? ((provider.models ?? []) as ProviderModel[]) : storedDefaults;
   const offered = own.length ? own : provider ? [] : FALLBACK_DEFAULT_MODELS;
   return [{ id: "", label: "Provider default" }, ...offered];
+}
+
+/** Button text for a model — free tiers carry a marker so the top of the list reads as one. */
+function modelButtonLabel(model: ProviderModel): string {
+  return model.free ? `🆓 ${model.label}` : model.label;
+}
+
+/** A comma-separated id list short enough for one Telegram message. */
+function previewModels(models: ProviderModel[]): string {
+  const shown = models.slice(0, PREVIEW_MODEL_LIMIT);
+  const hidden = models.length - shown.length;
+  return shown.map((m) => m.id).join(", ") + (hidden > 0 ? `, … +${hidden} more` : "");
 }
 
 /** Stored default-provider models, or [] when a real provider is selected. */
@@ -124,19 +166,23 @@ async function startAddFlow(ctx: Context, presetKey: string): Promise<void> {
       const token = tokenCtx.message?.text?.trim();
       if (!token) return;
 
+      // Acknowledge before the network call. Asking the provider costs up to 16s
+      // across both candidate paths, and an unacknowledged pause is exactly what
+      // a dropped message looks like.
+      await tokenCtx.reply(`Token received — asking ${preset.name} for its models…`).catch(() => {});
+
       // Ask the provider before offering anything hardcoded. A preset list is a
       // snapshot of whatever was current when it was written, and vendors move:
       // the GLM preset named 4.6 while z.ai was already shipping 5.2.
       const fetched = await fetchProviderModels(baseUrl, token, preset.authScheme);
       const offered = fetched ?? preset.models;
       const source = fetched
-        ? `Models from ${preset.name}`
+        ? `${offered.length} model(s) from ${preset.name}, free tiers first`
         : `Could not reach the provider's model list — falling back to presets`;
 
-      const suggested = offered.map((m) => m.id).join(", ");
       await tokenCtx.reply(
-        suggested
-          ? `${source}:\n${suggested}\n\nSend "ok" to accept, or your own comma-separated list.`
+        offered.length
+          ? `${source}:\n${previewModels(offered)}\n\nSend "ok" to accept all, or your own comma-separated list.`
           : "Models, comma-separated (or \"none\"):",
       );
       setPendingInput(chatId, async (modelsCtx) => {
@@ -162,8 +208,8 @@ async function startAddFlow(ctx: Context, presetKey: string): Promise<void> {
         } catch (err: any) {
           await modelsCtx.reply(`❌ ${err?.message ?? "could not add provider"}`);
         }
-      }, 120_000);
-    }, 120_000);
+      }, ADD_FLOW_TTL_MS);
+    }, ADD_FLOW_TTL_MS);
   };
 
   if (preset.key === "custom") {
@@ -172,7 +218,7 @@ async function startAddFlow(ctx: Context, presetKey: string): Promise<void> {
       const baseUrl = urlCtx.message?.text?.trim();
       if (!baseUrl) return;
       await askToken(baseUrl);
-    }, 120_000);
+    }, ADD_FLOW_TTL_MS);
   } else {
     await askToken(preset.baseUrl);
   }
@@ -260,14 +306,19 @@ async function showModelPicker(
   const current = selection?.model ?? "";
 
   const kb = new InlineKeyboard();
-  models.forEach((m, idx) => {
+  // Sliced from the front, so a button's position still is its index in the
+  // full list — which is what the pmsel callback resolves against.
+  const shown = models.slice(0, PICKER_MODEL_LIMIT);
+  shown.forEach((m, idx) => {
     const mark = m.id === current ? "✅ " : "";
-    kb.text(`${mark}${m.label}`, `pmsel:${projectId}:model:${providerId ?? "def"}:${idx}`).row();
+    kb.text(`${mark}${modelButtonLabel(m)}`, `pmsel:${projectId}:model:${providerId ?? "def"}:${idx}`).row();
   });
   kb.text("🔄 Refresh list", `pmref:${projectId}:${providerId ?? "def"}`).row();
 
+  const hidden = models.length - shown.length;
+  const overflow = hidden > 0 ? `\n${hidden} more not shown — free tiers come first.` : "";
   const label = provider?.name ?? DEFAULT_PROVIDER_LABEL;
-  const text = `Model for ${label}:${note ? `\n${note}` : ""}`;
+  const text = `Model for ${label}:${note ? `\n${note}` : ""}${overflow}`;
   await ctx.editMessageText(text, { reply_markup: kb }).catch(async () => {
     await replyInThread(ctx, text, { reply_markup: kb });
   });

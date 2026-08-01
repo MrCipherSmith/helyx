@@ -165,12 +165,38 @@ export function validateProviderInput(input: CreateProviderInput): { baseUrl: st
 }
 
 /**
- * Parse a models-list response into our shape.
+ * Whether a model costs nothing to call.
+ *
+ * Two signals, because providers say it two ways: OpenRouter suffixes the id of
+ * its zero-cost variants with `:free`, and also reports a pricing object whose
+ * per-token rates are "0". Either one is enough — a provider that reports
+ * neither simply has no free tier as far as this is concerned.
+ */
+function isFreeModel(entry: unknown, id: string): boolean {
+  if (/:free$/i.test(id)) return true;
+  const pricing = (entry as { pricing?: unknown })?.pricing as
+    | { prompt?: unknown; completion?: unknown }
+    | undefined;
+  if (!pricing) return false;
+  const rate = (v: unknown) => (typeof v === "string" || typeof v === "number" ? Number(v) : NaN);
+  const prompt = rate(pricing.prompt);
+  const completion = rate(pricing.completion);
+  return prompt === 0 && completion === 0;
+}
+
+/**
+ * Parse a models-list response into our shape, free models first.
  *
  * Anthropic and OpenAI-compatible endpoints both answer with
  * `{ data: [{ id, display_name? }] }`, so one parser covers the field. Exported
  * separately from the fetch so the shape handling can be tested without a
  * network call.
+ *
+ * The reordering exists because OpenRouter answers with several hundred models
+ * in no useful order, and the free ones — the whole reason to try a new
+ * provider before paying for it — land wherever they land. Order within each
+ * group is left as the provider gave it: that is the provider's own ranking and
+ * it is better than anything sorted alphabetically here.
  *
  * Returns null rather than an empty array when the payload is not a model list
  * at all — the caller needs to tell "provider says it has no models" apart from
@@ -184,10 +210,12 @@ export function parseModelsResponse(body: unknown): ProviderModel[] | null {
       const id = (entry as { id?: unknown })?.id;
       if (typeof id !== "string" || !id) return null;
       const label = (entry as { display_name?: unknown })?.display_name;
-      return { id, label: typeof label === "string" && label ? label : id };
+      const model: ProviderModel = { id, label: typeof label === "string" && label ? label : id };
+      if (isFreeModel(entry, id)) model.free = true;
+      return model;
     })
     .filter((m): m is ProviderModel => m !== null);
-  return models;
+  return [...models.filter((m) => m.free), ...models.filter((m) => !m.free)];
 }
 
 /**
