@@ -14,6 +14,7 @@ import { startOutputMonitor, getOutputFilePath, type OutputMonitorHandle } from 
 import { editTelegramMessage, deleteTelegramMessage, sendTelegramMessage, pinTelegramMessage, unpinTelegramMessage } from "./telegram.ts";
 import { channelLogger } from "../logger.ts";
 import { escapeHtml } from "../utils/html.ts";
+import { isRequeued, markRequeued } from "../utils/requeue.ts";
 
 export interface StatusContext {
   sql: postgres.Sql;
@@ -342,16 +343,84 @@ export class StatusManager {
       }
       await this.deleteStatusMessage(chatId);
       if (!hasPendingQueue) {
+        const requeued = await this.requeueUnansweredQuestion(chatId);
         await sendTelegramMessage(
           token,
           effectiveChatId,
-          `🔴 Claude не отвечает и tmux молчит уже ${silentStr} — сессия возможно зависла.\n/session — статус сессии`,
+          `🔴 Claude не отвечает и tmux молчит уже ${silentStr} — сессия возможно зависла.\n` +
+            (requeued ? "♻️ Вопрос возвращён в очередь — переспрашивать не нужно.\n" : "") +
+            `/session — статус сессии`,
           extra,
         );
       }
     }, this.RESPONSE_GUARD_MS);
 
     this.responseGuards.set(key, timer);
+  }
+
+  /**
+   * Put the question back on the queue when the guard gives up on a turn.
+   *
+   * A message is marked delivered the moment it is handed to Claude Code, so a
+   * turn that ends in silence consumes it: the operator got a red alert and
+   * their question was simply gone, with nothing to retype it from.
+   *
+   * The supervisor's unanswered-message loop was the only net under this, and
+   * the guard falls through it in the two cases that matter most. That loop
+   * only looks back thirty minutes, which a guard that spends its full re-arm
+   * budget has already used up; and it only retries the newest question in a
+   * chat, so anything the operator types after seeing the alert — "ау?" —
+   * buries the question it was meant to rescue. Re-queue here, where the loss
+   * is known the instant it happens, and let the loop keep sweeping up what
+   * this cannot see (a channel that died along with its session).
+   *
+   * Only a first loss is retried. A question already carrying the re-queue mark
+   * has had its second chance; queueing it again would spin.
+   */
+  private async requeueUnansweredQuestion(chatId: string): Promise<boolean> {
+    const sessionId = this.ctx.sessionId();
+    if (sessionId === null) return false;
+
+    try {
+      const [queued] = await this.ctx.sql`
+        SELECT content, from_user, message_id, created_at
+        FROM message_queue
+        WHERE session_id = ${sessionId} AND chat_id = ${chatId} AND delivered = true
+        ORDER BY created_at DESC
+        LIMIT 1
+      `;
+      const content = String(queued?.content ?? "");
+      if (!content || isRequeued(content)) return false;
+
+      // A batch that answered a different chat can leave this one's status
+      // open. If a reply did land after the question, nothing was lost.
+      const [answered] = await this.ctx.sql`
+        SELECT 1 FROM messages
+        WHERE session_id = ${sessionId} AND chat_id = ${chatId}
+          AND role = 'assistant' AND created_at > ${queued.created_at}
+        LIMIT 1
+      `;
+      if (answered) return false;
+
+      // The Telegram message id rides along so the reply tool can still mark
+      // the operator's original message answered once this one is picked up.
+      await this.ctx.sql`
+        INSERT INTO message_queue (session_id, chat_id, from_user, content, message_id, delivered)
+        VALUES (
+          ${sessionId},
+          ${chatId},
+          ${String(queued.from_user ?? "user")},
+          ${markRequeued(content, "Re-queued — the previous turn ended without a reply. Process normally.")},
+          ${queued.message_id ?? null},
+          false
+        )
+      `;
+      channelLogger.warn({ chatId, sessionId }, "response guard: re-queued the unanswered question");
+      return true;
+    } catch (err) {
+      channelLogger.warn({ chatId, sessionId, err }, "response guard: re-queue failed");
+      return false;
+    }
   }
 
   private disarmResponseGuard(chatId: string): void {

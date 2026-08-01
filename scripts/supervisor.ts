@@ -28,6 +28,7 @@ import type postgres from "postgres";
 import { join, resolve } from "node:path";
 import { forceSummarize } from "../memory/summarizer.ts";
 import { clearCache } from "../memory/short-term.ts";
+import { isRequeued, markRequeued } from "../utils/requeue.ts";
 
 // Path to today's tmux session log, for the "see the log" line in alerts.
 //
@@ -920,9 +921,20 @@ async function checkUnansweredMessages(sql: postgres.Sql): Promise<void> {
         }).catch(() => {});
       }
 
+      // A question the channel's response guard already put back carries the
+      // same mark. Retrying it a second time here would just start a loop
+      // between the two paths.
+      if (isRequeued(content)) {
+        console.log(`[supervisor] unanswered already re-queued, leaving alone: ${dedupKey}`);
+        continue;
+      }
+
       // Re-inject the lost message back into message_queue
       // Preserve telegram_msg_id so the reply tool can set ✅ when Claude responds
-      const reinjectedContent = `[♻️ Re-injected — previous response was lost during a Claude Code disconnect. Process normally.]\n${content}`;
+      const reinjectedContent = markRequeued(
+        content,
+        "Re-injected — previous response was lost during a Claude Code disconnect. Process normally.",
+      );
       try {
         await sql`
           INSERT INTO message_queue (session_id, chat_id, from_user, content, message_id, delivered)
