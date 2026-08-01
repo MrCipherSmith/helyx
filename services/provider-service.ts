@@ -57,7 +57,17 @@ export const DEFAULT_PROVIDER_LABEL = "Default (Claude)";
  * are the Anthropic ones by definition — that is what "default" means here.
  */
 const DEFAULT_PROVIDER_BASE_URL = "https://api.anthropic.com";
-const DEFAULT_PROVIDER_AUTH_SCHEME: AuthScheme = "api_key";
+
+/**
+ * Where Claude Code keeps the credentials of the signed-in session.
+ *
+ * The bot already mounts the operator's `~/.claude` (as HOST_CLAUDE_CONFIG) to
+ * read skills, commands and settings, so the file is reachable without any new
+ * plumbing. Reading it matters because a subscription login has no API key at
+ * all: without this, "Default (Claude)" is the one provider that can never be
+ * asked what models it has.
+ */
+const CLAUDE_CREDENTIALS_FILE = ".credentials.json";
 
 /**
  * `bot_config` key holding the default provider's fetched model list.
@@ -69,7 +79,11 @@ const DEFAULT_PROVIDER_AUTH_SCHEME: AuthScheme = "api_key";
  */
 const DEFAULT_MODELS_KEY = "default_provider_models";
 
-export type RefreshFailure = "no_credentials" | "unreachable" | "unknown_provider";
+export type RefreshFailure =
+  | "no_credentials"
+  | "credentials_expired"
+  | "unreachable"
+  | "unknown_provider";
 export type RefreshResult =
   | { ok: true; models: ProviderModel[] }
   | { ok: false; reason: RefreshFailure };
@@ -78,12 +92,43 @@ export type RefreshResult =
 export function describeRefreshFailure(reason: RefreshFailure): string {
   switch (reason) {
     case "no_credentials":
-      return "no ANTHROPIC_API_KEY set — cannot ask Claude for its list";
+      return "no ANTHROPIC_API_KEY and no signed-in Claude session to borrow";
+    case "credentials_expired":
+      return "the Claude session token has expired — run claude once to renew it";
     case "unknown_provider":
       return "that provider no longer exists";
     default:
       return "provider did not answer";
   }
+}
+
+/** An access token and the scheme to send it under. */
+interface Credential {
+  token: string;
+  scheme: AuthScheme;
+}
+
+/**
+ * Pull the OAuth access token out of Claude Code's credentials file.
+ *
+ * Exported without the file read so the shape and expiry handling can be tested
+ * without a credentials file on disk — and so no test ever needs a real token.
+ *
+ * A missing `expiresAt` is treated as "try it": the token may still work, and
+ * refusing to send it would turn an unknown into a hard failure.
+ */
+export function parseClaudeCredentials(
+  body: unknown,
+  now: number,
+): { ok: true; token: string } | { ok: false; reason: "no_credentials" | "credentials_expired" } {
+  const oauth = (body as { claudeAiOauth?: unknown })?.claudeAiOauth;
+  const token = (oauth as { accessToken?: unknown })?.accessToken;
+  if (typeof token !== "string" || !token) return { ok: false, reason: "no_credentials" };
+  const expiresAt = (oauth as { expiresAt?: unknown })?.expiresAt;
+  if (typeof expiresAt === "number" && expiresAt > 0 && expiresAt <= now) {
+    return { ok: false, reason: "credentials_expired" };
+  }
+  return { ok: true, token };
 }
 
 /**
@@ -162,13 +207,16 @@ export async function fetchProviderModels(
   authToken: string,
   authScheme: AuthScheme,
 ): Promise<ProviderModel[] | null> {
-  const headers: Record<string, string> = { "content-type": "application/json" };
-  if (authScheme === "api_key") {
-    headers["x-api-key"] = authToken;
-    headers["anthropic-version"] = "2023-06-01";
-  } else {
-    headers.authorization = `Bearer ${authToken}`;
-  }
+  // anthropic-version goes on every request, not just the api_key one: Anthropic
+  // answers 400 without it whatever the scheme, and a bearer token is exactly
+  // how a Claude Code session authenticates. OpenAI-compatible endpoints ignore
+  // the header, so sending it always costs nothing.
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    "anthropic-version": "2023-06-01",
+  };
+  if (authScheme === "api_key") headers["x-api-key"] = authToken;
+  else headers.authorization = `Bearer ${authToken}`;
 
   const root = baseUrl.replace(/\/+$/, "");
   const candidates = [`${root}/v1/models`, `${root}/models`];
@@ -184,6 +232,38 @@ export async function fetchProviderModels(
     }
   }
   return null;
+}
+
+/**
+ * Credentials to try for the default endpoint, best first.
+ *
+ * An explicit API key wins because it is a deliberate configuration. The Claude
+ * session token is the fallback that makes the subscription case work at all.
+ * Returning a list rather than one choice means a stale API key does not block
+ * a perfectly good session token.
+ *
+ * The token is returned, never logged: it grants inference on the operator's
+ * account and must go no further than the Anthropic request that needs it.
+ */
+async function defaultCredentials(
+  now: number,
+): Promise<{ ok: true; candidates: Credential[] } | { ok: false; reason: RefreshFailure }> {
+  const candidates: Credential[] = [];
+  if (CONFIG.ANTHROPIC_API_KEY) candidates.push({ token: CONFIG.ANTHROPIC_API_KEY, scheme: "api_key" });
+
+  let parsed: ReturnType<typeof parseClaudeCredentials> | null = null;
+  try {
+    const raw = await Bun.file(`${CONFIG.HOST_CLAUDE_CONFIG}/${CLAUDE_CREDENTIALS_FILE}`).json();
+    parsed = parseClaudeCredentials(raw, now);
+  } catch {
+    // No file, unreadable, or not JSON — the API key path may still work.
+  }
+  if (parsed?.ok) candidates.push({ token: parsed.token, scheme: "bearer" });
+
+  if (candidates.length) return { ok: true, candidates };
+  // Nothing usable: report the credentials-file verdict when there was one,
+  // because "expired" tells the operator to run claude and "missing" does not.
+  return { ok: false, reason: parsed && !parsed.ok ? parsed.reason : "no_credentials" };
 }
 
 export class ProviderService {
@@ -278,16 +358,15 @@ export class ProviderService {
    */
   async refreshModels(providerId: number | null): Promise<RefreshResult> {
     if (providerId === null) {
-      const token = CONFIG.ANTHROPIC_API_KEY;
-      if (!token) return { ok: false, reason: "no_credentials" };
-      const fetched = await fetchProviderModels(
-        DEFAULT_PROVIDER_BASE_URL,
-        token,
-        DEFAULT_PROVIDER_AUTH_SCHEME,
-      );
-      if (!fetched?.length) return { ok: false, reason: "unreachable" };
-      await this.setDefaultModels(fetched);
-      return { ok: true, models: fetched };
+      const creds = await defaultCredentials(Date.now());
+      if (!creds.ok) return { ok: false, reason: creds.reason };
+      for (const { token, scheme } of creds.candidates) {
+        const fetched = await fetchProviderModels(DEFAULT_PROVIDER_BASE_URL, token, scheme);
+        if (!fetched?.length) continue;
+        await this.setDefaultModels(fetched);
+        return { ok: true, models: fetched };
+      }
+      return { ok: false, reason: "unreachable" };
     }
 
     const provider = await this.get(providerId);

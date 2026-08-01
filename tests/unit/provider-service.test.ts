@@ -6,11 +6,13 @@
  * project's launch.
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   validateProviderInput,
   parseModelsResponse,
   describeRefreshFailure,
+  parseClaudeCredentials,
+  fetchProviderModels,
 } from "../../services/provider-service.ts";
 import { PROVIDER_PRESETS, findPreset } from "../../bot/providers/presets.ts";
 import { modelsFor, FALLBACK_DEFAULT_MODELS } from "../../bot/commands/providers.ts";
@@ -173,5 +175,75 @@ describe("describeRefreshFailure", () => {
   test("distinguishes a deleted provider from an unreachable one", () => {
     expect(describeRefreshFailure("unknown_provider")).toMatch(/no longer exists/);
     expect(describeRefreshFailure("unreachable")).toMatch(/did not answer/);
+  });
+});
+
+describe("parseClaudeCredentials", () => {
+  const NOW = 1_700_000_000_000;
+  const creds = (over: Record<string, unknown> = {}) => ({
+    claudeAiOauth: { accessToken: "tok", expiresAt: NOW + 60_000, ...over },
+  });
+
+  test("reads the access token Claude Code stores", () => {
+    expect(parseClaudeCredentials(creds(), NOW)).toEqual({ ok: true, token: "tok" });
+  });
+
+  test("reports an expired token separately — the operator's fix is to re-run claude", () => {
+    expect(parseClaudeCredentials(creds({ expiresAt: NOW - 1 }), NOW))
+      .toEqual({ ok: false, reason: "credentials_expired" });
+  });
+
+  test("a token expiring this instant is already expired", () => {
+    expect(parseClaudeCredentials(creds({ expiresAt: NOW }), NOW).ok).toBe(false);
+  });
+
+  test("tries a token with no expiry rather than refusing on an unknown", () => {
+    expect(parseClaudeCredentials(creds({ expiresAt: undefined }), NOW)).toEqual({ ok: true, token: "tok" });
+    expect(parseClaudeCredentials(creds({ expiresAt: 0 }), NOW)).toEqual({ ok: true, token: "tok" });
+    expect(parseClaudeCredentials(creds({ expiresAt: "soon" }), NOW)).toEqual({ ok: true, token: "tok" });
+  });
+
+  test("treats a file with no usable token as no credentials, not a crash", () => {
+    for (const body of [{}, null, "nope", { claudeAiOauth: {} }, { claudeAiOauth: { accessToken: "" } }]) {
+      expect(parseClaudeCredentials(body, NOW)).toEqual({ ok: false, reason: "no_credentials" });
+    }
+  });
+});
+
+describe("fetchProviderModels headers", () => {
+  const seen: { url: string; headers: Record<string, string> }[] = [];
+  const realFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    seen.length = 0;
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      seen.push({ url: String(url), headers: (init?.headers ?? {}) as Record<string, string> });
+      return new Response(JSON.stringify({ data: [{ id: "m" }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as unknown as typeof fetch;
+  });
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  test("sends anthropic-version under bearer too — Anthropic answers 400 without it", async () => {
+    // A Claude Code session token authenticates as a bearer, so omitting the
+    // header here is what made the default endpoint unrefreshable.
+    await fetchProviderModels("https://api.anthropic.com", "tok", "bearer");
+    expect(seen[0]?.headers["anthropic-version"]).toBe("2023-06-01");
+    expect(seen[0]?.headers.authorization).toBe("Bearer tok");
+  });
+
+  test("api_key goes in x-api-key, never in authorization", async () => {
+    await fetchProviderModels("https://api.anthropic.com", "sk-test", "api_key");
+    expect(seen[0]?.headers["x-api-key"]).toBe("sk-test");
+    expect(seen[0]?.headers.authorization).toBeUndefined();
+  });
+
+  test("tries /v1/models first and strips a trailing slash from the base url", async () => {
+    await fetchProviderModels("https://api.z.ai/api/anthropic/", "tok", "bearer");
+    expect(seen[0]?.url).toBe("https://api.z.ai/api/anthropic/v1/models");
   });
 });
