@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 2,
+  "id": "005",
+  "slug": "status-line-classifiers-a-tool-call-that",
+  "title": "status line classifiers — a tool call that mentions waiting is shown as waiting",
+  "status": "in-progress",
+  "createdAt": "2026-08-02T14:12:04.685Z",
+  "updatedAt": "2026-08-02T14:16:52.071Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:ee2ce66dacbd3d6e891ef0e9f85da27ebbf26d6e3f242a8bd369b86abacfcdbc",
+  "acConfirmed": {},
+  "pr": {
+    "url": null
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-02T14:12:04.685Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-02T14:13:41.073Z",
+      "event": "frozen",
+      "detail": "10 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-02T14:13:41.160Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-02T14:13:41.253Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-02T14:16:51.986Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-02T14:16:52.071Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    }
+  ]
+}

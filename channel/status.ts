@@ -13,6 +13,15 @@ import { startTmuxMonitor, type TmuxMonitorHandle } from "../utils/tmux-monitor.
 import { startOutputMonitor, getOutputFilePath, type OutputMonitorHandle } from "../utils/output-monitor.ts";
 import { editTelegramMessage, deleteTelegramMessage, sendTelegramMessage, pinTelegramMessage, unpinTelegramMessage } from "./telegram.ts";
 import { channelLogger } from "../logger.ts";
+import {
+  parseTokenCount,
+  formatElapsed,
+  getSpinnerIcon as spinnerIconAt,
+  computeSignature,
+  detectPhase,
+  SPINNER_FRAMES,
+  PHASE_LABEL,
+} from "../utils/status-format.ts";
 import { escapeHtml } from "../utils/html.ts";
 import { isRequeued, markRequeued } from "../utils/requeue.ts";
 
@@ -56,23 +65,6 @@ interface SessionStats {
   linesRemoved: number;
 }
 
-/** Parse "2.5k tokens", "15234 tokens", "1.2M tokens" → integer token count */
-function parseTokenCount(s: string): number | null {
-  const m = s.match(/^([\d,.]+)([kmKM]?)\s*tokens?$/i);
-  if (!m) return null;
-  const n = parseFloat(m[1].replace(/,/g, ""));
-  const suffix = m[2].toLowerCase();
-  if (suffix === "k") return Math.round(n * 1_000);
-  if (suffix === "m") return Math.round(n * 1_000_000);
-  return Math.round(n);
-}
-
-function formatElapsed(ms: number): string {
-  const sec = Math.round(ms / 1000);
-  if (sec < 60) return `${sec}s`;
-  return `${Math.floor(sec / 60)}m ${sec % 60}s`;
-}
-
 
 function normalizeStage(stage: string): string {
   return stage.replace(/^⏳\s*/, "");
@@ -80,73 +72,9 @@ function normalizeStage(stage: string): string {
 
 const STATUS_VISIBLE_LINES = 10;
 const STATUS_MAX_LINES = 40;
-const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-const SPINNER_STALE_MS = 60_000;
-
 const SPINNER_INTERVAL_ACTIVE_MS = 3_000;   // when monitor has been active recently
 const SPINNER_INTERVAL_IDLE_MS   = 15_000;  // when no monitor activity for >IDLE_THRESHOLD_MS
 const IDLE_THRESHOLD_MS          = 12_000;  // switch to idle after 12s of silence
-
-function getSpinnerIcon(spinnerFrame: number, lastUpdateAt: number): string {
-  if (Date.now() - lastUpdateAt > SPINNER_STALE_MS) return "⚠️";
-  return SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length];
-}
-
-// SU-1: FNV-1a 32-bit hash — fast, no external deps, sufficient for dedup
-function computeSignature(text: string): string {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < text.length; i++) {
-    h ^= text.charCodeAt(i);
-    h = (h * 0x01000193) >>> 0;
-  }
-  return h.toString(16);
-}
-
-// SU-3: Activity phase classification
-type ActivityPhase = 'thinking' | 'reading' | 'writing' | 'running' | 'searching' | 'waiting';
-
-// Returns null for empty/whitespace stage so no emoji is shown.
-//
-// Note on stage format: all tool-call lines from tmux-monitor.ts start with "● ":
-//   "● $ command"           — Bash
-//   "● Read: filename"      — file read
-//   "● Write: filename"     — file write
-//   "● MCP: toolname"       — MCP call
-//   "● AgentType: desc"     — agent call
-//   "● toolname..."         — generic tool
-// Non-tool stage text (custom messages, "Thinking...", etc.) does NOT start with "● ".
-function detectPhase(stage: string): ActivityPhase | null {
-  const s = stage.trim().toLowerCase();
-  if (!s) return null;
-  if (s.includes('permission') || s.includes('approve') || s.includes('waiting')) return 'waiting';
-
-  // stage is multi-line: spinner line first, most recent tool line last.
-  // Find the last "● " line to classify the current tool call.
-  const lastBulletLine = s.split('\n').filter(l => l.startsWith('● ')).at(-1) ?? '';
-  if (lastBulletLine) {
-    if (lastBulletLine.startsWith('● $'))                                              return 'running';   // Bash
-    if (lastBulletLine.includes('● read'))                                             return 'reading';
-    if (lastBulletLine.includes('● write') || lastBulletLine.includes('● edit') || lastBulletLine.includes('● creat')) return 'writing';
-    if (lastBulletLine.includes('grep') || lastBulletLine.includes('search') || lastBulletLine.includes('find') || lastBulletLine.includes('● mcp')) return 'searching';
-    return 'running';  // MCP, Agent, generic tool → running
-  }
-
-  // Non-tool stage text (custom messages)
-  if (s.includes('write') || s.includes('edit') || s.includes('creat')) return 'writing';
-  if (s.includes('read'))                                                  return 'reading';
-  if (s.includes('bash') || s.includes('execut') || s.includes('run'))   return 'running';
-  if (s.includes('grep') || s.includes('search') || s.includes('find'))  return 'searching';
-  return 'thinking';
-}
-
-const PHASE_LABEL: Record<ActivityPhase, string> = {
-  thinking:  '🧠',
-  reading:   '📖',
-  writing:   '✏️',
-  running:   '⚡',
-  searching: '🔍',
-  waiting:   '💬',
-};
 
 interface StatusExtras {
   phaseEmoji?: string;
@@ -833,7 +761,7 @@ export class StatusManager {
 
     // Content changed — advance spinner and compose final text with the live icon
     state.spinnerFrame = (state.spinnerFrame + 1) % SPINNER_FRAMES.length;
-    const spinnerIcon = getSpinnerIcon(state.spinnerFrame, state.lastUpdateAt);
+    const spinnerIcon = spinnerIconAt(state.spinnerFrame, state.lastUpdateAt, Date.now());
     const text = formatStatusText(state.stage, elapsed, tokenStr, state.paneSnapshot, spinnerIcon, extras);
 
     const res = await editTelegramMessage(token, state.chatId, state.messageId, text, { parse_mode: "HTML" });
