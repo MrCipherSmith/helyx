@@ -1,5 +1,56 @@
 # Changelog
 
+## v1.54.0
+
+### fix: the installer was shipping a three-month-old checkout
+
+`install.sh` resolves its version from the GitHub API's `releases/latest`,
+and releases had stopped at v1.47.0 on 2 May while six tags shipped past it.
+Every `curl … | bash` from the README cloned v1.47.0 and then pulled the
+`:latest` image built from v1.53.0 — current image on May sources and a May
+`docker-compose.yml`.
+
+- Releases now exist for v1.48.0, v1.49.0, v1.52.0 and v1.53.0, created in
+  ascending order with the latest pointer set explicitly, so the API answers
+  with the tag that was actually released.
+- No source change: the defect was entirely in what the repository had
+  published about itself.
+
+### fix: name the bot image instead of deriving it from the directory
+
+The `bot` service had no `image:` key, so Compose derived the name from the
+project — which is the install directory. The default `~/helyx` produces
+`helyx-bot` and matches what `install.sh` tags after pulling;
+`HELYX_DIR=~/my-bot`, which the README documents, produces `my-bot-bot` and
+silently discards the 1.3 GB just downloaded in favour of the local build the
+pull existed to avoid. `HELYX_IMAGE` overrides the name.
+
+### fix: clear the 36 dashboard eslint errors
+
+Held back in v1.53.0 because they are react-hooks correctness rules that need
+the UI exercised rather than reasoned about. Both apps were driven end to end
+in a browser against the live API for this change — the dashboard across all
+nine routes, the Mini App across every tab.
+
+- `Date.now()` out of render behind a `useNow` hook (three sites); the
+  latest-ref write in `useEventStream` moved into an effect.
+- Four fetch effects no longer set state synchronously, and each carries a
+  `cancelled` guard — which also closes a real bug where a slow response for
+  a previous session or filter could land on top of a newer one.
+- 18 `any` replaced: `errorMessage()` for `catch (e: any)`, stale
+  `(api as any)` casts dropped, `window.onTelegramAuth` declared.
+- `main.tsx` no longer defines the component it mounts, restoring fast
+  refresh. Two unused bindings removed.
+- Health score 37 → 57, findings 301 → 265.
+
+### docs: changelog and roadmap catch up
+
+The changelog had stopped at v1.46.0 while README's "Recent Changes" pointed
+readers straight at it; v1.47.0 through v1.53.0 are now written up. The
+roadmap's Planned section claimed `.github/workflows/e2e.yml` was committed
+and waiting on three repository secrets — that file was deleted in `5bab380`,
+and the entry now describes the decision the work actually needs.
+
 ## v1.53.0
 
 ### fix: keep tmux alive across admin-daemon restarts

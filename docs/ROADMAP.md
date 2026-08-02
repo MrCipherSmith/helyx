@@ -14,7 +14,15 @@
 
 ## ✅ Implemented
 
-### v1.53.0 (Latest) — Session Survival, Honest Quality Gate & Lint
+### v1.54.0 (Latest) — Distribution Fixes & a Clean Dashboard Lint
+
+- **The installer stopped shipping a three-month-old checkout** — `install.sh` resolves its version from the GitHub API's `releases/latest`, and releases had stopped at v1.47.0 on 2 May while six tags shipped past it. Every `curl … | bash` from the README cloned v1.47.0 and then pulled the `:latest` image built from v1.53.0: current image, May sources, May `docker-compose.yml`. Releases now exist for v1.48.0, v1.49.0, v1.52.0 and v1.53.0, so the API answers with the tag that was actually released
+- **The pulled image is found wherever the install lands** — the `bot` service had no `image:` key, so Compose derived the name from the project, which is the install directory. The default `~/helyx` produces `helyx-bot` and matches what `install.sh` tags; `HELYX_DIR=~/my-bot`, which the README documents, produces `my-bot-bot` and silently discards the 1.3 GB just downloaded in favour of a local build. The service now names its image, overridable via `HELYX_IMAGE` (`c1f8c0b`)
+- **Dashboard lint is clean** — the 36 errors held back in v1.53.0 are fixed rather than silenced: `Date.now()` out of render behind a `useNow` hook (three sites), the latest-ref write moved into an effect, four fetch effects moved off synchronous setState and given a `cancelled` guard that also closes a stale-response overwrite, and 18 `any` replaced by real types. `main.tsx` no longer defines the component it mounts, which restores fast refresh. Both apps were driven end to end in a browser against the live API — the dashboard across all nine routes, the Mini App across every tab. Health score 37 → 57, findings 301 → 265 (`f8a2868`)
+- **The changelog covers the last seven releases again** — it had stopped at v1.46.0 while README's "Recent Changes" pointed readers straight at it (`6806c66`)
+- **Known-stale roadmap entry removed** — the Planned item claiming `.github/workflows/e2e.yml` was committed and waiting on three GitHub secrets described a file deleted in `5bab380`; the repository has `build.yml` and `publish.yml` and nowhere to put those secrets
+
+### v1.53.0 — Session Survival, Honest Quality Gate & Lint
 
 - **tmux survives an admin-daemon restart** — the tmux server starts in its own transient systemd scope instead of inheriting the service cgroup, where systemd's control-group kill took every CLI pane down with the daemon and left Telegram messages piling up in `message_queue` with no consumer (`0abfe8d`)
 - **`helyx up` matches window names exactly** — the prefix-resolving `has-session -t sess:name` matched `goodai` against the existing `goodai-base` window, so that project was never started; `helyx up` also moved from `ExecStartPre` to `ExecStartPost`, since running it first spawned a second admin-daemon before systemd started its own. The stuck-queue restart button now gets `projectId` rather than `sessionId` — `enqueueRestart` threw "project not found" on every click (`0abfe8d`)
@@ -529,13 +537,10 @@ None currently.
 
 These items have PRDs written and are ready to implement.
 
-### GitHub Actions E2E CI — Activate Secrets
-- Workflow `.github/workflows/e2e.yml` is committed and ready
-- **Blocked on:** adding 3 secrets in GitHub repo Settings → Secrets and variables → Actions:
-  - `TELEGRAM_BOT_TOKEN` — Telegram bot token
-  - `ALLOWED_USERS` — `446593035`
-  - `TEST_BASE_URL` — `https://helyx.mrciphersmith.com`
-- **After:** E2E tests run automatically on every push to main and PRs
+### GitHub Actions E2E CI — Restore the Workflow
+- The e2e suite exists (`tests/e2e/`, Playwright, JWT minted in `global-setup.ts` without a browser) but nothing runs it in CI. `.github/workflows/e2e.yml` was **deleted** in `5bab380` — a self-hosted bot has no public URL for a GitHub runner to reach, so the workflow could only ever have tested a deployment that happens to be exposed.
+- **Blocked on:** deciding what CI should point at — a throwaway stack stood up inside the job (bot + postgres via compose, `TEST_BASE_URL=http://localhost:3847`), or the live deployment, which then needs its URL and a bot token as repository secrets.
+- **Note:** an earlier version of this entry claimed the workflow was committed and merely waiting on three secrets. It was not; the file had already been removed.
 
 ---
 
@@ -635,4 +640,4 @@ Features identified as valuable but without PRDs yet.
 
 ---
 
-**Last updated:** 2026-08-01 (v1.53.0)
+**Last updated:** 2026-08-02 (v1.54.0)
