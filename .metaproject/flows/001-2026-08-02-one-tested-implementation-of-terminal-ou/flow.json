@@ -3,17 +3,50 @@
   "id": "001",
   "slug": "one-tested-implementation-of-terminal-ou",
   "title": "One tested implementation of terminal-output parsing",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-02T10:34:27.806Z",
-  "updatedAt": "2026-08-02T11:00:42.144Z",
+  "updatedAt": "2026-08-02T11:10:51.382Z",
   "source": {
     "type": "description",
     "ref": null
   },
   "acChecksum": "sha256:92331c03ba2f0adf7c4fb1a653d8f71541aaf4300f2b59040216a3db1319a114",
-  "acConfirmed": {},
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-02T11:10:34.379Z",
+      "note": "utils/terminal.ts exports stripAnsi, paneLines, hasActiveSpinner; CSI by ECMA-48 byte ranges, OSC with BEL or ST, C0 controls; newline preserved"
+    },
+    "AC2": {
+      "at": "2026-08-02T11:10:34.602Z",
+      "note": "grep for 'function stripAnsi' and inline ANSI regexes across scripts/ utils/ bot/ channel/ returns only utils/terminal.ts"
+    },
+    "AC3": {
+      "at": "2026-08-02T11:10:34.816Z",
+      "note": "hasActiveSpinner tested with ESC[2K and with ESC[?25l preceding the glyph; both detected (tests/unit/terminal.test.ts)"
+    },
+    "AC4": {
+      "at": "2026-08-02T11:10:35.053Z",
+      "note": "tests/unit/tmux-watchdog.test.ts imports stripAnsi from utils/terminal.ts; 55 tests in that file pass"
+    },
+    "AC5": {
+      "at": "2026-08-02T11:10:45.547Z",
+      "note": "projectFromSessionProblemKey exported and used in checkRecovery; round-trip tested for a colon-bearing name and for a name containing the prefix itself"
+    },
+    "AC6": {
+      "at": "2026-08-02T11:10:45.635Z",
+      "note": "recoveryDecision exported; checkRecovery is a switch over it; all four outcomes tested plus relapse-clears-timer and falsy-timer cases"
+    },
+    "AC7": {
+      "at": "2026-08-02T11:10:45.725Z",
+      "note": "bun run typecheck clean; bun run lint 0 errors (211 warnings, pre-existing); 381 unit tests pass, none skipped or removed"
+    },
+    "AC8": {
+      "at": "2026-08-02T11:10:45.810Z",
+      "note": "keryx health run: coverage 16.44% (was 16.19% at flow start), score 57->58, gate WARN on coverage only — no new reason"
+    }
+  },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/37"
   },
   "tasks": [
     {
@@ -79,7 +112,7 @@
       "id": "T5",
       "title": "Address Codex review findings",
       "kind": "implement",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -87,7 +120,8 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     }
   ],
   "history": [
@@ -123,6 +157,65 @@
       "at": "2026-08-02T11:00:42.144Z",
       "event": "task-added",
       "detail": "T5: Address Codex review findings"
+    },
+    {
+      "at": "2026-08-02T11:01:59.751Z",
+      "event": "task-done",
+      "detail": "T5: Address Codex review findings"
+    },
+    {
+      "at": "2026-08-02T11:10:26.538Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/37"
+    },
+    {
+      "at": "2026-08-02T11:10:34.379Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: utils/terminal.ts exports stripAnsi, paneLines, hasActiveSpinner; CSI by ECMA-48 byte ranges, OSC with BEL or ST, C0 controls; newline preserved"
+    },
+    {
+      "at": "2026-08-02T11:10:34.602Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: grep for 'function stripAnsi' and inline ANSI regexes across scripts/ utils/ bot/ channel/ returns only utils/terminal.ts"
+    },
+    {
+      "at": "2026-08-02T11:10:34.816Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: hasActiveSpinner tested with ESC[2K and with ESC[?25l preceding the glyph; both detected (tests/unit/terminal.test.ts)"
+    },
+    {
+      "at": "2026-08-02T11:10:35.054Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: tests/unit/tmux-watchdog.test.ts imports stripAnsi from utils/terminal.ts; 55 tests in that file pass"
+    },
+    {
+      "at": "2026-08-02T11:10:45.547Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: projectFromSessionProblemKey exported and used in checkRecovery; round-trip tested for a colon-bearing name and for a name containing the prefix itself"
+    },
+    {
+      "at": "2026-08-02T11:10:45.635Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: recoveryDecision exported; checkRecovery is a switch over it; all four outcomes tested plus relapse-clears-timer and falsy-timer cases"
+    },
+    {
+      "at": "2026-08-02T11:10:45.725Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: bun run typecheck clean; bun run lint 0 errors (211 warnings, pre-existing); 381 unit tests pass, none skipped or removed"
+    },
+    {
+      "at": "2026-08-02T11:10:45.810Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: keryx health run: coverage 16.44% (was 16.19% at flow start), score 57->58, gate WARN on coverage only — no new reason"
+    },
+    {
+      "at": "2026-08-02T11:10:49.647Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-02T11:10:51.382Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
   ]
 }

@@ -24,3 +24,15 @@ deferred with reasoning.
 
 After the fixes: 381 tests pass (from 367), tsc clean, eslint 0 errors, health
 score 58, coverage 16.44%.
+- 2026-08-02T11:01:59.751Z - task-done: T5: Address Codex review findings
+- 2026-08-02T11:10:26.538Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/37
+- 2026-08-02T11:10:34.379Z - ac-confirmed: AC1: utils/terminal.ts exports stripAnsi, paneLines, hasActiveSpinner; CSI by ECMA-48 byte ranges, OSC with BEL or ST, C0 controls; newline preserved
+- 2026-08-02T11:10:34.602Z - ac-confirmed: AC2: grep for 'function stripAnsi' and inline ANSI regexes across scripts/ utils/ bot/ channel/ returns only utils/terminal.ts
+- 2026-08-02T11:10:34.816Z - ac-confirmed: AC3: hasActiveSpinner tested with ESC[2K and with ESC[?25l preceding the glyph; both detected (tests/unit/terminal.test.ts)
+- 2026-08-02T11:10:35.054Z - ac-confirmed: AC4: tests/unit/tmux-watchdog.test.ts imports stripAnsi from utils/terminal.ts; 55 tests in that file pass
+- 2026-08-02T11:10:45.547Z - ac-confirmed: AC5: projectFromSessionProblemKey exported and used in checkRecovery; round-trip tested for a colon-bearing name and for a name containing the prefix itself
+- 2026-08-02T11:10:45.635Z - ac-confirmed: AC6: recoveryDecision exported; checkRecovery is a switch over it; all four outcomes tested plus relapse-clears-timer and falsy-timer cases
+- 2026-08-02T11:10:45.725Z - ac-confirmed: AC7: bun run typecheck clean; bun run lint 0 errors (211 warnings, pre-existing); 381 unit tests pass, none skipped or removed
+- 2026-08-02T11:10:45.810Z - ac-confirmed: AC8: keryx health run: coverage 16.44% (was 16.19% at flow start), score 57->58, gate WARN on coverage only — no new reason
+- 2026-08-02T11:10:49.647Z - completing
+- 2026-08-02T11:10:51.382Z - done: all gates passed
