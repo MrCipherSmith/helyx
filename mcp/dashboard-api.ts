@@ -506,7 +506,7 @@ async function handleGitHubPRs(res: ServerResponse, sessionId: number, url: URL)
   if (!path) { sendError(res, "Session not found", 404); return; }
 
   const token = CONFIG.GITHUB_TOKEN;
-  if (!token) { sendError(res, "GITHUB_TOKEN not configured", 503); return; }
+  if (!token) { sendError(res, "GitHub integration is off — set GITHUB_TOKEN in .env and restart the bot", 503); return; }
 
   const repo = await getGitHubRepo(path);
   if (!repo) { sendError(res, "Could not determine GitHub repo from git remote", 400); return; }
@@ -556,7 +556,7 @@ async function handleGitHubPRDetail(res: ServerResponse, sessionId: number, prNu
   if (!path) { sendError(res, "Session not found", 404); return; }
 
   const token = CONFIG.GITHUB_TOKEN;
-  if (!token) { sendError(res, "GITHUB_TOKEN not configured", 503); return; }
+  if (!token) { sendError(res, "GitHub integration is off — set GITHUB_TOKEN in .env and restart the bot", 503); return; }
 
   const repo = await getGitHubRepo(path);
   if (!repo) { sendError(res, "Could not determine GitHub repo", 400); return; }

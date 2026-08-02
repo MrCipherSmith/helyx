@@ -111,7 +111,15 @@ async function req<T>(path: string, opts?: RequestInit): Promise<T> {
     headers: { ...headers, ...(opts?.headers as Record<string, string> ?? {}) },
     ...opts,
   });
-  if (!r.ok) throw new Error(await r.text());
+  if (!r.ok) {
+    // The API answers errors as {error}. Throwing the raw body put the JSON
+    // envelope itself on screen — the user read `{"error":"…"}`, braces and
+    // all — so unwrap it and fall back to the body only if it is not JSON.
+    const body = await r.text();
+    let message = body;
+    try { message = JSON.parse(body).error ?? body } catch { /* not JSON */ }
+    throw new Error(message || `HTTP ${r.status}`);
+  }
   if (r.status === 204) return undefined as T;
   return r.json();
 }

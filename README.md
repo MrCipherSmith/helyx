@@ -671,6 +671,7 @@ ollama pull nomic-embed-text
 | `OPENROUTER_API_KEY` | No | OpenRouter API (many models available) |
 | `OLLAMA_CHAT_MODEL` | No | Local Ollama model (default: `gemma4:e4b`) |
 | `GROQ_API_KEY` | No | Voice transcription ([free](https://console.groq.com)) |
+| `GITHUB_TOKEN` | No | PAT with repo read access — enables the PRs tab in the Mini App |
 | `DATABASE_URL` | Yes | PostgreSQL connection string |
 | `POSTGRES_PASSWORD` | Yes | PostgreSQL password (required in docker-compose) |
 | `OLLAMA_URL` | No | Ollama API URL (default: `http://localhost:11434`) |
@@ -679,6 +680,10 @@ ollama pull nomic-embed-text
 | `SECURE_COOKIES` | No | Force Secure flag on cookies (`true`/`false`, auto-detected) |
 | `KNOWLEDGE_BASE` | No | Path to knowledge base for `/skills` and `/rules` |
 | `HOST_CLAUDE_CONFIG` | No | Mount point for ~/.claude in Docker (default: `/host-claude-config`) |
+| `HELYX_PROFILE` | No | Deployment profile: `minimal`, `local`, `full` — written by the setup wizard |
+| `ENABLE_DASHBOARD` | No | Serve the web dashboard at runtime. Must agree with `WITH_DASHBOARD` |
+| `WITH_DASHBOARD` | No | Docker **build** arg — include the dashboard in the image (default: `false`). Enabling `ENABLE_DASHBOARD` on an image built without it yields empty pages |
+| `HELYX_IMAGE` | No | Image the `bot` service runs (default: `helyx-bot:latest`) |
 | `ARCHIVE_TTL_DAYS` | No | Days before archived messages/permissions are deleted (default: `30`) |
 | `MEMORY_SIMILARITY_THRESHOLD` | No | Cosine distance threshold for memory reconciliation (default: `0.35`) |
 | `MEMORY_RECONCILE_TOP_K` | No | Number of similar memories checked before LLM reconciliation (default: `5`) |
