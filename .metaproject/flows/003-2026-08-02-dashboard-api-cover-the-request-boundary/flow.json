@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 2,
+  "id": "003",
+  "slug": "dashboard-api-cover-the-request-boundary",
+  "title": "dashboard-api — cover the request-boundary decisions",
+  "status": "in-progress",
+  "createdAt": "2026-08-02T12:17:59.632Z",
+  "updatedAt": "2026-08-02T12:23:07.205Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:5c82684aacfd5dba0869bea3eae919a8740bdf36d1e5468d5c3f8ffaff4dce5b",
+  "acConfirmed": {},
+  "pr": {
+    "url": null
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-02T12:17:59.632Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-02T12:19:14.350Z",
+      "event": "frozen",
+      "detail": "10 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-02T12:19:14.434Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-02T12:19:14.523Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-02T12:23:07.121Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-02T12:23:07.205Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    }
+  ]
+}
