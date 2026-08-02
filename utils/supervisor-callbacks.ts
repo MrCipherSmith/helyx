@@ -9,9 +9,25 @@
  * named at both ends and lets the round trip be tested.
  */
 
+const SESSION_PROBLEM_PREFIX = "session_problem:";
+
 /** Dedup / acknowledgement key for a project-level session problem. */
 export function sessionProblemKey(project: string): string {
-  return `session_problem:${project}`;
+  return `${SESSION_PROBLEM_PREFIX}${project}`;
+}
+
+/**
+ * The project a `session_problem:` key refers to.
+ *
+ * The recovery loop used `key.replace("session_problem:", "")`, which is
+ * unanchored and replaces the first occurrence wherever it sits — a project
+ * whose name contains the prefix would come back mangled. Anchoring it also
+ * keeps the pair of functions visibly inverse.
+ */
+export function projectFromSessionProblemKey(key: string): string {
+  return key.startsWith(SESSION_PROBLEM_PREFIX)
+    ? key.slice(SESSION_PROBLEM_PREFIX.length)
+    : key;
 }
 
 /** "🔄 Перезапустить" — `enqueueRestart` takes a **project** id. */

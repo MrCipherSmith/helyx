@@ -1,11 +1,7 @@
 import type { Context } from "grammy";
 import { InlineKeyboard } from "grammy";
 import { logger } from "../../logger.ts";
-
-// Strip ANSI escape codes
-function stripAnsi(str: string): string {
-  return str.replace(/\x1B\[[0-9;]*[mGKHF]/g, "").replace(/\x1B\[[0-9;]*[A-Za-z]/g, "");
-}
+import { stripAnsi } from "../../utils/terminal.ts";
 
 export async function handleCodexSetup(ctx: Context): Promise<void> {
   const statusMsg = await ctx.reply("Starting Codex device auth...");

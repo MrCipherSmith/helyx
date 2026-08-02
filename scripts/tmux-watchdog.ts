@@ -26,6 +26,7 @@
  */
 
 import type postgres from "postgres";
+import { stripAnsi } from "../utils/terminal.ts";
 import { escapeHtml } from "../utils/html.ts";
 
 // ---------------------------------------------------------------------------
@@ -88,13 +89,6 @@ async function runShell(cmd: string): Promise<string> {
   } catch {
     return "";
   }
-}
-
-function stripAnsi(s: string): string {
-  return s
-    .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "")
-    .replace(/\x1b\][^\x07]*\x07/g, "")
-    .replace(/[\x00-\x09\x0b-\x1f]/g, "");
 }
 
 async function capturePane(windowName: string, numLines = 60): Promise<string[]> {

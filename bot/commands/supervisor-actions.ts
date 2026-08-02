@@ -10,6 +10,7 @@ import { sql } from "../../memory/db.ts";
 import { enqueueRestart } from "../../services/project-service.ts";
 import { forwardStuckMessages } from "../../scripts/supervisor.ts";
 import { parseSupervisorCallback } from "../../utils/supervisor-callbacks.ts";
+import { paneLines } from "../../utils/terminal.ts";
 
 export async function handleSupervisorCallback(ctx: Context): Promise<void> {
   // Only the configured admin chat may trigger supervisor actions
@@ -69,13 +70,13 @@ export async function handleSupervisorCallback(ctx: Context): Promise<void> {
     const proc = Bun.spawn(["tmux", "capture-pane", "-p", "-t", `bots:${project.name}`, "-S", "-20"], { stdout: "pipe", stderr: "pipe" });
     const out = await new Response(proc.stdout).text().catch(() => "");
     await proc.exited;
-    const paneLines = out.replace(/\x1B\[[0-9;]*m/g, "").split("\n").filter(Boolean).slice(-20).join("\n");
+    const pane = paneLines(out, 20).join("\n");
     const chatId = ctx.callbackQuery?.message?.chat?.id;
     const threadId = ctx.callbackQuery?.message?.message_thread_id;
     if (chatId) {
       const body: Record<string, unknown> = {
         chat_id: chatId,
-        text: `📋 <b>${project.name}</b> — последние 20 строк пейна:\n<pre>${paneLines.slice(0, 3500)}</pre>`,
+        text: `📋 <b>${project.name}</b> — последние 20 строк пейна:\n<pre>${pane.slice(0, 3500)}</pre>`,
         parse_mode: "HTML",
       };
       if (threadId) body.message_thread_id = threadId;
