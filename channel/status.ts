@@ -494,19 +494,37 @@ export class StatusManager {
    * showing it after the answer. The stage is untouched — only the phase it
    * is rendered with has changed.
    */
-  private async renderPhaseChange(key: string): Promise<void> {
-    const state = this.activeStatus.get(key);
-    if (!state) return;
+  /**
+   * Edit the status, draining anything that arrives while the edit is in
+   * flight.
+   *
+   * Single-flight: a caller that finds an edit running records that another
+   * is wanted and returns, and the running edit repeats before it finishes.
+   * Without the loop that record was only drained by the 5s timer, so an
+   * update landing during an edit — a monitor poll, or the latch flipping —
+   * showed up a tick late. For the stage that is a stale line; for the latch
+   * it is the wrong emoji on a session that is or is not blocked.
+   */
+  private async editWithDrain(state: StatusState): Promise<void> {
     if (state.editInFlight) {
       state.pendingImmediateEdit = true;
       return;
     }
     state.editInFlight = true;
     try {
-      await this.editStatusMessage(state);
+      do {
+        state.pendingImmediateEdit = false;
+        await this.editStatusMessage(state);
+      } while (state.pendingImmediateEdit);
     } finally {
       state.editInFlight = false;
     }
+  }
+
+  private async renderPhaseChange(key: string): Promise<void> {
+    const state = this.activeStatus.get(key);
+    if (!state) return;
+    await this.editWithDrain(state);
   }
 
   private stateKey(chatId: string): string {
@@ -634,12 +652,11 @@ export class StatusManager {
           state.editInFlight = true;
           try {
             await this.refreshPaneSnapshot(state).catch(() => {});
-            await this.editStatusMessage(state);
-            // SU-5: drain any pending stage update buffered during in-flight edit
-            if (state.pendingImmediateEdit) {
+            // SU-5: drain everything buffered during the edit, not just one.
+            do {
               state.pendingImmediateEdit = false;
               await this.editStatusMessage(state);
-            }
+            } while (state.pendingImmediateEdit);
           } finally {
             state.editInFlight = false;
           }
@@ -722,19 +739,10 @@ export class StatusManager {
     state.lastUpdateAt = Date.now();
     state.stage = stage;
 
-    if (state.editInFlight) {
-      // Timer is currently awaiting an editTelegramMessage — buffer the new stage;
-      // the timer's finally block drains it via pendingImmediateEdit.
-      state.pendingImmediateEdit = true;
-      return;
-    }
-    // Acquire the guard so the timer cannot fire a concurrent edit while we await.
-    state.editInFlight = true;
-    try {
-      await this.editStatusMessage(state);
-    } finally {
-      state.editInFlight = false;
-    }
+    // Single-flight with a drain: if an edit is already running this records
+    // that another is wanted and that edit repeats, rather than the update
+    // waiting for the next timer tick.
+    await this.editWithDrain(state);
   }
 
   private accumulateTurnActivity(state: StatusState, stage: string): void {

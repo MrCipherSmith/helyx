@@ -5,7 +5,7 @@
   "title": "a latched waiting state, so the blocked-session signal can finally be true",
   "status": "in-progress",
   "createdAt": "2026-08-02T15:17:04.435Z",
-  "updatedAt": "2026-08-02T15:21:02.189Z",
+  "updatedAt": "2026-08-02T15:33:20.397Z",
   "source": {
     "type": "description",
     "ref": null
@@ -65,7 +65,7 @@
       "id": "T4",
       "title": "Self-review and prepare draft PR",
       "kind": "review",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -73,7 +73,8 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     }
   ],
   "history": [
@@ -104,6 +105,11 @@
       "at": "2026-08-02T15:21:02.189Z",
       "event": "task-done",
       "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-02T15:33:20.397Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
     }
   ]
 }

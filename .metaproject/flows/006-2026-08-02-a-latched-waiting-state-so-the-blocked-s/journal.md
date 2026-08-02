@@ -22,3 +22,26 @@ Findings 1 and 3 are the same root cause seen from two sides: an identifier
 recomputed at each use rather than captured once. That is the third flow in a
 row where the fix was to stop re-deriving something and start holding onto it —
 after the shared ANSI parser and the shared prompt definition.
+- 2026-08-02T15:33:20.397Z - task-done: T4: Self-review and prepare draft PR
+
+### Second Codex pass
+
+Findings 1 and 3 confirmed resolved. Finding 2 came back **partially**
+resolved, correctly: both edges now request a redraw, but an edge arriving
+while an edit was in flight only set `pendingImmediateEdit`, and only the 5s
+timer drained it. So the latch could still show a tick late — which for a
+stage is a stale line, and for the latch is the wrong emoji on a session that
+is or is not blocked.
+
+Fixed with a shared single-flight drain, `editWithDrain`: a caller that finds
+an edit running records that another is wanted and returns, and the running
+edit repeats before finishing. `updateStatus`, `renderPhaseChange` and the
+timer all go through it, and the timer's own drain became a loop rather than a
+single extra pass — it too could only absorb one buffered update.
+
+Codex also noted that a live Telegram round trip is not strictly required for
+the lifecycle tests, and that fakes could cover the four exits. Fair, and
+recorded as the next step for this area rather than claimed as done: it needs
+a fake `ctx` for the permission handler (sql, mcp, token, session), which is a
+fixture this repository does not have yet and is worth building deliberately
+rather than as a side effect of this flow.
