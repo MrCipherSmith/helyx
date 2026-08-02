@@ -1,5 +1,36 @@
 {
-  "generatedAt": "2026-07-07T20:13:30.622Z",
-  "entryCount": 0,
-  "entries": []
+  "generatedAt": "2026-08-02T20:28:14.687Z",
+  "entryCount": 2,
+  "entries": [
+    {
+      "path": "known-mistakes/comment-asserts-more-than-code.md",
+      "type": "known-mistake",
+      "status": "accepted",
+      "confidence": "high",
+      "title": "A comment that claims agreement is not a mechanism",
+      "updated": "2026-08-02",
+      "tags": [],
+      "scopes": {
+        "module": "utils, channel",
+        "entity": "permission prompt detection, status rendering",
+        "files": [],
+        "skills": []
+      }
+    },
+    {
+      "path": "known-mistakes/duplicated-knowledge-diverges.md",
+      "type": "known-mistake",
+      "status": "accepted",
+      "confidence": "high",
+      "title": "One rule in several files diverges, and review does not catch it",
+      "updated": "2026-08-02",
+      "tags": [],
+      "scopes": {
+        "module": "utils, channel, scripts, mcp",
+        "entity": "terminal parsing, permission prompt detection, status rendering",
+        "files": [],
+        "skills": []
+      }
+    }
+  ]
 }
