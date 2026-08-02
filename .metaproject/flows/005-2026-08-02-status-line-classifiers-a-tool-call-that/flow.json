@@ -3,17 +3,58 @@
   "id": "005",
   "slug": "status-line-classifiers-a-tool-call-that",
   "title": "status line classifiers — a tool call that mentions waiting is shown as waiting",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-02T14:12:04.685Z",
-  "updatedAt": "2026-08-02T14:37:30.959Z",
+  "updatedAt": "2026-08-02T14:57:23.515Z",
   "source": {
     "type": "description",
     "ref": null
   },
   "acChecksum": "sha256:ee2ce66dacbd3d6e891ef0e9f85da27ebbf26d6e3f242a8bd369b86abacfcdbc",
-  "acConfirmed": {},
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-02T14:57:11.012Z",
+      "note": "utils/status-format.ts exports all five; channel/status.ts imports them and defines none. isPermissionPrompt delegates to utils/permission-prompt.ts, shared with the watchdog"
+    },
+    "AC2": {
+      "at": "2026-08-02T14:57:11.099Z",
+      "note": "all four demonstrated misclassifications asserted with their corrected phases"
+    },
+    "AC3": {
+      "at": "2026-08-02T14:57:11.189Z",
+      "note": "the watchdog's own dialog fixture classifies as waiting; the contract test also records that after tmux-monitor parsing it does NOT reach detectPhase at all — the gap this flow documents"
+    },
+    "AC4": {
+      "at": "2026-08-02T14:57:11.276Z",
+      "note": "every phase covered plus null for empty and whitespace"
+    },
+    "AC5": {
+      "at": "2026-08-02T14:57:11.363Z",
+      "note": "getSpinnerIcon takes now; stale, exact-threshold and wrap-past-end all tested"
+    },
+    "AC6": {
+      "at": "2026-08-02T14:57:21.388Z",
+      "note": "plain, k, M, comma grouping, case-insensitivity, singular, no-space suffix, rejections, and the multi-dot defect pinned with a comment naming it as deferred"
+    },
+    "AC7": {
+      "at": "2026-08-02T14:57:21.478Z",
+      "note": "determinism, difference on differing input, empty string, multi-byte text, hex output"
+    },
+    "AC8": {
+      "at": "2026-08-02T14:57:21.569Z",
+      "note": "bun run typecheck clean; bun run lint 0 errors (209 warnings, pre-existing); 601 unit tests pass, none skipped or removed"
+    },
+    "AC9": {
+      "at": "2026-08-02T14:57:21.663Z",
+      "note": "keryx health run: coverage 17.83% (was 17.72% at flow start), gate WARN on coverage only"
+    },
+    "AC10": {
+      "at": "2026-08-02T14:57:21.756Z",
+      "note": "PR #41 records the narrowing; the WAITING_PREFIX attempt was reverted and the remaining gap — no reachable waiting signal for a real prompt — is documented at channel/permissions.ts and carried to the next flow"
+    }
+  },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/41"
   },
   "tasks": [
     {
@@ -110,6 +151,70 @@
       "at": "2026-08-02T14:37:30.959Z",
       "event": "task-done",
       "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-02T14:57:10.929Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/41"
+    },
+    {
+      "at": "2026-08-02T14:57:11.012Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: utils/status-format.ts exports all five; channel/status.ts imports them and defines none. isPermissionPrompt delegates to utils/permission-prompt.ts, shared with the watchdog"
+    },
+    {
+      "at": "2026-08-02T14:57:11.099Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: all four demonstrated misclassifications asserted with their corrected phases"
+    },
+    {
+      "at": "2026-08-02T14:57:11.189Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: the watchdog's own dialog fixture classifies as waiting; the contract test also records that after tmux-monitor parsing it does NOT reach detectPhase at all — the gap this flow documents"
+    },
+    {
+      "at": "2026-08-02T14:57:11.276Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: every phase covered plus null for empty and whitespace"
+    },
+    {
+      "at": "2026-08-02T14:57:11.363Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: getSpinnerIcon takes now; stale, exact-threshold and wrap-past-end all tested"
+    },
+    {
+      "at": "2026-08-02T14:57:21.388Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: plain, k, M, comma grouping, case-insensitivity, singular, no-space suffix, rejections, and the multi-dot defect pinned with a comment naming it as deferred"
+    },
+    {
+      "at": "2026-08-02T14:57:21.478Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: determinism, difference on differing input, empty string, multi-byte text, hex output"
+    },
+    {
+      "at": "2026-08-02T14:57:21.569Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: bun run typecheck clean; bun run lint 0 errors (209 warnings, pre-existing); 601 unit tests pass, none skipped or removed"
+    },
+    {
+      "at": "2026-08-02T14:57:21.663Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: keryx health run: coverage 17.83% (was 17.72% at flow start), gate WARN on coverage only"
+    },
+    {
+      "at": "2026-08-02T14:57:21.756Z",
+      "event": "ac-confirmed",
+      "detail": "AC10: PR #41 records the narrowing; the WAITING_PREFIX attempt was reverted and the remaining gap — no reachable waiting signal for a real prompt — is documented at channel/permissions.ts and carried to the next flow"
+    },
+    {
+      "at": "2026-08-02T14:57:21.854Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-02T14:57:23.515Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
   ]
 }

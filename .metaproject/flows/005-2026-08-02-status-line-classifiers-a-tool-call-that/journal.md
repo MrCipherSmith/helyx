@@ -126,3 +126,16 @@ longer a second copy to get wrong.
 
 Three tests pin the exact rule: only option 1, the six-line window, and that
 the newest question wins because a pane holds the whole session.
+- 2026-08-02T14:57:10.929Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/41
+- 2026-08-02T14:57:11.012Z - ac-confirmed: AC1: utils/status-format.ts exports all five; channel/status.ts imports them and defines none. isPermissionPrompt delegates to utils/permission-prompt.ts, shared with the watchdog
+- 2026-08-02T14:57:11.099Z - ac-confirmed: AC2: all four demonstrated misclassifications asserted with their corrected phases
+- 2026-08-02T14:57:11.189Z - ac-confirmed: AC3: the watchdog's own dialog fixture classifies as waiting; the contract test also records that after tmux-monitor parsing it does NOT reach detectPhase at all — the gap this flow documents
+- 2026-08-02T14:57:11.276Z - ac-confirmed: AC4: every phase covered plus null for empty and whitespace
+- 2026-08-02T14:57:11.363Z - ac-confirmed: AC5: getSpinnerIcon takes now; stale, exact-threshold and wrap-past-end all tested
+- 2026-08-02T14:57:21.388Z - ac-confirmed: AC6: plain, k, M, comma grouping, case-insensitivity, singular, no-space suffix, rejections, and the multi-dot defect pinned with a comment naming it as deferred
+- 2026-08-02T14:57:21.478Z - ac-confirmed: AC7: determinism, difference on differing input, empty string, multi-byte text, hex output
+- 2026-08-02T14:57:21.569Z - ac-confirmed: AC8: bun run typecheck clean; bun run lint 0 errors (209 warnings, pre-existing); 601 unit tests pass, none skipped or removed
+- 2026-08-02T14:57:21.663Z - ac-confirmed: AC9: keryx health run: coverage 17.83% (was 17.72% at flow start), gate WARN on coverage only
+- 2026-08-02T14:57:21.756Z - ac-confirmed: AC10: PR #41 records the narrowing; the WAITING_PREFIX attempt was reverted and the remaining gap — no reachable waiting signal for a real prompt — is documented at channel/permissions.ts and carried to the next flow
+- 2026-08-02T14:57:21.854Z - completing
+- 2026-08-02T14:57:23.515Z - done: all gates passed
