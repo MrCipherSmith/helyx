@@ -1,6 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import {
   classifyContainer,
+  dockerListingUsable,
   classifySession,
   summarizeQueue,
   hasProblems,
@@ -175,5 +176,69 @@ describe("hasProblems", () => {
     // The version this replaced grepped the rendered lines for a leading 🔴,
     // which made the choice of icon part of the alerting logic.
     expect(hasProblems({ containers: [{ healthy: false }], stuckTotal: 0 })).toBe(true);
+  });
+});
+
+describe("classifyContainer — annotations other than the two named ones", () => {
+  test("a container inside its healthcheck start period is not yet healthy", () => {
+    // `health: starting` is a real docker status and used to pass, because the
+    // check only knew two bad substrings. A container still starting is not
+    // serving; this broadcast runs every five minutes, so a start period long
+    // enough to be caught by it twice is itself worth seeing.
+    const c = classifyContainer("Up 10 seconds (health: starting)");
+    expect(c.healthy).toBe(false);
+    expect(c.reason).toBe("health: starting");
+  });
+
+  test("an annotation nobody has seen before is not healthy", () => {
+    // The whole point of an allowlist: whatever docker adds next must make
+    // someone look rather than pass unexamined.
+    expect(classifyContainer("Up 3 days (quarantined)").healthy).toBe(false);
+    expect(classifyContainer("Up 3 days (health: degraded)").healthy).toBe(false);
+  });
+
+  test("no annotation at all is healthy — the container has no healthcheck", () => {
+    expect(classifyContainer("Up 3 days").healthy).toBe(true);
+    expect(classifyContainer("Up 2 minutes").healthy).toBe(true);
+  });
+
+  test("only (healthy) passes among annotations", () => {
+    expect(classifyContainer("Up 16 hours (healthy)").healthy).toBe(true);
+  });
+});
+
+describe("dockerListingUsable", () => {
+  test("a real listing is usable", () => {
+    expect(dockerListingUsable("helyx-bot-1\tUp 3 days\nhelyx-postgres-1\tUp 3 days")).toBe(true);
+  });
+
+  test("empty output is not usable", () => {
+    // `docker ps … 2>/dev/null || true` turns a dead daemon, a permissions
+    // problem or a missing binary into an empty string, and an empty container
+    // list is indistinguishable from "all fine" by the time it reaches
+    // hasProblems. It is not fine — it means nobody is watching.
+    expect(dockerListingUsable("")).toBe(false);
+    expect(dockerListingUsable("\n\n")).toBe(false);
+  });
+
+  test("output without the expected separator is not usable", () => {
+    expect(dockerListingUsable("Cannot connect to the Docker daemon")).toBe(false);
+  });
+});
+
+describe("hasProblems — an unreadable docker listing", () => {
+  test("an unusable listing is a problem on its own", () => {
+    expect(hasProblems({ containers: [], stuckTotal: 0, dockerUsable: false })).toBe(true);
+  });
+
+  test("a usable listing with everything healthy is not", () => {
+    expect(hasProblems({ containers: [{ healthy: true }], stuckTotal: 0, dockerUsable: true }))
+      .toBe(false);
+  });
+
+  test("omitting the flag keeps the previous meaning", () => {
+    // Callers that do not know about docker at all must not be forced to
+    // assert it is fine.
+    expect(hasProblems({ containers: [{ healthy: true }], stuckTotal: 0 })).toBe(false);
   });
 });

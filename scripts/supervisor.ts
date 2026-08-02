@@ -32,6 +32,7 @@ import { isRequeued, markRequeued } from "../utils/requeue.ts";
 import { paneLines, hasActiveSpinner, escapeHtml } from "../utils/terminal.ts";
 import {
   classifyContainer,
+  dockerListingUsable,
   classifySession,
   summarizeQueue,
   hasProblems,
@@ -599,6 +600,9 @@ async function sendStatusBroadcast(sql: postgres.Sql, runShell: RunShell): Promi
 
     // --- Docker status ---
     const dockerResult = await runShell(`docker ps --format "{{.Names}}\t{{.Status}}" 2>/dev/null || true`);
+    // An empty listing is not an empty host: `2>/dev/null || true` turns a dead
+    // daemon or a permissions problem into a clean-looking nothing.
+    const dockerUsable = dockerListingUsable(dockerResult.output);
     const dockerLines: string[] = [];
     const containers: ContainerHealth[] = [];
     for (const line of dockerResult.output.split("\n").filter(Boolean)) {
@@ -668,6 +672,8 @@ async function sendStatusBroadcast(sql: postgres.Sql, runShell: RunShell): Promi
 
     if (dockerLines.length > 0) {
       lines.push("<b>Docker:</b>", ...dockerLines, "");
+    } else if (!dockerUsable) {
+      lines.push("<b>Docker:</b>", "🔴 не удалось прочитать список контейнеров", "");
     }
 
     if (sessionLines.length > 0) {
@@ -693,7 +699,7 @@ async function sendStatusBroadcast(sql: postgres.Sql, runShell: RunShell): Promi
 
     // Decided from the classified containers, not from the rendered lines: the
     // choice of icon must not be able to switch alerting off.
-    const problems = hasProblems({ containers, stuckTotal });
+    const problems = hasProblems({ containers, stuckTotal, dockerUsable });
 
     if (statusMessageId && !problems) {
       // Healthy — edit in-place (silent, no notification)

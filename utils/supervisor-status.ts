@@ -38,9 +38,36 @@ export function classifyContainer(status: string): ContainerHealth {
     // Restarting, Created, Exited, Dead, Removing, or something new.
     return { healthy: false, reason: s.split(" ")[0] ?? s };
   }
-  if (lower.includes("(unhealthy)")) return { healthy: false, reason: "unhealthy" };
-  if (lower.includes("(paused)")) return { healthy: false, reason: "paused" };
-  return { healthy: true };
+
+  // An `Up` status may carry one parenthesised annotation, and only one value
+  // of it means the container is actually serving. Listing the bad ones would
+  // be a blacklist wearing an allowlist's name: docker also reports
+  // `(health: starting)`, and whatever it adds next would pass unexamined.
+  const annotation = s.match(/\(([^)]*)\)/)?.[1]?.trim().toLowerCase();
+  if (annotation === undefined) return { healthy: true }; // no healthcheck defined
+  if (annotation === "healthy") return { healthy: true };
+
+  // `health: starting` is the deliberate cost of the rule above. A container
+  // inside its healthcheck start period is not serving yet, and this broadcast
+  // runs every five minutes — a start period long enough to be caught by it
+  // twice is itself worth seeing.
+  return { healthy: false, reason: annotation };
+}
+
+/**
+ * Whether the docker listing itself can be trusted.
+ *
+ * The supervisor runs `docker ps … 2>/dev/null || true`, which turns a dead
+ * daemon, a permissions problem, or a missing binary into an empty string —
+ * and an empty list of containers is indistinguishable from "everything is
+ * fine" once it reaches `hasProblems`. It is not fine: it means nobody is
+ * watching.
+ *
+ * A host genuinely running no containers is the one false positive here, and
+ * on a host running this supervisor that state is itself worth a look.
+ */
+export function dockerListingUsable(rawOutput: string): boolean {
+  return rawOutput.split("\n").some((l) => l.includes("\t"));
 }
 
 export interface SessionSnapshot {
@@ -115,6 +142,9 @@ export function summarizeQueue(pending: number, stuck: number): string {
 export function hasProblems(input: {
   containers: readonly ContainerHealth[];
   stuckTotal: number;
+  /** False when the docker listing could not be read — see `dockerListingUsable`. */
+  dockerUsable?: boolean;
 }): boolean {
+  if (input.dockerUsable === false) return true;
   return input.stuckTotal > 0 || input.containers.some((c) => !c.healthy);
 }
