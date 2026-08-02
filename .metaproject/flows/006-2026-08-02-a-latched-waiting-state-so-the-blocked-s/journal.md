@@ -45,3 +45,26 @@ recorded as the next step for this area rather than claimed as done: it needs
 a fake `ctx` for the permission handler (sql, mcp, token, session), which is a
 fixture this repository does not have yet and is worth building deliberately
 rather than as a side effect of this flow.
+
+### Third Codex pass — one owner for the edit guard
+
+Three points, all correct.
+
+- `sendStatusMessage` still owned `editInFlight` itself without draining, so a
+  latch edge landing during that edit waited for the timer after all. The fix
+  had covered two of the three paths and I had reported it as done.
+- `editWithDrain` could loop for as long as updates kept arriving — which is
+  precisely when Telegram is most likely to be rate-limiting — and would never
+  reach `nextEditDelay`, the backoff the timer honours.
+- The timer still carried its own copy of the drain protocol.
+
+Now there is exactly one `editInFlight = true` in the file, inside
+`editWithDrain`, and all three paths call it. The drain is capped at four
+passes and breaks early once a rate-limit backoff has been recorded; anything
+still pending after that is the timer's, one tick later.
+
+The pattern from findings 1 and 3 of the previous pass repeated here at a
+larger scale: the same protocol written out in three places, differing in each.
+Routing them through one function is the same move as the shared ANSI parser,
+the shared prompt definition and the captured latch key — four flows in a row
+where the fix was to stop repeating something and start sharing it.

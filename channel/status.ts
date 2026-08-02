@@ -505,6 +505,8 @@ export class StatusManager {
    * showed up a tick late. For the stage that is a stale line; for the latch
    * it is the wrong emoji on a session that is or is not blocked.
    */
+  private static readonly MAX_DRAIN_PASSES = 4;
+
   private async editWithDrain(state: StatusState): Promise<void> {
     if (state.editInFlight) {
       state.pendingImmediateEdit = true;
@@ -512,10 +514,18 @@ export class StatusManager {
     }
     state.editInFlight = true;
     try {
-      do {
+      // Bounded, and it yields to the rate-limit backoff. An unbounded loop
+      // would keep editing for as long as updates keep arriving, which is
+      // exactly when Telegram is most likely to be pushing back — and
+      // nextEditDelay, which the timer honours, would never be reached.
+      // Whatever is still pending after the cap belongs to the timer, one
+      // tick later.
+      for (let pass = 0; pass < StatusManager.MAX_DRAIN_PASSES; pass++) {
         state.pendingImmediateEdit = false;
         await this.editStatusMessage(state);
-      } while (state.pendingImmediateEdit);
+        if (!state.pendingImmediateEdit) break;
+        if (state.nextEditDelay) break; // rate-limited — let the timer wait it out
+      }
     } finally {
       state.editInFlight = false;
     }
@@ -567,16 +577,10 @@ export class StatusManager {
       existing.stage = `${prefix}${stage}`;
       existing.startedAt = Date.now();
       existing.lastUpdateAt = Date.now();
-      if (existing.editInFlight) {
-        existing.pendingImmediateEdit = true;
-      } else {
-        existing.editInFlight = true;
-        try {
-          await this.editStatusMessage(existing);
-        } finally {
-          existing.editInFlight = false;
-        }
-      }
+      // Same single-flight drain as every other edit path: a latch edge or a
+      // monitor update landing during this edit is applied before it finishes,
+      // rather than waiting for the next timer tick.
+      await this.editWithDrain(existing);
       return null;
     }
 
@@ -649,17 +653,10 @@ export class StatusManager {
             scheduleTick(key);
             return;
           }
-          state.editInFlight = true;
-          try {
-            await this.refreshPaneSnapshot(state).catch(() => {});
-            // SU-5: drain everything buffered during the edit, not just one.
-            do {
-              state.pendingImmediateEdit = false;
-              await this.editStatusMessage(state);
-            } while (state.pendingImmediateEdit);
-          } finally {
-            state.editInFlight = false;
-          }
+          await this.refreshPaneSnapshot(state).catch(() => {});
+          // SU-5: same drain as the immediate paths, rather than a second copy
+          // of the protocol that absorbed exactly one buffered update.
+          await this.editWithDrain(state);
           scheduleTick(key);
         }, delay);
       };
