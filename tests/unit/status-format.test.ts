@@ -5,6 +5,7 @@ import {
   getSpinnerIcon,
   computeSignature,
   detectPhase,
+  resolvePhase,
   isPermissionPrompt,
   SPINNER_FRAMES,
   SPINNER_STALE_MS,
@@ -320,5 +321,38 @@ describe("the prompt definition is shared, not restated", () => {
     ].join("\n");
     // The last question has no highlighted choice — that dialog is not live.
     expect(isPermissionPrompt(stage)).toBe(false);
+  });
+});
+
+describe("resolvePhase — the latch outranks the classifier", () => {
+  test.each([
+    ["● $ npm test", "running"],
+    ["● Read: a.ts", "reading"],
+    ["● Write: b.ts", "writing"],
+    ["● Grep: pattern", "searching"],
+    ["Thinking about it", "thinking"],
+  ])("%s classifies as %s, and as waiting while blocked", (stage, phase) => {
+    // A blocked session's stage still reads like ordinary work: the handler
+    // sets "Running: npm test" while the prompt is up, and the dialog's own
+    // text never arrives because tmux-monitor drops it. Something has to know.
+    expect(resolvePhase(stage, false)).toBe(phase as never);
+    expect(resolvePhase(stage, true)).toBe("waiting");
+  });
+
+  test("an empty stage while blocked still shows the signal", () => {
+    // Nothing to describe is not the same as nothing happening.
+    expect(resolvePhase("", false)).toBeNull();
+    expect(resolvePhase("", true)).toBe("waiting");
+  });
+
+  test("released, it is exactly detectPhase again", () => {
+    const stage = "● MCP: docker_container_list";
+    expect(resolvePhase(stage, false)).toBe(detectPhase(stage));
+  });
+
+  test("a real prompt still classifies as waiting without the latch", () => {
+    // The latch is what makes the signal reachable in production; it is not
+    // the only thing that can produce it.
+    expect(resolvePhase("Do you want to proceed?\n❯ 1. Yes", false)).toBe("waiting");
   });
 });

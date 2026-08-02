@@ -121,3 +121,22 @@ export const PHASE_LABEL: Record<ActivityPhase, string> = {
   waiting: "💬",
 };
 
+
+/**
+ * The phase to show, given the classifier and whether a permission prompt is
+ * pending.
+ *
+ * The latch outranks the classifier, and that is the whole point. A blocked
+ * session's stage still reads like ordinary work — `channel/permissions.ts`
+ * sets `Running: npm test` while the prompt is up, and the dialog's own text
+ * never reaches here because `tmux-monitor` drops it. Without something that
+ * knows, 💬 cannot be true; with it, the stage stays informative and only the
+ * emoji is forced, so the operator sees 💬 *and* what is being asked about.
+ *
+ * An empty stage while blocked still shows the signal: nothing to describe is
+ * not the same as nothing happening.
+ */
+export function resolvePhase(stage: string, awaitingPermission: boolean): ActivityPhase | null {
+  if (awaitingPermission) return "waiting";
+  return detectPhase(stage);
+}

@@ -18,10 +18,11 @@ import {
   formatElapsed,
   getSpinnerIcon as spinnerIconAt,
   computeSignature,
-  detectPhase,
+  resolvePhase,
   SPINNER_FRAMES,
   PHASE_LABEL,
 } from "../utils/status-format.ts";
+import { HoldCounter } from "../utils/hold-counter.ts";
 import { escapeHtml } from "../utils/html.ts";
 import { isRequeued, markRequeued } from "../utils/requeue.ts";
 
@@ -121,6 +122,14 @@ function formatStatusText(stage: string, elapsed: string, tokens: string, paneSn
 
 export class StatusManager {
   private activeStatus = new Map<string, StatusState>();
+  /**
+   * Permission prompts pending per chat.
+   *
+   * Counted rather than flagged: two overlapping requests in one chat would
+   * otherwise have the second's release clear the first's signal, and the
+   * operator would watch 💬 disappear while still blocked.
+   */
+  private awaitingPermission = new HoldCounter();
   private lastTokenInfo = new Map<string, string>();
   private sessionStats = new Map<string, SessionStats>();
   private activeTyping = new Map<string, TypingHandle>();
@@ -454,6 +463,80 @@ export class StatusManager {
   }
 
   /** Map key for the activeStatus / stats maps. */
+  /**
+   * Hold or release the "blocked on a permission prompt" signal for a chat.
+   *
+   * Callers must release what they take, and the only caller does it in a
+   * `finally` — the lifetime is a scope, not a list of exit paths. Flow 005's
+   * attempt at this failed by enumerating paths and missing several, and a
+   * leaked latch is silent: 💬 would stay up forever and the signal would stop
+   * being believed.
+   */
+  holdAwaitingPermission(chatId: string): () => void {
+    // The key is resolved once and captured. Recomputing it at release time
+    // reads `stateKey` again, and the forum topic it derives from can change
+    // while a prompt is pending — the release would then target a key nobody
+    // holds, leaving the signal up forever, or a key another prompt holds.
+    const key = this.stateKey(chatId);
+    const release = this.awaitingPermission.acquire(key);
+    void this.renderPhaseChange(key);
+    return () => {
+      release();
+      void this.renderPhaseChange(key);
+    };
+  }
+
+  /**
+   * Redraw the status because the latch changed, not because the stage did.
+   *
+   * Without this the signal waits for the next timer tick: a prompt answered
+   * quickly would never show 💬 at all, and one answered slowly would keep
+   * showing it after the answer. The stage is untouched — only the phase it
+   * is rendered with has changed.
+   */
+  /**
+   * Edit the status, draining anything that arrives while the edit is in
+   * flight.
+   *
+   * Single-flight: a caller that finds an edit running records that another
+   * is wanted and returns, and the running edit repeats before it finishes.
+   * Without the loop that record was only drained by the 5s timer, so an
+   * update landing during an edit — a monitor poll, or the latch flipping —
+   * showed up a tick late. For the stage that is a stale line; for the latch
+   * it is the wrong emoji on a session that is or is not blocked.
+   */
+  private static readonly MAX_DRAIN_PASSES = 4;
+
+  private async editWithDrain(state: StatusState): Promise<void> {
+    if (state.editInFlight) {
+      state.pendingImmediateEdit = true;
+      return;
+    }
+    state.editInFlight = true;
+    try {
+      // Bounded, and it yields to the rate-limit backoff. An unbounded loop
+      // would keep editing for as long as updates keep arriving, which is
+      // exactly when Telegram is most likely to be pushing back — and
+      // nextEditDelay, which the timer honours, would never be reached.
+      // Whatever is still pending after the cap belongs to the timer, one
+      // tick later.
+      for (let pass = 0; pass < StatusManager.MAX_DRAIN_PASSES; pass++) {
+        state.pendingImmediateEdit = false;
+        await this.editStatusMessage(state);
+        if (!state.pendingImmediateEdit) break;
+        if (state.nextEditDelay) break; // rate-limited — let the timer wait it out
+      }
+    } finally {
+      state.editInFlight = false;
+    }
+  }
+
+  private async renderPhaseChange(key: string): Promise<void> {
+    const state = this.activeStatus.get(key);
+    if (!state) return;
+    await this.editWithDrain(state);
+  }
+
   private stateKey(chatId: string): string {
     const forum = this.getForumTarget();
     return forum ? `${forum.chatId}:${forum.threadId}` : chatId;
@@ -494,16 +577,10 @@ export class StatusManager {
       existing.stage = `${prefix}${stage}`;
       existing.startedAt = Date.now();
       existing.lastUpdateAt = Date.now();
-      if (existing.editInFlight) {
-        existing.pendingImmediateEdit = true;
-      } else {
-        existing.editInFlight = true;
-        try {
-          await this.editStatusMessage(existing);
-        } finally {
-          existing.editInFlight = false;
-        }
-      }
+      // Same single-flight drain as every other edit path: a latch edge or a
+      // monitor update landing during this edit is applied before it finishes,
+      // rather than waiting for the next timer tick.
+      await this.editWithDrain(existing);
       return null;
     }
 
@@ -576,18 +653,10 @@ export class StatusManager {
             scheduleTick(key);
             return;
           }
-          state.editInFlight = true;
-          try {
-            await this.refreshPaneSnapshot(state).catch(() => {});
-            await this.editStatusMessage(state);
-            // SU-5: drain any pending stage update buffered during in-flight edit
-            if (state.pendingImmediateEdit) {
-              state.pendingImmediateEdit = false;
-              await this.editStatusMessage(state);
-            }
-          } finally {
-            state.editInFlight = false;
-          }
+          await this.refreshPaneSnapshot(state).catch(() => {});
+          // SU-5: same drain as the immediate paths, rather than a second copy
+          // of the protocol that absorbed exactly one buffered update.
+          await this.editWithDrain(state);
           scheduleTick(key);
         }, delay);
       };
@@ -667,19 +736,10 @@ export class StatusManager {
     state.lastUpdateAt = Date.now();
     state.stage = stage;
 
-    if (state.editInFlight) {
-      // Timer is currently awaiting an editTelegramMessage — buffer the new stage;
-      // the timer's finally block drains it via pendingImmediateEdit.
-      state.pendingImmediateEdit = true;
-      return;
-    }
-    // Acquire the guard so the timer cannot fire a concurrent edit while we await.
-    state.editInFlight = true;
-    try {
-      await this.editStatusMessage(state);
-    } finally {
-      state.editInFlight = false;
-    }
+    // Single-flight with a drain: if an edit is already running this records
+    // that another is wanted and that edit repeats, rather than the update
+    // waiting for the next timer tick.
+    await this.editWithDrain(state);
   }
 
   private accumulateTurnActivity(state: StatusState, stage: string): void {
@@ -741,7 +801,7 @@ export class StatusManager {
     const tokens = this.lastTokenInfo.get(key);
     const tokenStr = tokens ? ` · ↓ ${tokens}` : "";
     // SU-3: compute phase extras
-    const phase = detectPhase(state.stage);
+    const phase = resolvePhase(state.stage, this.awaitingPermission.isHeld(key));
     const extras: StatusExtras = {
       phaseEmoji: phase ? PHASE_LABEL[phase] : undefined,
       toolCount: state.turnToolCount,

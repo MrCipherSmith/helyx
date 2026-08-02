@@ -382,24 +382,85 @@ export class PermissionHandler {
     // No new messages are sent — the one request message with buttons stays.
     const REMINDER_INTERVAL_MS = 120_000;
 
-    while (Date.now() - startTime < timeoutMs) {
-      const rows = await this.ctx.sql`
-        SELECT response FROM permission_requests WHERE id = ${request_id} AND response IS NOT NULL
-      `;
-      if (rows.length > 0) {
-        const behavior = rows[0].response;
+    // The status line shows 💬 for exactly as long as this call runs. Bound to
+    // the scope rather than released at each exit: this method leaves four
+    // ways — answered, resolved in the terminal, timed out, or thrown — and a
+    // hand-written list of them is a list that can be incomplete, which is how
+    // the previous attempt at this signal ended up latching a lie. Only
+    // reached on the sendResult.ok path, so the prompt is on the operator's
+    // screen before the signal claims it is.
+    const releaseWaiting = this.status.holdAwaitingPermission(chatId);
+    try {
+      while (Date.now() - startTime < timeoutMs) {
+        const rows = await this.ctx.sql`
+          SELECT response FROM permission_requests WHERE id = ${request_id} AND response IS NOT NULL
+        `;
+        if (rows.length > 0) {
+          const behavior = rows[0].response;
+          await this.ctx.mcp.notification({
+            method: "notifications/claude/channel/permission",
+            params: { request_id, behavior },
+          });
+          channelLogger.info({ requestId: request_id, behavior }, "permission resolved via telegram");
+          if (previewMsgId) deleteTelegramMessage(token, chatId, previewMsgId);
+          await this.status.updateStatus(chatId, "Processing...");
+          const sessionId = this.ctx.sessionId();
+          if (sessionId) {
+            this.ctx.sql`
+              UPDATE orchestration_runs
+              SET status = 'valid', phase = 'permission_resolved', completed_at = now(), updated_at = now()
+              WHERE session_id = ${sessionId}
+                AND chat_id = ${chatId}
+                AND project_path = ${this.ctx.projectPath}
+                AND artifact_type = 'tool_request'
+                AND status = 'waiting_permission'
+            `.catch(() => {});
+          }
+          this.loadAutoApproveRules().catch(() => {});
+          resolved = true;
+          break;
+        }
+
+        const exists = await this.ctx.sql`SELECT 1 FROM permission_requests WHERE id = ${request_id} AND archived_at IS NULL`;
+        if (exists.length === 0) {
+          channelLogger.info({ requestId: request_id }, "permission resolved externally");
+          if (previewMsgId) deleteTelegramMessage(token, chatId, previewMsgId);
+          if (telegramMsgId) {
+            await editTelegramMessage(token, chatId, telegramMsgId, `⚡ Resolved in terminal\n\n${escapeHtml(desc)}`, { parse_mode: "HTML" });
+          }
+          await this.status.updateStatus(chatId, "Processing...");
+          resolved = true;
+          break;
+        }
+
+        // Every 2 min: edit the original request message to show elapsed time.
+        // Keyboard is preserved (not passed in editMessageText → Telegram keeps it).
+        if (telegramMsgId && Date.now() - lastEditAt >= REMINDER_INTERVAL_MS) {
+          const elapsedMin = Math.round((Date.now() - startTime) / 60_000);
+          const updatedText = `${originalMsgText}\n\n<i>⏳ Waiting ${elapsedMin}m…</i>`;
+          await editTelegramMessage(token, chatId, telegramMsgId, updatedText, { parse_mode: "HTML" });
+          lastEditAt = Date.now();
+        }
+
+        await new Promise((r) => setTimeout(r, 500));
+      }
+
+      if (!resolved) {
+        channelLogger.warn({ requestId: request_id }, "permission timeout, denying");
+        await this.ctx.sql`UPDATE permission_requests SET status = 'expired' WHERE id = ${request_id} AND status = 'pending'`;
         await this.ctx.mcp.notification({
           method: "notifications/claude/channel/permission",
-          params: { request_id, behavior },
+          params: { request_id, behavior: "deny" },
         });
-        channelLogger.info({ requestId: request_id, behavior }, "permission resolved via telegram");
         if (previewMsgId) deleteTelegramMessage(token, chatId, previewMsgId);
-        await this.status.updateStatus(chatId, "Processing...");
+        if (telegramMsgId) {
+          await editTelegramMessage(token, chatId, telegramMsgId, `⏰ Timeout\n\n${escapeHtml(desc)}`, { parse_mode: "HTML" });
+        }
         const sessionId = this.ctx.sessionId();
         if (sessionId) {
           this.ctx.sql`
             UPDATE orchestration_runs
-            SET status = 'valid', phase = 'permission_resolved', completed_at = now(), updated_at = now()
+            SET status = 'failed', phase = 'permission_timeout', completed_at = now(), updated_at = now()
             WHERE session_id = ${sessionId}
               AND chat_id = ${chatId}
               AND project_path = ${this.ctx.projectPath}
@@ -407,60 +468,11 @@ export class PermissionHandler {
               AND status = 'waiting_permission'
           `.catch(() => {});
         }
-        this.loadAutoApproveRules().catch(() => {});
-        resolved = true;
-        break;
       }
 
-      const exists = await this.ctx.sql`SELECT 1 FROM permission_requests WHERE id = ${request_id} AND archived_at IS NULL`;
-      if (exists.length === 0) {
-        channelLogger.info({ requestId: request_id }, "permission resolved externally");
-        if (previewMsgId) deleteTelegramMessage(token, chatId, previewMsgId);
-        if (telegramMsgId) {
-          await editTelegramMessage(token, chatId, telegramMsgId, `⚡ Resolved in terminal\n\n${escapeHtml(desc)}`, { parse_mode: "HTML" });
-        }
-        await this.status.updateStatus(chatId, "Processing...");
-        resolved = true;
-        break;
-      }
-
-      // Every 2 min: edit the original request message to show elapsed time.
-      // Keyboard is preserved (not passed in editMessageText → Telegram keeps it).
-      if (telegramMsgId && Date.now() - lastEditAt >= REMINDER_INTERVAL_MS) {
-        const elapsedMin = Math.round((Date.now() - startTime) / 60_000);
-        const updatedText = `${originalMsgText}\n\n<i>⏳ Waiting ${elapsedMin}m…</i>`;
-        await editTelegramMessage(token, chatId, telegramMsgId, updatedText, { parse_mode: "HTML" });
-        lastEditAt = Date.now();
-      }
-
-      await new Promise((r) => setTimeout(r, 500));
+      await this.ctx.sql`UPDATE permission_requests SET archived_at = NOW() WHERE id = ${request_id}`;
+    } finally {
+      releaseWaiting();
     }
-
-    if (!resolved) {
-      channelLogger.warn({ requestId: request_id }, "permission timeout, denying");
-      await this.ctx.sql`UPDATE permission_requests SET status = 'expired' WHERE id = ${request_id} AND status = 'pending'`;
-      await this.ctx.mcp.notification({
-        method: "notifications/claude/channel/permission",
-        params: { request_id, behavior: "deny" },
-      });
-      if (previewMsgId) deleteTelegramMessage(token, chatId, previewMsgId);
-      if (telegramMsgId) {
-        await editTelegramMessage(token, chatId, telegramMsgId, `⏰ Timeout\n\n${escapeHtml(desc)}`, { parse_mode: "HTML" });
-      }
-      const sessionId = this.ctx.sessionId();
-      if (sessionId) {
-        this.ctx.sql`
-          UPDATE orchestration_runs
-          SET status = 'failed', phase = 'permission_timeout', completed_at = now(), updated_at = now()
-          WHERE session_id = ${sessionId}
-            AND chat_id = ${chatId}
-            AND project_path = ${this.ctx.projectPath}
-            AND artifact_type = 'tool_request'
-            AND status = 'waiting_permission'
-        `.catch(() => {});
-      }
-    }
-
-    await this.ctx.sql`UPDATE permission_requests SET archived_at = NOW() WHERE id = ${request_id}`;
   }
 }
