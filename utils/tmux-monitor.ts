@@ -159,8 +159,15 @@ function parseLine(line: string): string | null {
   return null;
 }
 
-/** Parse Claude Code terminal output into a multi-line status block */
-function parseStatus(output: string): string | null {
+/**
+ * Parse Claude Code terminal output into a multi-line status block.
+ *
+ * Exported so tests can assert what actually reaches the status line rather
+ * than what a pane looks like. The two are not the same: SKIP_PATTERNS drops
+ * the ❯ choice line and every prose line falls through to null, so a
+ * permission dialog arrives as nothing but the tool bullet it asked about.
+ */
+export function parseStatus(output: string): string | null {
   const lines = output.split("\n");
   const parsed: string[] = [];
 

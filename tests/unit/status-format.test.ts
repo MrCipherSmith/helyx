@@ -8,7 +8,9 @@ import {
   isPermissionPrompt,
   SPINNER_FRAMES,
   SPINNER_STALE_MS,
+  WAITING_PREFIX,
 } from "../../utils/status-format.ts";
+import { parseStatus } from "../../utils/tmux-monitor.ts";
 
 /**
  * What the live status message shows while Claude works.
@@ -236,5 +238,50 @@ describe("computeSignature", () => {
 
   test("returns hex", () => {
     expect(computeSignature("anything")).toMatch(/^[0-9a-f]+$/);
+  });
+});
+
+describe("what a permission dialog actually looks like by the time it gets here", () => {
+  // Codex raised this as a blocker on the first version of the fix, and it was
+  // right about the mechanism. The tests above feed detectPhase raw pane text,
+  // which is not what production feeds it: tmux-monitor parses the pane first.
+  const rawPane = [
+    "  ● mcp__docker__docker_container_list (MCP)",
+    "  Do you want to proceed?",
+    "  ❯ 1. Yes",
+    "    2. Yes, and don't ask again",
+    "    3. No",
+  ].join("\n");
+
+  test("the monitor discards both signals the dialog is recognised by", () => {
+    // `^❯` is in SKIP_PATTERNS; "Do you want to proceed?" is prose and falls
+    // through every branch of parseLine to null. What survives is the bullet.
+    const stage = parseStatus(rawPane);
+    expect(stage).toBe("● mcp__docker__docker_container_list (MCP)");
+    expect(stage).not.toContain("proceed");
+    expect(stage).not.toContain("❯");
+  });
+
+  test("so neither this classifier nor the one it replaced can see a real prompt", () => {
+    // The consequence is the opposite of losing a working signal: 💬 never
+    // fired for a real permission request in the first place. The old
+    // whole-blob word scan only ever produced the false positives this flow
+    // removes — a phase that could not be true.
+    const stage = parseStatus(rawPane)!;
+    expect(detectPhase(stage)).toBe("searching");
+    expect(isPermissionPrompt(stage)).toBe(false);
+  });
+
+  test("the permission handler says so itself, and that does classify as waiting", () => {
+    // channel/permissions.ts prefixes its status when a prompt is going out.
+    // The handler knows; it should not leave the classifier to infer it from
+    // text that has already been thrown away.
+    expect(detectPhase(`${WAITING_PREFIX}Running: npm test`)).toBe("waiting");
+    expect(detectPhase(`${WAITING_PREFIX}Reading: config.ts`)).toBe("waiting");
+  });
+
+  test("without the prefix, the handler's own status reads as an ordinary action", () => {
+    // What the operator saw before: a pending approval looked like work.
+    expect(detectPhase("Running: npm test")).toBe("running");
   });
 });

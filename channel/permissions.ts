@@ -10,6 +10,7 @@
 import type postgres from "postgres";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { StatusManager } from "./status.ts";
+import { WAITING_PREFIX } from "../utils/status-format.ts";
 import { sendTelegramMessage, deleteTelegramMessage, editTelegramMessage } from "./telegram.ts";
 import { channelLogger } from "../logger.ts";
 import { escapeHtml } from "../utils/html.ts";
@@ -228,7 +229,12 @@ export class PermissionHandler {
       : toolName === "Edit" || toolName === "Write" ? `Editing: ${String(input?.file_path ?? "").split("/").pop()}`
       : toolName === "Grep" ? `Searching: ${String(input?.pattern ?? "").slice(0, 40)}`
       : `${toolName}`;
-    await this.status.updateStatus(chatId, shortDesc);
+    // The handler knows for certain that a prompt is about to go out — the
+    // auto-approve path returned above. Say so, rather than leaving the phase
+    // classifier to infer it from pane text it never receives: tmux-monitor
+    // discards both the "Do you want to proceed?" line and the ❯ choice line,
+    // so the 💬 waiting signal had no way to fire for a real request.
+    await this.status.updateStatus(chatId, `${WAITING_PREFIX}${shortDesc}`);
 
     let previewMsgId: number | null = null;
     if (previewContent) {
