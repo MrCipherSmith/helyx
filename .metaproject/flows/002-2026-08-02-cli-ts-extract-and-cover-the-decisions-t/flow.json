@@ -1,0 +1,220 @@
+{
+  "schemaVersion": 2,
+  "id": "002",
+  "slug": "cli-ts-extract-and-cover-the-decisions-t",
+  "title": "cli.ts — extract and cover the decisions the setup path depends on",
+  "status": "done",
+  "createdAt": "2026-08-02T11:47:38.126Z",
+  "updatedAt": "2026-08-02T12:01:37.385Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:b5f2f1a04f194d8479b16a2bd05e55dd1c6764c5dfbcbf378c2f05fae0b4cf3e",
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-02T12:01:26.579Z",
+      "note": "utils/cli-flags.ts exports parseFlags and flagValue; cli.ts imports both, defines neither; 19 tests cover all six required forms"
+    },
+    "AC2": {
+      "at": "2026-08-02T12:01:26.664Z",
+      "note": "utils/host-memory.ts exports the three parsers plus presetsThatFit (and resolveMemoryMb after review); cli.ts reimplements none"
+    },
+    "AC3": {
+      "at": "2026-08-02T12:01:26.748Z",
+      "note": "tests assert parseCgroupV1Limit rejects 9223372036854771712 and exactly 1e15, and parseCgroupV2Max rejects the literal max"
+    },
+    "AC4": {
+      "at": "2026-08-02T12:01:26.837Z",
+      "note": "presetsThatFit tested for null (all), boundary equal/one-short, and the empty result on a 512 MB host"
+    },
+    "AC5": {
+      "at": "2026-08-02T12:01:26.925Z",
+      "note": "utils/stop-hook.ts exports classifyCheckout and pruneStaleStopHooks; filesystem passed in — as a thunk for the .git probe after Codex found the eager-stat regression"
+    },
+    "AC6": {
+      "at": "2026-08-02T12:01:35.279Z",
+      "note": "pruneStaleStopHooks: all six behaviours tested, plus splice-during-reverse-walk, non-string commands, and entries without a hooks array"
+    },
+    "AC7": {
+      "at": "2026-08-02T12:01:35.367Z",
+      "note": "classifyCheckout tested for temp dir, worktree, normal checkout, /tmpfoo (prefix without separator), literal /tmp with TMPDIR elsewhere, and probe laziness"
+    },
+    "AC8": {
+      "at": "2026-08-02T12:01:35.455Z",
+      "note": "bun run typecheck clean; bun run lint 0 errors (209 warnings, pre-existing); 450 unit tests pass, none skipped or removed"
+    },
+    "AC9": {
+      "at": "2026-08-02T12:01:35.542Z",
+      "note": "helyx --help and helyx ps run after the rewire and again after the review fixes; output unchanged, exit 0"
+    },
+    "AC10": {
+      "at": "2026-08-02T12:01:35.627Z",
+      "note": "keryx health run: coverage 17.00% (was 16.44% at flow start), score 58->59, findings 266->264, gate WARN on coverage only"
+    }
+  },
+  "pr": {
+    "url": "https://github.com/MrCipherSmith/helyx/pull/38"
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-02T11:47:38.126Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-02T11:49:18.670Z",
+      "event": "frozen",
+      "detail": "10 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-02T11:49:18.755Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-02T11:49:18.847Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-02T11:52:50.767Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-02T11:52:50.854Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-02T12:01:13.523Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-02T12:01:15.417Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/38"
+    },
+    {
+      "at": "2026-08-02T12:01:26.579Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: utils/cli-flags.ts exports parseFlags and flagValue; cli.ts imports both, defines neither; 19 tests cover all six required forms"
+    },
+    {
+      "at": "2026-08-02T12:01:26.664Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: utils/host-memory.ts exports the three parsers plus presetsThatFit (and resolveMemoryMb after review); cli.ts reimplements none"
+    },
+    {
+      "at": "2026-08-02T12:01:26.749Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: tests assert parseCgroupV1Limit rejects 9223372036854771712 and exactly 1e15, and parseCgroupV2Max rejects the literal max"
+    },
+    {
+      "at": "2026-08-02T12:01:26.838Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: presetsThatFit tested for null (all), boundary equal/one-short, and the empty result on a 512 MB host"
+    },
+    {
+      "at": "2026-08-02T12:01:26.925Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: utils/stop-hook.ts exports classifyCheckout and pruneStaleStopHooks; filesystem passed in — as a thunk for the .git probe after Codex found the eager-stat regression"
+    },
+    {
+      "at": "2026-08-02T12:01:35.279Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: pruneStaleStopHooks: all six behaviours tested, plus splice-during-reverse-walk, non-string commands, and entries without a hooks array"
+    },
+    {
+      "at": "2026-08-02T12:01:35.368Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: classifyCheckout tested for temp dir, worktree, normal checkout, /tmpfoo (prefix without separator), literal /tmp with TMPDIR elsewhere, and probe laziness"
+    },
+    {
+      "at": "2026-08-02T12:01:35.455Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: bun run typecheck clean; bun run lint 0 errors (209 warnings, pre-existing); 450 unit tests pass, none skipped or removed"
+    },
+    {
+      "at": "2026-08-02T12:01:35.542Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: helyx --help and helyx ps run after the rewire and again after the review fixes; output unchanged, exit 0"
+    },
+    {
+      "at": "2026-08-02T12:01:35.627Z",
+      "event": "ac-confirmed",
+      "detail": "AC10: keryx health run: coverage 17.00% (was 16.44% at flow start), score 58->59, findings 266->264, gate WARN on coverage only"
+    },
+    {
+      "at": "2026-08-02T12:01:35.715Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-02T12:01:37.385Z",
+      "event": "done",
+      "detail": "all gates passed"
+    }
+  ]
+}
