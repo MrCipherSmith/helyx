@@ -27,7 +27,7 @@
 
 import type postgres from "postgres";
 import { stripAnsi } from "../utils/terminal.ts";
-import { isPermissionPrompt, findPromptSignal } from "../utils/permission-prompt.ts";
+import { isPermissionPrompt, findPromptSignal, PERM_SIGNAL_RE, PERM_CHOICE_RE } from "../utils/permission-prompt.ts";
 import { escapeHtml } from "../utils/html.ts";
 
 // ---------------------------------------------------------------------------
@@ -151,8 +151,6 @@ async function listBotPanes(): Promise<Array<{ target: string; currentPath: stri
 // Detection
 // ---------------------------------------------------------------------------
 
-const PERM_SIGNAL_RE  = /do you want to proceed\?/i;
-const PERM_CHOICE_RE  = /❯\s*1[.)]\s*yes/i;
 const SPINNER_RE      = /^[·✶✻]\s+.+/;
 const VIM_RE          = /--\s*(INSERT|NORMAL|VISUAL|REPLACE)\s*--/;
 const NANO_RE         = /\^G\s*(Get Help|Help)|\^X\s*(Exit|Close)/i;

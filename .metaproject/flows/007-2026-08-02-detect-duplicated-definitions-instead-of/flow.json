@@ -1,0 +1,220 @@
+{
+  "schemaVersion": 2,
+  "id": "007",
+  "slug": "detect-duplicated-definitions-instead-of",
+  "title": "detect duplicated definitions instead of relying on noticing them",
+  "status": "done",
+  "createdAt": "2026-08-02T20:04:57.777Z",
+  "updatedAt": "2026-08-02T22:59:27.320Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:f27f454f4fe8ee11e741a4e87a37cb787b193534c6c0467294218c5d8c38ac46",
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-02T22:58:55.676Z",
+      "note": "scripts/find-duplicate-definitions.ts runs as 'bun run dupes' and reports each literal with every file it appears in"
+    },
+    "AC2": {
+      "at": "2026-08-02T22:58:55.781Z",
+      "note": "findDuplicates tests: a pattern in two files is reported with both; one in a single file is not"
+    },
+    "AC3": {
+      "at": "2026-08-02T22:58:55.883Z",
+      "note": "both prototype false positives covered, plus interpolated URLs, division, division inside a template, string content between slashes, and obj.await followed by division"
+    },
+    "AC4": {
+      "at": "2026-08-02T22:58:55.989Z",
+      "note": "MIN_STRING_LENGTH = 24, named with the reasoning; tested above and below the threshold"
+    },
+    "AC5": {
+      "at": "2026-08-02T22:58:56.095Z",
+      "note": "TEST_PATH excludes tests and fixtures by default; --include-tests documented; collectSourceFiles takes the flag"
+    },
+    "AC6": {
+      "at": "2026-08-02T22:58:56.197Z",
+      "note": "every test runs against synthetic sources; findDuplicates takes its reader as a parameter so nothing touches the repository"
+    },
+    "AC7": {
+      "at": "2026-08-02T22:59:19.314Z",
+      "note": "reports and exits 0; --fail documented in the header and implemented; nothing wired into CI in this flow"
+    },
+    "AC8": {
+      "at": "2026-08-02T22:59:19.401Z",
+      "note": "journal records all 19: two real leftovers fixed here (permission regexes, git-ref allowlist), twelve handed to the next flow as the pane-parsing set, and two named as acceptable"
+    },
+    "AC9": {
+      "at": "2026-08-02T22:59:19.484Z",
+      "note": "bun run typecheck clean; bun run lint 0 errors (208 warnings, pre-existing); 654 unit tests pass, none skipped or removed"
+    },
+    "AC10": {
+      "at": "2026-08-02T22:59:19.572Z",
+      "note": "the header names paraphrase, concatenated/template literals, and scan-not-parser as what it cannot see"
+    }
+  },
+  "pr": {
+    "url": "https://github.com/MrCipherSmith/helyx/pull/43"
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-02T20:04:57.777Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-02T20:05:43.753Z",
+      "event": "frozen",
+      "detail": "10 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-02T20:05:43.846Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-02T20:05:43.939Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-02T22:58:43.079Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-02T22:58:43.174Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-02T22:58:43.266Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-02T22:58:44.968Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/43"
+    },
+    {
+      "at": "2026-08-02T22:58:55.676Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: scripts/find-duplicate-definitions.ts runs as 'bun run dupes' and reports each literal with every file it appears in"
+    },
+    {
+      "at": "2026-08-02T22:58:55.781Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: findDuplicates tests: a pattern in two files is reported with both; one in a single file is not"
+    },
+    {
+      "at": "2026-08-02T22:58:55.883Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: both prototype false positives covered, plus interpolated URLs, division, division inside a template, string content between slashes, and obj.await followed by division"
+    },
+    {
+      "at": "2026-08-02T22:58:55.989Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: MIN_STRING_LENGTH = 24, named with the reasoning; tested above and below the threshold"
+    },
+    {
+      "at": "2026-08-02T22:58:56.095Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: TEST_PATH excludes tests and fixtures by default; --include-tests documented; collectSourceFiles takes the flag"
+    },
+    {
+      "at": "2026-08-02T22:58:56.197Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: every test runs against synthetic sources; findDuplicates takes its reader as a parameter so nothing touches the repository"
+    },
+    {
+      "at": "2026-08-02T22:59:19.314Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: reports and exits 0; --fail documented in the header and implemented; nothing wired into CI in this flow"
+    },
+    {
+      "at": "2026-08-02T22:59:19.401Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: journal records all 19: two real leftovers fixed here (permission regexes, git-ref allowlist), twelve handed to the next flow as the pane-parsing set, and two named as acceptable"
+    },
+    {
+      "at": "2026-08-02T22:59:19.484Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: bun run typecheck clean; bun run lint 0 errors (208 warnings, pre-existing); 654 unit tests pass, none skipped or removed"
+    },
+    {
+      "at": "2026-08-02T22:59:19.572Z",
+      "event": "ac-confirmed",
+      "detail": "AC10: the header names paraphrase, concatenated/template literals, and scan-not-parser as what it cannot see"
+    },
+    {
+      "at": "2026-08-02T22:59:25.686Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-02T22:59:27.320Z",
+      "event": "done",
+      "detail": "all gates passed"
+    }
+  ]
+}
