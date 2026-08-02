@@ -20,6 +20,9 @@ import { existsSync, readFileSync, writeFileSync, statSync } from "fs";
 import { resolve, basename, dirname } from "path";
 import { homedir, tmpdir } from "os";
 import { windowName, parseWindowNames, partitionByWindow } from "./sessions/tmux-windows.ts";
+import { parseFlags, flagValue } from "./utils/cli-flags.ts";
+import { parseCgroupV2Max, parseCgroupV1Limit, parseMemTotal, presetsThatFit } from "./utils/host-memory.ts";
+import { classifyCheckout, pruneStaleStopHooks } from "./utils/stop-hook.ts";
 
 // --- ANSI colors ---
 const c = {
@@ -165,31 +168,8 @@ function fail(msg?: string) {
 let FLAGS: Record<string, string> = {};
 let UNATTENDED = false;
 
-function parseFlags(argv: string[]): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i]!;
-    if (!arg.startsWith("--")) continue;
-    const eq = arg.indexOf("=");
-    if (eq !== -1) {
-      out[arg.slice(2, eq)] = arg.slice(eq + 1);
-    } else {
-      const key = arg.slice(2);
-      const next = argv[i + 1];
-      if (next && !next.startsWith("--")) {
-        out[key] = next;
-        i++;
-      } else {
-        out[key] = "true"; // bare boolean flag
-      }
-    }
-  }
-  return out;
-}
-
 function flag(key: string): string | undefined {
-  const v = FLAGS[key];
-  return v === undefined || v === "" ? undefined : v;
+  return flagValue(FLAGS, key);
 }
 
 function fatal(msg: string): never {
@@ -272,24 +252,24 @@ const MODEL_PRESETS: Preset[] = [
  * host total, so a container is not told it has the whole host to play with.
  * Returns null when it cannot tell — the caller warns rather than guessing.
  */
+/**
+ * Available memory in MB, or null when none of the three sources answer.
+ *
+ * Only the file reads live here; every parse is in utils/host-memory.ts, where
+ * the cgroup v1 unlimited sentinel and the `max` literal are tested.
+ */
 function availableMemoryMb(): number | null {
-  try {
-    const v = readFileSync("/sys/fs/cgroup/memory.max", "utf8").trim();
-    if (v && v !== "max") {
-      const n = parseInt(v, 10);
-      if (n > 0) return Math.floor(n / 1048576);
-    }
-  } catch {}
-  try {
-    const v = readFileSync("/sys/fs/cgroup/memory/memory.limit_in_bytes", "utf8").trim();
-    const n = parseInt(v, 10);
-    // cgroup v1 reports an absurd sentinel when unlimited.
-    if (n > 0 && n < 1e15) return Math.floor(n / 1048576);
-  } catch {}
-  try {
-    const m = readFileSync("/proc/meminfo", "utf8").match(/^MemTotal:\s+(\d+) kB/m);
-    if (m?.[1]) return Math.floor(parseInt(m[1], 10) / 1024);
-  } catch {}
+  const sources: Array<[string, (raw: string) => number | null]> = [
+    ["/sys/fs/cgroup/memory.max", parseCgroupV2Max],
+    ["/sys/fs/cgroup/memory/memory.limit_in_bytes", parseCgroupV1Limit],
+    ["/proc/meminfo", parseMemTotal],
+  ];
+  for (const [path, parse] of sources) {
+    try {
+      const mb = parse(readFileSync(path, "utf8"));
+      if (mb !== null) return mb;
+    } catch { /* source absent on this host — try the next */ }
+  }
   return null;
 }
 
@@ -416,7 +396,7 @@ async function setup() {
       // the host cannot run is a failure that surfaces at first use, long
       // after setup reported success.
       const mem = availableMemoryMb();
-      const fits = mem === null ? MODEL_PRESETS : MODEL_PRESETS.filter((p) => p.ramMb <= mem);
+      const fits = presetsThatFit(MODEL_PRESETS, mem);
 
       if (mem === null) {
         console.log(c.yellow("  Could not determine available memory — all presets shown, pick with care."));
@@ -915,36 +895,13 @@ const HOOK_SCRIPT_REL = "scripts/save-session-facts.sh";
  * dangling entry behind, so such checkouts never register.
  */
 function isEphemeralCheckout(): string | null {
-  const tmpRoot = resolve(tmpdir());
   const botDir = resolve(BOT_DIR);
-  if (botDir === tmpRoot || botDir.startsWith(`${tmpRoot}/`) || botDir.startsWith("/tmp/")) {
-    return "temporary directory";
-  }
-  // A linked worktree has .git as a file pointing at the real gitdir; the main
-  // checkout has it as a directory.
   const gitPath = `${botDir}/.git`;
-  if (existsSync(gitPath) && statSync(gitPath).isFile()) return "git worktree";
-  return null;
-}
-
-/** Drop registrations of this hook whose script no longer exists on disk. */
-function pruneStaleStopHooks(stop: any[]): number {
-  let removed = 0;
-  for (let i = stop.length - 1; i >= 0; i--) {
-    const entry = stop[i];
-    if (!Array.isArray(entry?.hooks)) continue;
-    const kept = entry.hooks.filter((h: any) => {
-      const cmd = typeof h?.command === "string" ? h.command : "";
-      if (!cmd.endsWith(`/${HOOK_SCRIPT_REL}`)) return true;
-      if (existsSync(cmd)) return true;
-      removed++;
-      return false;
-    });
-    if (kept.length === entry.hooks.length) continue;
-    if (kept.length === 0) stop.splice(i, 1);
-    else entry.hooks = kept;
-  }
-  return removed;
+  return classifyCheckout({
+    botDir,
+    tmpDir: resolve(tmpdir()),
+    gitPathIsFile: existsSync(gitPath) && statSync(gitPath).isFile(),
+  });
 }
 
 type StopHookResult =
@@ -968,7 +925,7 @@ async function setupStopHook(): Promise<StopHookResult> {
   if (!Array.isArray(settings.hooks.Stop)) settings.hooks.Stop = [];
 
   // Clear out entries left behind by checkouts that are gone
-  const removed = pruneStaleStopHooks(settings.hooks.Stop);
+  const removed = pruneStaleStopHooks(settings.hooks.Stop, `/${HOOK_SCRIPT_REL}`, existsSync);
 
   const ephemeral = isEphemeralCheckout();
   if (ephemeral) {
