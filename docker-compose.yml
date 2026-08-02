@@ -1,5 +1,11 @@
 services:
   bot:
+    # Named explicitly so the image install.sh pulls from GHCR is the image
+    # Compose looks for. Without this key the name is derived from the project,
+    # which is the install directory: the default ~/helyx happens to produce
+    # `helyx-bot`, but `HELYX_DIR=~/my-bot` produces `my-bot-bot` and the
+    # pulled image is silently ignored in favour of a local build.
+    image: ${HELYX_IMAGE:-helyx-bot:latest}
     build:
       context: .
       args:
