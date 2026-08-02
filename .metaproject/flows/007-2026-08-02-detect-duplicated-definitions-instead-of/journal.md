@@ -109,3 +109,19 @@ characters, no leading quote, no `${` — so `PATTERN_SIGNALS` is the only thing
 standing between it and a false positive. Written down here because the
 lesson is not "check the guards" but "a test written to prove a guard needs
 the same scrutiny as the guard".
+- 2026-08-02T22:58:43.079Z - task-done: T2: Implement per plan
+- 2026-08-02T22:58:43.174Z - task-done: T3: Add/adjust tests and make them pass
+- 2026-08-02T22:58:43.266Z - task-done: T4: Self-review and prepare draft PR
+- 2026-08-02T22:58:44.968Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/43
+- 2026-08-02T22:58:55.676Z - ac-confirmed: AC1: scripts/find-duplicate-definitions.ts runs as 'bun run dupes' and reports each literal with every file it appears in
+- 2026-08-02T22:58:55.781Z - ac-confirmed: AC2: findDuplicates tests: a pattern in two files is reported with both; one in a single file is not
+- 2026-08-02T22:58:55.883Z - ac-confirmed: AC3: both prototype false positives covered, plus interpolated URLs, division, division inside a template, string content between slashes, and obj.await followed by division
+- 2026-08-02T22:58:55.989Z - ac-confirmed: AC4: MIN_STRING_LENGTH = 24, named with the reasoning; tested above and below the threshold
+- 2026-08-02T22:58:56.095Z - ac-confirmed: AC5: TEST_PATH excludes tests and fixtures by default; --include-tests documented; collectSourceFiles takes the flag
+- 2026-08-02T22:58:56.197Z - ac-confirmed: AC6: every test runs against synthetic sources; findDuplicates takes its reader as a parameter so nothing touches the repository
+- 2026-08-02T22:59:19.314Z - ac-confirmed: AC7: reports and exits 0; --fail documented in the header and implemented; nothing wired into CI in this flow
+- 2026-08-02T22:59:19.401Z - ac-confirmed: AC8: journal records all 19: two real leftovers fixed here (permission regexes, git-ref allowlist), twelve handed to the next flow as the pane-parsing set, and two named as acceptable
+- 2026-08-02T22:59:19.484Z - ac-confirmed: AC9: bun run typecheck clean; bun run lint 0 errors (208 warnings, pre-existing); 654 unit tests pass, none skipped or removed
+- 2026-08-02T22:59:19.572Z - ac-confirmed: AC10: the header names paraphrase, concatenated/template literals, and scan-not-parser as what it cannot see
+- 2026-08-02T22:59:25.686Z - completing
+- 2026-08-02T22:59:27.320Z - done: all gates passed
