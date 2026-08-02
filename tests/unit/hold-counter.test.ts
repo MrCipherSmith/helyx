@@ -8,6 +8,10 @@ import { HoldCounter } from "../../utils/hold-counter.ts";
  * can be pending in one chat, and with a flag the first to finish would clear
  * the signal while the second was still blocked — the operator would watch 💬
  * disappear and conclude the session had been unblocked.
+ *
+ * `acquire` hands back the function that releases *that* hold. Releases need
+ * identity: a keyed `release(key)` has no way to tell whose hold it is
+ * dropping, so one holder calling it twice consumes another's.
  */
 
 describe("HoldCounter", () => {
@@ -15,11 +19,11 @@ describe("HoldCounter", () => {
     expect(new HoldCounter().isHeld("chat")).toBe(false);
   });
 
-  test("acquire holds it, release frees it", () => {
+  test("acquire holds it, the returned lease frees it", () => {
     const c = new HoldCounter();
-    c.acquire("chat");
+    const release = c.acquire("chat");
     expect(c.isHeld("chat")).toBe(true);
-    c.release("chat");
+    release();
     expect(c.isHeld("chat")).toBe(false);
   });
 
@@ -27,54 +31,81 @@ describe("HoldCounter", () => {
     // The reason this is counted. Two prompts pending in one chat: the first
     // to finish must not take the signal down while the second is still up.
     const c = new HoldCounter();
-    c.acquire("chat");
-    c.acquire("chat");
-    c.release("chat");
+    const first = c.acquire("chat");
+    const second = c.acquire("chat");
+    first();
     expect(c.isHeld("chat")).toBe(true);
-    c.release("chat");
+    second();
+    expect(c.isHeld("chat")).toBe(false);
+  });
+
+  test("releasing a lease twice does not consume another holder's hold", () => {
+    // The failure a keyed release cannot prevent: the first prompt's `finally`
+    // runs, something calls it again, and the second prompt — still blocked —
+    // loses its signal.
+    const c = new HoldCounter();
+    const first = c.acquire("chat");
+    const second = c.acquire("chat");
+    first();
+    first();
+    first();
+    expect(c.depth("chat")).toBe(1);
+    expect(c.isHeld("chat")).toBe(true);
+    second();
+    expect(c.isHeld("chat")).toBe(false);
+  });
+
+  test("leases are independent of the order they are released in", () => {
+    const c = new HoldCounter();
+    const first = c.acquire("chat");
+    const second = c.acquire("chat");
+    second();
+    expect(c.isHeld("chat")).toBe(true);
+    first();
     expect(c.isHeld("chat")).toBe(false);
   });
 
   test("depth reports how many are holding", () => {
     const c = new HoldCounter();
-    c.acquire("chat");
+    const a = c.acquire("chat");
     c.acquire("chat");
     c.acquire("chat");
     expect(c.depth("chat")).toBe(3);
-    c.release("chat");
+    a();
     expect(c.depth("chat")).toBe(2);
-  });
-
-  test("releasing more than was acquired does not go negative", () => {
-    // Callers pair acquire with release in a finally; a stray extra release
-    // must not leave the count below zero, or the next genuine hold would read
-    // as free while it is held.
-    const c = new HoldCounter();
-    c.release("chat");
-    c.release("chat");
-    expect(c.depth("chat")).toBe(0);
-    c.acquire("chat");
-    expect(c.isHeld("chat")).toBe(true);
   });
 
   test("keys are independent", () => {
     const c = new HoldCounter();
-    c.acquire("chat-a");
+    const a = c.acquire("chat-a");
     expect(c.isHeld("chat-a")).toBe(true);
     expect(c.isHeld("chat-b")).toBe(false);
-    c.release("chat-a");
-    c.acquire("chat-b");
+    a();
+    const b = c.acquire("chat-b");
     expect(c.isHeld("chat-a")).toBe(false);
     expect(c.isHeld("chat-b")).toBe(true);
+    b();
   });
 
   test("a released key is forgotten rather than kept at zero", () => {
     // Chats come and go; the map should not grow for every one that ever had
     // a prompt.
     const c = new HoldCounter();
-    c.acquire("chat");
-    c.release("chat");
+    c.acquire("chat")();
     expect(c.depth("chat")).toBe(0);
+    expect(c.isHeld("chat")).toBe(false);
+  });
+
+  test("a lease keeps working after the key was emptied and taken again", () => {
+    // Its own hold is gone, so it must do nothing — not decrement whatever
+    // holds the key now.
+    const c = new HoldCounter();
+    const stale = c.acquire("chat");
+    stale();
+    const fresh = c.acquire("chat");
+    stale();
+    expect(c.isHeld("chat")).toBe(true);
+    fresh();
     expect(c.isHeld("chat")).toBe(false);
   });
 });

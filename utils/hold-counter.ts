@@ -7,22 +7,32 @@
  * the signal while the second was still blocked — the operator would watch 💬
  * disappear and conclude the session had been unblocked.
  *
- * Releasing more times than acquired is not an error and does not go
- * negative. Callers pair acquire with release in a `finally`, and a stray
- * extra release should not be able to make a later hold start from below
- * zero and read as free while it is held.
+ * `acquire` hands back the function that releases that hold and nothing else.
+ * Calling it twice does nothing, so a stray release cannot consume a different
+ * holder's hold — which a keyed `release(key)` cannot prevent, having no way
+ * to tell whose hold it is releasing.
  */
 export class HoldCounter {
   private counts = new Map<string, number>();
 
-  acquire(key: string): void {
+  /**
+   * Take a hold, and return the one function that releases it.
+   *
+   * A lease rather than a bare `release(key)` because releases need identity.
+   * With a keyed release, one holder calling it twice consumes another
+   * holder's hold — the second prompt in a chat would find its signal already
+   * taken down. Calling a lease twice is a no-op.
+   */
+  acquire(key: string): () => void {
     this.counts.set(key, (this.counts.get(key) ?? 0) + 1);
-  }
-
-  release(key: string): void {
-    const held = this.counts.get(key) ?? 0;
-    if (held <= 1) this.counts.delete(key);
-    else this.counts.set(key, held - 1);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const held = this.counts.get(key) ?? 0;
+      if (held <= 1) this.counts.delete(key);
+      else this.counts.set(key, held - 1);
+    };
   }
 
   isHeld(key: string): boolean {

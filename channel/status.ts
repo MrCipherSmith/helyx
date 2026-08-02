@@ -472,10 +472,41 @@ export class StatusManager {
    * leaked latch is silent: 💬 would stay up forever and the signal would stop
    * being believed.
    */
-  setAwaitingPermission(chatId: string, holding: boolean): void {
+  holdAwaitingPermission(chatId: string): () => void {
+    // The key is resolved once and captured. Recomputing it at release time
+    // reads `stateKey` again, and the forum topic it derives from can change
+    // while a prompt is pending — the release would then target a key nobody
+    // holds, leaving the signal up forever, or a key another prompt holds.
     const key = this.stateKey(chatId);
-    if (holding) this.awaitingPermission.acquire(key);
-    else this.awaitingPermission.release(key);
+    const release = this.awaitingPermission.acquire(key);
+    void this.renderPhaseChange(key);
+    return () => {
+      release();
+      void this.renderPhaseChange(key);
+    };
+  }
+
+  /**
+   * Redraw the status because the latch changed, not because the stage did.
+   *
+   * Without this the signal waits for the next timer tick: a prompt answered
+   * quickly would never show 💬 at all, and one answered slowly would keep
+   * showing it after the answer. The stage is untouched — only the phase it
+   * is rendered with has changed.
+   */
+  private async renderPhaseChange(key: string): Promise<void> {
+    const state = this.activeStatus.get(key);
+    if (!state) return;
+    if (state.editInFlight) {
+      state.pendingImmediateEdit = true;
+      return;
+    }
+    state.editInFlight = true;
+    try {
+      await this.editStatusMessage(state);
+    } finally {
+      state.editInFlight = false;
+    }
   }
 
   private stateKey(chatId: string): string {

@@ -389,7 +389,7 @@ export class PermissionHandler {
     // the previous attempt at this signal ended up latching a lie. Only
     // reached on the sendResult.ok path, so the prompt is on the operator's
     // screen before the signal claims it is.
-    this.status.setAwaitingPermission(chatId, true);
+    const releaseWaiting = this.status.holdAwaitingPermission(chatId);
     try {
       while (Date.now() - startTime < timeoutMs) {
         const rows = await this.ctx.sql`
@@ -472,7 +472,7 @@ export class PermissionHandler {
 
       await this.ctx.sql`UPDATE permission_requests SET archived_at = NOW() WHERE id = ${request_id}`;
     } finally {
-      this.status.setAwaitingPermission(chatId, false);
+      releaseWaiting();
     }
   }
 }
