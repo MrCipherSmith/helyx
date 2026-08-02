@@ -833,7 +833,14 @@ async function serveWebApp(res: ServerResponse, subpath: string): Promise<boolea
   if (contained === null) return false;
   let filePath = contained;
   const exists = await access(filePath).then(() => true, () => false);
-  if (!exists || !subpath || subpath === "/") filePath = join(WEBAPP_DIST_DIR, "index.html");
+  if (!exists || !subpath || subpath === "/") {
+    // The SPA fallback replaces a validated path, so it is validated too — a
+    // deployed index.html that is itself a symlink would otherwise walk out
+    // of the root through a door the request never had to open.
+    const fallback = await resolveStaticPathReal(WEBAPP_DIST_DIR, "index.html", realpath);
+    if (fallback === null) return false;
+    filePath = fallback;
+  }
   const indexExists = await access(filePath).then(() => true, () => false);
   if (!indexExists) return false;
   const ext = extname(filePath);
@@ -853,7 +860,10 @@ async function serveStatic(res: ServerResponse, pathname: string): Promise<boole
 
   const exists = await access(filePath).then(() => true, () => false);
   if (!exists || pathname === "/") {
-    filePath = join(DIST_DIR, "index.html");
+    // Same reasoning as serveWebApp: the fallback is a path too.
+    const fallback = await resolveStaticPathReal(DIST_DIR, "index.html", realpath);
+    if (fallback === null) return false;
+    filePath = fallback;
   }
   const indexExists = await access(filePath).then(() => true, () => false);
   if (!indexExists) return false;

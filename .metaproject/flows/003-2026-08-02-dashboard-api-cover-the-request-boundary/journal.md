@@ -24,3 +24,21 @@ exercises would be untested surface rather than protection.
 
 After the fixes: 505 tests pass (from 491), tsc clean, eslint 0 errors,
 coverage 17.42%.
+
+### Second Codex pass
+
+Findings 2, 3 and 4 confirmed resolved; the Windows exclusion was accepted.
+
+Finding 1 came back **unresolved**, correctly. Both handlers validated the
+requested path and then, when the file did not exist, replaced it with
+`join(DIST_DIR, "index.html")` — an unvalidated path — before reading. The SPA
+fallback is not attacker-controlled, so this is not a request-triggered
+escape; but the invariant the guard exists to hold is "never read outside the
+root", and a deployed `index.html` that is itself a symlink would break it
+through a door no request had to open.
+
+Fixed: both fallbacks go through `resolveStaticPathReal` as well. Verified by
+replacing `dashboard/dist/index.html` with a symlink to a file in /tmp and
+requesting `/` and a missing path over HTTP — both refused, zero occurrences
+of the target's content in either response, while `cat` on the link confirmed
+it resolved outside. index.html restored afterwards.
