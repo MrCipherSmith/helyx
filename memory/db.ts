@@ -834,7 +834,7 @@ const migrations: Migration[] = [
  * Throws on the first violation rather than logging — migrations are
  * critical-path on startup; failing loud beats failing quietly.
  *
- * Cheap: O(N) scan over a 22-element array, runs once per process start.
+ * Cheap: O(N) scan over a 30-element array, runs once per process start.
  */
 // Exported for unit tests so the synthetic-bad-input cases call the real
 // implementation rather than a re-implementation that can drift from it.

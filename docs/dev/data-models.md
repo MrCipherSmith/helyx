@@ -4,7 +4,7 @@
 
 Helyx uses **PostgreSQL 16** with the **pgvector** extension for similarity search on long-term memory embeddings. All schema changes are managed through a custom migration framework defined entirely in `memory/db.ts` — there is no separate ORM or migration tool. Every migration runs inside an explicit transaction, and a `schema_versions` table records which versions have been applied.
 
-The current schema version is **v43**. Version numbers jump from v22 to v39 — the Skills Toolkit migrations were originally numbered v23–v27 but were renumbered v39–v43 during a rebase (commit `fe5380e`). This is intentional and documented.
+The current schema version is **v46**. Version numbers jump from v22 to v39 — the Skills Toolkit migrations were originally numbered v23–v27 but were renumbered v39–v43 during a rebase (commit `fe5380e`). This is intentional and documented.
 
 The postgres.js library is used for all queries via tagged template literals. Raw SQL (`tx.unsafe()`) is restricted to DDL that requires dynamic interpolation (HNSW index creation, trigger DDL, dedup index with WHERE clauses).
 
@@ -180,8 +180,9 @@ Created in v1; extended by v11, v19.
 | `delivered` | `BOOLEAN` | NOT NULL DEFAULT false | |
 | `created_at` | `TIMESTAMPTZ` | NOT NULL DEFAULT now() | |
 | `attachments` | `JSONB` | nullable | Added v11; file attachments |
+| `forwarded_at` | `TIMESTAMPTZ` | nullable | Added v45; set when the supervisor force-delivers a stuck row, so a second sweep does not forward it again |
 
-**Indexes:** `(session_id, delivered, created_at)`, UNIQUE `(chat_id, message_id) WHERE message_id IS NOT NULL AND message_id NOT IN ('', 'tool')` (dedup, v19).
+**Indexes:** `(session_id, delivered, created_at)`, UNIQUE `(chat_id, message_id) WHERE message_id IS NOT NULL AND message_id NOT IN ('', 'tool')` (dedup, v19), and `(session_id, created_at) WHERE delivered = false AND forwarded_at IS NULL` (v45) — the partial index that makes the stuck-queue sweep cheap.
 
 **Trigger (v2):** `notify_message_queue()` fires `pg_notify('message_queue_{session_id}', id::text)` on INSERT. The channel poller in `channel/poller.ts` uses `LISTEN` on this channel for instant delivery without polling.
 
@@ -538,6 +539,72 @@ Created in v13.
 
 **Written by:** bot admin commands, setup flow.
 **Read by:** forum-topic routing, status manager.
+
+---
+
+#### `providers`
+
+Created in v46. Operator-registered Anthropic-compatible backends (GLM, Kimi, DeepSeek, OpenRouter, or a custom endpoint).
+
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| `id` | `SERIAL` | PRIMARY KEY | |
+| `name` | `TEXT` | UNIQUE NOT NULL | Display name shown in `/providers` |
+| `base_url` | `TEXT` | NOT NULL | Anthropic-compatible endpoint |
+| `auth_token` | `TEXT` | NOT NULL | **Secret.** Lives here and in the host process env at launch — never in `admin_commands` payloads, tmux command arguments, or logs |
+| `auth_scheme` | `TEXT` | NOT NULL DEFAULT `'bearer'` | |
+| `models` | `JSONB` | NOT NULL DEFAULT `'[]'` | Model list, refreshed on demand from the provider |
+| `created_at` | `TIMESTAMPTZ` | NOT NULL DEFAULT now() | |
+
+`projects` gains two columns in the same migration: `provider_id INT REFERENCES providers(id) ON DELETE SET NULL` and `model TEXT`. Both NULL means the default Anthropic endpoint with the helyx key — the behaviour that predates the feature, so untouched projects keep working. `ON DELETE SET NULL` makes removing a provider fall its projects back to the default rather than orphaning them. `model` may be set with `provider_id` still NULL, to switch Anthropic model tiers.
+
+**Written by:** `/providers` registration flow, `/projects` → ⚙️ selection.
+**Read by:** `run-cli.sh` launch path (see `docs/providers.md`).
+
+---
+
+### Orchestration
+
+#### `orchestration_runs`
+
+Created in v44.
+
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| `id` | `BIGSERIAL` | PRIMARY KEY | |
+| `session_id` | `BIGINT` | nullable | |
+| `chat_id` | `TEXT` | NOT NULL | |
+| `thread_id` | `INTEGER` | nullable | Forum topic |
+| `project_path` | `TEXT` | NOT NULL | |
+| `artifact_type` | `TEXT` | NOT NULL | What is being produced |
+| `matrix_hash` | `TEXT` | NOT NULL | Identity of the state matrix the run validates against |
+| `status` | `TEXT` | NOT NULL | `validating`, `correcting`, `waiting_permission`, terminal states |
+| `phase` | `TEXT` | NOT NULL | |
+| `attempt` | `INTEGER` | NOT NULL DEFAULT 0 | |
+| `max_attempts` | `INTEGER` | NOT NULL DEFAULT 5 | |
+| `created_at` / `updated_at` | `TIMESTAMPTZ` | NOT NULL DEFAULT now() | |
+| `completed_at` | `TIMESTAMPTZ` | nullable | |
+
+**Indexes:** partial `(session_id, chat_id, project_path, artifact_type, updated_at DESC) WHERE status IN ('validating','correcting','waiting_permission')` — only live runs are ever scanned.
+
+---
+
+#### `matrix_violations`
+
+Created in v44.
+
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| `id` | `BIGSERIAL` | PRIMARY KEY | |
+| `run_id` | `BIGINT` | NOT NULL FK → `orchestration_runs(id)` ON DELETE CASCADE | |
+| `attempt` | `INTEGER` | NOT NULL | Which attempt produced the violation |
+| `code` | `TEXT` | NOT NULL | |
+| `message` | `TEXT` | NOT NULL | |
+| `severity` | `TEXT` | NOT NULL | |
+| `rule` | `TEXT` | nullable | |
+| `created_at` | `TIMESTAMPTZ` | NOT NULL DEFAULT now() | |
+
+**Indexes:** `(run_id, attempt)`.
 
 ---
 
