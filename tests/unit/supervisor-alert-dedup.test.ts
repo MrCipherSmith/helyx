@@ -140,3 +140,17 @@ describe("recoveryDecision", () => {
     expect(recoveryDecision(true, T0, T0, 0)).toBe("resolve");
   });
 });
+
+describe("recoveryDecision — falsy timers", () => {
+  const HOLD = 60_000;
+
+  test("a zero timestamp is no timer, not an ancient one", () => {
+    // The `if (cleanSince && …)` this replaced treated 0 as absent. Resolving
+    // on it instead would declare an incident over on its first clean tick.
+    expect(recoveryDecision(true, 0, T0, HOLD)).toBe("start-hold");
+  });
+
+  test("NaN is no timer either", () => {
+    expect(recoveryDecision(true, NaN, T0, HOLD)).toBe("start-hold");
+  });
+});

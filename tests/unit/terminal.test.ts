@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { stripAnsi, paneLines, isSpinnerLine, hasActiveSpinner } from "../../utils/terminal.ts";
+import { stripAnsi, paneLines, isSpinnerLine, hasActiveSpinner, escapeHtml } from "../../utils/terminal.ts";
 
 /**
  * Terminal-output parsing. Five call sites used to do this five different
@@ -139,5 +139,65 @@ describe("hasActiveSpinner", () => {
 
   test("empty output is not working", () => {
     expect(hasActiveSpinner("")).toBe(false);
+  });
+});
+
+describe("stripAnsi — sequence forms the narrow regexes missed", () => {
+  test("private-mode sequences go, not just their ESC", () => {
+    // ESC[?25l hides the cursor and is exactly what a CLI emits before it
+    // starts drawing a spinner. A [0-9;]* pattern does not match it, the ESC
+    // is eaten as a control character, and `?25l` is left in front of the
+    // glyph — which is the failure this whole module exists to prevent.
+    expect(stripAnsi(`${ESC}[?25l· Thinking`)).toBe("· Thinking");
+    expect(stripAnsi(`${ESC}[?25h`)).toBe("");
+  });
+
+  test("colon-form SGR goes", () => {
+    expect(stripAnsi(`${ESC}[38:2:255:0:0mred${ESC}[0m`)).toBe("red");
+  });
+
+  test("sequences with intermediate bytes go", () => {
+    expect(stripAnsi(`${ESC}[1 qtext`)).toBe("text");
+  });
+
+  test("punctuation-final sequences go", () => {
+    expect(stripAnsi(`${ESC}[0!ptext`)).toBe("text");
+  });
+
+  test("ST-terminated OSC goes, payload and all", () => {
+    expect(stripAnsi(`${ESC}]0;helyx${ESC}\\ready`)).toBe("ready");
+  });
+
+  test("an OSC-8 hyperlink does not leak its URL into the text", () => {
+    const link = `${ESC}]8;;file:///home/dev/helyx/README.md${ESC}\\README.md${ESC}]8;;${ESC}\\`;
+    expect(stripAnsi(link)).toBe("README.md");
+  });
+
+  test("a private-mode sequence before a spinner keeps it detectable", () => {
+    expect(hasActiveSpinner(`output\n${ESC}[?25l${ESC}[2K· Thinking`)).toBe(true);
+  });
+});
+
+describe("escapeHtml", () => {
+  test("escapes the three characters Telegram's HTML mode cares about", () => {
+    expect(escapeHtml("a < b > c & d")).toBe("a &lt; b &gt; c &amp; d");
+  });
+
+  test("escapes the ampersand first, so entities are not double-encoded wrong", () => {
+    expect(escapeHtml("&lt;")).toBe("&amp;lt;");
+  });
+
+  test("real terminal output survives intact", () => {
+    // A redirect and a shell && in one line — ordinary output that would
+    // otherwise make Telegram reject the entire alert.
+    expect(escapeHtml("$ cmd 2>&1 && echo <done>")).toBe("$ cmd 2&gt;&amp;1 &amp;&amp; echo &lt;done&gt;");
+  });
+
+  test("text with nothing to escape is unchanged", () => {
+    expect(escapeHtml("plain output")).toBe("plain output");
+  });
+
+  test("an empty string stays empty", () => {
+    expect(escapeHtml("")).toBe("");
   });
 });

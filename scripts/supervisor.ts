@@ -29,7 +29,7 @@ import { join, resolve } from "node:path";
 import { forceSummarize } from "../memory/summarizer.ts";
 import { clearCache } from "../memory/short-term.ts";
 import { isRequeued, markRequeued } from "../utils/requeue.ts";
-import { paneLines, hasActiveSpinner } from "../utils/terminal.ts";
+import { paneLines, hasActiveSpinner, escapeHtml } from "../utils/terminal.ts";
 import {
   sessionProblemKey,
   projectFromSessionProblemKey,
@@ -360,7 +360,7 @@ async function checkHungSessions(sql: postgres.Sql, runShell?: RunShell): Promis
         msgParts.push(`⚙️ Claude сейчас работает — возможно, не завис`);
       }
       if (pane.length > 0) {
-        msgParts.push(`Пане (последние 5 строк):\n<pre>${pane.join("\n")}</pre>`);
+        msgParts.push(`Пане (последние 5 строк):\n<pre>${escapeHtml(pane.join("\n"))}</pre>`);
       }
       msgParts.push(`📁 Лог: ${logPath}`);
       const msg = msgParts.join("\n");
@@ -462,7 +462,7 @@ async function checkStuckQueue(sql: postgres.Sql, runShell?: RunShell): Promise<
       // reached the message — the operator lost the one piece of context that
       // says what the session is actually doing.
       if (pane.length > 0) {
-        msgParts.push(`Пане (последние 5 строк):\n<pre>${pane.join("\n")}</pre>`);
+        msgParts.push(`Пане (последние 5 строк):\n<pre>${escapeHtml(pane.join("\n"))}</pre>`);
       }
       msgParts.push(`📁 Лог: ${logPath}`);
       const msg = msgParts.join("\n");
@@ -1201,6 +1201,8 @@ async function checkGemmaHealth(sql: postgres.Sql): Promise<void> {
 
 // --- Recovery check ---
 
+export type RecoveryAction = "resolve" | "start-hold" | "keep-waiting" | "reset";
+
 /**
  * What the recovery loop should do with one alert on this tick.
  *
@@ -1213,8 +1215,6 @@ async function checkGemmaHealth(sql: postgres.Sql): Promise<void> {
  * Exported with its clock as a parameter so the rule can be tested without a
  * database behind it.
  */
-export type RecoveryAction = "resolve" | "start-hold" | "keep-waiting" | "reset";
-
 export function recoveryDecision(
   bothClear: boolean,
   cleanSince: number | undefined,
@@ -1222,7 +1222,10 @@ export function recoveryDecision(
   holdMs: number,
 ): RecoveryAction {
   if (!bothClear) return "reset";
-  if (cleanSince === undefined) return "start-hold";
+  // A timestamp that is absent, zero, or not a number is no timer at all. The
+  // `if (cleanSince && …)` this replaced treated those the same way, and the
+  // exported contract should not quietly differ from it.
+  if (!cleanSince || !Number.isFinite(cleanSince)) return "start-hold";
   return now - cleanSince >= holdMs ? "resolve" : "keep-waiting";
 }
 

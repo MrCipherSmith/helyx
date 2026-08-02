@@ -10,7 +10,7 @@ import { sql } from "../../memory/db.ts";
 import { enqueueRestart } from "../../services/project-service.ts";
 import { forwardStuckMessages } from "../../scripts/supervisor.ts";
 import { parseSupervisorCallback } from "../../utils/supervisor-callbacks.ts";
-import { paneLines } from "../../utils/terminal.ts";
+import { paneLines, escapeHtml } from "../../utils/terminal.ts";
 
 export async function handleSupervisorCallback(ctx: Context): Promise<void> {
   // Only the configured admin chat may trigger supervisor actions
@@ -76,7 +76,7 @@ export async function handleSupervisorCallback(ctx: Context): Promise<void> {
     if (chatId) {
       const body: Record<string, unknown> = {
         chat_id: chatId,
-        text: `📋 <b>${project.name}</b> — последние 20 строк пейна:\n<pre>${pane.slice(0, 3500)}</pre>`,
+        text: `📋 <b>${project.name}</b> — последние 20 строк пейна:\n<pre>${escapeHtml(pane.slice(0, 3500))}</pre>`,
         parse_mode: "HTML",
       };
       if (threadId) body.message_thread_id = threadId;

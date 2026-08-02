@@ -5,7 +5,7 @@
   "title": "One tested implementation of terminal-output parsing",
   "status": "in-progress",
   "createdAt": "2026-08-02T10:34:27.806Z",
-  "updatedAt": "2026-08-02T10:41:29.463Z",
+  "updatedAt": "2026-08-02T11:00:42.144Z",
   "source": {
     "type": "description",
     "ref": null
@@ -74,6 +74,20 @@
       "acRefs": [],
       "evidenceRefs": [],
       "budget": {}
+    },
+    {
+      "id": "T5",
+      "title": "Address Codex review findings",
+      "kind": "implement",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
     }
   ],
   "history": [
@@ -104,6 +118,11 @@
       "at": "2026-08-02T10:41:29.463Z",
       "event": "task-done",
       "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-02T11:00:42.144Z",
+      "event": "task-added",
+      "detail": "T5: Address Codex review findings"
     }
   ]
 }

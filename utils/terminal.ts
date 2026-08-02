@@ -13,11 +13,28 @@
  * preserved.
  */
 
-/** CSI: ESC [ … final-byte. Covers colour, cursor movement, erase, and the rest. */
-const CSI = /\x1b\[[0-9;]*[a-zA-Z]/g;
+/**
+ * CSI: ESC `[`, parameter bytes, intermediate bytes, final byte — the ECMA-48
+ * ranges rather than the digits-and-letters approximation the five originals
+ * used.
+ *
+ * The parameter range matters here specifically. `ESC[?25l` hides the cursor
+ * and is what a CLI emits right before it starts drawing a spinner; `?` is a
+ * parameter byte, so a `[0-9;]*` pattern does not match the sequence, the ESC
+ * is removed as a control character, and `?25l` is left sitting in front of
+ * the spinner glyph — defeating the anchored match this module exists to
+ * protect. Colon-form SGR (`ESC[38:2:255:0:0m`) fails the same way.
+ */
+const CSI = /\x1b\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]/g;
 
-/** OSC: ESC ] … BEL. tmux and shells use these for window titles. */
-const OSC = /\x1b\][^\x07]*\x07/g;
+/**
+ * OSC: ESC `]` … terminator, where the terminator is BEL or ST (`ESC \`).
+ *
+ * Only BEL was recognised before. ST-terminated titles are just as common, and
+ * OSC-8 hyperlinks — which modern CLIs use for clickable paths — are always
+ * ST-terminated, so their URLs leaked into the text as visible content.
+ */
+const OSC = /\x1b\][\s\S]*?(?:\x07|\x1b\\)/g;
 
 /**
  * C0 control characters, newline excepted.
@@ -30,9 +47,33 @@ const OSC = /\x1b\][^\x07]*\x07/g;
  */
 const CONTROLS = /[\x00-\x09\x0b-\x1f]/g;
 
-/** Remove ANSI escape sequences and stray control characters. */
+/**
+ * Remove ANSI escape sequences and stray control characters.
+ *
+ * OSC first: an ST terminator is itself an ESC sequence, so stripping CSI or
+ * controls ahead of it would break the payload apart and leave the title text
+ * behind.
+ *
+ * Note for streamed input: this is not incremental. A sequence split across
+ * two chunks is not recognised in either half, and the fragments survive as
+ * text. Callers reading a stream should accumulate first and strip the buffer,
+ * which is what `bot/commands/codex.ts` does.
+ */
 export function stripAnsi(s: string): string {
-  return s.replace(CSI, "").replace(OSC, "").replace(CONTROLS, "");
+  return s.replace(OSC, "").replace(CSI, "").replace(CONTROLS, "");
+}
+
+/**
+ * Escape text for Telegram's HTML parse mode.
+ *
+ * Terminal output routinely contains `<`, `>` and `&` — a redirect, a diff
+ * marker, a shell `&&`. Interpolated raw into a `<pre>` block, Telegram
+ * rejects the whole message, so the alert an operator was supposed to receive
+ * simply never arrives. Only these three characters need escaping; Telegram's
+ * HTML mode ignores the rest.
+ */
+export function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 /**

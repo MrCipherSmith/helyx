@@ -19,6 +19,7 @@ export async function handleCodexSetup(ctx: Context): Promise<void> {
     if (!proc.stdout || typeof proc.stdout === "number") throw new Error("stdout unavailable");
     const reader = (proc.stdout as ReadableStream<Uint8Array>).getReader();
     const decoder = new TextDecoder();
+    let raw = "";
     let buffer = "";
     const deadline = Date.now() + 30_000;
 
@@ -29,7 +30,12 @@ export async function handleCodexSetup(ctx: Context): Promise<void> {
       const { done, value } = await reader.read();
       if (done) break;
 
-      buffer += stripAnsi(decoder.decode(value));
+      // Accumulate raw, then strip the whole buffer. Stripping each chunk
+      // instead leaves the halves of a sequence that straddles a chunk
+      // boundary sitting in the text as literal characters — and a stray `m`
+      // landing next to the device code defeats the \b in the pattern below.
+      raw += decoder.decode(value);
+      buffer = stripAnsi(raw);
 
       // Parse URL — look for https://auth.openai.com/codex/device
       const urlMatch = buffer.match(/https:\/\/auth\.openai\.com\/codex\/device/);
