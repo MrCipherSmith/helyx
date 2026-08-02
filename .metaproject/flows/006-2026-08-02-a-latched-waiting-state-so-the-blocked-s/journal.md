@@ -68,3 +68,16 @@ larger scale: the same protocol written out in three places, differing in each.
 Routing them through one function is the same move as the shared ANSI parser,
 the shared prompt definition and the captured latch key — four flows in a row
 where the fix was to stop repeating something and start sharing it.
+- 2026-08-02T18:29:40.720Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/42
+- 2026-08-02T18:29:40.827Z - ac-confirmed: AC1: resolvePhase(stage, awaitingPermission) exported; returns waiting when held, detectPhase otherwise
+- 2026-08-02T18:29:40.927Z - ac-confirmed: AC2: five stages covering running, reading, writing, searching and thinking each asserted twice — classifier result, then waiting while held
+- 2026-08-02T18:29:41.010Z - ac-confirmed: AC3: empty stage returns null unheld and waiting while held
+- 2026-08-02T18:29:41.094Z - ac-confirmed: AC4: StatusManager holds a HoldCounter keyed by stateKey, exposes holdAwaitingPermission, and computes the phase via resolvePhase at the single former detectPhase site
+- 2026-08-02T18:29:41.180Z - ac-confirmed: AC5: HoldCounter counts; tests cover two overlapping holders, release order independence, double-release not consuming another hold, and a stale lease after the key was retaken
+- 2026-08-02T18:29:52.528Z - ac-confirmed: AC6: pollForResponse acquires before the wait and releases in a finally; the lease is captured so no exit is enumerated — answered, resolved externally, timed out and thrown all release
+- 2026-08-02T18:29:52.616Z - ac-confirmed: AC7: pollForResponse is called once, at permissions.ts on the sendResult.ok path; the send-failure branch returns before it
+- 2026-08-02T18:29:52.706Z - ac-confirmed: AC8: bun run typecheck clean; bun run lint 0 errors (209 warnings, pre-existing); 618 unit tests pass, none skipped or removed
+- 2026-08-02T18:29:52.796Z - ac-confirmed: AC9: keryx health run: coverage 17.96% (was 17.83% at flow start), gate WARN on coverage only
+- 2026-08-02T18:29:52.889Z - ac-confirmed: AC10: PR #42 carries a Verification limit section: the lifecycle is verified by the scope construct and by reading every exit, not end to end; Codex's note that fakes would suffice is recorded in the journal as the next step
+- 2026-08-02T18:29:52.982Z - completing
+- 2026-08-02T18:29:54.663Z - done: all gates passed

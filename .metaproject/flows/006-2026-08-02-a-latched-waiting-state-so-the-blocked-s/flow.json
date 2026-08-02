@@ -3,17 +3,58 @@
   "id": "006",
   "slug": "a-latched-waiting-state-so-the-blocked-s",
   "title": "a latched waiting state, so the blocked-session signal can finally be true",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-02T15:17:04.435Z",
-  "updatedAt": "2026-08-02T15:33:20.397Z",
+  "updatedAt": "2026-08-02T18:29:54.663Z",
   "source": {
     "type": "description",
     "ref": null
   },
   "acChecksum": "sha256:621b7954b6f1c761c50248d3c876209a6a8e05970ccd78618115076cc8baeecc",
-  "acConfirmed": {},
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-02T18:29:40.827Z",
+      "note": "resolvePhase(stage, awaitingPermission) exported; returns waiting when held, detectPhase otherwise"
+    },
+    "AC2": {
+      "at": "2026-08-02T18:29:40.927Z",
+      "note": "five stages covering running, reading, writing, searching and thinking each asserted twice — classifier result, then waiting while held"
+    },
+    "AC3": {
+      "at": "2026-08-02T18:29:41.010Z",
+      "note": "empty stage returns null unheld and waiting while held"
+    },
+    "AC4": {
+      "at": "2026-08-02T18:29:41.094Z",
+      "note": "StatusManager holds a HoldCounter keyed by stateKey, exposes holdAwaitingPermission, and computes the phase via resolvePhase at the single former detectPhase site"
+    },
+    "AC5": {
+      "at": "2026-08-02T18:29:41.180Z",
+      "note": "HoldCounter counts; tests cover two overlapping holders, release order independence, double-release not consuming another hold, and a stale lease after the key was retaken"
+    },
+    "AC6": {
+      "at": "2026-08-02T18:29:52.528Z",
+      "note": "pollForResponse acquires before the wait and releases in a finally; the lease is captured so no exit is enumerated — answered, resolved externally, timed out and thrown all release"
+    },
+    "AC7": {
+      "at": "2026-08-02T18:29:52.616Z",
+      "note": "pollForResponse is called once, at permissions.ts on the sendResult.ok path; the send-failure branch returns before it"
+    },
+    "AC8": {
+      "at": "2026-08-02T18:29:52.706Z",
+      "note": "bun run typecheck clean; bun run lint 0 errors (209 warnings, pre-existing); 618 unit tests pass, none skipped or removed"
+    },
+    "AC9": {
+      "at": "2026-08-02T18:29:52.796Z",
+      "note": "keryx health run: coverage 17.96% (was 17.83% at flow start), gate WARN on coverage only"
+    },
+    "AC10": {
+      "at": "2026-08-02T18:29:52.889Z",
+      "note": "PR #42 carries a Verification limit section: the lifecycle is verified by the scope construct and by reading every exit, not end to end; Codex's note that fakes would suffice is recorded in the journal as the next step"
+    }
+  },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/42"
   },
   "tasks": [
     {
@@ -110,6 +151,70 @@
       "at": "2026-08-02T15:33:20.397Z",
       "event": "task-done",
       "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-02T18:29:40.720Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/42"
+    },
+    {
+      "at": "2026-08-02T18:29:40.827Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: resolvePhase(stage, awaitingPermission) exported; returns waiting when held, detectPhase otherwise"
+    },
+    {
+      "at": "2026-08-02T18:29:40.927Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: five stages covering running, reading, writing, searching and thinking each asserted twice — classifier result, then waiting while held"
+    },
+    {
+      "at": "2026-08-02T18:29:41.010Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: empty stage returns null unheld and waiting while held"
+    },
+    {
+      "at": "2026-08-02T18:29:41.094Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: StatusManager holds a HoldCounter keyed by stateKey, exposes holdAwaitingPermission, and computes the phase via resolvePhase at the single former detectPhase site"
+    },
+    {
+      "at": "2026-08-02T18:29:41.180Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: HoldCounter counts; tests cover two overlapping holders, release order independence, double-release not consuming another hold, and a stale lease after the key was retaken"
+    },
+    {
+      "at": "2026-08-02T18:29:52.528Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: pollForResponse acquires before the wait and releases in a finally; the lease is captured so no exit is enumerated — answered, resolved externally, timed out and thrown all release"
+    },
+    {
+      "at": "2026-08-02T18:29:52.616Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: pollForResponse is called once, at permissions.ts on the sendResult.ok path; the send-failure branch returns before it"
+    },
+    {
+      "at": "2026-08-02T18:29:52.706Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: bun run typecheck clean; bun run lint 0 errors (209 warnings, pre-existing); 618 unit tests pass, none skipped or removed"
+    },
+    {
+      "at": "2026-08-02T18:29:52.796Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: keryx health run: coverage 17.96% (was 17.83% at flow start), gate WARN on coverage only"
+    },
+    {
+      "at": "2026-08-02T18:29:52.889Z",
+      "event": "ac-confirmed",
+      "detail": "AC10: PR #42 carries a Verification limit section: the lifecycle is verified by the scope construct and by reading every exit, not end to end; Codex's note that fakes would suffice is recorded in the journal as the next step"
+    },
+    {
+      "at": "2026-08-02T18:29:52.982Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-02T18:29:54.663Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
   ]
 }
