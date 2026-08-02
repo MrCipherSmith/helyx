@@ -58,13 +58,23 @@ describe("detectPhase — a real permission prompt still reports waiting", () =>
     expect(detectPhase(dialog)).toBe("waiting");
   });
 
-  test("the signal alone is enough", () => {
-    expect(detectPhase("Do you want to proceed?")).toBe("waiting");
+  test("both signals are required, in order", () => {
+    // Exactly what scripts/tmux-watchdog.ts requires. Either alone is not a
+    // prompt, and accepting one would be a new false 💬 of the same class this
+    // change removes: `● $ echo "Do you want to proceed?"` is a shell command.
+    expect(detectPhase("Do you want to proceed?")).not.toBe("waiting");
+    expect(detectPhase("❯ 1. Yes")).not.toBe("waiting");
+    expect(detectPhase('● $ echo "Do you want to proceed?"')).toBe("running");
   });
 
-  test("the choice line alone is enough", () => {
-    expect(detectPhase("❯ 1. Yes")).toBe("waiting");
-    expect(detectPhase("❯ 2) Yes, and don't ask again")).toBe("waiting");
+  test("the choice must come after the question, not before it", () => {
+    expect(isPermissionPrompt("❯ 1. Yes\nDo you want to proceed?")).toBe(false);
+    expect(isPermissionPrompt("Do you want to proceed?\n❯ 1. Yes")).toBe(true);
+  });
+
+  test("a choice line that is not highlighted does not count", () => {
+    // The ❯ marks the active choice; without it the dialog is not awaiting input.
+    expect(isPermissionPrompt("Do you want to proceed?\n  1. Yes")).toBe(false);
   });
 
   test("isPermissionPrompt agrees with detectPhase on the dialog", () => {

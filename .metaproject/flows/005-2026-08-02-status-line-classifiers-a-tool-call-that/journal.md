@@ -78,3 +78,33 @@ Recorded as the next flow. What this flow ships stands on its own: the false
 💬 signals are gone, the classifiers are covered, and the contract test pins
 what the monitor actually keeps — which is the thing nobody had written down
 and the reason the gap survived this long.
+- 2026-08-02T14:37:30.959Z - task-done: T4: Self-review and prepare draft PR
+
+### Third Codex pass — the same mistake a third time
+
+The revert was confirmed clean. One finding remained, and it is the same
+error I had already made twice in this flow: **I described a stricter contract
+than I implemented.**
+
+`isPermissionPrompt` was documented as using "the same signals
+`scripts/tmux-watchdog.ts` uses" and then combined them with **or**. The
+watchdog requires both — the question, and a highlighted choice *below* it.
+With `or`, `● $ echo "Do you want to proceed?"` becomes `waiting`: a brand new
+false 💬, of exactly the class this flow exists to remove.
+
+Fixed: both signals, in order, matching the watchdog. Three tests added — the
+shell-command case, the choice-before-question case, and an unhighlighted
+choice line.
+
+Three times in one flow, the same shape:
+
+1. planned a rule keyed on "is there a bullet", when the real dialog has one —
+   caught by reading the fixture before writing code;
+2. claimed the new regexes detect real prompts, when the monitor discards both
+   signal lines before they arrive — caught by Codex, and it was the risk this
+   plan listed in step 5 and did not run;
+3. claimed to share the watchdog's definition while implementing a weaker one
+   — caught by Codex.
+
+Every one was a gap between what the comment asserted and what the code did.
+Worth recording as the lesson of this flow, more than the fix itself.

@@ -5,7 +5,7 @@
   "title": "status line classifiers — a tool call that mentions waiting is shown as waiting",
   "status": "in-progress",
   "createdAt": "2026-08-02T14:12:04.685Z",
-  "updatedAt": "2026-08-02T14:16:52.071Z",
+  "updatedAt": "2026-08-02T14:37:30.959Z",
   "source": {
     "type": "description",
     "ref": null
@@ -65,7 +65,7 @@
       "id": "T4",
       "title": "Self-review and prepare draft PR",
       "kind": "review",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -73,7 +73,8 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     }
   ],
   "history": [
@@ -104,6 +105,11 @@
       "at": "2026-08-02T14:16:52.071Z",
       "event": "task-done",
       "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-02T14:37:30.959Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
     }
   ]
 }

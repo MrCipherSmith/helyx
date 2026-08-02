@@ -76,7 +76,15 @@ const PROMPT_CHOICE_RE = /❯\s*\d[.)]\s*yes/i;
  * matching.
  */
 export function isPermissionPrompt(stage: string): boolean {
-  return PROMPT_SIGNAL_RE.test(stage) || PROMPT_CHOICE_RE.test(stage);
+  // Both signals, in order, exactly as scripts/tmux-watchdog.ts requires them:
+  // the question, and then a highlighted choice below it. Either one alone is
+  // not a prompt — `● $ echo "Do you want to proceed?"` is a shell command,
+  // and accepting it would be a new false 💬 of precisely the class this
+  // function exists to remove.
+  const lines = stage.split("\n");
+  const signalIdx = lines.findIndex((l) => PROMPT_SIGNAL_RE.test(l));
+  if (signalIdx === -1) return false;
+  return lines.slice(signalIdx + 1).some((l) => PROMPT_CHOICE_RE.test(l));
 }
 
 /**
