@@ -1,6 +1,6 @@
 import { IncomingMessage, ServerResponse } from "http";
-import { readFile, access, writeFile } from "fs/promises";
-import { join, extname, resolve } from "path";
+import { readFile, access, writeFile, realpath } from "fs/promises";
+import { join, extname } from "path";
 import { homedir } from "os";
 import { sql } from "../memory/db.ts";
 import { sessionManager } from "../sessions/manager.ts";
@@ -13,6 +13,13 @@ import { addSSEClient, removeSSEClient, getSSEClientCount } from "./notification
 import { sessionService } from "../services/session-service.ts";
 import { projectService } from "../services/project-service.ts";
 import { logger } from "../logger.ts";
+import {
+  resolveStaticPathReal,
+  parseCookieHeader,
+  sanitizeGitRef,
+  isSafeRepoPath,
+  hostToContainerPath as mapHostPath,
+} from "../utils/request-guards.ts";
 
 const DIST_DIR = join(import.meta.dirname, "../dashboard/dist");
 const WEBAPP_DIST_DIR = join(import.meta.dirname, "../dashboard/webapp/dist");
@@ -20,15 +27,12 @@ const WEBAPP_DIST_DIR = join(import.meta.dirname, "../dashboard/webapp/dist");
 // Map host project_path to container-accessible path
 const HOST_PROJECTS_DIR = process.env.HOST_PROJECTS_DIR ?? (homedir() + "/bots");
 function hostToContainerPath(hostPath: string): string {
-  if (hostPath.startsWith(HOST_PROJECTS_DIR)) {
-    return "/host-projects" + hostPath.slice(HOST_PROJECTS_DIR.length);
-  }
-  // Fallback for legacy HOST_HOME mount during transition
-  const HOST_HOME = process.env.HOST_HOME ?? homedir();
-  if (process.env.HOST_HOME && hostPath.startsWith(HOST_HOME)) {
-    return "/host-home" + hostPath.slice(HOST_HOME.length);
-  }
-  return hostPath; // fallback: same path (manual/non-Docker runs)
+  // HOST_HOME is the legacy mount kept during the transition; unset means the
+  // fallback does not apply, which is why it is read rather than defaulted.
+  return mapHostPath(hostPath, {
+    projectsDir: HOST_PROJECTS_DIR,
+    hostHome: process.env.HOST_HOME,
+  });
 }
 
 const MIME_TYPES: Record<string, string> = {
@@ -72,10 +76,7 @@ async function parseBody(req: IncomingMessage): Promise<any> {
 }
 
 function parseCookie(req: IncomingMessage, name: string): string | undefined {
-  const cookies = req.headers.cookie;
-  if (!cookies) return undefined;
-  const match = cookies.split(";").find((c) => c.trim().startsWith(`${name}=`));
-  return match?.split("=").slice(1).join("=").trim();
+  return parseCookieHeader(req.headers.cookie, name);
 }
 
 function setCookie(res: ServerResponse, name: string, value: string, maxAge: number): void {
@@ -393,10 +394,8 @@ async function handleGitFile(res: ServerResponse, sessionId: number, url: URL): 
   if (!path) { sendError(res, "Session not found", 404); return; }
   const file = url.searchParams.get("path");
   if (!file) { sendError(res, "path required"); return; }
-  // Prevent path traversal
-  if (file.includes("..")) { sendError(res, "Invalid path", 400); return; }
-  const rawRef = url.searchParams.get("ref") ?? "HEAD";
-  const ref = /^[a-zA-Z0-9._\-\/~^:]{1,200}$/.test(rawRef) ? rawRef : "HEAD";
+  if (!isSafeRepoPath(file)) { sendError(res, "Invalid path", 400); return; }
+  const ref = sanitizeGitRef(url.searchParams.get("ref"));
   const { ok, out } = await gitExec(path, ["show", `${ref}:${file}`]);
   if (!ok) { sendError(res, out || "File not found", 404); return; }
   sendJson(res, { content: out });
@@ -830,10 +829,18 @@ async function handleAuthWebApp(req: IncomingMessage, res: ServerResponse): Prom
 // --- Static file serving ---
 
 async function serveWebApp(res: ServerResponse, subpath: string): Promise<boolean> {
-  let filePath = resolve(join(WEBAPP_DIST_DIR, subpath));
-  if (!filePath.startsWith(WEBAPP_DIST_DIR)) return false;
+  const contained = await resolveStaticPathReal(WEBAPP_DIST_DIR, subpath, realpath);
+  if (contained === null) return false;
+  let filePath = contained;
   const exists = await access(filePath).then(() => true, () => false);
-  if (!exists || !subpath || subpath === "/") filePath = join(WEBAPP_DIST_DIR, "index.html");
+  if (!exists || !subpath || subpath === "/") {
+    // The SPA fallback replaces a validated path, so it is validated too — a
+    // deployed index.html that is itself a symlink would otherwise walk out
+    // of the root through a door the request never had to open.
+    const fallback = await resolveStaticPathReal(WEBAPP_DIST_DIR, "index.html", realpath);
+    if (fallback === null) return false;
+    filePath = fallback;
+  }
   const indexExists = await access(filePath).then(() => true, () => false);
   if (!indexExists) return false;
   const ext = extname(filePath);
@@ -847,12 +854,16 @@ async function serveWebApp(res: ServerResponse, subpath: string): Promise<boolea
 }
 
 async function serveStatic(res: ServerResponse, pathname: string): Promise<boolean> {
-  let filePath = resolve(join(DIST_DIR, pathname));
-  if (!filePath.startsWith(DIST_DIR)) return false; // path traversal protection
+  const contained = await resolveStaticPathReal(DIST_DIR, pathname, realpath);
+  if (contained === null) return false; // escaped the static root
+  let filePath = contained;
 
   const exists = await access(filePath).then(() => true, () => false);
   if (!exists || pathname === "/") {
-    filePath = join(DIST_DIR, "index.html");
+    // Same reasoning as serveWebApp: the fallback is a path too.
+    const fallback = await resolveStaticPathReal(DIST_DIR, "index.html", realpath);
+    if (fallback === null) return false;
+    filePath = fallback;
   }
   const indexExists = await access(filePath).then(() => true, () => false);
   if (!indexExists) return false;

@@ -1,0 +1,220 @@
+{
+  "schemaVersion": 2,
+  "id": "003",
+  "slug": "dashboard-api-cover-the-request-boundary",
+  "title": "dashboard-api — cover the request-boundary decisions",
+  "status": "done",
+  "createdAt": "2026-08-02T12:17:59.632Z",
+  "updatedAt": "2026-08-02T12:44:15.734Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:5c82684aacfd5dba0869bea3eae919a8740bdf36d1e5468d5c3f8ffaff4dce5b",
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-02T12:44:03.714Z",
+      "note": "utils/request-guards.ts exports all six, plus resolveStaticPathReal added during review"
+    },
+    "AC2": {
+      "at": "2026-08-02T12:44:03.796Z",
+      "note": "resolveStaticPath('/app/dashboard/dist','/../dist-evil/secret') is null; verified over HTTP with a real dist-evil sibling — 0 occurrences of its content in the response"
+    },
+    "AC3": {
+      "at": "2026-08-02T12:44:03.879Z",
+      "note": "containsPath tested for root, child, nested child, prefix-sharing sibling, parent, unrelated, trailing separator, non-canonical candidate, empty and relative roots"
+    },
+    "AC4": {
+      "at": "2026-08-02T12:44:03.961Z",
+      "note": "no startsWith containment and no inline cookie/git-ref parsing remain in mcp/dashboard-api.ts; all six decisions called from the module"
+    },
+    "AC5": {
+      "at": "2026-08-02T12:44:04.042Z",
+      "note": "parseCookieHeader: absent header, absent cookie, value containing =, name-is-prefix and name-is-suffix, whitespace, empty value"
+    },
+    "AC6": {
+      "at": "2026-08-02T12:44:13.630Z",
+      "note": "sanitizeGitRef: accepted refs, shell metacharacters falling back, the 200-char limit at 200 and 201, and _ accepted — the character the escaped - protects"
+    },
+    "AC7": {
+      "at": "2026-08-02T12:44:13.714Z",
+      "note": "hostToContainerPath: under projects dir, prefix-sharing sibling NOT rewritten, legacy host-home fallback, unset and empty legacy mount, trailing separators, root of /"
+    },
+    "AC8": {
+      "at": "2026-08-02T12:44:13.802Z",
+      "note": "bun run typecheck clean; bun run lint 0 errors (209 warnings, pre-existing); 505 unit tests pass, none skipped or removed"
+    },
+    "AC9": {
+      "at": "2026-08-02T12:44:13.885Z",
+      "note": "served over HTTP through the exported handleDashboardRequest three times: real asset 200; traversal into a real dist-evil sibling refused with 0 leaked occurrences; a real symlink out of the root refused, both as a direct request and as the index.html fallback"
+    },
+    "AC10": {
+      "at": "2026-08-02T12:44:13.972Z",
+      "note": "keryx health run: coverage 17.42% (was 17.00% at flow start), gate WARN on coverage only"
+    }
+  },
+  "pr": {
+    "url": "https://github.com/MrCipherSmith/helyx/pull/39"
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-02T12:17:59.632Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-02T12:19:14.350Z",
+      "event": "frozen",
+      "detail": "10 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-02T12:19:14.434Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-02T12:19:14.523Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-02T12:23:07.121Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-02T12:23:07.205Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-02T12:41:49.813Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-02T12:44:03.632Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/39"
+    },
+    {
+      "at": "2026-08-02T12:44:03.714Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: utils/request-guards.ts exports all six, plus resolveStaticPathReal added during review"
+    },
+    {
+      "at": "2026-08-02T12:44:03.797Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: resolveStaticPath('/app/dashboard/dist','/../dist-evil/secret') is null; verified over HTTP with a real dist-evil sibling — 0 occurrences of its content in the response"
+    },
+    {
+      "at": "2026-08-02T12:44:03.879Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: containsPath tested for root, child, nested child, prefix-sharing sibling, parent, unrelated, trailing separator, non-canonical candidate, empty and relative roots"
+    },
+    {
+      "at": "2026-08-02T12:44:03.961Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: no startsWith containment and no inline cookie/git-ref parsing remain in mcp/dashboard-api.ts; all six decisions called from the module"
+    },
+    {
+      "at": "2026-08-02T12:44:04.043Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: parseCookieHeader: absent header, absent cookie, value containing =, name-is-prefix and name-is-suffix, whitespace, empty value"
+    },
+    {
+      "at": "2026-08-02T12:44:13.631Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: sanitizeGitRef: accepted refs, shell metacharacters falling back, the 200-char limit at 200 and 201, and _ accepted — the character the escaped - protects"
+    },
+    {
+      "at": "2026-08-02T12:44:13.714Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: hostToContainerPath: under projects dir, prefix-sharing sibling NOT rewritten, legacy host-home fallback, unset and empty legacy mount, trailing separators, root of /"
+    },
+    {
+      "at": "2026-08-02T12:44:13.802Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: bun run typecheck clean; bun run lint 0 errors (209 warnings, pre-existing); 505 unit tests pass, none skipped or removed"
+    },
+    {
+      "at": "2026-08-02T12:44:13.885Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: served over HTTP through the exported handleDashboardRequest three times: real asset 200; traversal into a real dist-evil sibling refused with 0 leaked occurrences; a real symlink out of the root refused, both as a direct request and as the index.html fallback"
+    },
+    {
+      "at": "2026-08-02T12:44:13.972Z",
+      "event": "ac-confirmed",
+      "detail": "AC10: keryx health run: coverage 17.42% (was 17.00% at flow start), gate WARN on coverage only"
+    },
+    {
+      "at": "2026-08-02T12:44:14.054Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-02T12:44:15.734Z",
+      "event": "done",
+      "detail": "all gates passed"
+    }
+  ]
+}
