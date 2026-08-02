@@ -173,3 +173,78 @@ describe("formatReport", () => {
     expect(out).toContain("not automatically a defect");
   });
 });
+
+describe("each guard is isolated — a test that only that guard can satisfy", () => {
+  // Codex's finding on this PR: the tests above would pass with PATTERN_SIGNALS
+  // or TEMPLATE_MARKER deleted, because some other filter happened to reject
+  // the same input. A test that cannot fail when a guard is removed does not
+  // test that guard. Each case here is constructed so exactly one filter
+  // stands between it and a false positive.
+
+  test("PATTERN_SIGNALS alone rejects a path in a legal regex position", () => {
+    // Preceder passes — `(` is one. Nothing else rejects it. Only the
+    // requirement that a pattern contain pattern structure does.
+    expect(extractRegexLiterals('fn("/usr/local/share/data/x");')).toEqual([]);
+  });
+
+  test("TEMPLATE_MARKER alone rejects an interpolated fragment", () => {
+    // Preceder is `=`, the fragment carries `[` and `+`, and it does not start
+    // with a quote. Only `${` disqualifies it.
+    expect(extractRegexLiterals("const r = /x[0-9]+${n}/;")).toEqual([]);
+  });
+
+  test("the quote-led filter alone rejects string content", () => {
+    // Preceder `=`, has `[` and `+`, no `${`. Only the leading quote saves it.
+    expect(extractRegexLiterals(`const s = /'[0-9]+abc/;`)).toEqual([]);
+  });
+
+  test("the preceder anchor alone rejects a slash after a word character", () => {
+    // Has pattern structure and no other disqualifier; what rejects it is that
+    // a regex cannot follow an identifier.
+    expect(extractRegexLiterals("const n = count /x[0-9]+/;")).toEqual([]);
+  });
+
+  test("MIN_REGEX_LENGTH alone rejects a short pattern in a good position", () => {
+    expect(extractRegexLiterals("const R = /^\\d+$/;")).toEqual([]);
+  });
+});
+
+describe("positions a pattern is legally returned from", () => {
+  test("an arrow function body", () => {
+    // Missed before: `=>` ends with `>`, which was not a recognised preceder,
+    // so a regex handed straight back from an arrow was invisible.
+    expect(extractRegexLiterals("const f = (x) => /^[a-z][a-z0-9]{3,}$/.test(x);"))
+      .toEqual(["/^[a-z][a-z0-9]{3,}$/"]);
+  });
+
+  test("a throw", () => {
+    expect(extractRegexLiterals("throw /^[a-z][a-z0-9]{3,}$/;"))
+      .toEqual(["/^[a-z][a-z0-9]{3,}$/"]);
+  });
+
+  test("after await", () => {
+    expect(extractRegexLiterals("const r = await /^[a-z][a-z0-9]{3,}$/;"))
+      .toEqual(["/^[a-z][a-z0-9]{3,}$/"]);
+  });
+});
+
+describe("flags are part of the literal", () => {
+  test("d and v are recognised, so a flagged pattern is not conflated with a bare one", () => {
+    // Omitting them from the flag set does not skip the literal — the capture
+    // ends at the slash and drops the flag, so /x/d and /x/ become the same
+    // string and are reported as duplicates of each other.
+    expect(extractRegexLiterals("const R = /^[a-z][a-z0-9]{3,}$/d;"))
+      .toEqual(["/^[a-z][a-z0-9]{3,}$/d"]);
+    expect(extractRegexLiterals("const R = /^[a-z][a-z0-9]{3,}$/v;"))
+      .toEqual(["/^[a-z][a-z0-9]{3,}$/v"]);
+  });
+
+  test("differently flagged patterns are different literals", () => {
+    const sources: Record<string, string> = {
+      "a.ts": "const R = /^[a-z][a-z0-9]{3,}$/g;",
+      "b.ts": "const R = /^[a-z][a-z0-9]{3,}$/;",
+    };
+    // Same body, different flags — not the same rule, and not a duplicate.
+    expect(findDuplicates(Object.keys(sources), (f) => sources[f]!)).toEqual([]);
+  });
+});

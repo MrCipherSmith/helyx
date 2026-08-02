@@ -53,3 +53,26 @@ patterns. Four filters brought it to 19, all genuine:
   `html += "…"` let string content through;
 - `${` disqualifies a match, since no real pattern contains it;
 - strings are opt-in, because that dimension is where the noise lives.
+
+## Codex review, 2026-08-02
+
+Verdict: REQUEST CHANGES. Three findings on the scanner, all confirmed by
+running them before accepting.
+
+| Finding | Verified | Outcome |
+|---|---|---|
+| The flag set `[gimsuy]` omits `d` and `v` | `/x/d` was captured as `/x/` — the flag dropped | **Fixed.** Not a skipped literal but a *conflation*: `/x/d` and `/x/` became the same string and would be reported as duplicates of each other. |
+| Literals after `=>` and `throw` are missed | both returned `[]` | **Fixed.** `>` and `throw`/`await`/`yield` added. A regex handed straight back from an arrow function was invisible — a false negative in a tool whose whole job is finding copies. |
+| The tests would pass against a broken scanner | confirmed by inspection: removing `PATTERN_SIGNALS` or `TEMPLATE_MARKER` leaves every existing case still rejected by some *other* filter | **Fixed.** Five tests added, each constructed so exactly one guard stands between the input and a false positive. |
+
+The third is the one worth keeping. A test that cannot fail when a guard is
+deleted does not test that guard, and until this was pointed out the suite
+looked thorough while pinning almost nothing about the filters specifically.
+The same class as the flow-005 tests that fed `detectPhase` raw pane text and
+passed while production failed.
+
+Codex also confirmed the two duplicate removals are behaviour-preserving,
+including that `handleGitDiff` keeps `HEAD~1` rather than inheriting
+`sanitizeGitRef`'s `HEAD` default.
+
+After the fixes: 652 tests pass, the repository report is unchanged at 19.

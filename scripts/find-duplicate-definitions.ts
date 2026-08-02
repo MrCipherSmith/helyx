@@ -60,8 +60,12 @@ const TEST_PATH = /(^|\/)(tests?|__tests__|fixtures)(\/|$)|\.(test|spec)\.tsx?$/
  * The body may contain escapes and character classes — `[^\/]` must not end
  * the literal at the slash inside it — which is why those two alternatives
  * come before the plain-character one.
+ *
+ * The flag set includes `d` and `v`. Omitting them does not merely skip those
+ * literals: the capture ends at the slash and drops the flag, so `/x/d` and
+ * `/x/` become the same string and are reported as duplicates of each other.
  */
-const REGEX_LITERAL = /\/(?![/*])(?:\\.|\[(?:\\.|[^\]])*\]|[^/\n\\])+\/[gimsuy]*/g;
+const REGEX_LITERAL = /\/(?![/*])(?:\\.|\[(?:\\.|[^\]])*\]|[^/\n\\])+\/[dgimsuvy]*/g;
 
 /** Single- or double-quoted strings, without interpolation. */
 const STRING_LITERAL = /(['"])(?:\\.|(?!\1)[^\\\n])*\1/g;
@@ -77,8 +81,13 @@ const STRING_LITERAL = /(['"])(?:\\.|(?!\1)[^\\\n])*\1/g;
  * Anchored at the end, which is the whole point: an unanchored test matched
  * the `=` in `html += "..."` and let string content through. Its own test
  * caught that.
+ *
+ * `>` is here for `=>`, and `throw`/`await`/`yield` for the other positions a
+ * pattern is legally returned from. Without them a regex handed straight back
+ * from an arrow function is invisible, which is a duplicate this tool exists
+ * to find rather than a false positive it exists to avoid.
  */
-const REGEX_PRECEDERS = /(?:[=(,:[!&|?{;+]|\breturn|\btypeof|\bcase)$/;
+const REGEX_PRECEDERS = /(?:[=(,:[!&|?{;+>]|\breturn|\btypeof|\bcase|\bthrow|\bawait|\byield)$/;
 
 /** Something only a pattern has. A path or a URL has none of these. */
 const PATTERN_SIGNALS = /[\\^$[\]+*?{}|]|\(\?/;
