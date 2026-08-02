@@ -228,6 +228,14 @@ export class PermissionHandler {
       : toolName === "Edit" || toolName === "Write" ? `Editing: ${String(input?.file_path ?? "").split("/").pop()}`
       : toolName === "Grep" ? `Searching: ${String(input?.pattern ?? "").slice(0, 40)}`
       : `${toolName}`;
+    // NOTE: the 💬 waiting phase cannot be reached for a real permission
+    // request. tmux-monitor discards both the "Do you want to proceed?" line
+    // and the ❯ choice line before the pane text becomes a status, and this
+    // status says "Running: …" like any other action. Announcing it from here
+    // is the right fix, but only as a latched state: a plain prefix is
+    // overwritten by the next monitor poll and is never cleared if delivery
+    // fails or the request times out. Tracked as its own flow — see
+    // .metaproject/flows/005-*/journal.md.
     await this.status.updateStatus(chatId, shortDesc);
 
     let previewMsgId: number | null = null;

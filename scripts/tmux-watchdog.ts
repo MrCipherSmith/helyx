@@ -27,6 +27,7 @@
 
 import type postgres from "postgres";
 import { stripAnsi } from "../utils/terminal.ts";
+import { isPermissionPrompt, findPromptSignal } from "../utils/permission-prompt.ts";
 import { escapeHtml } from "../utils/html.ts";
 
 // ---------------------------------------------------------------------------
@@ -179,14 +180,9 @@ function detectDevChannelPrompt(lines: string[]): boolean {
 function detectPermissionPrompt(
   lines: string[],
 ): { toolName: string; description: string } | null {
-  let signalIdx = -1;
-  for (let i = lines.length - 1; i >= 0; i--) {
-    if (PERM_SIGNAL_RE.test(lines[i])) { signalIdx = i; break; }
-  }
-  if (signalIdx === -1) return null;
-
-  const after = lines.slice(signalIdx, Math.min(lines.length, signalIdx + 6));
-  if (!after.some((l) => PERM_CHOICE_RE.test(l))) return null;
+  // Shared with utils/status-format.ts, which shows 💬 for the same condition.
+  if (!isPermissionPrompt(lines)) return null;
+  const signalIdx = findPromptSignal(lines);
 
   const ctx = lines.slice(Math.max(0, signalIdx - 25), signalIdx);
   let toolName = "";
