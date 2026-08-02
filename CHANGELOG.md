@@ -1,5 +1,242 @@
 # Changelog
 
+## v1.53.0
+
+### fix: keep tmux alive across admin-daemon restarts
+
+Restarting `helyx-admin` killed every CLI pane. The tmux server inherited
+the service cgroup, so systemd's control-group kill took the whole session
+down with it, and Telegram messages piled up in `message_queue` with
+nothing left to consume them.
+
+- tmux server now starts in its own transient systemd scope
+  (`helyx-tmux.scope`), outside the service's control group.
+- `helyx up` matches window names exactly. The prefix-resolving
+  `has-session -t sess:name` matched `goodai` against the existing
+  `goodai-base` window, so that project was never started.
+- `helyx up` moved from `ExecStartPre` to `ExecStartPost` — running it
+  first spawned a second admin-daemon before systemd started its own.
+- The stuck-queue restart button passes `projectId`, not `sessionId`;
+  `enqueueRestart` threw "project not found" on every click.
+
+### feat: eslint pass — the required signal health thought was running
+
+`keryx health` listed eslint as a required source and had been reporting
+it "skipped": there was no config and no lint script, so score 87 rested
+on complexity alone.
+
+- Flat config with js + typescript-eslint recommended. Four deliberate
+  severity choices: `no-explicit-any` warns (213 exist), `no-empty` allows
+  an empty catch (how this codebase says "best effort, never fatal"),
+  `no-control-regex` off (the bot parses tmux panes and ANSI output),
+  `no-useless-escape` warns (removing the backslash in
+  `[a-zA-Z0-9._\-\/~^:]` turns the path-traversal guard into a
+  SyntaxError).
+- Errors outside `dashboard/` went 57 → 0. Two defects the pass surfaced
+  are fixed: `supervisor.ts` captured the tmux pane in `checkStuckQueue`
+  and never put it in the alert, and `channel/status.ts` matched
+  `[·●⏳🔄⎿]` without the `u` flag, so the surrogate-pair emoji matched
+  half-characters.
+- The dashboard keeps 36 errors from its own nested config, nearly all
+  react-hooks correctness rules. They stay visible rather than silenced —
+  changing them safely needs the UI exercised.
+
+### feat: wire tests and coverage into the quality gate
+
+Health had six sources configured and was reading two. Tests read
+"missing" and coverage read "missing", so a project with 284 passing tests
+scored as though it had none.
+
+- `keryx test run` normalizes the project's own runner. This matters: the
+  built-in fallback runs a bare `bun test`, which would pull in the
+  Playwright e2e suite.
+- `scripts/coverage-summary.ts` bridges Bun's text/lcov output to the
+  Istanbul `coverage-summary.json` health reads — lines.pct per file plus
+  a total, not a pretend Istanbul report. `test:coverage` produces it.
+- First honest reading: 15.71% line coverage over the 74 files the unit
+  tests touch, against a soft floor of 60. Gate is WARN on coverage
+  rather than FAIL on a regression that was really just the lights coming
+  on; the baseline was re-recorded, since the old one was taken while four
+  of six sources were silent.
+
+### refactor: split registerTools into one function per tool family
+
+`registerTools` was a single ~750-line function and the most complex thing
+in the codebase — cyclomatic 145, in a file that is also the fourth-highest
+hotspot by churn × complexity.
+
+- `TOOL_DEFINITIONS` becomes a module constant; the list never depended on
+  session state, yet it was rebuilt on every ListTools request.
+- Case bodies move verbatim into `handleTelegramTool`, `handleMemoryTool`,
+  `handleSkillTool` and `handleCuratorTool`. Each returns `null` for a name
+  it does not own, so the dispatcher chains them and falls back to the same
+  "Unknown tool" text the default case produced.
+- `channel/tools.ts` drops from cyclomatic 145 to 80.
+
+### chore: metaproject re-init on keryx 345eaa5
+
+Modules 8 → 9 with `security` joining (scanning, redaction, guardrails,
+audit; advisory mode, so the pre-push guard warns and never blocks).
+`keryx update` could not have added it — its backfill is written for the
+`tasks` module only, so a workspace initialized before `security` existed
+would have skipped it silently, forever. Graph, wiki, testing context and
+health artifacts refreshed in the same pass.
+
+## v1.52.0
+
+### feat: per-project provider and model switching
+
+`/providers` registers an Anthropic-compatible endpoint (GLM / Kimi /
+DeepSeek / OpenRouter presets, or Custom); `/projects` → ⚙️ picks provider,
+then model, and restarts that project. A project with nothing configured
+behaves exactly as it did before the feature existed. See
+`docs/providers.md`.
+
+- Security-critical launch fix: `run-cli.sh` unsets `ANTHROPIC_API_KEY`
+  before launching a third-party provider. helyx `.env` sets that key and
+  `run-cli.sh` loads it with "only if unset" semantics, so without the
+  unset a project `.env` cannot override it and the real Anthropic key is
+  sent to the third-party endpoint.
+- Providers are asked for their own model list, refreshed on demand; the
+  Anthropic default list is refreshed from the Claude session. A ~320-model
+  OpenRouter list no longer bursts Telegram's 4096-char limit — truncated
+  and sorted free-models-first.
+
+### feat: verbatim replies with a separate spoken recap
+
+The Telegram message is the model's text unchanged. A summarized recap
+(≥ 200 prose chars) is generated only for voice and collapsed behind a
+show-more blockquote.
+
+### fix: guard no longer eats the question; commands stop stranding steps
+
+- When the response guard gives up on a turn, the unanswered question is
+  put back in the queue instead of dropped.
+- Issuing a slash command mid-flow cancels the input step that was
+  waiting; pending scopes moved from chat-level to `chat_id:thread_id`, so
+  forum topics stop interfering with each other.
+- Fixes: the OpenRouter preset pointed at the wrong protocol;
+  `/providers` and `/projects` registered for group chats; the Stop hook is
+  no longer registered from ephemeral checkouts.
+
+## v1.51.0
+
+### feat: deployment profiles and prebuilt images
+
+- `HELYX_PROFILE` = `minimal` | `local` | `full`; the `minimal` wizard asks
+  five questions instead of roughly fifteen.
+- Dashboard gated at build time and runtime via `ENABLE_DASHBOARD`. The
+  default is deliberately asymmetric: an `.env` written before the flag
+  keeps its dashboard, and only a fresh install writes `false`.
+- `.github/workflows/publish.yml` publishes prebuilt images on GHCR and
+  `install.sh` pulls instead of building locally.
+- Unattended install path: `helyx setup --profile=minimal … < /dev/null`
+  completes with stdin closed; setup refuses to overwrite a live `.env`
+  without `--force` and never touches running services unattended.
+
+### fix: image layering — 3.13 GB → 1.27 GB
+
+A single `chown -R` was creating a 905 MB layer. The dashboard's real cost
+turned out to be build *memory*, not bytes: a dashboard-off build completes
+under a 256 MB / 2 CPU builder where the full build OOM'd at 512 MB.
+
+Also in this release: five requirement packages that had shipped more than
+they claimed were re-verified against the code and restated. The one
+deviation found — tmux log path hardcoded instead of derived from
+`BOT_DIR` — was fixed.
+
+## v1.50.0
+
+### feat: session context injection
+
+On CLI restart, the first delivered message includes a prior-context block
+(LLM summary, with raw messages as fallback). The guard key
+`sessionId:clientId` resets on every new Claude Code process. Fail-open:
+DB errors are logged and skipped.
+
+### fix: restart control reform
+
+- `checkHungSessions` and `checkStuckQueue` no longer auto-restart; both
+  use the unified dedup key `session_problem:<project>`, and alerts include
+  the pane tail and spinner detection.
+- `enqueueRestart()` is the single idempotent entry point for all
+  `proj_start` commands; a double-press returns "⏳ уже в очереди".
+- `forwardStuckMessages` is callable per-project from the supervisor-actions
+  callback `sup:force_deliver`.
+- Alerts auto-resolve: the message is edited to ✅ after two consecutive
+  clean ticks (60 s) and the inline keyboard is cleared.
+- `run-cli.sh` restart cap escalates to Telegram after
+  `MAX_RESTARTS_IN_WINDOW` (default 3) restarts in `RESTART_WINDOW_SECONDS`
+  (default 300 s), writes a marker file and exits the loop.
+- tmux audit daemon (`scripts/tmux-session-logger.ts`): structured JSONL
+  log of session/window lifecycle events, periodic snapshots, `--query` CLI
+  for post-mortem, started by `admin-daemon`.
+
+## v1.49.0
+
+### feat: supervisor overhaul
+
+- Smart status broadcast — edits the message in place (silent) when
+  healthy; delete + send (notification) only when a stuck queue or a 🔴
+  docker container is detected.
+- Stuck-queue auto-recovery — `checkStuckQueue` triggers `proj_start`
+  before alerting; manual buttons appear only if auto-recovery fails.
+- `/supervisor` command — on-demand status from anywhere, not just the
+  supervisor topic.
+- Acknowledge button — "🔕 Тишина 30м" on all alerts; the ack is stored in
+  `admin_commands` and the supervisor checks the DB each loop, staying
+  silent for the window.
+- Escalation — after 30 min of repeated failures, hung channel processes
+  are killed (`pkill bun channel.ts`) before `proj_start`, and a
+  "🚀 Bounce бот" button is added on failure.
+
+## v1.48.0
+
+### feat: send_photo MCP tool
+
+New tool on both stdio and HTTP transports; supports a public URL and a
+local file via multipart upload, with forum-topic routing in the stdio
+transport.
+
+### feat: status intelligence
+
+- Smart response guard — 3-state Claude activity detection: silent re-arm
+  (< 90 s), soft note (long thinking), alert + delete status (stuck).
+  Replaces the single generic "no reply" message.
+- Status heartbeat — one 15 s interval replaces the separate 1 s spinner
+  and 10 s pane timers; each new user request starts with a clean status
+  message (delete → send instead of edit-in-place).
+
+## v1.47.0
+
+### feat: public release
+
+The repository is open-sourced: personal references scrubbed from code,
+changelog and UI strings, and `/quickstart` translated to English.
+
+- Generated developer docs (`docs/dev/`) — onboarding, architecture,
+  modules, API reference, data models, via the autodoc pipeline.
+- Release materials (`docs/release/v1.47.0/`) — press releases, developer
+  and user descriptions, platform posts (EN + RU).
+
+### fix: fail-closed admin check and graceful degradation
+
+- `isAdmin()` is fail-closed: `/system` and admin callbacks deny access
+  when `TELEGRAM_CHAT_ID` is not configured (previously fail-open).
+- `recall()` degrades gracefully when Ollama is unreachable —
+  `embedSafe()` returns null instead of throwing, recall falls back to
+  recency sort, and `remember()` proceeds without an embedding, so no data
+  is lost.
+- `admin-daemon` processes commands sequentially: `LIMIT 1` with
+  `FOR UPDATE SKIP LOCKED` instead of concurrent `setImmediate` dispatch,
+  eliminating out-of-order execution.
+- `setMyCommands` runs in both webhook and polling modes; previously bot
+  commands were only registered on the webhook path.
+- Menu dispatch errors surface as `⚠️ /cmd failed: reason` instead of a
+  silent drop.
+- The bounce path uses a portable bun binary —
+  `Bun.which("bun") ?? process.execPath` replaces a hardcoded path.
+
 ## v1.46.0
 
 ### feat: /model fetches live model list from Anthropic API
