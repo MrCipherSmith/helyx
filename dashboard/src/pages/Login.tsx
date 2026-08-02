@@ -4,6 +4,13 @@ import { Bot } from 'lucide-react'
 import { api, type TelegramLoginData } from '../api/client'
 import { useI18n } from '../i18n'
 
+declare global {
+  interface Window {
+    /** Installed for the Telegram login widget, which calls it by name. */
+    onTelegramAuth?: (user: TelegramLoginData) => void
+  }
+}
+
 export function LoginPage() {
   const navigate = useNavigate()
   const widgetRef = useRef<HTMLDivElement>(null)
@@ -11,13 +18,13 @@ export function LoginPage() {
   const { t } = useI18n()
 
   useEffect(() => {
-    ;(window as any).onTelegramAuth = async (user: TelegramLoginData) => {
+    window.onTelegramAuth = async (user: TelegramLoginData) => {
       try {
         setError(null)
         await api.authTelegram(user)
         navigate({ to: '/' })
-      } catch (e: any) {
-        setError(e.message || t('login.error'))
+      } catch (e) {
+        setError(e instanceof Error ? e.message : t('login.error'))
       }
     }
 
@@ -30,7 +37,7 @@ export function LoginPage() {
     script.async = true
     widgetRef.current?.appendChild(script)
 
-    return () => { delete (window as any).onTelegramAuth }
+    return () => { delete window.onTelegramAuth }
   }, [navigate, t])
 
   return (

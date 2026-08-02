@@ -28,24 +28,41 @@ export function MessageHistory({ session }: Props) {
   const [loadingMore, setLoadingMore] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  const load = useCallback(async (off = 0, append = false) => {
-    try {
-      const res = await api.sessionMessages(session.id, PAGE, off);
-      // API returns newest first — reverse for chronological display
-      const ordered = [...res.messages].reverse();
-      setMessages((prev) => append ? [...ordered, ...prev] : ordered);
-      setTotal(res.total);
-      setOffset(off);
-    } catch {}
-    setLoading(false);
-    setLoadingMore(false);
+  const load = useCallback((off = 0, append = false) => {
+    return api.sessionMessages(session.id, PAGE, off)
+      .then((res) => {
+        // API returns newest first — reverse for chronological display
+        const ordered = [...res.messages].reverse();
+        setMessages((prev) => append ? [...ordered, ...prev] : ordered);
+        setTotal(res.total);
+        setOffset(off);
+      })
+      .catch(() => {
+        // Transient fetch failure: keep whatever is already on screen and let
+        // the 5s poll try again rather than blanking the history.
+      })
+      .finally(() => {
+        setLoading(false);
+        setLoadingMore(false);
+      });
   }, [session.id]);
 
-  useEffect(() => {
-    setLoading(true);
+  // Reset while rendering when the session changes, rather than in an effect:
+  // an effect would paint the previous session's messages for one frame first.
+  const [renderedSession, setRenderedSession] = useState(session.id);
+  if (renderedSession !== session.id) {
+    setRenderedSession(session.id);
     setMessages([]);
     setOffset(0);
+    setLoading(true);
+  }
+
+  // First load plus the 5s poll, in one effect: every state update happens in
+  // a promise continuation or a timer callback, never in the effect body.
+  useEffect(() => {
     load(0);
+    const t = setInterval(() => load(0), 5000);
+    return () => clearInterval(t);
   }, [load]);
 
   // Auto-scroll to bottom on first load
@@ -54,12 +71,6 @@ export function MessageHistory({ session }: Props) {
       bottomRef.current?.scrollIntoView({ behavior: "instant" });
     }
   }, [loading]);
-
-  // Poll for new messages every 5s
-  useEffect(() => {
-    const t = setInterval(() => load(0), 5000);
-    return () => clearInterval(t);
-  }, [load]);
 
   async function loadOlder() {
     const newOffset = offset + PAGE;

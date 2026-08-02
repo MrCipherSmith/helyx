@@ -90,7 +90,7 @@ export function Layout() {
             {NAV_ITEMS.map((item) => {
               const isActive = item.to === '/' ? pathname === '/' : pathname.startsWith(item.to)
               const Icon = item.icon
-              const badge = 'badge' in item ? (item as any).badge : 0
+              const badge = 'badge' in item ? item.badge : 0
               const link = (
                 <Link
                   key={item.to}

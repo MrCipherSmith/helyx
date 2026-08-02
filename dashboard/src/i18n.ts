@@ -329,7 +329,10 @@ function getStoredLocale(): Locale {
   try {
     const stored = localStorage.getItem('locale')
     if (stored === 'en' || stored === 'ru') return stored
-  } catch {}
+  } catch {
+    // localStorage can throw in private mode or with storage disabled.
+    // Fall through to browser-language detection rather than failing boot.
+  }
   // Auto-detect from browser
   const lang = navigator.language.toLowerCase()
   return lang.startsWith('ru') ? 'ru' : 'en'

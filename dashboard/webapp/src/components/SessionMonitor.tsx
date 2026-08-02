@@ -1,5 +1,8 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { api, type Session, type SessionDetail } from "../api";
+import { useNow } from "../utils/useNow";
+
+type StatsWindow = "24h" | "startup" | "total";
 
 interface Props { session: Session }
 
@@ -27,37 +30,52 @@ export function SessionMonitor({ session }: Props) {
   const [permStats, setPermStats] = useState<PermStats | null>(null);
   const [claudeUsage, setClaudeUsage] = useState<ClaudeUsage | null>(null);
   const [statsDays, setStatsDays] = useState(30);
-  const [statsWindow, setStatsWindow] = useState<"24h" | "startup" | "total">("24h");
+  const [statsWindow, setStatsWindow] = useState<StatsWindow>("24h");
+  // "working now" is a time-based judgement — it needs a clock that ticks.
+  const now = useNow(5_000);
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async () => {
-    try {
-      const [det, gs, ps, cu] = await Promise.all([
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    // `cancelled` stops a response for the previous session or stats window
+    // from landing on top of a newer one after a switch.
+    let cancelled = false;
+
+    const fetchAll = () => {
+      Promise.all([
         api.session(session.id),
         api.globalStats(),
         api.permissions.stats(session.id, statsDays),
         api.claudeCodeUsage(statsDays),
-      ]);
-      setDetail(det);
-      setGlobalStats(gs);
-      setPermStats(ps);
-      setClaudeUsage(cu);
-    } catch {}
-    setLoading(false);
-  }, [session.id, statsDays]);
+      ])
+        .then(([det, gs, ps, cu]) => {
+          if (cancelled) return;
+          setDetail(det);
+          setGlobalStats(gs);
+          setPermStats(ps);
+          setClaudeUsage(cu);
+        })
+        .catch(() => {
+          // Partial or failed refresh: keep the last good numbers on screen;
+          // the 5s poll picks the panel back up when the API recovers.
+        })
+        .finally(() => { if (!cancelled) setLoading(false) });
+    };
 
-  useEffect(() => { load(); }, [load]);
-  useEffect(() => {
-    const t = setInterval(load, 5000);
-    return () => clearInterval(t);
-  }, [load]);
+    fetchAll();
+    const t = setInterval(fetchAll, 5000);
+    return () => { cancelled = true; clearInterval(t) };
+  }, [session.id, statsDays, reloadKey]);
+
+  const load = () => setReloadKey((k) => k + 1);
 
   if (loading) {
     return <div className="flex items-center justify-center h-full text-[var(--tg-hint)] text-sm">Loading...</div>;
   }
 
   const isActive = detail?.status === "active";
-  const lastActiveAgo = detail ? (Date.now() - new Date(detail.last_active).getTime()) / 1000 : 9999;
+  const lastActiveAgo = detail ? (now - new Date(detail.last_active).getTime()) / 1000 : 9999;
   const isWorking = isActive && lastActiveAgo < 10;
 
   const tokens = detail?.tokens;
@@ -108,7 +126,7 @@ export function SessionMonitor({ session }: Props) {
               <select
                 className="text-[10px] text-[var(--tg-hint)] bg-transparent border border-black/10 rounded px-1"
                 value={statsWindow}
-                onChange={(e) => setStatsWindow(e.target.value as any)}
+                onChange={(e) => setStatsWindow(e.target.value as StatsWindow)}
               >
                 <option value="24h">24h</option>
                 <option value="startup">Since restart</option>

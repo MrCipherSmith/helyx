@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { api, type Session, type GitHubPR, type GitHubReview, type GitHubComment, type GitHubCheckRun } from "../api";
+import { errorMessage } from "../utils/errors";
 
 interface Props { session: Session }
 
@@ -49,22 +50,6 @@ function timeAgo(iso: string): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-// --- Check runs summary badge ---
-function ChecksBadge({ checks }: { checks: GitHubCheckRun[] }) {
-  if (checks.length === 0) return null;
-  const completed = checks.filter((c) => c.status === "completed");
-  const failed = completed.filter((c) => c.conclusion === "failure" || c.conclusion === "timed_out" || c.conclusion === "action_required");
-  const pending = checks.filter((c) => c.status !== "completed");
-
-  if (pending.length > 0) {
-    return <span className="text-xs px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-500">⏳ {pending.length}</span>;
-  }
-  if (failed.length > 0) {
-    return <span className="text-xs px-1.5 py-0.5 rounded bg-red-500/20 text-red-400">✗ {failed.length}</span>;
-  }
-  return <span className="text-xs px-1.5 py-0.5 rounded bg-green-500/20 text-green-500">✓ {completed.length}</span>;
-}
-
 // --- PR Detail panel ---
 function PRDetail({
   sessionId,
@@ -79,12 +64,21 @@ function PRDetail({
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"overview" | "checks" | "comments">("overview");
 
-  useEffect(() => {
+  // Same render-time reset as the list: `loading` must flip before the fetch,
+  // not one frame into it, or the previous PR's detail shows through.
+  const [renderedPr, setRenderedPr] = useState(pr.number);
+  if (renderedPr !== pr.number) {
+    setRenderedPr(pr.number);
     setLoading(true);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
     api.git.prDetail(sessionId, pr.number)
-      .then((d) => setData({ reviews: d.reviews, comments: d.comments, checks: d.checks }))
-      .catch(() => setData(null))
-      .finally(() => setLoading(false));
+      .then((d) => { if (!cancelled) setData({ reviews: d.reviews, comments: d.comments, checks: d.checks }) })
+      .catch(() => { if (!cancelled) setData(null) })
+      .finally(() => { if (!cancelled) setLoading(false) });
+    return () => { cancelled = true };
   }, [sessionId, pr.number]);
 
   const significantReviews = data?.reviews.filter((r) => r.state !== "COMMENTED" || r.body.trim()) ?? [];
@@ -282,19 +276,36 @@ export function PRList({ session }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [selectedPR, setSelectedPR] = useState<GitHubPR | null>(null);
 
-  const load = useCallback(() => {
+  const [reloadKey, setReloadKey] = useState(0);
+
+  // Reset while rendering when the query changes, not in an effect: an effect
+  // would paint the previous session's PRs for one frame first. Selection is
+  // tied to the session alone — switching author must not close an open PR.
+  const query = `${session.id}:${authorFilter}`;
+  const [renderedQuery, setRenderedQuery] = useState(query);
+  if (renderedQuery !== query) {
+    if (renderedQuery.split(':')[0] !== String(session.id)) setSelectedPR(null);
+    setRenderedQuery(query);
     setLoading(true);
     setError(null);
+  }
+
+  useEffect(() => {
+    // `cancelled` guards against a slow response for the previous session or
+    // author landing after a newer one and overwriting it.
+    let cancelled = false;
     api.git.prs(session.id, { author: authorFilter })
-      .then((d) => { setPrs(d.prs); setRepo(d.repo); })
-      .catch((e) => setError(e.message ?? "Failed to load PRs"))
-      .finally(() => setLoading(false));
-  }, [session.id, authorFilter]);
+      .then((d) => { if (!cancelled) { setPrs(d.prs); setRepo(d.repo); setError(null); } })
+      .catch((e) => { if (!cancelled) setError(errorMessage(e)); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [session.id, authorFilter, reloadKey]);
 
-  useEffect(() => { load(); }, [load]);
-
-  // Reset selection when session changes
-  useEffect(() => { setSelectedPR(null); }, [session.id]);
+  const load = () => {
+    setLoading(true);
+    setError(null);
+    setReloadKey((k) => k + 1);
+  };
 
   if (selectedPR) {
     return <PRDetail sessionId={session.id} pr={selectedPR} onBack={() => setSelectedPR(null)} />;

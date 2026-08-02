@@ -42,11 +42,11 @@ export function ProcessHealth() {
 
   const load = useCallback(async () => {
     try {
-      const result = await (api as any).processHealth();
+      const result = await api.processHealth();
       setData(result);
       setError(null);
-    } catch (e: any) {
-      setError(e.message ?? "Failed to load");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
       setLoading(false);
     }
@@ -111,7 +111,7 @@ export function ProcessHealth() {
           <button
             onClick={() => {
               if (!window.confirm('Restart? This will cause brief downtime.')) return;
-              action(() => (api as any).restartDaemon(), "daemon");
+              action(() => api.restartDaemon(), "daemon");
             }}
             disabled={busy === "daemon"}
             className="text-[10px] px-2 py-1 rounded-lg font-medium text-[var(--tg-button)] bg-[var(--tg-button)]/10 disabled:opacity-40"
@@ -140,7 +140,7 @@ export function ProcessHealth() {
               onClick={() => {
                 const container = botContainer.name.slice("docker:".length);
                 if (!window.confirm(`Restart container "${container}"?`)) return;
-                action(() => (api as any).restartDockerContainer(container), "docker");
+                action(() => api.restartDockerContainer(container), "docker");
               }}
               disabled={busy === "docker"}
               className="text-[10px] px-2 py-1 rounded-lg font-medium text-[var(--tg-button)] bg-[var(--tg-button)]/10 disabled:opacity-40"

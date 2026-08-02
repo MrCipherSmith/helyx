@@ -40,22 +40,7 @@ export function App() {
     }
   }, []);
 
-  // Auth via initData
-  useEffect(() => {
-    const tg = window.Telegram?.WebApp;
-    const initData = tg?.initData;
-    if (!initData) {
-      // Dev mode: skip auth if no Telegram context
-      if (import.meta.env.DEV) { setAuthed(true); loadSessions(); }
-      else setAuthError("Open in Telegram");
-      return;
-    }
-    api.authWebApp(initData)
-      .then(() => { setAuthed(true); loadSessions(); })
-      .catch((e) => setAuthError(e.message ?? "Auth failed"));
-  }, []);
-
-  async function loadSessions() {
+  const loadSessions = useCallback(async () => {
     try {
       const [list, userActive] = await Promise.all([
         api.sessions(),
@@ -77,10 +62,27 @@ export function App() {
           setTab("sessions");
         }
       }
-    } catch (e: any) {
-      setAuthError(`Sessions error: ${e.message}`);
+    } catch (e) {
+      setAuthError(`Sessions error: ${e instanceof Error ? e.message : String(e)}`);
     }
-  }
+  }, []);
+
+  // Auth via initData
+  useEffect(() => {
+    const initData = window.Telegram?.WebApp?.initData;
+
+    // Outside Telegram there is no initData: a dev build is let through
+    // unauthenticated, anything else is refused. Both branches resolve
+    // asynchronously, so no state is set synchronously inside the effect.
+    let authenticate: Promise<unknown>;
+    if (initData) authenticate = api.authWebApp(initData);
+    else if (import.meta.env.DEV) authenticate = Promise.resolve();
+    else authenticate = Promise.reject(new Error("Open in Telegram"));
+
+    authenticate
+      .then(() => { setAuthed(true); loadSessions(); })
+      .catch((e) => setAuthError(e.message ?? "Auth failed"));
+  }, [loadSessions]);
 
   if (authError) {
     return (

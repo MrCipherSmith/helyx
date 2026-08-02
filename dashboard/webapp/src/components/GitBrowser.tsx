@@ -15,6 +15,7 @@ import go from "highlight.js/lib/languages/go";
 import { api, type Session, type GitCommit, type GitStatusFile } from "../api";
 import { PRList } from "./PRList";
 import { getFileIcon, getLang } from "../utils/fileIcons";
+import { errorMessage } from "../utils/errors";
 
 // Register languages
 hljs.registerLanguage("typescript", typescript);
@@ -126,7 +127,10 @@ function CodeViewer({ content, path }: { content: string; path: string }) {
       if (lang !== "plaintext" && hljs.getLanguage(lang)) {
         return hljs.highlight(content, { language: lang }).value;
       }
-    } catch {}
+    } catch {
+      // Unknown or malformed language: fall back to auto-detection rather
+      // than rendering the file unhighlighted.
+    }
     return hljs.highlightAuto(content).value;
   }, [content, path]);
 
@@ -251,8 +255,8 @@ function FileTree({ session }: Props) {
     try {
       const r = await api.git.file(session.id, path);
       setFileContent(r.content);
-    } catch (e: any) {
-      setFileContent(`Error: ${e.message}`);
+    } catch (e) {
+      setFileContent(`Error: ${errorMessage(e)}`);
     } finally {
       setFileLoading(false);
     }
@@ -332,8 +336,8 @@ function CommitLog({ session }: Props) {
     try {
       const r = await api.git.commitDiff(session.id, commit.hash);
       setDiff(r.diff);
-    } catch (e: any) {
-      setDiff(`Error: ${e.message}`);
+    } catch (e) {
+      setDiff(`Error: ${errorMessage(e)}`);
     } finally {
       setDiffLoading(false);
     }
@@ -415,8 +419,8 @@ function GitStatus({ session }: Props) {
     try {
       const r = await api.git.diff(session.id, "HEAD", file);
       setDiff(r.diff || "(no diff)");
-    } catch (e: any) {
-      setDiff(`Error: ${e.message}`);
+    } catch (e) {
+      setDiff(`Error: ${errorMessage(e)}`);
     } finally {
       setDiffLoading(false);
     }

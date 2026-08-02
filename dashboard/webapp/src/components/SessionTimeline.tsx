@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { api, type Session } from "../api";
+import { errorMessage } from "../utils/errors";
 
 type TimelineItem = {
   kind: "message" | "tool" | "memory";
@@ -50,8 +51,8 @@ export function SessionTimeline({ session }: Props) {
       setTotal(res.total);
       setOffset(off);
       setError(null);
-    } catch (e: any) {
-      if (off === 0 && !prepend) setError(e?.message ?? "Failed to load timeline");
+    } catch (e) {
+      if (off === 0 && !prepend) setError(errorMessage(e));
       // silent for auto-refresh failures (offset > 0 or existing data present)
     } finally {
       setLoading(false);
@@ -158,7 +159,6 @@ export function SessionTimeline({ session }: Props) {
 
 function MessageItem({ item }: { item: TimelineItem }) {
   const isUser = item.actor === "user";
-  const isAssistant = item.actor === "assistant";
   const isSystem = item.actor === "system";
   const [expanded, setExpanded] = useState(false);
 

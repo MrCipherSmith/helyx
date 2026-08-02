@@ -1,10 +1,18 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { useEffect } from 'react'
-import { api } from '../api/client'
+import { api, type Session } from '../api/client'
 import { useI18n } from '../i18n'
 import { useEventStream } from '../hooks/useEventStream'
+import { useNow } from '../hooks/useNow'
 import { requestNotificationPermission, sendBrowserNotification } from '../lib/notifications'
+
+/** Payload of the `session-state` SSE event. */
+interface SessionStateEvent {
+  id: number
+  project?: string
+  status: string
+}
 
 function formatUptime(seconds: number): string {
   const d = Math.floor(seconds / 86400)
@@ -30,7 +38,8 @@ export function OverviewPage() {
 
   // Subscribe to SSE events for real-time session state updates
   useEventStream("/api/events", {
-    "session-state": (data: any) => {
+    "session-state": (payload: unknown) => {
+      const data = payload as SessionStateEvent
       const statusLabel = data.status === "active" ? "started" : data.status === "inactive" ? "stopped" : data.status
       sendBrowserNotification(
         `Session ${data.project ?? `#${data.id}`} ${statusLabel}`,
@@ -40,8 +49,12 @@ export function OverviewPage() {
     },
   })
 
+  // Ticking clock instead of Date.now() at render — "3m ago" stays honest
+  // between refetches without making render impure.
+  const now = useNow(30_000)
+
   const formatRelative = (date: string): string => {
-    const diff = (Date.now() - new Date(date).getTime()) / 1000
+    const diff = (now - new Date(date).getTime()) / 1000
     if (diff < 60) return t('common.justNow')
     if (diff < 3600) return t('common.mAgo', { n: Math.floor(diff / 60) })
     if (diff < 86400) return t('common.hAgo', { n: Math.floor(diff / 3600) })
@@ -114,7 +127,7 @@ export function OverviewPage() {
               </tr>
             </thead>
             <tbody>
-              {data.recentSessions.map((s: any) => (
+              {data.recentSessions.map((s: Session) => (
                 <tr key={s.id} className="table-row-hover border-b border-gray-800/30 last:border-0">
                   <td className="px-5 py-3">
                     <Link to="/sessions/$id" params={{ id: String(s.id) }} className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors">

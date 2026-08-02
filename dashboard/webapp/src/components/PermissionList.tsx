@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { api, type Session, type PermissionRequest } from "../api";
+import { errorMessage } from "../utils/errors";
 
 interface Props { session: Session }
 
@@ -30,8 +31,8 @@ export function PermissionList({ session }: Props) {
     try {
       await api.permissions.respond(id, response);
       setPerms((prev) => prev.filter((p) => p.id !== id));
-    } catch (e: any) {
-      alert(e.message);
+    } catch (e) {
+      alert(errorMessage(e));
     } finally {
       setPending((p) => { const n = new Set(p); n.delete(id); return n; });
     }
@@ -42,8 +43,8 @@ export function PermissionList({ session }: Props) {
     try {
       await api.permissions.always(id);
       setPerms((prev) => prev.filter((p) => p.id !== id));
-    } catch (e: any) {
-      alert(e.message);
+    } catch (e) {
+      alert(errorMessage(e));
     } finally {
       setPending((p) => { const n = new Set(p); n.delete(id); return n; });
     }

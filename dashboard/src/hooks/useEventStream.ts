@@ -8,7 +8,13 @@ export function useEventStream(
   enabled = true,
 ): void {
   const handlersRef = useRef(handlers);
-  handlersRef.current = handlers;
+
+  // Latest-ref pattern: the connection below must survive a handler identity
+  // change without reconnecting, but writing the ref during render is impure.
+  // Callers only read it from SSE callbacks, which run after commit.
+  useEffect(() => {
+    handlersRef.current = handlers;
+  });
 
   useEffect(() => {
     if (!enabled) return;
@@ -24,7 +30,10 @@ export function useEventStream(
           try {
             const data = JSON.parse(e.data);
             handlersRef.current[event]?.(data);
-          } catch {}
+          } catch {
+            // Malformed payload from the stream: drop the event, keep the
+            // connection. One bad frame must not tear down the subscription.
+          }
         });
       }
 

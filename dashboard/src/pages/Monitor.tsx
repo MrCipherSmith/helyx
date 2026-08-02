@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, type ProcessHealthRow } from '../api/client'
+import { useNow } from '../hooks/useNow'
 
 function fmtUptime(ms: number): string {
   const s = Math.floor(ms / 1000)
@@ -29,6 +30,8 @@ function StatusDot({ status, stale }: { status: string; stale?: boolean }) {
 export function MonitorPage() {
   const queryClient = useQueryClient()
   const [mutationError, setMutationError] = useState<string | null>(null)
+  // Staleness is measured against a ticking clock, not Date.now() at render.
+  const now = useNow(15_000)
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['process-health'],
@@ -62,7 +65,7 @@ export function MonitorPage() {
   const dockerRows = data.health.filter((r) => r.name.startsWith('docker:'))
 
   const daemonStale = daemonRow
-    ? Date.now() - new Date(daemonRow.updated_at).getTime() > 90_000
+    ? now - new Date(daemonRow.updated_at).getTime() > 90_000
     : false
 
   const botContainer = dockerRows.find((r) => r.name.includes('bot-') || r.name.includes('-bot'))
