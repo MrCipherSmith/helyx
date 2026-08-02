@@ -404,8 +404,10 @@ async function handleGitFile(res: ServerResponse, sessionId: number, url: URL): 
 async function handleGitDiff(res: ServerResponse, sessionId: number, url: URL): Promise<void> {
   const path = await getSessionPath(sessionId);
   if (!path) { sendError(res, "Session not found", 404); return; }
-  const rawRef = url.searchParams.get("ref") ?? "HEAD~1";
-  const ref = /^[a-zA-Z0-9._\-\/~^:]{1,200}$/.test(rawRef) ? rawRef : "HEAD~1";
+  // Same allowlist as handleGitFile, via the shared guard rather than a second
+  // copy of the pattern — flow 003 moved one of the two and left this behind,
+  // which is what the duplicate detector found.
+  const ref = sanitizeGitRef(url.searchParams.get("ref"), "HEAD~1");
   const file = url.searchParams.get("path");
   const args = file ? ["diff", ref, "--", file] : ["diff", ref];
   const { ok, out } = await gitExec(path, args);
