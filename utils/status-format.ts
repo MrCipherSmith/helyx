@@ -125,13 +125,3 @@ export const PHASE_LABEL: Record<ActivityPhase, string> = {
   waiting: "💬",
 };
 
-/**
- * Prefix a status so that `detectPhase` reports `waiting`.
- *
- * Used by the permission handler, which knows a prompt is going out and
- * should not leave the classifier to infer it. The pane path cannot: by the
- * time `tmux-monitor` is done, the "Do you want to proceed?" line and the ❯
- * choice line have both been dropped as UI chrome, so the dialog reaches the
- * status line as nothing but the tool bullet it was asking about.
- */
-export const WAITING_PREFIX = "⏳ Waiting for approval — ";

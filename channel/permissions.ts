@@ -10,7 +10,6 @@
 import type postgres from "postgres";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { StatusManager } from "./status.ts";
-import { WAITING_PREFIX } from "../utils/status-format.ts";
 import { sendTelegramMessage, deleteTelegramMessage, editTelegramMessage } from "./telegram.ts";
 import { channelLogger } from "../logger.ts";
 import { escapeHtml } from "../utils/html.ts";
@@ -229,12 +228,15 @@ export class PermissionHandler {
       : toolName === "Edit" || toolName === "Write" ? `Editing: ${String(input?.file_path ?? "").split("/").pop()}`
       : toolName === "Grep" ? `Searching: ${String(input?.pattern ?? "").slice(0, 40)}`
       : `${toolName}`;
-    // The handler knows for certain that a prompt is about to go out — the
-    // auto-approve path returned above. Say so, rather than leaving the phase
-    // classifier to infer it from pane text it never receives: tmux-monitor
-    // discards both the "Do you want to proceed?" line and the ❯ choice line,
-    // so the 💬 waiting signal had no way to fire for a real request.
-    await this.status.updateStatus(chatId, `${WAITING_PREFIX}${shortDesc}`);
+    // NOTE: the 💬 waiting phase cannot be reached for a real permission
+    // request. tmux-monitor discards both the "Do you want to proceed?" line
+    // and the ❯ choice line before the pane text becomes a status, and this
+    // status says "Running: …" like any other action. Announcing it from here
+    // is the right fix, but only as a latched state: a plain prefix is
+    // overwritten by the next monitor poll and is never cleared if delivery
+    // fails or the request times out. Tracked as its own flow — see
+    // .metaproject/flows/005-*/journal.md.
+    await this.status.updateStatus(chatId, shortDesc);
 
     let previewMsgId: number | null = null;
     if (previewContent) {

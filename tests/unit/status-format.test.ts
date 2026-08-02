@@ -8,7 +8,6 @@ import {
   isPermissionPrompt,
   SPINNER_FRAMES,
   SPINNER_STALE_MS,
-  WAITING_PREFIX,
 } from "../../utils/status-format.ts";
 import { parseStatus } from "../../utils/tmux-monitor.ts";
 
@@ -272,16 +271,14 @@ describe("what a permission dialog actually looks like by the time it gets here"
     expect(isPermissionPrompt(stage)).toBe(false);
   });
 
-  test("the permission handler says so itself, and that does classify as waiting", () => {
-    // channel/permissions.ts prefixes its status when a prompt is going out.
-    // The handler knows; it should not leave the classifier to infer it from
-    // text that has already been thrown away.
-    expect(detectPhase(`${WAITING_PREFIX}Running: npm test`)).toBe("waiting");
-    expect(detectPhase(`${WAITING_PREFIX}Reading: config.ts`)).toBe("waiting");
-  });
-
-  test("without the prefix, the handler's own status reads as an ordinary action", () => {
-    // What the operator saw before: a pending approval looked like work.
+  test("the handler's own status reads as an ordinary action, so nothing marks the block", () => {
+    // channel/permissions.ts sets this while the prompt is pending. A blocked
+    // session therefore looks like work, and no 💬 appears — the gap this flow
+    // documents rather than half-closes. Announcing it from the handler is the
+    // right fix, but only as a latched state: a plain prefix is overwritten by
+    // the next monitor poll and never cleared if delivery fails or the request
+    // times out. Its own flow.
     expect(detectPhase("Running: npm test")).toBe("running");
+    expect(detectPhase("Reading: config.ts")).toBe("reading");
   });
 });

@@ -48,3 +48,33 @@ asserting the raw-pane → stage → phase contract against the real
 implementation.
 
 After the fixes: 598 tests pass (from 594).
+
+### Second Codex pass — the fix was half a state machine
+
+Codex confirmed the historical measurement: the old `detectPhase` also could
+not see a real prompt, and 💬 had no genuine detection. But it rejected the
+`WAITING_PREFIX` fix, correctly:
+
+- the prefix is written once, and the next tmux/output poll overwrites the
+  stage unconditionally (`status.ts:668`, `status.ts:939`);
+- it is set *before* Telegram delivery, and a send failure returns without
+  clearing it (`permissions.ts:255`);
+- the timeout path never clears it either (`permissions.ts:437`).
+
+So it would flicker for one poll interval in the good case and latch a false
+"waiting" forever in the bad ones. Half a state machine is worse than none:
+the previous behaviour was merely silent, this one would lie.
+
+**Reverted from this flow.** The correct fix is an explicit latched
+permission-waiting state in `StatusManager` — set after successful delivery,
+suppressing monitor stage replacement while held, cleared on every resolution,
+failure and timeout path. That is work inside `StatusManager`, which this
+flow's description explicitly placed out of scope, and it touches live
+permission handling I cannot exercise end to end. Putting it in here would
+also deliver something the frozen acceptance criteria never described, which
+is the drift the checksum exists to prevent.
+
+Recorded as the next flow. What this flow ships stands on its own: the false
+💬 signals are gone, the classifiers are covered, and the contract test pins
+what the monitor actually keeps — which is the thing nobody had written down
+and the reason the gap survived this long.
