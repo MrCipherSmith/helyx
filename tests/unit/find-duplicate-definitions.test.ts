@@ -181,10 +181,14 @@ describe("each guard is isolated — a test that only that guard can satisfy", (
   // test that guard. Each case here is constructed so exactly one filter
   // stands between it and a false positive.
 
-  test("PATTERN_SIGNALS alone rejects a path in a legal regex position", () => {
-    // Preceder passes — `(` is one. Nothing else rejects it. Only the
-    // requirement that a pattern contain pattern structure does.
-    expect(extractRegexLiterals('fn("/usr/local/share/data/x");')).toEqual([]);
+  test("PATTERN_SIGNALS alone rejects a long slash-delimited run", () => {
+    // The first attempt at this test used a quoted path, and review showed it
+    // proved nothing: the segments between slashes were under the length
+    // minimum and the quote failed the preceder guard too. This one clears
+    // every other filter — preceder `(`, 27 characters, no leading quote, no
+    // `${` — so only the requirement that a pattern contain pattern structure
+    // stands between it and a false positive.
+    expect(extractRegexLiterals("fn(/usr_local_share_data_dir/)")).toEqual([]);
   });
 
   test("TEMPLATE_MARKER alone rejects an interpolated fragment", () => {
@@ -225,6 +229,17 @@ describe("positions a pattern is legally returned from", () => {
   test("after await", () => {
     expect(extractRegexLiterals("const r = await /^[a-z][a-z0-9]{3,}$/;"))
       .toEqual(["/^[a-z][a-z0-9]{3,}$/"]);
+  });
+
+  test("but a property named await followed by division is not a pattern", () => {
+    // A bare `\bawait` preceder invented `/ total[0] + offset /` here. Widening
+    // the accepted positions is how a scanner finds more duplicates and also
+    // how it starts making them up.
+    expect(extractRegexLiterals("const x = obj.await / total[0] + offset / scale;")).toEqual([]);
+  });
+
+  test("a bare greater-than is not an arrow", () => {
+    expect(extractRegexLiterals("const n = a > /x[0-9]+/;")).toEqual([]);
   });
 });
 

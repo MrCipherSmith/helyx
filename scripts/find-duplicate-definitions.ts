@@ -82,12 +82,14 @@ const STRING_LITERAL = /(['"])(?:\\.|(?!\1)[^\\\n])*\1/g;
  * the `=` in `html += "..."` and let string content through. Its own test
  * caught that.
  *
- * `>` is here for `=>`, and `throw`/`await`/`yield` for the other positions a
- * pattern is legally returned from. Without them a regex handed straight back
- * from an arrow function is invisible, which is a duplicate this tool exists
- * to find rather than a false positive it exists to avoid.
+ * `=>` is matched as a pair rather than by a bare `>`, and the keywords are
+ * guarded against a preceding `.` or word character. Both narrowings came from
+ * review: a bare `>` and a bare `\bawait` turned `obj.await / total[0] +
+ * offset / scale` into the fake literal `/ total[0] + offset /`. Widening the
+ * accepted positions is how a scanner finds more duplicates and also how it
+ * starts inventing them.
  */
-const REGEX_PRECEDERS = /(?:[=(,:[!&|?{;+>]|\breturn|\btypeof|\bcase|\bthrow|\bawait|\byield)$/;
+const REGEX_PRECEDERS = /(?:[=(,:[!&|?{;+]|=>|(?<![.\w])(?:return|typeof|case|throw|await|yield))$/;
 
 /** Something only a pattern has. A path or a URL has none of these. */
 const PATTERN_SIGNALS = /[\\^$[\]+*?{}|]|\(\?/;

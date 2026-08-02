@@ -76,3 +76,36 @@ including that `handleGitDiff` keeps `HEAD~1` rather than inheriting
 `sanitizeGitRef`'s `HEAD` default.
 
 After the fixes: 652 tests pass, the repository report is unchanged at 19.
+
+### Second Codex pass — the fix for "tests can't fail" could not fail either
+
+Two findings, both verified before accepting.
+
+**Widening the preceders invented a duplicate.** A bare `\bawait` and a bare
+`>` turned `obj.await / total[0] + offset / scale` into the literal
+`/ total[0] + offset /`. Confirmed by running it. `=>` is now matched as a
+pair, and the keywords are guarded against a preceding `.` or word character.
+Both directions retested: real `await`, `=>` and `throw` positions still
+found, `a > /x/` and `obj.await /…/` no longer.
+
+Codex also cited TypeScript assertions ending in `>` as a second false
+positive. That one did not reproduce — `value as Map<string, number> / 2`
+returns nothing — but the narrowing removes the class regardless, so it is
+fixed without having been demonstrated.
+
+**The PATTERN_SIGNALS test still pinned nothing.** It used a quoted path whose
+segments were under the length minimum and whose quote also failed the
+preceder guard, so deleting `PATTERN_SIGNALS` would not have failed it.
+
+That is the third time in this flow the same shape appeared, and the second
+time inside the fix for it:
+
+1. the original suite would have passed with two guards deleted;
+2. the test written to fix that could itself not fail;
+3. both were found by review, neither by me.
+
+The replacement clears every other filter deliberately — preceder `(`, 27
+characters, no leading quote, no `${` — so `PATTERN_SIGNALS` is the only thing
+standing between it and a false positive. Written down here because the
+lesson is not "check the guards" but "a test written to prove a guard needs
+the same scrutiny as the guard".
