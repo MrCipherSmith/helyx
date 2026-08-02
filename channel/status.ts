@@ -18,10 +18,11 @@ import {
   formatElapsed,
   getSpinnerIcon as spinnerIconAt,
   computeSignature,
-  detectPhase,
+  resolvePhase,
   SPINNER_FRAMES,
   PHASE_LABEL,
 } from "../utils/status-format.ts";
+import { HoldCounter } from "../utils/hold-counter.ts";
 import { escapeHtml } from "../utils/html.ts";
 import { isRequeued, markRequeued } from "../utils/requeue.ts";
 
@@ -121,6 +122,14 @@ function formatStatusText(stage: string, elapsed: string, tokens: string, paneSn
 
 export class StatusManager {
   private activeStatus = new Map<string, StatusState>();
+  /**
+   * Permission prompts pending per chat.
+   *
+   * Counted rather than flagged: two overlapping requests in one chat would
+   * otherwise have the second's release clear the first's signal, and the
+   * operator would watch 💬 disappear while still blocked.
+   */
+  private awaitingPermission = new HoldCounter();
   private lastTokenInfo = new Map<string, string>();
   private sessionStats = new Map<string, SessionStats>();
   private activeTyping = new Map<string, TypingHandle>();
@@ -454,6 +463,21 @@ export class StatusManager {
   }
 
   /** Map key for the activeStatus / stats maps. */
+  /**
+   * Hold or release the "blocked on a permission prompt" signal for a chat.
+   *
+   * Callers must release what they take, and the only caller does it in a
+   * `finally` — the lifetime is a scope, not a list of exit paths. Flow 005's
+   * attempt at this failed by enumerating paths and missing several, and a
+   * leaked latch is silent: 💬 would stay up forever and the signal would stop
+   * being believed.
+   */
+  setAwaitingPermission(chatId: string, holding: boolean): void {
+    const key = this.stateKey(chatId);
+    if (holding) this.awaitingPermission.acquire(key);
+    else this.awaitingPermission.release(key);
+  }
+
   private stateKey(chatId: string): string {
     const forum = this.getForumTarget();
     return forum ? `${forum.chatId}:${forum.threadId}` : chatId;
@@ -741,7 +765,7 @@ export class StatusManager {
     const tokens = this.lastTokenInfo.get(key);
     const tokenStr = tokens ? ` · ↓ ${tokens}` : "";
     // SU-3: compute phase extras
-    const phase = detectPhase(state.stage);
+    const phase = resolvePhase(state.stage, this.awaitingPermission.isHeld(key));
     const extras: StatusExtras = {
       phaseEmoji: phase ? PHASE_LABEL[phase] : undefined,
       toolCount: state.turnToolCount,
