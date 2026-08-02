@@ -45,6 +45,41 @@ export function parseMemTotal(raw: string): number | null {
 }
 
 /**
+ * The sources, in the order they are consulted.
+ *
+ * The order is the contract, not an implementation detail: a container limit
+ * has to beat what the kernel says the machine has, or the wizard offers a
+ * model sized for the host and the container kills it.
+ */
+export const MEMORY_SOURCES: ReadonlyArray<{
+  path: string;
+  parse: (raw: string) => number | null;
+}> = [
+  { path: "/sys/fs/cgroup/memory.max", parse: parseCgroupV2Max },
+  { path: "/sys/fs/cgroup/memory/memory.limit_in_bytes", parse: parseCgroupV1Limit },
+  { path: "/proc/meminfo", parse: parseMemTotal },
+];
+
+/**
+ * Available memory in MB, or `null` when no source answers.
+ *
+ * `read` is supplied by the caller — production passes `readFileSync` — so the
+ * order and the fallthrough are testable, which the loop inside `cli.ts` was
+ * not. A source that is absent throws, and a source that is present but says
+ * nothing useful returns null; both mean "try the next one", and neither is
+ * allowed to abort the walk.
+ */
+export function resolveMemoryMb(read: (path: string) => string): number | null {
+  for (const { path, parse } of MEMORY_SOURCES) {
+    try {
+      const mb = parse(read(path));
+      if (mb !== null) return mb;
+    } catch { /* source absent or unreadable on this host — try the next */ }
+  }
+  return null;
+}
+
+/**
  * The presets a host with `memMb` of memory can serve.
  *
  * Unknown memory returns everything: hiding options because detection failed

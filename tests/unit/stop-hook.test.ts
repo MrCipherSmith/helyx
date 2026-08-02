@@ -17,12 +17,12 @@ describe("classifyCheckout", () => {
     expect(classifyCheckout({
       botDir: "/tmp/build-123/helyx",
       tmpDir: "/tmp",
-      gitPathIsFile: false,
+      gitPathIsFile: () => false,
     })).toBe("temporary directory");
   });
 
   test("the temp directory itself is refused", () => {
-    expect(classifyCheckout({ botDir: "/tmp", tmpDir: "/tmp", gitPathIsFile: false }))
+    expect(classifyCheckout({ botDir: "/tmp", tmpDir: "/tmp", gitPathIsFile: () => false }))
       .toBe("temporary directory");
   });
 
@@ -31,7 +31,7 @@ describe("classifyCheckout", () => {
     expect(classifyCheckout({
       botDir: "/tmp/helyx",
       tmpDir: "/var/folders/xy/T",
-      gitPathIsFile: false,
+      gitPathIsFile: () => false,
     })).toBe("temporary directory");
   });
 
@@ -41,7 +41,7 @@ describe("classifyCheckout", () => {
     expect(classifyCheckout({
       botDir: "/tmpfoo/helyx",
       tmpDir: "/tmp",
-      gitPathIsFile: false,
+      gitPathIsFile: () => false,
     })).toBeNull();
   });
 
@@ -50,7 +50,7 @@ describe("classifyCheckout", () => {
     expect(classifyCheckout({
       botDir: "/home/dev/helyx-wt",
       tmpDir: "/tmp",
-      gitPathIsFile: true,
+      gitPathIsFile: () => true,
     })).toBe("git worktree");
   });
 
@@ -58,7 +58,7 @@ describe("classifyCheckout", () => {
     expect(classifyCheckout({
       botDir: "/home/dev/helyx",
       tmpDir: "/tmp",
-      gitPathIsFile: false,
+      gitPathIsFile: () => false,
     })).toBeNull();
   });
 
@@ -66,7 +66,7 @@ describe("classifyCheckout", () => {
     expect(classifyCheckout({
       botDir: "/tmp/wt/helyx",
       tmpDir: "/tmp",
-      gitPathIsFile: true,
+      gitPathIsFile: () => true,
     })).toBe("temporary directory");
   });
 });
@@ -155,5 +155,40 @@ describe("pruneStaleStopHooks", () => {
     const stop = [entry(`/x${HOOK}/nested/other.sh`)];
     expect(pruneStaleStopHooks(stop, HOOK, gone)).toBe(0);
     expect(stop).toHaveLength(1);
+  });
+});
+
+describe("classifyCheckout — the filesystem is only touched when it has to be", () => {
+  test("a temporary checkout is refused without stat-ing .git", () => {
+    // The code this replaced returned before it reached the .git check. An
+    // eager stat here would throw on a checkout whose .git is missing or
+    // unreadable, turning a clean "temporary directory" into a crash in the
+    // middle of setup.
+    let called = false;
+    const result = classifyCheckout({
+      botDir: "/tmp/build-123/helyx",
+      tmpDir: "/tmp",
+      gitPathIsFile: () => { called = true; return true },
+    });
+    expect(result).toBe("temporary directory");
+    expect(called).toBe(false);
+  });
+
+  test("a non-temporary checkout does consult it", () => {
+    let called = false;
+    classifyCheckout({
+      botDir: "/home/dev/helyx",
+      tmpDir: "/tmp",
+      gitPathIsFile: () => { called = true; return false },
+    });
+    expect(called).toBe(true);
+  });
+
+  test("a throwing probe propagates only where the probe is reached", () => {
+    const boom = () => { throw new Error("ENOENT") };
+    expect(classifyCheckout({ botDir: "/tmp/x", tmpDir: "/tmp", gitPathIsFile: boom }))
+      .toBe("temporary directory");
+    expect(() => classifyCheckout({ botDir: "/home/dev/x", tmpDir: "/tmp", gitPathIsFile: boom }))
+      .toThrow("ENOENT");
   });
 });

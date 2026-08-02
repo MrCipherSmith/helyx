@@ -25,7 +25,13 @@
 export function classifyCheckout(input: {
   botDir: string;
   tmpDir: string;
-  gitPathIsFile: boolean;
+  /**
+   * Whether `<botDir>/.git` is a file. A thunk, not a value: the temp-directory
+   * answer must not depend on the filesystem at all. Passing the result eagerly
+   * would stat a `.git` that a temporary checkout may not have — and a stat
+   * that throws would take down a call that used to return cleanly.
+   */
+  gitPathIsFile: () => boolean;
 }): string | null {
   const { botDir, tmpDir, gitPathIsFile } = input;
   if (botDir === tmpDir || botDir.startsWith(`${tmpDir}/`) || botDir.startsWith("/tmp/")) {
@@ -33,7 +39,7 @@ export function classifyCheckout(input: {
   }
   // A linked worktree has .git as a file pointing at the real gitdir; the main
   // checkout has it as a directory.
-  if (gitPathIsFile) return "git worktree";
+  if (gitPathIsFile()) return "git worktree";
   return null;
 }
 

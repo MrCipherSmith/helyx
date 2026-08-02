@@ -21,7 +21,7 @@ import { resolve, basename, dirname } from "path";
 import { homedir, tmpdir } from "os";
 import { windowName, parseWindowNames, partitionByWindow } from "./sessions/tmux-windows.ts";
 import { parseFlags, flagValue } from "./utils/cli-flags.ts";
-import { parseCgroupV2Max, parseCgroupV1Limit, parseMemTotal, presetsThatFit } from "./utils/host-memory.ts";
+import { resolveMemoryMb, presetsThatFit } from "./utils/host-memory.ts";
 import { classifyCheckout, pruneStaleStopHooks } from "./utils/stop-hook.ts";
 
 // --- ANSI colors ---
@@ -253,24 +253,13 @@ const MODEL_PRESETS: Preset[] = [
  * Returns null when it cannot tell — the caller warns rather than guessing.
  */
 /**
- * Available memory in MB, or null when none of the three sources answer.
+ * Available memory in MB, or null when none of the sources answer.
  *
- * Only the file reads live here; every parse is in utils/host-memory.ts, where
- * the cgroup v1 unlimited sentinel and the `max` literal are tested.
+ * Reading a file is the only impure part; the source order, the fallthrough
+ * and every parse live in utils/host-memory.ts, where they are tested.
  */
 function availableMemoryMb(): number | null {
-  const sources: Array<[string, (raw: string) => number | null]> = [
-    ["/sys/fs/cgroup/memory.max", parseCgroupV2Max],
-    ["/sys/fs/cgroup/memory/memory.limit_in_bytes", parseCgroupV1Limit],
-    ["/proc/meminfo", parseMemTotal],
-  ];
-  for (const [path, parse] of sources) {
-    try {
-      const mb = parse(readFileSync(path, "utf8"));
-      if (mb !== null) return mb;
-    } catch { /* source absent on this host — try the next */ }
-  }
-  return null;
+  return resolveMemoryMb((path) => readFileSync(path, "utf8"));
 }
 
 // --- Setup wizard ---
@@ -900,7 +889,9 @@ function isEphemeralCheckout(): string | null {
   return classifyCheckout({
     botDir,
     tmpDir: resolve(tmpdir()),
-    gitPathIsFile: existsSync(gitPath) && statSync(gitPath).isFile(),
+    // Lazy: a temporary checkout is refused without ever stat-ing .git, which
+    // is what the code this replaced did by returning before it got there.
+    gitPathIsFile: () => existsSync(gitPath) && statSync(gitPath).isFile(),
   });
 }
 

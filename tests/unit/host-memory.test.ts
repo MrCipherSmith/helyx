@@ -4,6 +4,7 @@ import {
   parseCgroupV1Limit,
   parseMemTotal,
   presetsThatFit,
+  resolveMemoryMb,
 } from "../../utils/host-memory.ts";
 
 /**
@@ -129,5 +130,80 @@ describe("presetsThatFit", () => {
     const result = presetsThatFit(presets, null);
     result.pop();
     expect(presets).toHaveLength(3);
+  });
+});
+
+describe("resolveMemoryMb — source order and fallthrough", () => {
+  const V2 = "/sys/fs/cgroup/memory.max";
+  const V1 = "/sys/fs/cgroup/memory/memory.limit_in_bytes";
+  const MEMINFO = "/proc/meminfo";
+
+  const reader = (files: Record<string, string>) => (path: string) => {
+    const v = files[path];
+    if (v === undefined) throw new Error(`ENOENT: ${path}`);
+    return v;
+  };
+
+  test("a container limit beats what the kernel says the machine has", () => {
+    // The order is the contract: sized for the host, killed by the container.
+    const read = reader({
+      [V2]: String(2 * 1048576 * 1024),
+      [MEMINFO]: "MemTotal:       64000000 kB",
+    });
+    expect(resolveMemoryMb(read)).toBe(2048);
+  });
+
+  test("cgroup v1 is consulted when v2 says max", () => {
+    const read = reader({
+      [V2]: "max",
+      [V1]: String(4 * 1048576 * 1024),
+      [MEMINFO]: "MemTotal:       64000000 kB",
+    });
+    expect(resolveMemoryMb(read)).toBe(4096);
+  });
+
+  test("meminfo is the last resort", () => {
+    const read = reader({ [MEMINFO]: "MemTotal:       16316360 kB" });
+    expect(resolveMemoryMb(read)).toBe(Math.floor(16316360 / 1024));
+  });
+
+  test("a source that throws does not abort the walk", () => {
+    // An absent cgroup file is the normal case outside a container.
+    const read = (path: string) => {
+      if (path === MEMINFO) return "MemTotal:       8000000 kB";
+      throw new Error("ENOENT");
+    };
+    expect(resolveMemoryMb(read)).toBe(Math.floor(8000000 / 1024));
+  });
+
+  test("a source present but useless falls through", () => {
+    // v1's unlimited sentinel must not end the walk with a bogus answer.
+    const read = reader({
+      [V2]: "max",
+      [V1]: "9223372036854771712",
+      [MEMINFO]: "MemTotal:       8000000 kB",
+    });
+    expect(resolveMemoryMb(read)).toBe(Math.floor(8000000 / 1024));
+  });
+
+  test("no source answering yields null, not a throw", () => {
+    const read = () => { throw new Error("ENOENT") };
+    expect(resolveMemoryMb(read)).toBeNull();
+  });
+
+  test("garbage everywhere yields null", () => {
+    const read = reader({ [V2]: "max", [V1]: "0", [MEMINFO]: "nothing useful" });
+    expect(resolveMemoryMb(read)).toBeNull();
+  });
+
+  test("later sources are not read once one answers", () => {
+    const seen: string[] = [];
+    const read = (path: string) => {
+      seen.push(path);
+      if (path === V2) return String(1048576 * 1024);
+      throw new Error("ENOENT");
+    };
+    expect(resolveMemoryMb(read)).toBe(1024);
+    expect(seen).toEqual([V2]);
   });
 });
