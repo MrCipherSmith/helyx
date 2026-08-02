@@ -1,5 +1,5 @@
 import { IncomingMessage, ServerResponse } from "http";
-import { readFile, access, writeFile } from "fs/promises";
+import { readFile, access, writeFile, realpath } from "fs/promises";
 import { join, extname } from "path";
 import { homedir } from "os";
 import { sql } from "../memory/db.ts";
@@ -14,7 +14,7 @@ import { sessionService } from "../services/session-service.ts";
 import { projectService } from "../services/project-service.ts";
 import { logger } from "../logger.ts";
 import {
-  resolveStaticPath,
+  resolveStaticPathReal,
   parseCookieHeader,
   sanitizeGitRef,
   isSafeRepoPath,
@@ -829,7 +829,7 @@ async function handleAuthWebApp(req: IncomingMessage, res: ServerResponse): Prom
 // --- Static file serving ---
 
 async function serveWebApp(res: ServerResponse, subpath: string): Promise<boolean> {
-  const contained = resolveStaticPath(WEBAPP_DIST_DIR, subpath);
+  const contained = await resolveStaticPathReal(WEBAPP_DIST_DIR, subpath, realpath);
   if (contained === null) return false;
   let filePath = contained;
   const exists = await access(filePath).then(() => true, () => false);
@@ -847,7 +847,7 @@ async function serveWebApp(res: ServerResponse, subpath: string): Promise<boolea
 }
 
 async function serveStatic(res: ServerResponse, pathname: string): Promise<boolean> {
-  const contained = resolveStaticPath(DIST_DIR, pathname);
+  const contained = await resolveStaticPathReal(DIST_DIR, pathname, realpath);
   if (contained === null) return false; // escaped the static root
   let filePath = contained;
 

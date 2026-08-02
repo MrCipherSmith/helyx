@@ -2,6 +2,7 @@ import { describe, test, expect } from "bun:test";
 import {
   containsPath,
   resolveStaticPath,
+  resolveStaticPathReal,
   parseCookieHeader,
   sanitizeGitRef,
   isSafeRepoPath,
@@ -232,5 +233,97 @@ describe("hostToContainerPath", () => {
   test("an unrelated path is returned unchanged", () => {
     expect(hostToContainerPath("/opt/thing", { projectsDir: PROJECTS, hostHome: HOME }))
       .toBe("/opt/thing");
+  });
+});
+
+describe("containsPath — non-canonical inputs", () => {
+  test("a candidate that has not been resolved is still judged correctly", () => {
+    // Documenting "pass me resolved paths" is not the same as being safe when
+    // a caller does not. Both sides are resolved inside.
+    expect(containsPath("/srv/dist", "/srv/dist/../secret")).toBe(false);
+    expect(containsPath("/srv/dist", "/srv/dist/./assets/app.js")).toBe(true);
+  });
+
+  test("a root written with a trailing separator contains itself", () => {
+    expect(containsPath("/srv/dist/", "/srv/dist")).toBe(true);
+  });
+
+  test("an empty root fails closed rather than meaning the working directory", () => {
+    expect(containsPath("", "/anything")).toBe(false);
+    expect(resolveStaticPath("", "/index.html")).toBeNull();
+  });
+
+  test("a relative root is resolved against the working directory, consistently on both sides", () => {
+    expect(containsPath("dist", `${process.cwd()}/dist/index.html`)).toBe(true);
+    expect(containsPath("dist", `${process.cwd()}/dist-evil/x`)).toBe(false);
+  });
+});
+
+describe("resolveStaticPathReal — following what the path actually reaches", () => {
+  const ROOT = "/app/dashboard/dist";
+  const identity = async (p: string) => p;
+
+  test("an ordinary file passes both checks", async () => {
+    expect(await resolveStaticPathReal(ROOT, "/index.html", identity))
+      .toBe(`${ROOT}/index.html`);
+  });
+
+  test("a symlink pointing outside the root is refused", async () => {
+    // Lexically contained, but readFile would follow it out of the tree.
+    const realpath = async (p: string) =>
+      p === `${ROOT}/link` ? "/etc/passwd" : p;
+    expect(await resolveStaticPathReal(ROOT, "/link", realpath)).toBeNull();
+  });
+
+  test("a symlink pointing into a prefix-sharing sibling is refused", async () => {
+    const realpath = async (p: string) =>
+      p === `${ROOT}/link` ? "/app/dashboard/dist-evil/secret" : p;
+    expect(await resolveStaticPathReal(ROOT, "/link", realpath)).toBeNull();
+  });
+
+  test("a symlink that stays inside the root is allowed", async () => {
+    const realpath = async (p: string) =>
+      p === `${ROOT}/alias.js` ? `${ROOT}/assets/app.js` : p;
+    expect(await resolveStaticPathReal(ROOT, "/alias.js", realpath))
+      .toBe(`${ROOT}/alias.js`);
+  });
+
+  test("a root that is itself a symlink does not make everything under it escape", async () => {
+    // /app/dashboard/dist -> /data/build. Files under it resolve into /data/build,
+    // which is contained by the *real* root, not the lexical one.
+    const realpath = async (p: string) =>
+      p.startsWith(ROOT) ? p.replace(ROOT, "/data/build") : p;
+    expect(await resolveStaticPathReal(ROOT, "/index.html", realpath))
+      .toBe(`${ROOT}/index.html`);
+  });
+
+  test("a path that does not exist falls back to the lexical answer", async () => {
+    // Nothing to follow is not an escape; the caller's existence check answers.
+    const realpath = async () => { throw new Error("ENOENT") };
+    expect(await resolveStaticPathReal(ROOT, "/missing.js", realpath))
+      .toBe(`${ROOT}/missing.js`);
+  });
+
+  test("a lexical escape is refused before the filesystem is consulted", async () => {
+    let called = false;
+    const realpath = async (p: string) => { called = true; return p };
+    expect(await resolveStaticPathReal(ROOT, "/../dist-evil/secret", realpath)).toBeNull();
+    expect(called).toBe(false);
+  });
+});
+
+describe("hostToContainerPath — configured directories written loosely", () => {
+  test("a trailing separator on the projects dir still claims its children", () => {
+    expect(hostToContainerPath("/home/dev/projects/helyx", { projectsDir: "/home/dev/projects/" }))
+      .toBe("/host-projects/helyx");
+  });
+
+  test("a trailing separator on the legacy home mount behaves the same", () => {
+    expect(hostToContainerPath("/home/dev/x", { projectsDir: "/nope", hostHome: "/home/dev/" }))
+      .toBe("/host-home/x");
+  });
+
+  test("a root of just / is handled without doubling the separator", () => {
+    expect(hostToContainerPath("/srv/app", { projectsDir: "/" })).toBe("/host-projects/srv/app");
   });
 });

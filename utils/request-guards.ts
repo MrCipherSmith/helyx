@@ -20,9 +20,15 @@ import { join, resolve, sep } from "node:path";
  * paths must already be resolved for it to mean anything.
  */
 export function containsPath(root: string, candidate: string): boolean {
-  if (candidate === root) return true;
-  const prefix = root.endsWith(sep) ? root : root + sep;
-  return candidate.startsWith(prefix);
+  // Both sides are resolved here rather than assumed to be. Documenting the
+  // requirement is not the same as meeting it: a caller reusing this with a
+  // raw `/srv/dist/../secret` would otherwise be told it is contained, and a
+  // root written with a trailing slash would not contain itself.
+  if (!root) return false; // fail closed — resolve("") is the working directory
+  const r = resolve(root);
+  const c = resolve(candidate);
+  if (c === r) return true;
+  return c.startsWith(r.endsWith(sep) ? r : r + sep);
 }
 
 /**
@@ -34,8 +40,47 @@ export function containsPath(root: string, candidate: string): boolean {
  * which is also the right thing to tell whoever asked.
  */
 export function resolveStaticPath(root: string, requestPath: string): string | null {
+  if (!root) return null;
   const resolved = resolve(join(root, requestPath));
-  return containsPath(resolve(root), resolved) ? resolved : null;
+  return containsPath(root, resolved) ? resolved : null;
+}
+
+/**
+ * The same check, then again against the path the filesystem actually reaches.
+ *
+ * `resolveStaticPath` is lexical: it answers what the string means, not where
+ * it leads. A symlink planted inside the static root points outside it while
+ * spelling a contained path, and `readFile` follows the link. Resolving the
+ * link and containing that too closes the gap.
+ *
+ * `realpath` is a parameter so the escape can be tested without planting a
+ * symlink; production passes `fs.promises.realpath`. A path that does not
+ * exist has no real path — that is not an escape, so it falls back to the
+ * lexical answer and the caller's own existence check handles it.
+ */
+export async function resolveStaticPathReal(
+  root: string,
+  requestPath: string,
+  realpath: (p: string) => Promise<string>,
+): Promise<string | null> {
+  const lexical = resolveStaticPath(root, requestPath);
+  if (lexical === null) return null;
+
+  let real: string;
+  try {
+    real = await realpath(lexical);
+  } catch {
+    return lexical; // does not exist yet — nothing to follow
+  }
+
+  let realRoot: string;
+  try {
+    realRoot = await realpath(root);
+  } catch {
+    realRoot = root; // the root itself is not a link
+  }
+
+  return containsPath(realRoot, real) ? lexical : null;
 }
 
 /**
@@ -95,12 +140,34 @@ export function hostToContainerPath(
   hostPath: string,
   dirs: { projectsDir?: string; hostHome?: string },
 ): string {
-  const { projectsDir, hostHome } = dirs;
-  if (projectsDir && (hostPath === projectsDir || hostPath.startsWith(projectsDir + sep))) {
-    return "/host-projects" + hostPath.slice(projectsDir.length);
+  // Trailing separators are stripped before comparing: a configured directory
+  // written as `/home/dev/projects/` must still claim its children, and the
+  // remainder below counts on the two spellings being the same length. A
+  // directory of just `/` survives as itself rather than trimming to nothing.
+  const trim = (d?: string): string | undefined => {
+    if (!d) return undefined;
+    const t = d.replace(/\/+$/, "");
+    return t === "" ? "/" : t;
+  };
+
+  /** The part of `hostPath` below `dir`, or null when it is not below it. */
+  const remainder = (dir: string): string | null => {
+    if (dir === "/") return hostPath.startsWith("/") ? hostPath : null;
+    if (hostPath === dir) return "";
+    return hostPath.startsWith(dir + sep) ? hostPath.slice(dir.length) : null;
+  };
+
+  const projectsDir = trim(dirs.projectsDir);
+  if (projectsDir) {
+    const rest = remainder(projectsDir);
+    if (rest !== null) return "/host-projects" + rest;
   }
-  if (hostHome && (hostPath === hostHome || hostPath.startsWith(hostHome + sep))) {
-    return "/host-home" + hostPath.slice(hostHome.length);
+
+  const hostHome = trim(dirs.hostHome);
+  if (hostHome) {
+    const rest = remainder(hostHome);
+    if (rest !== null) return "/host-home" + rest;
   }
+
   return hostPath; // same path — a manual or non-Docker run
 }
