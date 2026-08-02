@@ -3,17 +3,58 @@
   "id": "004",
   "slug": "supervisor-status-broadcast-the-red-stat",
   "title": "supervisor status broadcast — the red state is unreachable",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-02T13:45:38.594Z",
-  "updatedAt": "2026-08-02T13:49:21.332Z",
+  "updatedAt": "2026-08-02T14:05:22.878Z",
   "source": {
     "type": "description",
     "ref": null
   },
   "acChecksum": "sha256:f50a7197a625d8e19e14502fc7bf17d04830d50e05d33817eba64ed18119390b",
-  "acConfirmed": {},
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-02T14:05:11.226Z",
+      "note": "utils/supervisor-status.ts exports classifyContainer, classifySession, summarizeQueue, hasProblems, plus dockerListingUsable added during review"
+    },
+    "AC2": {
+      "at": "2026-08-02T14:05:11.312Z",
+      "note": "all six problem states classified not-healthy and all three healthy states classified healthy; tested by name"
+    },
+    "AC3": {
+      "at": "2026-08-02T14:05:11.400Z",
+      "note": "unknown status and unknown Up-annotation both read as not healthy; tightened during review so only (healthy) passes among annotations"
+    },
+    "AC4": {
+      "at": "2026-08-02T14:05:11.486Z",
+      "note": "hasProblems takes ContainerHealth[] plus stuckTotal and dockerUsable; no emoji-prefix test remains in scripts/supervisor.ts"
+    },
+    "AC5": {
+      "at": "2026-08-02T14:05:11.572Z",
+      "note": "test 'a fresh heartbeat wins over queued messages' asserts the order and states why the queue is not mentioned"
+    },
+    "AC6": {
+      "at": "2026-08-02T14:05:20.369Z",
+      "note": "summarizeQueue tested for all three branches plus the stuck-without-pending boundary"
+    },
+    "AC7": {
+      "at": "2026-08-02T14:05:20.453Z",
+      "note": "bun run typecheck clean; bun run lint 0 errors (209 warnings, pre-existing); 546 unit tests pass, none skipped or removed"
+    },
+    "AC8": {
+      "at": "2026-08-02T14:05:20.540Z",
+      "note": "this host's real docker ps output fed through classifyContainer twice — before and after the review tightening: 21 containers, all genuinely up, all healthy, no false reds"
+    },
+    "AC9": {
+      "at": "2026-08-02T14:05:20.626Z",
+      "note": "keryx health run: coverage 17.72% (was 17.42% at flow start), score 59->60, gate WARN on coverage only"
+    },
+    "AC10": {
+      "at": "2026-08-02T14:05:20.710Z",
+      "note": "PR #40 body carries a dedicated section: a restarting or unhealthy container now notifies where the broadcast previously edited silently; health: starting is named as the deliberate cost"
+    }
+  },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/40"
   },
   "tasks": [
     {
@@ -65,7 +106,7 @@
       "id": "T4",
       "title": "Self-review and prepare draft PR",
       "kind": "review",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -73,7 +114,8 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     }
   ],
   "history": [
@@ -104,6 +146,75 @@
       "at": "2026-08-02T13:49:21.332Z",
       "event": "task-done",
       "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-02T14:05:09.288Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-02T14:05:11.141Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/40"
+    },
+    {
+      "at": "2026-08-02T14:05:11.226Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: utils/supervisor-status.ts exports classifyContainer, classifySession, summarizeQueue, hasProblems, plus dockerListingUsable added during review"
+    },
+    {
+      "at": "2026-08-02T14:05:11.312Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: all six problem states classified not-healthy and all three healthy states classified healthy; tested by name"
+    },
+    {
+      "at": "2026-08-02T14:05:11.400Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: unknown status and unknown Up-annotation both read as not healthy; tightened during review so only (healthy) passes among annotations"
+    },
+    {
+      "at": "2026-08-02T14:05:11.486Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: hasProblems takes ContainerHealth[] plus stuckTotal and dockerUsable; no emoji-prefix test remains in scripts/supervisor.ts"
+    },
+    {
+      "at": "2026-08-02T14:05:11.572Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: test 'a fresh heartbeat wins over queued messages' asserts the order and states why the queue is not mentioned"
+    },
+    {
+      "at": "2026-08-02T14:05:20.369Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: summarizeQueue tested for all three branches plus the stuck-without-pending boundary"
+    },
+    {
+      "at": "2026-08-02T14:05:20.454Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: bun run typecheck clean; bun run lint 0 errors (209 warnings, pre-existing); 546 unit tests pass, none skipped or removed"
+    },
+    {
+      "at": "2026-08-02T14:05:20.540Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: this host's real docker ps output fed through classifyContainer twice — before and after the review tightening: 21 containers, all genuinely up, all healthy, no false reds"
+    },
+    {
+      "at": "2026-08-02T14:05:20.626Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: keryx health run: coverage 17.72% (was 17.42% at flow start), score 59->60, gate WARN on coverage only"
+    },
+    {
+      "at": "2026-08-02T14:05:20.710Z",
+      "event": "ac-confirmed",
+      "detail": "AC10: PR #40 body carries a dedicated section: a restarting or unhealthy container now notifies where the broadcast previously edited silently; health: starting is named as the deliberate cost"
+    },
+    {
+      "at": "2026-08-02T14:05:20.795Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-02T14:05:22.878Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
   ]
 }

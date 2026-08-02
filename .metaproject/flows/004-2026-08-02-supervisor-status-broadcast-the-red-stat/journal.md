@@ -39,3 +39,17 @@ worth knowing about.
 
 After the fixes: 546 tests pass (from 536), coverage 17.72%, and this host's
 real `docker ps` output still classifies 21/21 healthy with no false reds.
+- 2026-08-02T14:05:09.288Z - task-done: T4: Self-review and prepare draft PR
+- 2026-08-02T14:05:11.141Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/40
+- 2026-08-02T14:05:11.226Z - ac-confirmed: AC1: utils/supervisor-status.ts exports classifyContainer, classifySession, summarizeQueue, hasProblems, plus dockerListingUsable added during review
+- 2026-08-02T14:05:11.312Z - ac-confirmed: AC2: all six problem states classified not-healthy and all three healthy states classified healthy; tested by name
+- 2026-08-02T14:05:11.400Z - ac-confirmed: AC3: unknown status and unknown Up-annotation both read as not healthy; tightened during review so only (healthy) passes among annotations
+- 2026-08-02T14:05:11.486Z - ac-confirmed: AC4: hasProblems takes ContainerHealth[] plus stuckTotal and dockerUsable; no emoji-prefix test remains in scripts/supervisor.ts
+- 2026-08-02T14:05:11.572Z - ac-confirmed: AC5: test 'a fresh heartbeat wins over queued messages' asserts the order and states why the queue is not mentioned
+- 2026-08-02T14:05:20.369Z - ac-confirmed: AC6: summarizeQueue tested for all three branches plus the stuck-without-pending boundary
+- 2026-08-02T14:05:20.454Z - ac-confirmed: AC7: bun run typecheck clean; bun run lint 0 errors (209 warnings, pre-existing); 546 unit tests pass, none skipped or removed
+- 2026-08-02T14:05:20.540Z - ac-confirmed: AC8: this host's real docker ps output fed through classifyContainer twice — before and after the review tightening: 21 containers, all genuinely up, all healthy, no false reds
+- 2026-08-02T14:05:20.626Z - ac-confirmed: AC9: keryx health run: coverage 17.72% (was 17.42% at flow start), score 59->60, gate WARN on coverage only
+- 2026-08-02T14:05:20.710Z - ac-confirmed: AC10: PR #40 body carries a dedicated section: a restarting or unhealthy container now notifies where the broadcast previously edited silently; health: starting is named as the deliberate cost
+- 2026-08-02T14:05:20.795Z - completing
+- 2026-08-02T14:05:22.878Z - done: all gates passed
