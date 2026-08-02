@@ -108,3 +108,21 @@ Three times in one flow, the same shape:
 
 Every one was a gap between what the comment asserted and what the code did.
 Worth recording as the lesson of this flow, more than the fix itself.
+
+### Fourth Codex pass — stop restating, start sharing
+
+`and` was fixed, but the rule still differed: the watchdog requires option
+**1** specifically, within **six lines** of the question, scanning bottom-up.
+Mine accepted any digit at any distance.
+
+That is the fourth wrong restatement of the same rule in one flow. The lesson
+recorded after the third pass was that a comment claiming two things agree is
+not a mechanism — and the fix that followed it was another restatement.
+
+So the rule now lives in `utils/permission-prompt.ts`, and both
+`scripts/tmux-watchdog.ts` and `utils/status-format.ts` import it. The
+watchdog's inline scan is gone; it calls the shared predicate. There is no
+longer a second copy to get wrong.
+
+Three tests pin the exact rule: only option 1, the six-line window, and that
+the newest question wins because a pane holds the whole session.

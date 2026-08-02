@@ -7,6 +7,8 @@
  * the one that tells the operator a session is blocked and needs them.
  */
 
+import { isPermissionPrompt as isPromptLines } from "./permission-prompt.ts";
+
 /** Parse `"2.5k tokens"`, `"15,234 tokens"`, `"1.2M tokens"` → an integer. */
 export function parseTokenCount(s: string): number | null {
   // NOTE: the character class admits several dots, so "1.2.3 tokens" reaches
@@ -56,35 +58,21 @@ export function computeSignature(text: string): string {
 export type ActivityPhase =
   | "thinking" | "reading" | "writing" | "running" | "searching" | "waiting";
 
-/** Claude Code's permission dialog, by the same signals `scripts/tmux-watchdog.ts` uses. */
-const PROMPT_SIGNAL_RE = /do you want to proceed\?/i;
-const PROMPT_CHOICE_RE = /❯\s*\d[.)]\s*yes/i;
-
 /**
  * Whether the stage text is an actual permission prompt.
  *
- * Keyed on the shape of the dialog rather than on the words `permission`,
- * `approve` or `waiting` appearing somewhere in it. The version this replaced
- * scanned the whole blob for those three words, so any tool call that
- * mentioned one — `grep -rn "waiting" src/`, reading `docs/permissions.md`,
- * running `npm run approve-release` — raised 💬, the signal that means a
- * session is blocked and needs a human. In this codebase those words are
- * everywhere.
+ * Delegates to `utils/permission-prompt.ts` rather than restating the rule.
+ * The version this replaced scanned the whole blob for the words `permission`,
+ * `approve` or `waiting`, so any tool call that mentioned one — `grep -rn
+ * "waiting" src/`, reading `docs/permissions.md`, running `npm run
+ * approve-release` — raised 💬, the signal that means a session is blocked and
+ * needs a human. In this codebase those words are everywhere.
  *
- * The definition is shared with the watchdog deliberately: two independent
- * ideas of what a prompt looks like is how one of them silently stops
- * matching.
+ * The first three attempts to restate the watchdog's rule here each got it
+ * wrong in a different way. Sharing the predicate removes the possibility.
  */
 export function isPermissionPrompt(stage: string): boolean {
-  // Both signals, in order, exactly as scripts/tmux-watchdog.ts requires them:
-  // the question, and then a highlighted choice below it. Either one alone is
-  // not a prompt — `● $ echo "Do you want to proceed?"` is a shell command,
-  // and accepting it would be a new false 💬 of precisely the class this
-  // function exists to remove.
-  const lines = stage.split("\n");
-  const signalIdx = lines.findIndex((l) => PROMPT_SIGNAL_RE.test(l));
-  if (signalIdx === -1) return false;
-  return lines.slice(signalIdx + 1).some((l) => PROMPT_CHOICE_RE.test(l));
+  return isPromptLines(stage.split("\n"));
 }
 
 /**

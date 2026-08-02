@@ -292,3 +292,33 @@ describe("what a permission dialog actually looks like by the time it gets here"
     expect(detectPhase("Reading: config.ts")).toBe("reading");
   });
 });
+
+describe("the prompt definition is shared, not restated", () => {
+  test("only option 1 counts — the watchdog's rule, now literally the same code", () => {
+    // Three attempts to restate this rule got it wrong three different ways:
+    // `or` instead of `and`, any digit instead of 1, any distance instead of a
+    // six-line window. utils/permission-prompt.ts is now the single source and
+    // both consumers import it.
+    expect(isPermissionPrompt("Do you want to proceed?\n❯ 1. Yes")).toBe(true);
+    expect(isPermissionPrompt("Do you want to proceed?\n❯ 2. Yes, and don't ask again")).toBe(false);
+  });
+
+  test("the choice must fall within six lines of the question", () => {
+    const near = ["Do you want to proceed?", "a", "b", "c", "d", "❯ 1. Yes"].join("\n");
+    const far = ["Do you want to proceed?", "a", "b", "c", "d", "e", "❯ 1. Yes"].join("\n");
+    expect(isPermissionPrompt(near)).toBe(true);
+    expect(isPermissionPrompt(far)).toBe(false);
+  });
+
+  test("the newest question wins, since a pane holds the whole session", () => {
+    const stage = [
+      "Do you want to proceed?",
+      "❯ 1. Yes",
+      "…answered, work continued…",
+      "Do you want to proceed?",
+      "  1. Yes",
+    ].join("\n");
+    // The last question has no highlighted choice — that dialog is not live.
+    expect(isPermissionPrompt(stage)).toBe(false);
+  });
+});
