@@ -29,6 +29,13 @@ import { join, resolve } from "node:path";
 import { forceSummarize } from "../memory/summarizer.ts";
 import { clearCache } from "../memory/short-term.ts";
 import { isRequeued, markRequeued } from "../utils/requeue.ts";
+import {
+  sessionProblemKey,
+  restartCallbackData,
+  paneCallbackData,
+  forceDeliverCallbackData,
+  ackCallbackData,
+} from "../utils/supervisor-callbacks.ts";
 
 // Path to today's tmux session log, for the "see the log" line in alerts.
 //
@@ -203,13 +210,36 @@ async function getLlmExplanation(
 
 // --- Dedup check ---
 
-function shouldAlert(key: string): boolean {
-  const ackUntil = ackedUntil.get(key);
-  if (ackUntil && ackUntil > Date.now()) return false;
-  const last = alertedAt.get(key) ?? 0;
-  if (Date.now() - last < DEDUP_WINDOW_MS) return false;
-  alertedAt.set(key, Date.now());
+/**
+ * Whether an alert for `key` may be sent right now, recording it if so.
+ *
+ * Two independent silencers, in order: an acknowledgement the operator set
+ * from Telegram ("🔕 Тишина 30м"), and the dedup window that stops one
+ * ongoing problem from re-alerting every loop. An ack that has expired is a
+ * non-event — it must not keep suppressing — and the dedup window is only
+ * armed when an alert actually goes out, so a suppressed check does not push
+ * the next one further away.
+ *
+ * Exported with its state and clock as parameters so the unit tests exercise
+ * this implementation rather than a re-implementation that can drift from it;
+ * `shouldAlert` below is the production call site with module state bound.
+ */
+export function shouldAlertNow(
+  state: { alertedAt: Map<string, number>; ackedUntil: Map<string, number> },
+  key: string,
+  now: number,
+  dedupWindowMs: number,
+): boolean {
+  const ackUntil = state.ackedUntil.get(key);
+  if (ackUntil && ackUntil > now) return false;
+  const last = state.alertedAt.get(key) ?? 0;
+  if (now - last < dedupWindowMs) return false;
+  state.alertedAt.set(key, now);
   return true;
+}
+
+function shouldAlert(key: string): boolean {
+  return shouldAlertNow({ alertedAt, ackedUntil }, key, Date.now(), DEDUP_WINDOW_MS);
 }
 
 // verifyRecovery lived here: it polled the heartbeat after the supervisor
@@ -289,7 +319,7 @@ async function checkHungSessions(sql: postgres.Sql, runShell?: RunShell): Promis
       const projectId = Number(row.project_id);
       const elapsedMs = Date.now() - new Date(row.updated_at).getTime();
       const elapsedSec = Math.round(elapsedMs / 1000);
-      const dedupKey = `session_problem:${project}`;
+      const dedupKey = sessionProblemKey(project);
 
       console.log(`[supervisor] hung session detected: ${project} (stale ${elapsedSec}s)`);
 
@@ -336,11 +366,11 @@ async function checkHungSessions(sql: postgres.Sql, runShell?: RunShell): Promis
 
       const messageId = await sendAlertWithButtons(msg, [
         [
-          { text: "📋 Показать лог", callback_data: `sup:pane:${projectId}` },
-          { text: spinnerActive ? "⚠️ Перезапустить (Claude работает!)" : "🔄 Перезапустить", callback_data: `sup:restart_session:${projectId}` },
+          { text: "📋 Показать лог", callback_data: paneCallbackData(projectId) },
+          { text: spinnerActive ? "⚠️ Перезапустить (Claude работает!)" : "🔄 Перезапустить", callback_data: restartCallbackData(projectId) },
         ],
         [
-          { text: "🔇 Заглушить на 1 ч", callback_data: `sup:ack:session_problem:${project}:${projectId}` },
+          { text: "🔇 Заглушить на 1 ч", callback_data: ackCallbackData(project, projectId) },
         ],
       ]);
       if (messageId) {
@@ -387,7 +417,7 @@ async function checkStuckQueue(sql: postgres.Sql, runShell?: RunShell): Promise<
       const oldestSec = Math.round(oldestMs / 1000);
       const stuckCount = Number(row.stuck_count ?? 1);
       const firstMsgContent = String(row.first_msg_content ?? "");
-      const dedupKey = `session_problem:${project}`;
+      const dedupKey = sessionProblemKey(project);
 
       console.log(`[supervisor] stuck queue: ${project} (oldest msg ${oldestSec}s, count ${stuckCount})`);
 
@@ -439,11 +469,11 @@ async function checkStuckQueue(sql: postgres.Sql, runShell?: RunShell): Promise<
 
       const messageId = await sendAlertWithButtons(msg, [
         [
-          { text: "📬 Принудительно доставить", callback_data: `sup:force_deliver:${sessionId}` },
-          { text: spinnerActive ? "⚠️ Перезапустить (Claude работает!)" : "🔄 Перезапустить сессию", callback_data: `sup:restart_session:${projectId}` },
+          { text: "📬 Принудительно доставить", callback_data: forceDeliverCallbackData(sessionId) },
+          { text: spinnerActive ? "⚠️ Перезапустить (Claude работает!)" : "🔄 Перезапустить сессию", callback_data: restartCallbackData(projectId) },
         ],
         [
-          { text: "🔇 Заглушить на 1 ч", callback_data: `sup:ack:session_problem:${project}:${sessionId}` },
+          { text: "🔇 Заглушить на 1 ч", callback_data: ackCallbackData(project, sessionId) },
         ],
       ]);
       if (messageId) {

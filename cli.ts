@@ -19,6 +19,7 @@
 import { existsSync, readFileSync, writeFileSync, statSync } from "fs";
 import { resolve, basename, dirname } from "path";
 import { homedir, tmpdir } from "os";
+import { windowName, parseWindowNames, partitionByWindow } from "./sessions/tmux-windows.ts";
 
 // --- ANSI colors ---
 const c = {
@@ -1297,9 +1298,6 @@ async function loadProjects(): Promise<Project[]> {
   });
 }
 
-function windowName(p: Project): string {
-  return p.name;
-}
 
 /**
  * Prefix that puts the tmux server in its own transient scope.
@@ -1374,29 +1372,29 @@ async function tmuxStart() {
     console.log(`\n  ${c.bold("Session")} ${c.cyan(TMUX_SESSION)} ${c.dim("already running — starting missing windows...")}\n`);
     // `tmux has-session -t sess:name` resolves the window by prefix, so a project
     // named "goodai" matched the existing "goodai-base" window and was silently
-    // never started. Compare against the real window names instead.
+    // never started. Compare against the real window names instead — see
+    // sessions/tmux-windows.ts.
     const windowList = await run(
       ["tmux", "list-windows", "-t", TMUX_SESSION, "-F", "#{window_name}"],
       { silent: true },
     );
-    const existingWindows = new Set(
-      windowList.output.split("\n").map(l => l.trim()).filter(Boolean),
-    );
-    let started = 0;
-    for (const p of projects) {
-      if (!existsSync(p.path)) continue;
+    const existingWindows = parseWindowNames(windowList.output);
+    const present = projects.filter(p => existsSync(p.path));
+    const { toStart } = partitionByWindow(present, existingWindows);
+    const startNames = new Set(toStart.map(windowName));
+
+    for (const p of present) {
       const wname = windowName(p);
-      if (existingWindows.has(wname)) {
+      if (!startNames.has(wname)) {
         console.log(`  ${c.dim("·")} ${wname} — already running`);
-      } else {
-        await run(["tmux", "new-window", "-t", TMUX_SESSION, "-n", wname, "-c", p.path]);
-        const cmd = `${BOT_DIR}/scripts/run-cli.sh ${p.path}`;
-        await run(["tmux", "send-keys", "-t", `${TMUX_SESSION}:${wname}`, cmd, "Enter"]);
-        console.log(`  ${c.green("✓")} ${wname} — started`);
-        started++;
+        continue;
       }
+      await run(["tmux", "new-window", "-t", TMUX_SESSION, "-n", wname, "-c", p.path]);
+      const cmd = `${BOT_DIR}/scripts/run-cli.sh ${p.path}`;
+      await run(["tmux", "send-keys", "-t", `${TMUX_SESSION}:${wname}`, cmd, "Enter"]);
+      console.log(`  ${c.green("✓")} ${wname} — started`);
     }
-    if (started === 0) {
+    if (toStart.length === 0) {
       console.log(`\n  ${c.dim("All windows already running.")}`);
     }
     console.log(`\n  Attach: ${c.cyan(`tmux attach -t ${TMUX_SESSION}`)}`);

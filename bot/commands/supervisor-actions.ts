@@ -9,6 +9,7 @@ import { InlineKeyboard } from "grammy";
 import { sql } from "../../memory/db.ts";
 import { enqueueRestart } from "../../services/project-service.ts";
 import { forwardStuckMessages } from "../../scripts/supervisor.ts";
+import { parseSupervisorCallback } from "../../utils/supervisor-callbacks.ts";
 
 export async function handleSupervisorCallback(ctx: Context): Promise<void> {
   // Only the configured admin chat may trigger supervisor actions
@@ -19,12 +20,11 @@ export async function handleSupervisorCallback(ctx: Context): Promise<void> {
   }
 
   const data = ctx.callbackQuery?.data ?? "";
-  const parts = data.split(":");
-  const action = parts[1];
+  const parsed = parseSupervisorCallback(data);
+  const action = parsed.action;
 
-  if (action === "restart_session") {
-    const projectId = parseInt(parts[2] ?? "0", 10);
-    const result = await enqueueRestart(sql, projectId, "user:button", "user:button");
+  if (parsed.action === "restart_session") {
+    const result = await enqueueRestart(sql, parsed.projectId, "user:button", "user:button");
     const replyText = result === "skipped_already_pending"
       ? "⏳ Перезапуск уже в очереди — ожидайте"
       : "✅ Перезапуск поставлен в очередь";
@@ -38,8 +38,8 @@ export async function handleSupervisorCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  if (action === "ack") {
-    const key = parts.slice(2, 4).join(":");
+  if (parsed.action === "ack") {
+    const key = parsed.key;
     const durationMin = 60;
     await sql`
       INSERT INTO admin_commands (command, payload)
@@ -62,8 +62,8 @@ export async function handleSupervisorCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  if (action === "pane") {
-    const projectId = parseInt(parts[2] ?? "0", 10);
+  if (parsed.action === "pane") {
+    const projectId = parsed.projectId;
     const [project] = await sql`SELECT name FROM projects WHERE id = ${projectId}`;
     if (!project) { await ctx.answerCallbackQuery({ text: "Проект не найден" }); return; }
     const proc = Bun.spawn(["tmux", "capture-pane", "-p", "-t", `bots:${project.name}`, "-S", "-20"], { stdout: "pipe", stderr: "pipe" });
@@ -89,15 +89,15 @@ export async function handleSupervisorCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  if (action === "force_deliver") {
-    const sessionId = parseInt(parts[2] ?? "0", 10);
+  if (parsed.action === "force_deliver") {
+    const sessionId = parsed.sessionId;
     await forwardStuckMessages(sql, sessionId);
     await ctx.answerCallbackQuery({ text: "✅ Принудительная доставка запущена" });
     return;
   }
 
-  if (action === "start_by_pid") {
-    const projectId = parseInt(parts[2] ?? "0", 10);
+  if (parsed.action === "start_by_pid") {
+    const projectId = parsed.projectId;
     const result = await enqueueRestart(sql, projectId, "run-cli:max_restarts", "run-cli");
     const replyText = result === "skipped_already_pending"
       ? "⏳ Перезапуск уже в очереди"
