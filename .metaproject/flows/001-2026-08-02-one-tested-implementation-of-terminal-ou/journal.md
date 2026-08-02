@@ -36,3 +36,4 @@ score 58, coverage 16.44%.
 - 2026-08-02T11:10:45.810Z - ac-confirmed: AC8: keryx health run: coverage 16.44% (was 16.19% at flow start), score 57->58, gate WARN on coverage only — no new reason
 - 2026-08-02T11:10:49.647Z - completing
 - 2026-08-02T11:10:51.382Z - done: all gates passed
+- 2026-08-02T11:12:10.854Z - task-done: T4: Self-review and prepare draft PR
