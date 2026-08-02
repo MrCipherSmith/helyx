@@ -1,10 +1,11 @@
 import { describe, test, expect } from "bun:test";
+import { stripAnsi } from "../../utils/terminal.ts";
 
 /**
  * tmux-watchdog — pure unit tests.
  *
  * No I/O, no database, no tmux calls. Tests cover:
- *   - stripAnsi: ANSI escape code stripping
+ *   - stripAnsi: imported from utils/terminal.ts (see tests/unit/terminal.test.ts)
  *   - detectPermissionPrompt: Claude Code MCP tool permission dialog detection
  *   - detectSpinner: active thinking/spinner line detection
  *   - detectEditor: vim / nano blocking session detection
@@ -16,14 +17,11 @@ import { describe, test, expect } from "bun:test";
 
 // ---------------------------------------------------------------------------
 // Pure functions copied from scripts/tmux-watchdog.ts
+//
+// stripAnsi is NOT copied: it is imported from utils/terminal.ts, which is the
+// implementation the watchdog itself now uses. A copy here would assert that a
+// duplicate still behaves, which is not the question these tests exist to ask.
 // ---------------------------------------------------------------------------
-
-function stripAnsi(s: string): string {
-  return s
-    .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "")
-    .replace(/\x1b\][^\x07]*\x07/g, "")
-    .replace(/[\x00-\x09\x0b-\x1f]/g, "");
-}
 
 const PERM_SIGNAL_RE = /do you want to proceed\?/i;
 const PERM_CHOICE_RE = /❯\s*1[.)]\s*yes/i;

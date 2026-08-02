@@ -7,6 +7,7 @@
  */
 
 import { existsSync } from "fs";
+import { stripAnsi } from "./terminal.ts";
 import { normalizeForComparison } from "./tmux-monitor.ts";
 
 const POLL_INTERVAL_MS = 2000;
@@ -37,12 +38,6 @@ function isChrome(line: string): boolean {
 }
 
 /** Strip ANSI escape codes from terminal output */
-function stripAnsi(str: string): string {
-  return str.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "")
-            .replace(/\x1b\][^\x07]*\x07/g, "")
-            .replace(/[\x00-\x09\x0b-\x1f]/g, "");
-}
-
 function parseLine(line: string): string | null {
   const trimmed = stripAnsi(line).trim();
   if (!trimmed || isChrome(trimmed)) return null;

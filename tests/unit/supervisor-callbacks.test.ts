@@ -1,6 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import {
   sessionProblemKey,
+  projectFromSessionProblemKey,
   restartCallbackData,
   paneCallbackData,
   forceDeliverCallbackData,
@@ -129,5 +130,31 @@ describe("malformed input", () => {
       action: "ack",
       key: "session_problem",
     });
+  });
+});
+
+describe("projectFromSessionProblemKey", () => {
+  test("inverts sessionProblemKey", () => {
+    expect(projectFromSessionProblemKey(sessionProblemKey("helyx"))).toBe("helyx");
+  });
+
+  test("round-trips a project name containing a colon", () => {
+    const project = "acme:web";
+    expect(projectFromSessionProblemKey(sessionProblemKey(project))).toBe(project);
+  });
+
+  test("round-trips a project name that contains the prefix itself", () => {
+    // The unanchored `.replace("session_problem:", "")` this replaced would
+    // have removed the *inner* occurrence and returned a mangled name.
+    const project = "session_problem:weird";
+    expect(projectFromSessionProblemKey(sessionProblemKey(project))).toBe(project);
+  });
+
+  test("a key without the prefix is returned unchanged", () => {
+    expect(projectFromSessionProblemKey("something_else")).toBe("something_else");
+  });
+
+  test("the empty project round-trips", () => {
+    expect(projectFromSessionProblemKey(sessionProblemKey(""))).toBe("");
   });
 });

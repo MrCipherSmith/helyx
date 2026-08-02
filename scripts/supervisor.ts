@@ -29,8 +29,10 @@ import { join, resolve } from "node:path";
 import { forceSummarize } from "../memory/summarizer.ts";
 import { clearCache } from "../memory/short-term.ts";
 import { isRequeued, markRequeued } from "../utils/requeue.ts";
+import { paneLines, hasActiveSpinner, escapeHtml } from "../utils/terminal.ts";
 import {
   sessionProblemKey,
+  projectFromSessionProblemKey,
   restartCallbackData,
   paneCallbackData,
   forceDeliverCallbackData,
@@ -324,13 +326,12 @@ async function checkHungSessions(sql: postgres.Sql, runShell?: RunShell): Promis
       console.log(`[supervisor] hung session detected: ${project} (stale ${elapsedSec}s)`);
 
       // Capture tmux pane for context
-      let paneLines: string[] = [];
+      let pane: string[] = [];
       let spinnerActive = false;
       if (runShell) {
         const paneRaw = await runShell(`tmux capture-pane -p -t "bots:${project}" 2>/dev/null || true`);
-        const stripped = paneRaw.output.replace(/\x1B\[[0-9;]*m/g, "");
-        paneLines = stripped.split("\n").filter(Boolean).slice(-5);
-        spinnerActive = stripped.split("\n").slice(-10).some(l => /^[·✶✻]\s/.test(l.trim()));
+        pane = paneLines(paneRaw.output, 5);
+        spinnerActive = hasActiveSpinner(paneRaw.output);
       }
 
       if (!shouldAlert(dedupKey)) {
@@ -358,8 +359,8 @@ async function checkHungSessions(sql: postgres.Sql, runShell?: RunShell): Promis
       if (spinnerActive) {
         msgParts.push(`⚙️ Claude сейчас работает — возможно, не завис`);
       }
-      if (paneLines.length > 0) {
-        msgParts.push(`Пане (последние 5 строк):\n<pre>${paneLines.join("\n")}</pre>`);
+      if (pane.length > 0) {
+        msgParts.push(`Пане (последние 5 строк):\n<pre>${escapeHtml(pane.join("\n"))}</pre>`);
       }
       msgParts.push(`📁 Лог: ${logPath}`);
       const msg = msgParts.join("\n");
@@ -422,13 +423,12 @@ async function checkStuckQueue(sql: postgres.Sql, runShell?: RunShell): Promise<
       console.log(`[supervisor] stuck queue: ${project} (oldest msg ${oldestSec}s, count ${stuckCount})`);
 
       // Capture tmux pane for context
-      let paneLines: string[] = [];
+      let pane: string[] = [];
       let spinnerActive = false;
       if (runShell) {
         const paneRaw = await runShell(`tmux capture-pane -p -t "bots:${project}" 2>/dev/null || true`);
-        const stripped = paneRaw.output.replace(/\x1B\[[0-9;]*m/g, "");
-        paneLines = stripped.split("\n").filter(Boolean).slice(-5);
-        spinnerActive = stripped.split("\n").slice(-10).some(l => /^[·✶✻]\s/.test(l.trim()));
+        pane = paneLines(paneRaw.output, 5);
+        spinnerActive = hasActiveSpinner(paneRaw.output);
       }
 
       if (!shouldAlert(dedupKey)) {
@@ -461,8 +461,8 @@ async function checkStuckQueue(sql: postgres.Sql, runShell?: RunShell): Promise<
       // The pane was captured above and, unlike the hung-session alert, never
       // reached the message — the operator lost the one piece of context that
       // says what the session is actually doing.
-      if (paneLines.length > 0) {
-        msgParts.push(`Пане (последние 5 строк):\n<pre>${paneLines.join("\n")}</pre>`);
+      if (pane.length > 0) {
+        msgParts.push(`Пане (последние 5 строк):\n<pre>${escapeHtml(pane.join("\n"))}</pre>`);
       }
       msgParts.push(`📁 Лог: ${logPath}`);
       const msg = msgParts.join("\n");
@@ -1201,9 +1201,39 @@ async function checkGemmaHealth(sql: postgres.Sql): Promise<void> {
 
 // --- Recovery check ---
 
+export type RecoveryAction = "resolve" | "start-hold" | "keep-waiting" | "reset";
+
+/**
+ * What the recovery loop should do with one alert on this tick.
+ *
+ * An incident is only declared over after it has looked clean twice in a row,
+ * `holdMs` apart — a single clean tick can be the gap between two bursts of the
+ * same problem, and editing the alert to ✅ then re-alerting seconds later is
+ * worse than staying quiet. The timer is cleared the moment a tick is not
+ * clean, so recovery has to be continuous rather than cumulative.
+ *
+ * Exported with its clock as a parameter so the rule can be tested without a
+ * database behind it.
+ */
+export function recoveryDecision(
+  bothClear: boolean,
+  cleanSince: number | undefined,
+  now: number,
+  holdMs: number,
+): RecoveryAction {
+  if (!bothClear) return "reset";
+  // A timestamp that is absent, zero, or not a number is no timer at all. The
+  // `if (cleanSince && …)` this replaced treated those the same way, and the
+  // exported contract should not quietly differ from it.
+  if (!cleanSince || !Number.isFinite(cleanSince)) return "start-hold";
+  return now - cleanSince >= holdMs ? "resolve" : "keep-waiting";
+}
+
+const RECOVERY_HOLD_MS = 60_000;
+
 async function checkRecovery(sql: postgres.Sql): Promise<void> {
   for (const [dedupKey, alert] of activeAlerts) {
-    const project = dedupKey.replace("session_problem:", "");
+    const project = projectFromSessionProblemKey(dedupKey);
 
     // Check hung condition (is ASM heartbeat still stale?)
     const [hungRow] = await sql`
@@ -1226,11 +1256,10 @@ async function checkRecovery(sql: postgres.Sql): Promise<void> {
 
     const bothClear = !hungRow && !stuckRow;
 
-    if (bothClear) {
-      const cleanSince = recoveryCleanSince.get(dedupKey);
-      if (cleanSince && Date.now() - cleanSince >= 60_000) {
-        // Two consecutive clean ticks — resolve
-        const elapsedMin = Math.round((Date.now() - alert.sentAt) / 60_000);
+    const now = Date.now();
+    switch (recoveryDecision(bothClear, recoveryCleanSince.get(dedupKey), now, RECOVERY_HOLD_MS)) {
+      case "resolve": {
+        const elapsedMin = Math.round((now - alert.sentAt) / 60_000);
         const timeStr = new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC";
         await tgPost("editMessageText", {
           chat_id: alert.chatId,
@@ -1241,11 +1270,16 @@ async function checkRecovery(sql: postgres.Sql): Promise<void> {
         alertedAt.delete(dedupKey);
         activeAlerts.delete(dedupKey);
         recoveryCleanSince.delete(dedupKey);
-      } else if (!cleanSince) {
-        recoveryCleanSince.set(dedupKey, Date.now());
+        break;
       }
-    } else {
-      recoveryCleanSince.delete(dedupKey);
+      case "start-hold":
+        recoveryCleanSince.set(dedupKey, now);
+        break;
+      case "keep-waiting":
+        break;
+      case "reset":
+        recoveryCleanSince.delete(dedupKey);
+        break;
     }
   }
 }

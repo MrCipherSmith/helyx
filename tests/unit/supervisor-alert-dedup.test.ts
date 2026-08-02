@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { shouldAlertNow } from "../../scripts/supervisor.ts";
+import { shouldAlertNow, recoveryDecision } from "../../scripts/supervisor.ts";
 
 /**
  * The supervisor's alert gate. Getting it wrong is quiet in one direction and
@@ -97,5 +97,60 @@ describe("shouldAlertNow — acknowledgement", () => {
     state.ackedUntil.set("session_problem:helyx", T0 + 60_000);
     expect(shouldAlertNow(state, "session_problem:helyx", T0, WINDOW)).toBe(false);
     expect(shouldAlertNow(state, "session_problem:keryx", T0, WINDOW)).toBe(true);
+  });
+});
+
+describe("recoveryDecision", () => {
+  const HOLD = 60_000;
+
+  test("a non-clean tick resets, whatever the timer said", () => {
+    expect(recoveryDecision(false, undefined, T0, HOLD)).toBe("reset");
+    expect(recoveryDecision(false, T0 - HOLD * 2, T0, HOLD)).toBe("reset");
+  });
+
+  test("the first clean tick starts the hold", () => {
+    expect(recoveryDecision(true, undefined, T0, HOLD)).toBe("start-hold");
+  });
+
+  test("a clean tick inside the hold keeps waiting", () => {
+    expect(recoveryDecision(true, T0, T0 + HOLD - 1, HOLD)).toBe("keep-waiting");
+  });
+
+  test("a clean tick at the hold boundary resolves", () => {
+    expect(recoveryDecision(true, T0, T0 + HOLD, HOLD)).toBe("resolve");
+  });
+
+  test("recovery must be continuous, not cumulative", () => {
+    // Clean, then a relapse, then clean again: the second clean run starts its
+    // own hold rather than inheriting the first one's elapsed time. Resolving
+    // on cumulative cleanliness would edit the alert to ✅ during an incident
+    // that never actually stopped.
+    expect(recoveryDecision(true, undefined, T0, HOLD)).toBe("start-hold");
+    expect(recoveryDecision(false, T0, T0 + 30_000, HOLD)).toBe("reset");
+    expect(recoveryDecision(true, undefined, T0 + 31_000, HOLD)).toBe("start-hold");
+    expect(recoveryDecision(true, T0 + 31_000, T0 + 61_000, HOLD)).toBe("keep-waiting");
+  });
+
+  test("a clean timer from the future does not resolve early", () => {
+    // Clock skew or a re-set timer; `now - cleanSince` goes negative.
+    expect(recoveryDecision(true, T0 + 10_000, T0, HOLD)).toBe("keep-waiting");
+  });
+
+  test("a zero hold resolves on the tick after the timer starts", () => {
+    expect(recoveryDecision(true, T0, T0, 0)).toBe("resolve");
+  });
+});
+
+describe("recoveryDecision — falsy timers", () => {
+  const HOLD = 60_000;
+
+  test("a zero timestamp is no timer, not an ancient one", () => {
+    // The `if (cleanSince && …)` this replaced treated 0 as absent. Resolving
+    // on it instead would declare an incident over on its first clean tick.
+    expect(recoveryDecision(true, 0, T0, HOLD)).toBe("start-hold");
+  });
+
+  test("NaN is no timer either", () => {
+    expect(recoveryDecision(true, NaN, T0, HOLD)).toBe("start-hold");
   });
 });
