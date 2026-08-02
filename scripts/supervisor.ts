@@ -31,6 +31,14 @@ import { clearCache } from "../memory/short-term.ts";
 import { isRequeued, markRequeued } from "../utils/requeue.ts";
 import { paneLines, hasActiveSpinner, escapeHtml } from "../utils/terminal.ts";
 import {
+  classifyContainer,
+  dockerListingUsable,
+  classifySession,
+  summarizeQueue,
+  hasProblems,
+  type ContainerHealth,
+} from "../utils/supervisor-status.ts";
+import {
   sessionProblemKey,
   projectFromSessionProblemKey,
   restartCallbackData,
@@ -592,14 +600,19 @@ async function sendStatusBroadcast(sql: postgres.Sql, runShell: RunShell): Promi
 
     // --- Docker status ---
     const dockerResult = await runShell(`docker ps --format "{{.Names}}\t{{.Status}}" 2>/dev/null || true`);
+    // An empty listing is not an empty host: `2>/dev/null || true` turns a dead
+    // daemon or a permissions problem into a clean-looking nothing.
+    const dockerUsable = dockerListingUsable(dockerResult.output);
     const dockerLines: string[] = [];
+    const containers: ContainerHealth[] = [];
     for (const line of dockerResult.output.split("\n").filter(Boolean)) {
       const tab = line.indexOf("\t");
       if (tab === -1) continue;
       const name = line.slice(0, tab).trim();
       const status = line.slice(tab + 1).trim();
-      const running = !status.toLowerCase().startsWith("exited") && !status.toLowerCase().startsWith("dead");
-      dockerLines.push(`${running ? "🟢" : "🔴"} ${name} — <i>${status}</i>`);
+      const health = classifyContainer(status);
+      containers.push(health);
+      dockerLines.push(`${health.healthy ? "🟢" : "🔴"} ${name} — <i>${status}</i>`);
     }
 
     // --- Session states ---
@@ -627,30 +640,13 @@ async function sendStatusBroadcast(sql: postgres.Sql, runShell: RunShell): Promi
       const pendingMsgs = Number(row.pending_msgs ?? 0);
       const asmUpdated = row.asm_updated ? new Date(row.asm_updated) : null;
       const lastActive = row.last_active ? new Date(row.last_active) : null;
-      const idleSec = lastActive ? Math.floor((Date.now() - lastActive.getTime()) / 1000) : null;
 
-      let stateIcon: string;
-      let stateText: string;
-
-      if (asmUpdated && Date.now() - asmUpdated.getTime() < 2 * 60 * 1000) {
-        // Fresh heartbeat in active_status_messages → Claude is actively working
-        const elapsed = Math.floor((Date.now() - asmUpdated.getTime()) / 1000);
-        stateIcon = "🔄";
-        stateText = `работает (heartbeat ${elapsed}s назад)`;
-      } else if (pendingMsgs > 0) {
-        // Has pending messages in queue
-        stateIcon = "📨";
-        stateText = `${pendingMsgs} сообщ. в очереди`;
-      } else if (idleSec !== null && idleSec < 60) {
-        stateIcon = "🟢";
-        stateText = `активна только что`;
-      } else {
-        // Idle
-        const idleStr = idleSec === null ? "?" :
-          idleSec < 3600 ? `${Math.floor(idleSec / 60)}m` : `${Math.floor(idleSec / 3600)}h`;
-        stateIcon = "⚪";
-        stateText = `ожидание (idle ${idleStr})`;
-      }
+      const { icon: stateIcon, text: stateText } = classifySession({
+        asmUpdatedMs: asmUpdated?.getTime() ?? null,
+        pendingMsgs,
+        lastActiveMs: lastActive?.getTime() ?? null,
+        now: Date.now(),
+      });
 
       sessionLines.push(`${stateIcon} <b>${project}</b> — ${stateText}`);
     }
@@ -676,6 +672,8 @@ async function sendStatusBroadcast(sql: postgres.Sql, runShell: RunShell): Promi
 
     if (dockerLines.length > 0) {
       lines.push("<b>Docker:</b>", ...dockerLines, "");
+    } else if (!dockerUsable) {
+      lines.push("<b>Docker:</b>", "🔴 не удалось прочитать список контейнеров", "");
     }
 
     if (sessionLines.length > 0) {
@@ -684,11 +682,7 @@ async function sendStatusBroadcast(sql: postgres.Sql, runShell: RunShell): Promi
       lines.push("Активных сессий нет", "");
     }
 
-    const queueStatus = stuckTotal > 0
-      ? `⚠️ ${pendingTotal} pending, ${stuckTotal} зависших`
-      : pendingTotal > 0
-        ? `📨 ${pendingTotal} pending`
-        : "✅ очередь пуста";
+    const queueStatus = summarizeQueue(pendingTotal, stuckTotal);
     lines.push(`<b>Очередь:</b> ${queueStatus}`);
     lines.push(`<b>Супервизор:</b> 🛡 uptime ${uptimeMin}m · инцидентов: ${incidentCount}`);
 
@@ -703,9 +697,11 @@ async function sendStatusBroadcast(sql: postgres.Sql, runShell: RunShell): Promi
       return;
     }
 
-    const hasProblems = stuckTotal > 0 || dockerLines.some(l => l.startsWith("🔴"));
+    // Decided from the classified containers, not from the rendered lines: the
+    // choice of icon must not be able to switch alerting off.
+    const problems = hasProblems({ containers, stuckTotal, dockerUsable });
 
-    if (statusMessageId && !hasProblems) {
+    if (statusMessageId && !problems) {
       // Healthy — edit in-place (silent, no notification)
       const edited = await tgPost("editMessageText", {
         chat_id: SUPERVISOR_CHAT_ID,
@@ -739,7 +735,7 @@ async function sendStatusBroadcast(sql: postgres.Sql, runShell: RunShell): Promi
     const sendResult = await tgPost("sendMessage", sendBody);
     if (sendResult?.result?.message_id) {
       statusMessageId = sendResult.result.message_id;
-      console.log("[supervisor] status broadcast sent (msg_id:", statusMessageId, hasProblems ? "— problems detected" : "— fresh start", ")");
+      console.log("[supervisor] status broadcast sent (msg_id:", statusMessageId, problems ? "— problems detected" : "— fresh start", ")");
     }
   } catch (err: any) {
     console.error(`[supervisor] sendStatusBroadcast error: ${err?.message}`);
