@@ -17,7 +17,11 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16-alpine
+        # pgvector, not plain postgres: the schema creates a vector column for
+        # memory search, and a migration that cannot CREATE EXTENSION vector
+        # fails the whole run. The first CI attempt used postgres:16-alpine and
+        # died on exactly that.
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: helyx
           POSTGRES_PASSWORD: helyx
