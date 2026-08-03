@@ -147,12 +147,24 @@ export async function waitForAnswers(
   expected: number,
   timeoutMs: number,
   pollMs = 1_000,
+  /**
+   * Whether the client is still there. Checked every poll, not once before the
+   * loop: a hook whose curl gives up mid-wait would otherwise hold a waiter
+   * slot for the full ten minutes, and enough of those stop any further
+   * question being delivered at all.
+   */
+  clientGone: () => boolean = () => false,
 ): Promise<(number | null)[] | null> {
   const now = deps.now ?? Date.now;
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const deadline = now() + timeoutMs;
 
   while (now() < deadline) {
+    if (clientGone()) {
+      await cancelRequest(deps.sql, requestId);
+      return null;
+    }
+
     const rows = await deps.sql`
       SELECT answers, expired_at FROM question_requests WHERE id = ${requestId}
     `.catch(() => [] as Record<string, unknown>[]);
@@ -309,6 +321,8 @@ export interface ExchangeLimits {
   timeoutMs: number;
   /** A signal that the client has gone away — the hook's curl giving up. */
   clientGone: () => boolean;
+  /** Poll interval; the default is a second. */
+  pollMs?: number;
 }
 
 /**
@@ -336,7 +350,14 @@ export async function runQuestionExchange(
     return null;
   }
 
-  return waitForAnswers(deps, registered.requestId, input.questions.length, limits.timeoutMs);
+  return waitForAnswers(
+    deps,
+    registered.requestId,
+    input.questions.length,
+    limits.timeoutMs,
+    limits.pollMs ?? 1_000,
+    limits.clientGone,
+  );
 }
 
 /**

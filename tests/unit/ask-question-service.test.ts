@@ -617,6 +617,29 @@ describe("runQuestionExchange — the ordering that was wrong twice", () => {
     expect(answers).toEqual([0, 1]);
   });
 
+  test("a client that leaves mid-wait cancels rather than holding its slot", async () => {
+    // The check has to be inside the loop. Checked only before it, a curl that
+    // gives up while the operator is deciding leaves the request polling for
+    // the full ten minutes — and enough of those fill the waiter cap, after
+    // which no question reaches Telegram at all.
+    const world = makeWorld();
+    withChat(world);
+    world.db.program(SELECT_ANSWERS, { rows: [{ answers: [null, null], expired_at: null }] });
+    let polls = 0;
+    let t = 0;
+
+    const answers = await runQuestionExchange(
+      { ...world.deps, now: () => t, sleep: async (ms: number) => { t += ms; polls++; } },
+      hookInput(),
+      { timeoutMs: 600_000, pollMs: 1_000, clientGone: () => polls >= 2 },
+    );
+
+    expect(answers).toBeNull();
+    expect(world.db.count("SET expired_at = NOW()")).toBe(1);
+    // It stopped where the client left, not at the deadline.
+    expect(polls).toBeLessThan(5);
+  });
+
   test("nowhere to send means no wait and no cancel", async () => {
     const world = makeWorld();
     world.db.program(SELECT_TARGET, { rows: [] });
