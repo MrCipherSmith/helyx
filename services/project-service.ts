@@ -85,6 +85,11 @@ export class ProjectService {
   }
 
   async create(name: string, path: string): Promise<Project | null> {
+    // tmux's rule for a window name. `utils/supervisor-status.ts` carries the
+    // same character class for Docker compose project names — deliberately not
+    // shared: the sets coincide today because the two systems happen to agree,
+    // and each is owned by its own. Note the different replacement, which is
+    // the visible half of the difference.
     const tmuxName = name.toLowerCase().replace(/[^a-z0-9_-]/g, "_");
     const rows = await sql`
       INSERT INTO projects (name, path, tmux_session_name)

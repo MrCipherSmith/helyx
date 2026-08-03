@@ -90,3 +90,21 @@ nothing of ours now raises the alarm rather than passing as health — the exact
 failure the scope introduces, and the one the first finding would have caused.
 
 Tests 953 → 957.
+
+### The duplicate count is 2 now, and deliberately
+
+`bun run dupes` reports the character class `[^a-z0-9_-]` in two places: Docker's
+rule for a compose project name, and tmux's rule for a window name. They are
+identical today because the two systems happen to agree — and they are owned by
+different systems. Sharing them would mean that widening one silently widens the
+other. Both sites carry a comment saying so; the replacement character differs,
+which is the visible half of the difference.
+
+The baseline moves from 1 to 2, both reviewed, the same way the `unquote` idiom
+was accepted. The detector's own output says a duplicate is a question rather
+than a verdict; this is the answer to it, written where the next reader looks.
+
+Also restored: the `parseContainerLine` tests, which a bulk edit swallowed while
+rewriting the block above them. Caught because lint reported the import as
+unused — which is the only reason it was noticed at all, and worth remembering
+about bulk edits.

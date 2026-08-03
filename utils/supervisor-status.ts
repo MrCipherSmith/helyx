@@ -127,6 +127,12 @@ export function isOurContainer(
 export function composeProjectFor(directory: string, override?: string): string {
   if (override?.trim()) return override.trim();
   const base = directory.replace(/\/+$/, "").split("/").pop() ?? "";
+  // Docker's rule for a project name. `services/project-service.ts` carries the
+  // same character class for tmux window names — deliberately not shared: the
+  // two sets coincide today because Docker and tmux happen to agree, and they
+  // are owned by different systems. If Docker widened its rule, sharing this
+  // would silently widen tmux's too. `bun run dupes` reports the pair; this
+  // comment is the answer to it.
   return base.toLowerCase().replace(/[^a-z0-9_-]/g, "");
 }
 

@@ -88,6 +88,39 @@ describe("composeProjectFor", () => {
   });
 });
 
+describe("parseContainerLine", () => {
+  test("reads the label, the name and the status", () => {
+    expect(parseContainerLine("helyx\thelyx-bot-1\tUp 3 hours (healthy)")).toEqual({
+      composeProject: "helyx",
+      name: "helyx-bot-1",
+      status: "Up 3 hours (healthy)",
+    });
+  });
+
+  test("an unlabelled container still parses", () => {
+    // Started with `--name` rather than by compose. It has no project label,
+    // and the only thing left to match on is the name itself.
+    expect(parseContainerLine("\tnginx\tUp 3 weeks")).toEqual({
+      composeProject: "",
+      name: "nginx",
+      status: "Up 3 weeks",
+    });
+  });
+
+  test("a status containing a tab does not lose its tail", () => {
+    expect(parseContainerLine("helyx\tbot\tUp\t3 hours")?.status).toBe("Up\t3 hours");
+  });
+
+  test("a line that is not a listing is not one", () => {
+    // The command runs with `2>/dev/null || true`, so a daemon error can arrive
+    // where a listing was expected.
+    expect(parseContainerLine("Cannot connect to the Docker daemon")).toBeNull();
+    expect(parseContainerLine("")).toBeNull();
+    expect(parseContainerLine("helyx\tname\t")).toBeNull();
+    expect(parseContainerLine("helyx\t\tUp 3 hours")).toBeNull();
+  });
+});
+
 describe("the broadcast", () => {
   function world(options: { docker?: string; projects?: string[] } = {}) {
     const db = new FakeSql();
