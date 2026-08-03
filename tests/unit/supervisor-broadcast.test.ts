@@ -16,7 +16,7 @@
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { sendStatusBroadcast, cleanVoiceStatuses, updateProcessHealth } from "../../scripts/supervisor.ts";
-import { isOurContainer, parseContainerLine } from "../../utils/supervisor-status.ts";
+import { isOurContainer, parseContainerLine, composeProjectFor } from "../../utils/supervisor-status.ts";
 import { FakeSql } from "../fixtures/fake-sql.ts";
 import { installFakeFetch, type FakeFetch } from "../fixtures/fake-fetch.ts";
 import { uniqueName } from "../fixtures/unique.ts";
@@ -37,57 +37,54 @@ beforeEach(() => {
 afterEach(() => restore());
 
 describe("isOurContainer", () => {
-  const scope = { composeProject: "helyx", projects: ["carlson-bot", "vantage"] };
+  const scope = { composeProject: "helyx", projects: ["carlson-bot", "api"] };
+  const labelled = (composeProject: string, name: string) => ({ composeProject, name, status: "Up" });
+  const unlabelled = (name: string) => ({ composeProject: "", name, status: "Up" });
 
-  test("helyx's own stack", () => {
-    expect(isOurContainer("helyx-bot-1", scope)).toBe(true);
-    expect(isOurContainer("helyx-postgres-1", scope)).toBe(true);
-    expect(isOurContainer("helyx", scope)).toBe(true);
+  test("the compose label decides, and it decides exactly", () => {
+    expect(isOurContainer(labelled("helyx", "helyx-bot-1"), scope)).toBe(true);
+    expect(isOurContainer(labelled("carlson-bot", "carlson-bot-web-1"), scope)).toBe(true);
+    expect(isOurContainer(labelled("something-else", "helyx-bot-1"), scope)).toBe(false);
   });
 
-  test("a project's containers", () => {
-    expect(isOurContainer("carlson-bot-web-1", scope)).toBe(true);
-    expect(isOurContainer("vantage-api-1", scope)).toBe(true);
+  test("a name prefix does not prove ownership", () => {
+    // The reason the label is used at all: a project registered as `api` would
+    // otherwise adopt an unrelated `api-worker-1`, and `docker ps -a` now lists
+    // stopped foreign containers too.
+    expect(isOurContainer(labelled("other-stack", "api-worker-1"), scope)).toBe(false);
+    expect(isOurContainer(unlabelled("api-worker-1"), scope)).toBe(false);
+    expect(isOurContainer(unlabelled("helyx-experiment"), scope)).toBe(false);
   });
 
-  test("someone else's container is not ours to report", () => {
-    // Reporting it would train the operator to ignore the alert, which costs
-    // more than the container nobody was watching.
-    expect(isOurContainer("nginx", scope)).toBe(false);
-    expect(isOurContainer("deprecated-postgres", scope)).toBe(false);
-    expect(isOurContainer("some-other-stack-db-1", scope)).toBe(false);
+  test("a container started outside compose is matched by its exact name", () => {
+    expect(isOurContainer(unlabelled("helyx"), scope)).toBe(true);
+    expect(isOurContainer(unlabelled("carlson-bot"), scope)).toBe(true);
+    expect(isOurContainer(unlabelled("nginx"), scope)).toBe(false);
   });
 
-  test("a name that merely contains ours is not adopted", () => {
-    // Matched on the compose naming convention rather than on a substring:
-    // `my-helyx-experiment` belongs to whoever named it that.
-    expect(isOurContainer("my-helyx-experiment", scope)).toBe(false);
-    expect(isOurContainer("not-vantage-api", scope)).toBe(false);
-    expect(isOurContainer("helyxor-1", scope)).toBe(false);
-  });
-
-  test("empty names and empty owners decide nothing", () => {
-    expect(isOurContainer("", scope)).toBe(false);
-    expect(isOurContainer("anything", { composeProject: "", projects: [] })).toBe(false);
-    expect(isOurContainer("anything", { composeProject: "helyx", projects: ["", "  "] })).toBe(false);
+  test("no owners means nothing is ours", () => {
+    expect(isOurContainer(labelled("helyx", "helyx-bot-1"), { composeProject: "", projects: [] })).toBe(false);
+    expect(isOurContainer(labelled("helyx", "x"), { composeProject: "  ", projects: ["", " "] })).toBe(false);
   });
 });
 
-describe("parseContainerLine", () => {
-  test("reads a name and a status", () => {
-    expect(parseContainerLine("helyx-bot-1\tUp 3 hours (healthy)")).toEqual({
-      name: "helyx-bot-1",
-      status: "Up 3 hours (healthy)",
-    });
+describe("composeProjectFor", () => {
+  test("compose derives its default from the directory, and so does this", () => {
+    // Assuming the literal "helyx" excluded every installation living anywhere
+    // else: the listing came back fine, nothing in it was recognised, and an
+    // empty set of owned containers reads as a healthy one.
+    expect(composeProjectFor("/home/altsay/bots/helyx")).toBe("helyx");
+    expect(composeProjectFor("/home/someone/my-bot")).toBe("my-bot");
+    expect(composeProjectFor("/srv/Helyx_Prod/")).toBe("helyx_prod");
   });
 
-  test("a line that is not a listing is not one", () => {
-    // The command runs with `2>/dev/null || true`, so an error message can
-    // arrive where a listing was expected.
-    expect(parseContainerLine("Cannot connect to the Docker daemon")).toBeNull();
-    expect(parseContainerLine("")).toBeNull();
-    expect(parseContainerLine("name\t")).toBeNull();
-    expect(parseContainerLine("\tUp 3 hours")).toBeNull();
+  test("characters compose drops are dropped", () => {
+    expect(composeProjectFor("/srv/My Bot!")).toBe("mybot");
+  });
+
+  test("an explicit override wins", () => {
+    expect(composeProjectFor("/home/x/helyx", "custom")).toBe("custom");
+    expect(composeProjectFor("/home/x/helyx", "  ")).toBe("helyx");
   });
 });
 
@@ -123,14 +120,14 @@ describe("the broadcast", () => {
     const { db } = world();
     await sendStatusBroadcast(db.sql as never, async (cmd) => {
       seen.push(cmd);
-      return { ok: true, output: "helyx-bot-1\tUp 2 hours (healthy)" };
+      return { ok: true, output: "helyx\thelyx-bot-1\tUp 2 hours (healthy)" };
     });
 
     expect(seen.some((c) => c.includes("docker ps -a"))).toBe(true);
   });
 
   test("a crashed container is reported red", async () => {
-    const { db, runShell } = world({ docker: "helyx-bot-1\tExited (1) 3 minutes ago" });
+    const { db, runShell } = world({ docker: "helyx\thelyx-bot-1\tExited (1) 3 minutes ago" });
 
     await sendStatusBroadcast(db.sql as never, runShell);
 
@@ -139,7 +136,7 @@ describe("the broadcast", () => {
   });
 
   test("a healthy container is reported green", async () => {
-    const { db, runShell } = world({ docker: "helyx-postgres-1\tUp 5 days (healthy)" });
+    const { db, runShell } = world({ docker: "helyx\thelyx-postgres-1\tUp 5 days (healthy)" });
 
     await sendStatusBroadcast(db.sql as never, runShell);
 
@@ -149,9 +146,9 @@ describe("the broadcast", () => {
   test("containers belonging to someone else are left out", async () => {
     const { db, runShell } = world({
       docker: [
-        "helyx-bot-1\tUp 2 hours (healthy)",
-        "deprecated-postgres\tExited (0) 5 days ago",
-        "nginx\tUp 3 weeks",
+        "helyx\thelyx-bot-1\tUp 2 hours (healthy)",
+        "deprecated\tdeprecated-postgres\tExited (0) 5 days ago",
+        "\tnginx\tUp 3 weeks",
       ].join("\n"),
       projects: [],
     });
@@ -166,7 +163,7 @@ describe("the broadcast", () => {
 
   test("a project's own container is included", async () => {
     const { db, runShell } = world({
-      docker: "carlson-bot-app-1\tExited (137) 1 minute ago",
+      docker: "carlson-bot\tcarlson-bot-app-1\tExited (137) 1 minute ago",
       projects: ["carlson-bot"],
     });
 
@@ -179,7 +176,7 @@ describe("the broadcast", () => {
     // Docker's status text is not ours, and the broadcast is sent with
     // parse_mode HTML. An unescaped angle bracket fails the send silently —
     // which is how the supervisor's other alerts were lost.
-    const { db, runShell } = world({ docker: "helyx-bot-1\tExited (1) <weird> ago" });
+    const { db, runShell } = world({ docker: "helyx\thelyx-bot-1\tExited (1) <weird> ago" });
 
     await sendStatusBroadcast(db.sql as never, runShell);
 
@@ -195,6 +192,81 @@ describe("the broadcast", () => {
     await sendStatusBroadcast(db.sql as never, runShell);
 
     expect(broadcastText()).toMatch(/docker|Docker|🔴|⚠️/);
+  });
+});
+
+describe("silent when healthy, loud when not", () => {
+  // The distinction the whole broadcast exists for. Editing in place is
+  // deliberate — a five-minute heartbeat that notifies is a heartbeat the
+  // operator mutes — and a problem must therefore *not* be an edit, or it
+  // arrives with the same silence as good news.
+  function world(docker: string, projects: string[] = []) {
+    const db = new FakeSql();
+    db.program(SELECT_PROJECTS, { rows: projects.map((name) => ({ name })) });
+    db.program(SELECT_SESSIONS, { rows: [] });
+    return { db, runShell: async () => ({ ok: true, output: docker }) };
+  }
+
+  const methodsUsed = () =>
+    http.requests.map((r) => r.url.split("/").pop()).filter((m) => m !== undefined);
+
+  test("a healthy update edits the existing message and sends nothing", async () => {
+    const healthy = world("helyx\thelyx-bot-1\tUp 2 hours (healthy)");
+
+    // A first run, whatever it does — the module remembers its status message
+    // across calls, and across tests.
+    await sendStatusBroadcast(healthy.db.sql as never, healthy.runShell);
+
+    http.requests.length = 0;
+    const second = world("helyx\thelyx-bot-1\tUp 2 hours (healthy)");
+    await sendStatusBroadcast(second.db.sql as never, second.runShell);
+
+    expect(methodsUsed()).toEqual([EDIT]);
+  });
+
+  test("a problem replaces the message rather than editing it", async () => {
+    // Otherwise the red status arrives as a silent edit to a message the
+    // operator has already read and scrolled past.
+    const healthy = world("helyx\thelyx-bot-1\tUp 2 hours (healthy)");
+    await sendStatusBroadcast(healthy.db.sql as never, healthy.runShell);
+
+    http.requests.length = 0;
+    const broken = world("helyx\thelyx-bot-1\tExited (1) 2 minutes ago");
+    await sendStatusBroadcast(broken.db.sql as never, broken.runShell);
+
+    const methods = methodsUsed();
+    expect(methods).toContain("deleteMessage");
+    expect(methods).toContain(SEND);
+    expect(methods).not.toContain(EDIT);
+  });
+
+  test("an unreadable docker listing is loud too", async () => {
+    const healthy = world("helyx\thelyx-bot-1\tUp 2 hours (healthy)");
+    await sendStatusBroadcast(healthy.db.sql as never, healthy.runShell);
+
+    http.requests.length = 0;
+    const blind = world("");
+    await sendStatusBroadcast(blind.db.sql as never, blind.runShell);
+
+    expect(methodsUsed()).toContain(SEND);
+    expect(methodsUsed()).not.toContain(EDIT);
+  });
+
+  test("a readable listing with nothing of ours in it is a problem, not health", async () => {
+    // The failure the scope introduces: an installation whose containers do not
+    // match reports a clean list of nothing, and nothing reads as fine.
+    const healthy = world("helyx\thelyx-bot-1\tUp 2 hours (healthy)");
+    await sendStatusBroadcast(healthy.db.sql as never, healthy.runShell);
+
+    http.requests.length = 0;
+    const foreign = world("other\tother-db-1\tUp 3 days");
+    await sendStatusBroadcast(foreign.db.sql as never, foreign.runShell);
+
+    const methods = methodsUsed();
+    expect(methods).toContain(SEND);
+    expect(methods).not.toContain(EDIT);
+    const text = String((http.requests.find((r) => r.url.endsWith(SEND))?.body as { text?: string })?.text ?? "");
+    expect(text).toContain("no containers matched");
   });
 });
 

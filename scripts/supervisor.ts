@@ -36,6 +36,7 @@ import {
   dockerListingUsable,
   isOurContainer,
   parseContainerLine,
+  composeProjectFor,
   classifySession,
   summarizeQueue,
   hasProblems,
@@ -69,7 +70,7 @@ const BOT_DIR = resolve(import.meta.dir, "..");
  * second installation on one host would otherwise adopt the first one's
  * containers and report them as its own.
  */
-const COMPOSE_PROJECT = process.env.COMPOSE_PROJECT_NAME ?? "helyx";
+const COMPOSE_PROJECT = composeProjectFor(BOT_DIR, process.env.COMPOSE_PROJECT_NAME);
 
 /** Project names, whose containers are also ours to watch. */
 async function knownProjectNames(sql: postgres.Sql): Promise<string[]> {
@@ -646,7 +647,12 @@ export async function sendStatusBroadcast(sql: postgres.Sql, runShell: RunShell)
     // decided rather than assumed: helyx's own stack and the projects running
     // under it. Someone else's container is not this supervisor's to report,
     // and reporting it would teach the operator to ignore the alert.
-    const dockerResult = await runShell(`docker ps -a --format "{{.Names}}\t{{.Status}}" 2>/dev/null || true`);
+    // The compose project label comes first: it is the only field that proves
+    // ownership. A name prefix does not — a project called `api` would adopt an
+    // unrelated `api-worker-1`.
+    const dockerResult = await runShell(
+      `docker ps -a --format '{{.Label "com.docker.compose.project"}}\t{{.Names}}\t{{.Status}}' 2>/dev/null || true`,
+    );
     // An empty listing is not an empty host: `2>/dev/null || true` turns a dead
     // daemon or a permissions problem into a clean-looking nothing.
     const dockerUsable = dockerListingUsable(dockerResult.output);
@@ -656,10 +662,21 @@ export async function sendStatusBroadcast(sql: postgres.Sql, runShell: RunShell)
     for (const line of dockerResult.output.split("\n").filter(Boolean)) {
       const parsed = parseContainerLine(line);
       if (!parsed) continue;
-      if (!isOurContainer(parsed.name, scope)) continue;
+      if (!isOurContainer(parsed, scope)) continue;
       const health = classifyContainer(parsed.status);
       containers.push(health);
       dockerLines.push(`${health.healthy ? "🟢" : "🔴"} ${parsed.name} — <i>${escapeHtml(parsed.status)}</i>`);
+    }
+
+    // A readable listing with nothing of ours in it is not health. It means the
+    // scope no longer matches reality — an installation in a differently-named
+    // directory, or a stack that is entirely gone — and an empty set of owned
+    // containers is exactly what a healthy one looks like to `hasProblems`.
+    const scopeLost = dockerUsable && containers.length === 0;
+    if (scopeLost) {
+      dockerLines.push(
+        `🔴 ни один контейнер не совпал с <code>${escapeHtml(COMPOSE_PROJECT)}</code> — no containers matched`,
+      );
     }
 
     // --- Session states ---
@@ -746,7 +763,7 @@ export async function sendStatusBroadcast(sql: postgres.Sql, runShell: RunShell)
 
     // Decided from the classified containers, not from the rendered lines: the
     // choice of icon must not be able to switch alerting off.
-    const problems = hasProblems({ containers, stuckTotal, dockerUsable });
+    const problems = hasProblems({ containers, stuckTotal, dockerUsable }) || scopeLost;
 
     if (statusMessageId && !problems) {
       // Healthy — edit in-place (silent, no notification)

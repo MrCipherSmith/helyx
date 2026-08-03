@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "query": "flow-014 llm client FakeFetch endpoint",
-  "generatedAt": "2026-08-03T21:36:11.900Z",
+  "query": "supervisor status broadcast docker containers project stack",
+  "generatedAt": "2026-08-03T21:59:35.809Z",
   "results": [
     {
       "entry": {
@@ -34,56 +34,15 @@
         "supersedes": null,
         "supersededBy": null
       },
-      "score": 1.998,
+      "score": 2.212,
       "components": {
-        "relevance": 0.5,
+        "relevance": 0.714,
         "recency": 0.995,
         "confidence": 1,
         "status": 1,
         "scope": 0
       },
-      "reason": "matched 3/6 terms; status accepted; confidence high"
-    },
-    {
-      "entry": {
-        "absolutePath": "/home/altsay/bots/helyx/.metaproject/memory/known-mistakes/comment-asserts-more-than-code.md",
-        "relativePath": "known-mistakes/comment-asserts-more-than-code.md",
-        "type": "known-mistake",
-        "title": "A comment that claims agreement is not a mechanism",
-        "version": "1.0.0",
-        "status": "accepted",
-        "confidence": "high",
-        "summary": "The recurring authoring mistake in this repository is not a logic error: it is a doc comment asserting more than the code below it does. It is invisible on re-reading, because the author reads what they meant. Every instance was caught by an independent reviewer, never by the author.",
-        "details": "Four instances in a single flow (005), each in code whose comment claimed the\nopposite:\n\n1. A plan keyed the permission phase on \"is there a `● ` tool line\", asserting\n   that a prompt has none. The real dialog carries one. Caught before writing\n   the code, by reading the watchdog's fixture instead of assuming.\n2. The comment said the new regexes \"detect real prompts\". They cannot:\n   `utils/tmux-monitor.ts` discards both signal lines before the text reaches\n   the classifier. Caught by review — and it was the risk the plan itself\n   listed in step 5 and did not run.\n3. `isPermissionPrompt` was documented as \"the same signals\n   `scripts/tmux-watchdog.ts` uses\" and combined them with `or`. The watchdog\n   requires both.\n4. Then, corrected to `and`, it still accepted any digit at any distance; the\n   watchdog requires option 1 within six lines.\n\nThe same shape in flow 006: `holdAwaitingPermission` was described as bound to\na scope so no exit path could leak, while `sendStatusMessage` still owned the\nedit guard itself — two of three paths fixed, reported as three.",
-        "tags": [],
-        "scopes": {
-          "module": "utils, channel",
-          "entity": "permission prompt detection, status rendering",
-          "files": [],
-          "skills": []
-        },
-        "created": "2026-08-02",
-        "updated": "2026-08-02",
-        "provenance": {
-          "source": "manual",
-          "link": "flows 005 and 006 in `.metaproject/flows/`"
-        },
-        "class": "procedural",
-        "validFrom": null,
-        "validTo": null,
-        "recordedAt": "2026-08-02",
-        "supersedes": null,
-        "supersededBy": null
-      },
-      "score": 1.662,
-      "components": {
-        "relevance": 0.167,
-        "recency": 0.991,
-        "confidence": 1,
-        "status": 1,
-        "scope": 0
-      },
-      "reason": "matched 1/6 terms; status accepted; confidence high"
+      "reason": "matched 5/7 terms; status accepted; confidence high"
     },
     {
       "entry": {
@@ -116,15 +75,15 @@
         "supersedes": null,
         "supersededBy": null
       },
-      "score": 1.662,
+      "score": 1.638,
       "components": {
-        "relevance": 0.167,
-        "recency": 0.991,
+        "relevance": 0.143,
+        "recency": 0.99,
         "confidence": 1,
         "status": 1,
         "scope": 0
       },
-      "reason": "matched 1/6 terms; status accepted; confidence high"
+      "reason": "matched 1/7 terms; status accepted; confidence high"
     }
   ]
 }

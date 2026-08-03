@@ -59,3 +59,34 @@ functions. Tests 935 → 953.
 - 2026-08-03T21:58:22.047Z - ac-confirmed: AC8: broadcastText reads the last send or edit — the loop edits in place while healthy
 - 2026-08-03T21:58:22.137Z - ac-confirmed: AC9: FakeSql.sql.json added; ask-question-service.test.ts no longer defines its own
 - 2026-08-03T21:58:22.231Z - ac-confirmed: AC10: typecheck clean, lint 0 errors, 953 tests, dupes 1, supervisor 46.76% lines
+
+## Review: three majors, and the first one would have made the feature useless
+
+**The project name was a literal.** `COMPOSE_PROJECT` defaulted to `"helyx"`,
+but compose derives its default from the directory it runs in. An installation
+anywhere else produces `my-bot-*` containers, none of which the predicate
+recognises — the listing comes back fine, nothing in it is ours, and an empty
+set of owned containers is exactly what a healthy one looks like. The feature
+would have worked on this machine and silently watched nothing everywhere else.
+Derived from the directory now, the way compose does it.
+
+**A name prefix does not prove ownership.** A project registered as `api` would
+have adopted an unrelated `api-worker-1` — and `docker ps -a` now lists stopped
+foreign containers, so the surface is larger than it was. The listing carries
+`com.docker.compose.project` as its first field now and ownership is decided by
+that label, exactly. A container started outside compose is matched by its exact
+name, which is the only other thing that can be checked.
+
+**And the tests could not tell silence from an alert.** The broadcast keeps one
+message and edits it in place while healthy — deliberately, because a
+five-minute heartbeat that notifies is a heartbeat the operator mutes. A problem
+must therefore *not* be an edit, or it arrives with the same silence as good
+news. `broadcastText` accepted either, so a regression that quietly edited a red
+status would have passed. There is a controlled sequence now: healthy edits and
+sends nothing; a problem deletes and sends and never edits.
+
+That third finding also produced a real one. A readable listing containing
+nothing of ours now raises the alarm rather than passing as health — the exact
+failure the scope introduces, and the one the first finding would have caused.
+
+Tests 953 → 957.
