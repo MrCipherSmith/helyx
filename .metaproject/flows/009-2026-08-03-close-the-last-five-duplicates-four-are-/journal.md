@@ -67,3 +67,20 @@ rule restated in a prompt, a README or a shell script is invisible to it — and
 class. Recorded as a limit of the tool rather than left to be rediscovered.
 
 Final: `bun run dupes` reports 1, the documented one. 720 tests.
+- 2026-08-03T11:03:56.262Z - task-done: T4: Self-review and prepare draft PR
+- 2026-08-03T11:03:58.122Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/45
+- 2026-08-03T11:03:58.208Z - ac-confirmed: AC1: utils/skill-format.ts exports isValidSkillName, INLINE_SHELL_TOKEN and inlineShellTokens; callbacks, distiller, handlers and preprocessor all use it with no local copy
+- 2026-08-03T11:03:58.292Z - ac-confirmed: AC2: utils/duration.ts exports parseDuration returning ms; tmux-log wraps it as durationOrHour, tmux-session-logger uses it directly; neither keeps the pattern or its own unit arithmetic
+- 2026-08-03T11:03:58.376Z - ac-confirmed: AC3: utils/llm-output.ts exports stripReasoning plus the tags; claude/client.ts (three sites incl. streaming) and scripts/supervisor.ts (two sites) use them
+- 2026-08-03T11:03:58.460Z - ac-confirmed: AC4: T5: bun run dupes reports exactly 1, the unquote idiom
+- 2026-08-03T11:03:58.549Z - ac-confirmed: AC5: both skill-distiller.ts and tools-reader.ts carry a comment stating the duplication is deliberate and that connecting the two formats would imply a rule that does not exist
+- 2026-08-03T11:04:09.921Z - ac-confirmed: AC6: parseDuration tested with the millisecond value stated for every unit, plus zero and eight malformed inputs
+- 2026-08-03T11:04:10.008Z - ac-confirmed: AC7: isValidSkillName tested for leading character, lowercase, path characters, the exact 64-char boundary and empty; plus a parity test against the rule quoted in prompts/skill-distillation.md
+- 2026-08-03T11:04:10.093Z - ac-confirmed: AC8: stripReasoning tested for one block, several, a multi-line block, non-greedy behaviour between blocks, no block, and empty
+- 2026-08-03T11:04:10.179Z - ac-confirmed: AC9: bun run typecheck clean; bun run lint 0 errors (208 warnings, pre-existing); 720 unit tests pass, none skipped or removed
+- 2026-08-03T11:04:10.266Z - ac-confirmed: AC10: T6: all three behaviours run side by side with the inline originals across 21 inputs — identical. Codex separately confirmed the 1h fallback, the exit 1 and the unchanged callback message
+- 2026-08-03T11:04:10.351Z - completing
+- 2026-08-03T11:04:12.144Z - completion-failed: pull-request: PR checks not green
+- 2026-08-03T11:04:48.349Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/45
+- 2026-08-03T11:04:48.470Z - completing
+- 2026-08-03T11:04:50.386Z - done: all gates passed
