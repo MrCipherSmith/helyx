@@ -90,8 +90,18 @@ export class FakeQuery implements PromiseLike<unknown[]> {
   }
 }
 
-/** The shape production code sees: a tagged template returning a lazy query. */
-export type FakeSqlTag = (strings: TemplateStringsArray, ...values: unknown[]) => FakeQuery;
+/**
+ * The shape production code sees: a tagged template returning a lazy query,
+ * carrying the one postgres.js helper this codebase uses on it.
+ *
+ * `sql.json` marks a value as JSONB. Production calls it while *building* the
+ * template arguments, so a fake without it throws before the query is issued —
+ * and the query then never appears in the recording, which reads as "the code
+ * did not run that statement". Two test files had already added it by hand.
+ */
+export type FakeSqlTag = ((strings: TemplateStringsArray, ...values: unknown[]) => FakeQuery) & {
+  json: (value: unknown) => unknown;
+};
 
 function normalize(raw: string): string {
   return raw.replace(/\s+/g, " ").trim();
@@ -214,6 +224,12 @@ export class FakeSql {
       }
     });
   }) as FakeSqlTag;
+
+  constructor() {
+    // Identity: the value passes through as an ordinary parameter, so a test
+    // asserts on what was stored rather than on a wrapper around it.
+    this.sql.json = (value: unknown) => value;
+  }
 }
 
 /** Two matchers are the same if a test would think of them as the same query. */

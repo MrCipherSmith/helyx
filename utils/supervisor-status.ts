@@ -70,6 +70,55 @@ export function dockerListingUsable(rawOutput: string): boolean {
   return rawOutput.split("\n").some((l) => l.includes("\t"));
 }
 
+/**
+ * Which containers this supervisor is answerable for.
+ *
+ * The question had been open since the loop was written, and answering it is
+ * what unblocks listing *stopped* containers at all. `docker ps` shows only
+ * what is running, so a container that crashed does not appear as broken — it
+ * simply vanishes, and a vanished container is indistinguishable from one that
+ * was never there. `docker ps -a` shows it, at the price of also showing
+ * everything else on the host.
+ *
+ * The scope, decided by the maintainer: helyx's own stack, and the containers
+ * of projects running under it. Anything else on the machine belongs to someone
+ * else, and reporting it would train the operator to ignore this alert.
+ *
+ * Matched on the compose project label's naming convention — `<project>-<service>-<n>` —
+ * rather than on a substring, so a container called `my-helyx-experiment` is
+ * not adopted by accident.
+ */
+export function isOurContainer(
+  name: string,
+  scope: { composeProject: string; projects: readonly string[] },
+): boolean {
+  const trimmed = name.trim();
+  if (!trimmed) return false;
+  const owners = [scope.composeProject, ...scope.projects].filter((o) => o && o.trim());
+  return owners.some((owner) => {
+    const prefix = `${owner.trim()}-`;
+    // `helyx-bot-1`, `helyx-postgres-1` — compose's own shape. The bare name is
+    // accepted too, for a container started outside compose with `--name`.
+    return trimmed === owner.trim() || trimmed.startsWith(prefix);
+  });
+}
+
+/**
+ * Read one line of `docker ps -a --format "{{.Names}}\t{{.Status}}"`.
+ *
+ * Returns null for a line that is not one — the shell runs the command with
+ * `2>/dev/null || true`, so an error message can arrive where a listing was
+ * expected.
+ */
+export function parseContainerLine(line: string): { name: string; status: string } | null {
+  const tab = line.indexOf("\t");
+  if (tab === -1) return null;
+  const name = line.slice(0, tab).trim();
+  const status = line.slice(tab + 1).trim();
+  if (!name || !status) return null;
+  return { name, status };
+}
+
 export interface SessionSnapshot {
   /** `active_status_messages.updated_at` in ms, or null when there is none. */
   asmUpdatedMs: number | null;

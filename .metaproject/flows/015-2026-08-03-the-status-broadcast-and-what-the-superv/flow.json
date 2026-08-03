@@ -1,0 +1,331 @@
+{
+  "schemaVersion": 2,
+  "id": "015",
+  "slug": "the-status-broadcast-and-what-the-superv",
+  "title": "the status broadcast, and what the supervisor is answerable for",
+  "status": "in-progress",
+  "createdAt": "2026-08-03T21:57:55.986Z",
+  "updatedAt": "2026-08-03T21:58:22.231Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:727528e9d319eba87af4b51ea7f1803d58e114dd608e52cd5fafd52ac8895dee",
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-03T21:58:21.423Z",
+      "note": "helyx-bot-1, helyx-postgres-1, carlson-bot-web-1 accepted; nginx, deprecated-postgres, my-helyx-experiment, helyxor-1 rejected"
+    },
+    "AC2": {
+      "at": "2026-08-03T21:58:21.513Z",
+      "note": "name and status read; a daemon error line, an empty line and a half line are all null"
+    },
+    "AC3": {
+      "at": "2026-08-03T21:58:21.602Z",
+      "note": "the command is asserted to contain docker ps -a"
+    },
+    "AC4": {
+      "at": "2026-08-03T21:58:21.690Z",
+      "note": "Exited reported red, Up healthy green, via classifyContainer"
+    },
+    "AC5": {
+      "at": "2026-08-03T21:58:21.780Z",
+      "note": "deprecated-postgres and nginx absent from the report; a project container present when the project is known"
+    },
+    "AC6": {
+      "at": "2026-08-03T21:58:21.869Z",
+      "note": "a status containing <weird> arrives escaped"
+    },
+    "AC7": {
+      "at": "2026-08-03T21:58:21.959Z",
+      "note": "an empty listing still produces a report rather than silence"
+    },
+    "AC8": {
+      "at": "2026-08-03T21:58:22.047Z",
+      "note": "broadcastText reads the last send or edit — the loop edits in place while healthy"
+    },
+    "AC9": {
+      "at": "2026-08-03T21:58:22.137Z",
+      "note": "FakeSql.sql.json added; ask-question-service.test.ts no longer defines its own"
+    },
+    "AC10": {
+      "at": "2026-08-03T21:58:22.231Z",
+      "note": "typecheck clean, lint 0 errors, 953 tests, dupes 1, supervisor 46.76% lines"
+    }
+  },
+  "pr": {
+    "url": null
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T5",
+      "title": "isOurContainer and parseContainerLine",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T6",
+      "title": "broadcast onto docker ps -a with the scope",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T7",
+      "title": "escape the status text",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T8",
+      "title": "sql.json in the fixture",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T9",
+      "title": "tests and full gate",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-03T21:57:55.986Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-03T21:57:56.090Z",
+      "event": "task-added",
+      "detail": "T5: isOurContainer and parseContainerLine"
+    },
+    {
+      "at": "2026-08-03T21:57:56.184Z",
+      "event": "task-added",
+      "detail": "T6: broadcast onto docker ps -a with the scope"
+    },
+    {
+      "at": "2026-08-03T21:57:56.280Z",
+      "event": "task-added",
+      "detail": "T7: escape the status text"
+    },
+    {
+      "at": "2026-08-03T21:57:56.367Z",
+      "event": "task-added",
+      "detail": "T8: sql.json in the fixture"
+    },
+    {
+      "at": "2026-08-03T21:57:56.453Z",
+      "event": "task-added",
+      "detail": "T9: tests and full gate"
+    },
+    {
+      "at": "2026-08-03T21:57:56.536Z",
+      "event": "frozen",
+      "detail": "10 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-03T21:57:56.623Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-03T21:58:20.621Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-03T21:58:20.710Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-03T21:58:20.798Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-03T21:58:20.886Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-03T21:58:20.980Z",
+      "event": "task-done",
+      "detail": "T5: isOurContainer and parseContainerLine"
+    },
+    {
+      "at": "2026-08-03T21:58:21.072Z",
+      "event": "task-done",
+      "detail": "T6: broadcast onto docker ps -a with the scope"
+    },
+    {
+      "at": "2026-08-03T21:58:21.159Z",
+      "event": "task-done",
+      "detail": "T7: escape the status text"
+    },
+    {
+      "at": "2026-08-03T21:58:21.248Z",
+      "event": "task-done",
+      "detail": "T8: sql.json in the fixture"
+    },
+    {
+      "at": "2026-08-03T21:58:21.337Z",
+      "event": "task-done",
+      "detail": "T9: tests and full gate"
+    },
+    {
+      "at": "2026-08-03T21:58:21.423Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: helyx-bot-1, helyx-postgres-1, carlson-bot-web-1 accepted; nginx, deprecated-postgres, my-helyx-experiment, helyxor-1 rejected"
+    },
+    {
+      "at": "2026-08-03T21:58:21.513Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: name and status read; a daemon error line, an empty line and a half line are all null"
+    },
+    {
+      "at": "2026-08-03T21:58:21.602Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: the command is asserted to contain docker ps -a"
+    },
+    {
+      "at": "2026-08-03T21:58:21.690Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: Exited reported red, Up healthy green, via classifyContainer"
+    },
+    {
+      "at": "2026-08-03T21:58:21.780Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: deprecated-postgres and nginx absent from the report; a project container present when the project is known"
+    },
+    {
+      "at": "2026-08-03T21:58:21.869Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: a status containing <weird> arrives escaped"
+    },
+    {
+      "at": "2026-08-03T21:58:21.959Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: an empty listing still produces a report rather than silence"
+    },
+    {
+      "at": "2026-08-03T21:58:22.047Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: broadcastText reads the last send or edit — the loop edits in place while healthy"
+    },
+    {
+      "at": "2026-08-03T21:58:22.137Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: FakeSql.sql.json added; ask-question-service.test.ts no longer defines its own"
+    },
+    {
+      "at": "2026-08-03T21:58:22.231Z",
+      "event": "ac-confirmed",
+      "detail": "AC10: typecheck clean, lint 0 errors, 953 tests, dupes 1, supervisor 46.76% lines"
+    }
+  ]
+}

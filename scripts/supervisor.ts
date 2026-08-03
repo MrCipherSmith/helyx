@@ -34,6 +34,8 @@ import { stripReasoning } from "../utils/llm-output.ts";
 import {
   classifyContainer,
   dockerListingUsable,
+  isOurContainer,
+  parseContainerLine,
   classifySession,
   summarizeQueue,
   hasProblems,
@@ -59,6 +61,22 @@ import {
 // on exactly one machine and pointed every other installation at a path that
 // does not exist.
 const BOT_DIR = resolve(import.meta.dir, "..");
+
+/**
+ * The compose project whose containers are this supervisor's responsibility.
+ *
+ * Defaults to the directory compose itself defaults to. Overridable because a
+ * second installation on one host would otherwise adopt the first one's
+ * containers and report them as its own.
+ */
+const COMPOSE_PROJECT = process.env.COMPOSE_PROJECT_NAME ?? "helyx";
+
+/** Project names, whose containers are also ours to watch. */
+async function knownProjectNames(sql: postgres.Sql): Promise<string[]> {
+  const rows = await sql<{ name: string }[]>`SELECT name FROM projects WHERE name IS NOT NULL`
+    .catch(() => [] as { name: string }[]);
+  return rows.map((r) => r.name).filter(Boolean);
+}
 
 function tmuxLogPath(): string {
   const dateStr = new Date().toISOString().slice(0, 10);
@@ -586,7 +604,7 @@ function resolveFallbackChannel(): { chat: string; topic: number } | null {
 
 // --- Loop 3: Voice status recovery ---
 
-async function cleanVoiceStatuses(sql: postgres.Sql): Promise<void> {
+export async function cleanVoiceStatuses(sql: postgres.Sql): Promise<void> {
   try {
     const rows = await sql`
       SELECT id, chat_id, thread_id, message_id
@@ -613,25 +631,35 @@ async function cleanVoiceStatuses(sql: postgres.Sql): Promise<void> {
 
 let statusMessageId: number | null = null; // edit existing message instead of spamming
 
-async function sendStatusBroadcast(sql: postgres.Sql, runShell: RunShell): Promise<void> {
+export async function sendStatusBroadcast(sql: postgres.Sql, runShell: RunShell): Promise<void> {
   try {
     const now = new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
 
     // --- Docker status ---
-    const dockerResult = await runShell(`docker ps --format "{{.Names}}\t{{.Status}}" 2>/dev/null || true`);
+    //
+    // `-a`, not the default. `docker ps` lists only what is running, so a
+    // container that crashed does not appear as broken — it vanishes, and a
+    // vanished container looks exactly like one that was never there. That is
+    // how the red state stayed unreachable for weeks.
+    //
+    // The price of `-a` is the rest of the host, which is why the scope is
+    // decided rather than assumed: helyx's own stack and the projects running
+    // under it. Someone else's container is not this supervisor's to report,
+    // and reporting it would teach the operator to ignore the alert.
+    const dockerResult = await runShell(`docker ps -a --format "{{.Names}}\t{{.Status}}" 2>/dev/null || true`);
     // An empty listing is not an empty host: `2>/dev/null || true` turns a dead
     // daemon or a permissions problem into a clean-looking nothing.
     const dockerUsable = dockerListingUsable(dockerResult.output);
+    const scope = { composeProject: COMPOSE_PROJECT, projects: await knownProjectNames(sql) };
     const dockerLines: string[] = [];
     const containers: ContainerHealth[] = [];
     for (const line of dockerResult.output.split("\n").filter(Boolean)) {
-      const tab = line.indexOf("\t");
-      if (tab === -1) continue;
-      const name = line.slice(0, tab).trim();
-      const status = line.slice(tab + 1).trim();
-      const health = classifyContainer(status);
+      const parsed = parseContainerLine(line);
+      if (!parsed) continue;
+      if (!isOurContainer(parsed.name, scope)) continue;
+      const health = classifyContainer(parsed.status);
       containers.push(health);
-      dockerLines.push(`${health.healthy ? "🟢" : "🔴"} ${name} — <i>${status}</i>`);
+      dockerLines.push(`${health.healthy ? "🟢" : "🔴"} ${parsed.name} — <i>${escapeHtml(parsed.status)}</i>`);
     }
 
     // --- Session states ---
@@ -763,7 +791,7 @@ async function sendStatusBroadcast(sql: postgres.Sql, runShell: RunShell): Promi
 
 // --- Heartbeat to process_health ---
 
-async function updateProcessHealth(sql: postgres.Sql): Promise<void> {
+export async function updateProcessHealth(sql: postgres.Sql): Promise<void> {
   const uptimeMs = Date.now() - SUPERVISOR_START;
   try {
     await sql`
@@ -793,7 +821,7 @@ async function updateProcessHealth(sql: postgres.Sql): Promise<void> {
  * summarizes each (session_id, chat_id) pair, saves to long-term memory,
  * and clears the message context so next interaction starts fresh.
  */
-async function checkIdleSessions(sql: postgres.Sql): Promise<void> {
+export async function checkIdleSessions(sql: postgres.Sql): Promise<void> {
   const idleSessions = await sql`
     SELECT s.id, s.project, s.project_path,
       COUNT(m.id) AS msg_count,
@@ -1011,7 +1039,7 @@ export async function checkUnansweredMessages(sql: postgres.Sql): Promise<void> 
 const GEMMA_HEALTH_DEDUP_MS = 10 * 60 * 1000; // 10 min — same key not re-alerted
 const gemmaHealthAlertedAt = new Map<string, number>();
 
-interface SystemSnapshot {
+export interface SystemSnapshot {
   activeSessions: { project: string; lastActiveAgo: string }[];
   stuckStatusMessages: { project: string; stuckMin: number }[];
   pendingQueueItems: { project: string; oldestAgo: string }[];
@@ -1020,7 +1048,7 @@ interface SystemSnapshot {
   dockerContainers: string;
 }
 
-async function collectSystemSnapshot(sql: postgres.Sql): Promise<SystemSnapshot> {
+export async function collectSystemSnapshot(sql: postgres.Sql): Promise<SystemSnapshot> {
   const [sessions, stuckStatus, pendingQueue, processes] = await Promise.all([
     sql`
       SELECT project, last_active,
@@ -1100,7 +1128,7 @@ async function collectSystemSnapshot(sql: postgres.Sql): Promise<SystemSnapshot>
   };
 }
 
-function formatSnapshotForGemma(snap: SystemSnapshot): string {
+export function formatSnapshotForGemma(snap: SystemSnapshot): string {
   const lines: string[] = ["=== Helyx system snapshot ===\n"];
 
   lines.push(`Active sessions (${snap.activeSessions.length}):`);
