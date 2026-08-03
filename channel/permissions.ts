@@ -27,6 +27,16 @@ export interface PermissionContext {
   forumChatId?: () => string | null;
   /** Forum topic (thread) ID for this project session. */
   forumTopicId?: () => number | null;
+  /**
+   * How long to wait for an answer before denying, in milliseconds.
+   *
+   * Optional: when absent `pollForResponse` applies its own default, which is
+   * where the value lives. The override exists because ten minutes is the right
+   * production wait and an impossible test — the timeout is one of the four
+   * ways out of the poll, and without this it is the one that cannot be reached
+   * through the public entry point.
+   */
+  permissionTimeoutMs?: () => number;
 }
 
 
@@ -285,7 +295,11 @@ export class PermissionHandler {
       `;
     }
 
-    await this.pollForResponse(request_id, chatId, token, previewMsgId, sendResult.messageId, msgText, desc, 600_000, forumExtra);
+    // No timeout literal here: passing `undefined` lets pollForResponse's own
+    // default apply, so the ten minutes is written once. It used to be spelled
+    // out at both ends, which made the default dead code and the two free to
+    // drift apart.
+    await this.pollForResponse(request_id, chatId, token, previewMsgId, sendResult.messageId, msgText, desc, this.ctx.permissionTimeoutMs?.(), forumExtra);
   }
 
   private parseInput(params: any): Record<string, any> {
