@@ -3,9 +3,9 @@
   "id": "013",
   "slug": "cover-the-migration-registry-by-running-",
   "title": "cover the migration registry by running it in-process against a real database",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-03T19:13:21.356Z",
-  "updatedAt": "2026-08-03T19:14:04.802Z",
+  "updatedAt": "2026-08-03T19:32:11.984Z",
   "source": {
     "type": "description",
     "ref": null
@@ -29,8 +29,8 @@
       "note": "all of them run, from nothing — from 0, to the top version, applied length equals the registry"
     },
     "AC5": {
-      "at": "2026-08-03T19:14:03.725Z",
-      "note": "fourteen tables asserted by name, each reported individually so the failure names the missing one"
+      "at": "2026-08-03T19:30:43.477Z",
+      "note": "the full 28-table set asserted, not a sample; writing it out surfaced six drifted tables no migration creates"
     },
     "AC6": {
       "at": "2026-08-03T19:14:03.963Z",
@@ -49,12 +49,12 @@
       "note": "registry tests run without a database; the rest use describe.skip"
     },
     "AC10": {
-      "at": "2026-08-03T19:14:04.802Z",
-      "note": "typecheck clean, lint 0 errors, 884 tests, dupes 1, memory/db.ts 96.81% lines"
+      "at": "2026-08-03T19:30:43.561Z",
+      "note": "typecheck clean, lint 0 errors on the server tree, 886 tests, dupes 1, memory/db.ts 96.81% lines; CI now runs the suite against pgvector"
     }
   },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/49"
   },
   "tasks": [
     {
@@ -301,6 +301,44 @@
       "at": "2026-08-03T19:14:04.802Z",
       "event": "ac-confirmed",
       "detail": "AC10: typecheck clean, lint 0 errors, 884 tests, dupes 1, memory/db.ts 96.81% lines"
+    },
+    {
+      "at": "2026-08-03T19:30:43.478Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: the full 28-table set asserted, not a sample; writing it out surfaced six drifted tables no migration creates"
+    },
+    {
+      "at": "2026-08-03T19:30:43.561Z",
+      "event": "ac-confirmed",
+      "detail": "AC10: typecheck clean, lint 0 errors on the server tree, 886 tests, dupes 1, memory/db.ts 96.81% lines; CI now runs the suite against pgvector"
+    },
+    {
+      "at": "2026-08-03T19:30:45.329Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/49"
+    },
+    {
+      "at": "2026-08-03T19:30:45.415Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-03T19:30:47.094Z",
+      "event": "completion-failed",
+      "detail": "pull-request: PR checks not green"
+    },
+    {
+      "at": "2026-08-03T19:32:10.164Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/49 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-08-03T19:32:10.249Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-03T19:32:11.984Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
   ]
 }

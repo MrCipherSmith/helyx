@@ -104,3 +104,11 @@ for, and the reason none of it had ever been noticed.
 
 The suite now runs in CI against a real database, and the migration tests are a
 gate rather than a skip.
+- 2026-08-03T19:30:43.478Z - ac-confirmed: AC5: the full 28-table set asserted, not a sample; writing it out surfaced six drifted tables no migration creates
+- 2026-08-03T19:30:43.561Z - ac-confirmed: AC10: typecheck clean, lint 0 errors on the server tree, 886 tests, dupes 1, memory/db.ts 96.81% lines; CI now runs the suite against pgvector
+- 2026-08-03T19:30:45.329Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/49
+- 2026-08-03T19:30:45.415Z - completing
+- 2026-08-03T19:30:47.094Z - completion-failed: pull-request: PR checks not green
+- 2026-08-03T19:32:10.164Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/49 (warning: PR is not a draft)
+- 2026-08-03T19:32:10.249Z - completing
+- 2026-08-03T19:32:11.984Z - done: all gates passed
