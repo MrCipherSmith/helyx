@@ -22,9 +22,33 @@
 
 import { afterAll } from "bun:test";
 import { databaseAvailable, provisionTestDatabase, NO_DATABASE_MESSAGE } from "./fixtures/test-db.ts";
+import { installNetworkGuard } from "./fixtures/fake-fetch.ts";
 
 /** Set to the provisioned database's name when the run has one. */
 export const TEST_DATABASE_ENV = "HELYX_TEST_DATABASE";
+
+// The network is off unless a test says otherwise.
+//
+// scripts/supervisor.ts reads TELEGRAM_BOT_TOKEN and SUPERVISOR_CHAT_ID from
+// the environment at import — and `.env` is loaded automatically here — so the
+// first test to call one of its alert paths without a fake would post to the
+// real bot in the real supervisor chat. Off by default, on by asking.
+installNetworkGuard();
+
+// And the supervisor's identity is a fake one for the duration of the run.
+//
+// `scripts/supervisor.ts` captures these at import, so they cannot be set from
+// inside a test file — by then the constants are already bound. Two reasons to
+// set them here rather than leave the real values in place: a test can assert
+// what an alert would have contained, which is most of what those loops do; and
+// if anything ever slipped past the network guard, it would carry a token that
+// authenticates as nobody.
+//
+// `bun test` only. The Playwright suite has its own setup and still uses the
+// real credentials, which is the point of an end-to-end test.
+process.env.TELEGRAM_BOT_TOKEN = "test-bot-token";
+process.env.SUPERVISOR_CHAT_ID = "-100999000111";
+process.env.SUPERVISOR_TOPIC_ID = "7";
 
 // Cleared before anything else. The marker means "this run provisioned a
 // database"; inherited from a parent shell or a previous run it would mean

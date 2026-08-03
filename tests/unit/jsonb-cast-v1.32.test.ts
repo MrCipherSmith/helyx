@@ -124,6 +124,10 @@ describe("v1.32.1 jsonb cast fix", () => {
         AND status IN ('pending', 'processing')
     `) as any[];
     expect(matches.length).toBeGreaterThanOrEqual(1);
-    expect(Number(matches[0].id)).toBe(Number(a.id));
+    // Contains, not "is first": the predicate has to find the row, and a
+    // second pass over the same database — `bun test --rerun-each` — leaves
+    // the earlier one in place. Asserting on position made the test depend on
+    // how many times it had been run.
+    expect(matches.map((m: any) => Number(m.id))).toContain(Number(a.id));
   });
 });

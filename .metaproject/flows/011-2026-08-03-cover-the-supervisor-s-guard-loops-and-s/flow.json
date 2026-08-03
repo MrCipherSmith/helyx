@@ -1,0 +1,524 @@
+{
+  "schemaVersion": 2,
+  "id": "011",
+  "slug": "cover-the-supervisor-s-guard-loops-and-s",
+  "title": "cover the supervisor's guard loops, and stop tests from being able to reach the network",
+  "status": "done",
+  "createdAt": "2026-08-03T13:18:28.764Z",
+  "updatedAt": "2026-08-03T13:59:26.169Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:5eb2d2fc9568a0a14bcf7c70c7fbbb1b90b548fac60b914413d7511ee2bda6e4",
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-03T13:28:38.882Z",
+      "note": "tests/fixtures/fake-fetch.ts: requests[] records method/url/headers/parsed JSON body; program() by URL pattern, same match replaces"
+    },
+    "AC2": {
+      "at": "2026-08-03T13:28:38.968Z",
+      "note": "unmatched request rejects naming method and URL; asserted in fixtures.test.ts and still recorded so the test can see the attempt"
+    },
+    "AC3": {
+      "at": "2026-08-03T13:28:39.049Z",
+      "note": "preload calls installNetworkGuard(); fixtures.test.ts asserts the rejection names the URL and installFakeFetch"
+    },
+    "AC4": {
+      "at": "2026-08-03T13:28:39.138Z",
+      "note": "whole suite green with the guard active — 791 pass 0 fail; any real fetch would have rejected"
+    },
+    "AC5": {
+      "at": "2026-08-03T13:28:39.224Z",
+      "note": "provider-service.test.ts uses installFakeFetch; the globalThis.fetch swap and its restore are gone"
+    },
+    "AC6": {
+      "at": "2026-08-03T13:28:39.311Z",
+      "note": "checkUnansweredMessages, checkHungSessions, checkStuckQueue exported; signatures and bodies unchanged"
+    },
+    "AC7": {
+      "at": "2026-08-03T13:28:39.397Z",
+      "note": "re-injected row asserted: session/chat/from_user/content marked, telegram_msg_id carried, delivered false in the statement text"
+    },
+    "AC8": {
+      "at": "2026-08-03T13:28:39.482Z",
+      "note": "reaction asserted on chat_id + message_id + emoji, and asserted still set for an already-requeued message — current order"
+    },
+    "AC9": {
+      "at": "2026-08-03T13:28:39.569Z",
+      "note": "already-requeued message inserts nothing and sends no alert"
+    },
+    "AC10": {
+      "at": "2026-08-03T13:28:39.652Z",
+      "note": "second sweep inside the window does nothing; a failing insert consumes the window and the next sweep inserts nothing"
+    },
+    "AC11": {
+      "at": "2026-08-03T13:28:39.737Z",
+      "note": "alert asserts project, path, elapsed; payloads compared against restartCallbackData/paneCallbackData/ackCallbackData; incident row asserted"
+    },
+    "AC12": {
+      "at": "2026-08-03T13:28:39.826Z",
+      "note": "already-alerted path: one send total, editMessageText carries the original message_id and appends"
+    },
+    "AC13": {
+      "at": "2026-08-03T13:28:39.913Z",
+      "note": "spinner reported and the restart button warns; with no RunShell the session is still alerted, without the pane block"
+    },
+    "AC14": {
+      "at": "2026-08-03T13:28:39.999Z",
+      "note": "stuck alert asserts count, wait, preview, pane, force-deliver by session and restart by project; healthy queue sends nothing"
+    },
+    "AC15": {
+      "at": "2026-08-03T13:28:40.088Z",
+      "note": "mutation: emptying each loop body fails 8/11, 7/9 and 6/7 of its tests; survivors are the do-nothing cases"
+    },
+    "AC16": {
+      "at": "2026-08-03T13:28:40.179Z",
+      "note": "typecheck clean, lint 0 errors, 791 pass, dupes 1, supervisor 5.55% to 32.07% lines and 7.69% to 54.55% funcs, health 64"
+    }
+  },
+  "pr": {
+    "url": "https://github.com/MrCipherSmith/helyx/pull/47"
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T5",
+      "title": "fake-fetch.ts: recording fetch, programmed by URL, unmatched throws naming the URL",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T6",
+      "title": "preload: network guard — any unfaked fetch throws",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T7",
+      "title": "rewire provider-service.test.ts off its hand-rolled globalThis.fetch swap",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T8",
+      "title": "export checkUnansweredMessages, checkHungSessions, checkStuckQueue — signatures untouched",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T9",
+      "title": "supervisor-unanswered.test.ts: re-injected row, reaction, already-requeued refusal, dedup window",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T10",
+      "title": "supervisor-hung.test.ts: alert and buttons, incident row, already-alerted edit path, spinner, no-RunShell",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T11",
+      "title": "supervisor-queue.test.ts: stuck item alert and log, silence on a healthy queue",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T12",
+      "title": "VERIFY nothing in the suite reaches the network, by the guard's counter",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T13",
+      "title": "VERIFY the tests assert effects: empty each loop body and confirm its tests fail",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T14",
+      "title": "full gate: typecheck, lint, test, dupes=1, health, supervisor uncovered-lines before/after",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-03T13:18:28.764Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-03T13:20:27.276Z",
+      "event": "task-added",
+      "detail": "T5: fake-fetch.ts: recording fetch, programmed by URL, unmatched throws naming the URL"
+    },
+    {
+      "at": "2026-08-03T13:20:27.363Z",
+      "event": "task-added",
+      "detail": "T6: preload: network guard — any unfaked fetch throws"
+    },
+    {
+      "at": "2026-08-03T13:20:27.448Z",
+      "event": "task-added",
+      "detail": "T7: rewire provider-service.test.ts off its hand-rolled globalThis.fetch swap"
+    },
+    {
+      "at": "2026-08-03T13:20:27.531Z",
+      "event": "task-added",
+      "detail": "T8: export checkUnansweredMessages, checkHungSessions, checkStuckQueue — signatures untouched"
+    },
+    {
+      "at": "2026-08-03T13:20:27.614Z",
+      "event": "task-added",
+      "detail": "T9: supervisor-unanswered.test.ts: re-injected row, reaction, already-requeued refusal, dedup window"
+    },
+    {
+      "at": "2026-08-03T13:20:27.700Z",
+      "event": "task-added",
+      "detail": "T10: supervisor-hung.test.ts: alert and buttons, incident row, already-alerted edit path, spinner, no-RunShell"
+    },
+    {
+      "at": "2026-08-03T13:20:27.784Z",
+      "event": "task-added",
+      "detail": "T11: supervisor-queue.test.ts: stuck item alert and log, silence on a healthy queue"
+    },
+    {
+      "at": "2026-08-03T13:20:27.874Z",
+      "event": "task-added",
+      "detail": "T12: VERIFY nothing in the suite reaches the network, by the guard's counter"
+    },
+    {
+      "at": "2026-08-03T13:20:27.960Z",
+      "event": "task-added",
+      "detail": "T13: VERIFY the tests assert effects: empty each loop body and confirm its tests fail"
+    },
+    {
+      "at": "2026-08-03T13:20:28.041Z",
+      "event": "task-added",
+      "detail": "T14: full gate: typecheck, lint, test, dupes=1, health, supervisor uncovered-lines before/after"
+    },
+    {
+      "at": "2026-08-03T13:20:40.246Z",
+      "event": "frozen",
+      "detail": "16 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-03T13:20:40.334Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-03T13:28:24.271Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-03T13:28:24.353Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-03T13:28:24.440Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-03T13:28:24.528Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-03T13:28:24.610Z",
+      "event": "task-done",
+      "detail": "T5: fake-fetch.ts: recording fetch, programmed by URL, unmatched throws naming the URL"
+    },
+    {
+      "at": "2026-08-03T13:28:24.697Z",
+      "event": "task-done",
+      "detail": "T6: preload: network guard — any unfaked fetch throws"
+    },
+    {
+      "at": "2026-08-03T13:28:24.789Z",
+      "event": "task-done",
+      "detail": "T7: rewire provider-service.test.ts off its hand-rolled globalThis.fetch swap"
+    },
+    {
+      "at": "2026-08-03T13:28:24.875Z",
+      "event": "task-done",
+      "detail": "T8: export checkUnansweredMessages, checkHungSessions, checkStuckQueue — signatures untouched"
+    },
+    {
+      "at": "2026-08-03T13:28:24.960Z",
+      "event": "task-done",
+      "detail": "T9: supervisor-unanswered.test.ts: re-injected row, reaction, already-requeued refusal, dedup window"
+    },
+    {
+      "at": "2026-08-03T13:28:25.041Z",
+      "event": "task-done",
+      "detail": "T10: supervisor-hung.test.ts: alert and buttons, incident row, already-alerted edit path, spinner, no-RunShell"
+    },
+    {
+      "at": "2026-08-03T13:28:25.127Z",
+      "event": "task-done",
+      "detail": "T11: supervisor-queue.test.ts: stuck item alert and log, silence on a healthy queue"
+    },
+    {
+      "at": "2026-08-03T13:28:25.212Z",
+      "event": "task-done",
+      "detail": "T12: VERIFY nothing in the suite reaches the network, by the guard's counter"
+    },
+    {
+      "at": "2026-08-03T13:28:25.297Z",
+      "event": "task-done",
+      "detail": "T13: VERIFY the tests assert effects: empty each loop body and confirm its tests fail"
+    },
+    {
+      "at": "2026-08-03T13:28:25.381Z",
+      "event": "task-done",
+      "detail": "T14: full gate: typecheck, lint, test, dupes=1, health, supervisor uncovered-lines before/after"
+    },
+    {
+      "at": "2026-08-03T13:28:38.882Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: tests/fixtures/fake-fetch.ts: requests[] records method/url/headers/parsed JSON body; program() by URL pattern, same match replaces"
+    },
+    {
+      "at": "2026-08-03T13:28:38.968Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: unmatched request rejects naming method and URL; asserted in fixtures.test.ts and still recorded so the test can see the attempt"
+    },
+    {
+      "at": "2026-08-03T13:28:39.049Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: preload calls installNetworkGuard(); fixtures.test.ts asserts the rejection names the URL and installFakeFetch"
+    },
+    {
+      "at": "2026-08-03T13:28:39.138Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: whole suite green with the guard active — 791 pass 0 fail; any real fetch would have rejected"
+    },
+    {
+      "at": "2026-08-03T13:28:39.225Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: provider-service.test.ts uses installFakeFetch; the globalThis.fetch swap and its restore are gone"
+    },
+    {
+      "at": "2026-08-03T13:28:39.311Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: checkUnansweredMessages, checkHungSessions, checkStuckQueue exported; signatures and bodies unchanged"
+    },
+    {
+      "at": "2026-08-03T13:28:39.397Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: re-injected row asserted: session/chat/from_user/content marked, telegram_msg_id carried, delivered false in the statement text"
+    },
+    {
+      "at": "2026-08-03T13:28:39.482Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: reaction asserted on chat_id + message_id + emoji, and asserted still set for an already-requeued message — current order"
+    },
+    {
+      "at": "2026-08-03T13:28:39.570Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: already-requeued message inserts nothing and sends no alert"
+    },
+    {
+      "at": "2026-08-03T13:28:39.652Z",
+      "event": "ac-confirmed",
+      "detail": "AC10: second sweep inside the window does nothing; a failing insert consumes the window and the next sweep inserts nothing"
+    },
+    {
+      "at": "2026-08-03T13:28:39.737Z",
+      "event": "ac-confirmed",
+      "detail": "AC11: alert asserts project, path, elapsed; payloads compared against restartCallbackData/paneCallbackData/ackCallbackData; incident row asserted"
+    },
+    {
+      "at": "2026-08-03T13:28:39.826Z",
+      "event": "ac-confirmed",
+      "detail": "AC12: already-alerted path: one send total, editMessageText carries the original message_id and appends"
+    },
+    {
+      "at": "2026-08-03T13:28:39.913Z",
+      "event": "ac-confirmed",
+      "detail": "AC13: spinner reported and the restart button warns; with no RunShell the session is still alerted, without the pane block"
+    },
+    {
+      "at": "2026-08-03T13:28:39.999Z",
+      "event": "ac-confirmed",
+      "detail": "AC14: stuck alert asserts count, wait, preview, pane, force-deliver by session and restart by project; healthy queue sends nothing"
+    },
+    {
+      "at": "2026-08-03T13:28:40.088Z",
+      "event": "ac-confirmed",
+      "detail": "AC15: mutation: emptying each loop body fails 8/11, 7/9 and 6/7 of its tests; survivors are the do-nothing cases"
+    },
+    {
+      "at": "2026-08-03T13:28:40.179Z",
+      "event": "ac-confirmed",
+      "detail": "AC16: typecheck clean, lint 0 errors, 791 pass, dupes 1, supervisor 5.55% to 32.07% lines and 7.69% to 54.55% funcs, health 64"
+    },
+    {
+      "at": "2026-08-03T13:59:24.152Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/47 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-08-03T13:59:24.243Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-03T13:59:26.169Z",
+      "event": "done",
+      "detail": "all gates passed"
+    }
+  ]
+}
