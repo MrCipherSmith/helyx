@@ -47,6 +47,21 @@ const OSC = /\x1b\][\s\S]*?(?:\x07|\x1b\\)/g;
  */
 const CONTROLS = /[\x00-\x09\x0b-\x1f]/g;
 
+/** The same range with the tab (0x09) left in — see `StripOptions.keepTabs`. */
+const CONTROLS_KEEPING_TABS = /[\x00-\x08\x0b-\x1f]/g;
+
+export interface StripOptions {
+  /**
+   * Keep tabs.
+   *
+   * A tab is a C0 control and normally goes with the rest. A parser whose
+   * patterns match on `\s` needs it kept: `●\tBash(ls)` arriving as
+   * `●Bash(ls)` stops matching `^●\s+`, and the line is lost. Off by default,
+   * so every existing caller keeps the behaviour it had.
+   */
+  keepTabs?: boolean;
+}
+
 /**
  * Remove ANSI escape sequences and stray control characters.
  *
@@ -59,8 +74,9 @@ const CONTROLS = /[\x00-\x09\x0b-\x1f]/g;
  * text. Callers reading a stream should accumulate first and strip the buffer,
  * which is what `bot/commands/codex.ts` does.
  */
-export function stripAnsi(s: string): string {
-  return s.replace(OSC, "").replace(CSI, "").replace(CONTROLS, "");
+export function stripAnsi(s: string, options: StripOptions = {}): string {
+  const controls = options.keepTabs ? CONTROLS_KEEPING_TABS : CONTROLS;
+  return s.replace(OSC, "").replace(CSI, "").replace(controls, "");
 }
 
 /**

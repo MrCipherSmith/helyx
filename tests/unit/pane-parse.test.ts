@@ -42,16 +42,20 @@ describe("parseLine — the ANSI drift", () => {
   });
 
   test("a tab after the marker still parses", () => {
-    // `stripAnsi` removes C0 controls, and a tab is one — so `●\tBash(ls)`
-    // arrived as `●Bash(ls)` and stopped matching `^●\s+`, a line the pane
-    // copy used to parse. Tabs become spaces before stripping.
-    //
-    // Parity with both originals is impossible: the pane copy did not strip
-    // and matched it, the file copy stripped and did not. The tie goes to
-    // parsing the line.
+    // A tab is a C0 control, so stripping removed it and `●\tBash(ls)` reached
+    // the patterns as `●Bash(ls)`, no longer matching `^●\s+`. The parser asks
+    // for tabs to be kept.
     expect(parseLine("●\tBash(ls)")).toBe("● $ ls");
     expect(parseLine("·\tBrewing…")).toBe("⏳ Brewing…");
     expect(parseLine("⎿\tGrep(x)")).toBe("  └ Grep: x");
+  });
+
+  test("a tab inside the payload is preserved, not rewritten", () => {
+    // The first attempt at the fix replaced every tab with a space, which was
+    // a third behaviour: the pane copy kept the tab, the file copy deleted it,
+    // and neither turned it into a space. Keeping it reproduces the copy that
+    // parsed the line, payload included.
+    expect(parseLine("● Some\tTool")).toBe("● Some\tTool");
   });
 
   test("other control characters are still removed", () => {

@@ -72,3 +72,25 @@ every branch, plus the ANSI-decorated prompt boundary in `parseStatus`, which
 nothing had exercised.
 
 688 -> 695 tests.
+
+### Second Codex pass — the fix was a third behaviour
+
+All three earlier findings resolved, and a new one that is exactly right:
+converting every tab to a space rewrote tabs *inside* the payload too, which
+neither original did. `● Some\tTool` was kept as-is by the pane copy, deleted
+by the file copy, and my fix turned it into `● Some Tool` — a third answer,
+matching neither.
+
+Resolved by keeping the tab rather than converting it: `stripAnsi` gained a
+`keepTabs` option, off by default so every existing caller is untouched, and
+the parser asks for it. That reproduces the pane copy exactly, payload
+included — the copy that parsed the line in the first place.
+
+Widening the shared signature immediately proved the rule that motivated this
+flow: `scripts/tmux-watchdog.ts` passed `stripAnsi` point-free to `.map()`, so
+the index became the second argument and the file stopped type-checking. Fixed
+at both call sites. The typechecker caught it here, which is what "check every
+consumer when a shared definition changes" looks like when the language can
+help.
+
+T6 re-run again: all three panes byte-identical.
