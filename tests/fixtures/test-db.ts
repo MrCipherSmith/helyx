@@ -28,6 +28,7 @@
  * between a fixture that is safe and one that is usually safe.
  */
 
+import { hostname } from "node:os";
 import postgres from "postgres";
 
 /** Every database this fixture creates shares this prefix, so strays are recognisable. */
@@ -36,6 +37,38 @@ const TEST_DB_PREFIX = "helyx_test_";
 /** What to tell a developer whose machine has no database. */
 export const NO_DATABASE_MESSAGE =
   "no Postgres reachable — start it with `docker compose up -d postgres` and set DATABASE_URL";
+
+/**
+ * Hosts this fixture will create and drop databases on without being told to.
+ *
+ * `DATABASE_URL` is an application variable, and on some machines it points at
+ * staging. This fixture issues `CREATE DATABASE` and `DROP DATABASE … WITH
+ * (FORCE)`, which is not something an application variable should be able to
+ * authorise by accident. A remote server has to be named deliberately, through
+ * `TEST_DATABASE_URL`, and that is the whole opt-in: saying it out loud.
+ */
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"]);
+
+/**
+ * A short, stable tag for this machine.
+ *
+ * The pid in a database name only means something on the host that produced it:
+ * a Postgres server can be shared between machines and containers, where pid
+ * 3412 is a different process for each of them, and stray cleanup would drop a
+ * live run's database. The tag makes "was this mine to judge?" answerable.
+ */
+const HOST_TAG = shortHash(hostname());
+
+function shortHash(value: string): string {
+  // Not cryptographic — it only has to be stable and collision-shy across the
+  // handful of machines that share one database server.
+  let h = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    h ^= value.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(36).padStart(7, "0").slice(0, 7);
+}
 
 export interface TestDatabase {
   /** A connection to the provisioned database. */
@@ -62,6 +95,31 @@ function serverUrl(): string | null {
   return process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? null;
 }
 
+/**
+ * May this fixture create and drop databases on the server the URL names?
+ *
+ * Yes if the URL was given as `TEST_DATABASE_URL` — that is someone choosing
+ * this server for tests. Yes if the host is loopback. Otherwise no: an
+ * inherited `DATABASE_URL` pointing at a shared or staging server must not be
+ * enough to authorise DDL on it.
+ */
+function permittedServer(url: string): { permitted: boolean; reason?: string } {
+  if (process.env.TEST_DATABASE_URL) return { permitted: true };
+  let host: string;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    return { permitted: false, reason: "DATABASE_URL is not a URL" };
+  }
+  if (LOCAL_HOSTS.has(host)) return { permitted: true };
+  return {
+    permitted: false,
+    reason:
+      `DATABASE_URL points at ${host}, which is not local. This fixture creates and drops ` +
+      "databases; name a server explicitly in TEST_DATABASE_URL to allow that.",
+  };
+}
+
 /** Swap the database name in a connection URL, keeping host, credentials and options. */
 function withDatabase(url: string, name: string): string {
   const parsed = new URL(url);
@@ -79,6 +137,9 @@ function withDatabase(url: string, name: string): string {
 export async function databaseAvailable(): Promise<Availability> {
   const url = serverUrl();
   if (!url) return { available: false, reason: "DATABASE_URL is not set" };
+
+  const permission = permittedServer(url);
+  if (!permission.permitted) return { available: false, reason: permission.reason };
 
   let admin: postgres.Sql | null = null;
   try {
@@ -103,20 +164,32 @@ export async function provisionTestDatabase(): Promise<TestDatabase> {
   const url = serverUrl();
   if (!url) throw new Error(NO_DATABASE_MESSAGE);
 
-  const name = `${TEST_DB_PREFIX}${process.pid}_${++counter}`;
+  const permission = permittedServer(url);
+  if (!permission.permitted) throw new Error(permission.reason ?? "server not permitted for tests");
+
+  const name = `${TEST_DB_PREFIX}${HOST_TAG}_${process.pid}_${++counter}`;
   const admin = postgres(withDatabase(url, "postgres"), { max: 1, connect_timeout: 10, onnotice: () => {} });
 
   try {
     await dropStrays(admin);
     // Identifiers cannot be parameterised, and the name is built here from a
-    // fixed prefix, a pid and a counter — no caller supplies any part of it.
+    // fixed prefix, a host tag, a pid and a counter — no caller supplies any
+    // part of it.
     await admin.unsafe(`CREATE DATABASE "${name}"`);
   } finally {
     await admin.end({ timeout: 5 }).catch(() => {});
   }
 
   const dbUrl = withDatabase(url, name);
-  await migrateInSubprocess(dbUrl, name);
+  try {
+    await migrateInSubprocess(dbUrl, name);
+  } catch (err) {
+    // The database exists and nothing yet knows how to drop it — the caller has
+    // no handle, because we are throwing instead of returning one. Take it back
+    // out here or it survives until some later run decides it is a stray.
+    await dropDatabase(url, name);
+    throw err;
+  }
 
   const sql = postgres(dbUrl, { max: 2, onnotice: () => {} });
 
@@ -127,12 +200,7 @@ export async function provisionTestDatabase(): Promise<TestDatabase> {
     remigrate: () => migrateInSubprocess(dbUrl, name),
     drop: async () => {
       await sql.end({ timeout: 5 }).catch(() => {});
-      const cleanup = postgres(withDatabase(url, "postgres"), { max: 1, onnotice: () => {} });
-      try {
-        await cleanup.unsafe(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`);
-      } finally {
-        await cleanup.end({ timeout: 5 }).catch(() => {});
-      }
+      await dropDatabase(url, name);
     },
   };
 }
@@ -161,13 +229,34 @@ async function dropStrays(admin: postgres.Sql): Promise<void> {
   }
 }
 
-/** `helyx_test_<pid>_<n>` — ours, someone else's, or an orphan? */
-function isStray(name: string): boolean {
-  const match = name.slice(TEST_DB_PREFIX.length).match(/^(\d+)_\d+$/);
+/** Drop one database, connecting through the maintenance database to do it. */
+async function dropDatabase(url: string, name: string): Promise<void> {
+  const cleanup = postgres(withDatabase(url, "postgres"), { max: 1, onnotice: () => {} });
+  try {
+    await cleanup.unsafe(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`);
+  } finally {
+    await cleanup.end({ timeout: 5 }).catch(() => {});
+  }
+}
+
+/** `helyx_test_<host>_<pid>_<n>` — ours, someone else's, or an orphan? */
+export function isStray(
+  name: string,
+  self: { hostTag: string; pid: number } = { hostTag: HOST_TAG, pid: process.pid },
+  alive: (pid: number) => boolean = processAlive,
+): boolean {
+  if (!name.startsWith(TEST_DB_PREFIX)) return false;
+  const match = name.slice(TEST_DB_PREFIX.length).match(/^([a-z0-9]+)_(\d+)_\d+$/);
   if (!match) return false; // not a name this fixture made; leave it alone
-  const pid = Number(match[1]);
-  if (pid === process.pid) return false; // ours, possibly not connected yet
-  return !processAlive(pid);
+
+  // Another machine's pid means nothing here — pid 3412 there is a different
+  // process from pid 3412 on this host, and judging it would mean dropping a
+  // live run's database.
+  if (match[1] !== self.hostTag) return false;
+
+  const pid = Number(match[2]);
+  if (pid === self.pid) return false; // ours, possibly not connected to yet
+  return !alive(pid);
 }
 
 function processAlive(pid: number): boolean {

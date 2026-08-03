@@ -103,3 +103,52 @@ reports 1.
 - 2026-08-03T11:25:12.267Z - ac-confirmed: AC12: skill-handlers.test.ts FakeSql class deleted; jsonb-cast-v1.32.test.ts has no DATABASE_URL check and no tag cleanup
 - 2026-08-03T11:25:12.349Z - ac-confirmed: AC13: 'migrations were applied from empty' + 'migrating again is a no-op' — schema_versions max and row count unchanged
 - 2026-08-03T11:25:12.433Z - ac-confirmed: AC14: typecheck clean, lint 0 errors, 739 pass 0 fail, dupes reports 1, health 63 (improved)
+
+## Review: REQUEST_CHANGES, and it was right about most of it
+
+Six major findings and two minor. All eight taken.
+
+**The fake `sql` was eager where postgres.js is lazy** (F-005). A postgres.js
+query is dispatched by `.then`/`.catch`/`.finally`, not by being written. The
+fake recorded at construction — so deleting the `.catch()` from the
+fire-and-forget insert in `utils/skill-handlers.ts` would have stopped
+production sending the query while the assertions kept passing. A fixture that
+cannot fail when the code breaks is worse than none. The query is now lazy and
+`queries` means "sent", not "written".
+
+**Restoring the Telegram module put the fake back** (F-004). An ESM namespace
+has live bindings: the namespace captured before mocking starts reporting the
+fakes once `mock.module` runs, so the restore installed them under the real
+names and every later file in the process inherited them. Values are now
+snapshotted at fixture import. Verified by reintroducing the old restore — the
+new identity assertion fails, and passes again once fixed.
+
+**An application variable could authorise DDL on a real server** (F-001).
+`DATABASE_URL` points at staging on some machines, and this fixture issues
+`CREATE DATABASE` and `DROP DATABASE … WITH (FORCE)`. It now refuses any
+non-loopback host unless `TEST_DATABASE_URL` names it deliberately.
+
+**The pid in a database name means nothing across hosts** (F-003). A shared
+server sees pid 3412 from several machines. The name now carries a host tag and
+cleanup judges only its own host's databases.
+
+**A stale marker was taken as proof of isolation** (F-002). `HELYX_TEST_DATABASE`
+inherited from a parent shell would have satisfied the check while the run wrote
+to the real database. The preload clears it before probing and on any
+provisioning failure, and the jsonb suite's safety check moved from a sibling
+test into a `beforeAll` gate — as a test it would have gone red while its
+siblings carried on writing.
+
+**The timeout tests could not fail for the right reason** (F-006). "Finished
+within five seconds" and "polled at least three times" are both true of a
+four-second override and a five-second default. They now capture the value
+actually forwarded: exactly `1234`, and exactly `undefined` when there is no
+override.
+
+Minor: the `sql(value)` fragment overload was a stub with no caller and is gone
+(F-007) — the same rule this flow's own description states about fixtures
+written ahead of their first caller. A migration failure after `CREATE DATABASE`
+leaked the database, since the caller gets a throw rather than a handle; it is
+dropped before rethrowing (F-008).
+
+Tests 739 → 754.

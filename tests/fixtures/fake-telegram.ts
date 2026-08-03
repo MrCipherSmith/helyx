@@ -78,7 +78,15 @@ export class FakeTelegram {
  * in one process.
  */
 export async function installFakeTelegram(): Promise<{ telegram: FakeTelegram; restore: () => void }> {
-  const actual = await import(TELEGRAM_MODULE);
+  // A snapshot of the *values*, not the namespace.
+  //
+  // An ESM namespace object has live bindings: once `mock.module` replaces the
+  // module, the namespace captured here starts reporting the fakes, and a
+  // restore built from it puts the fakes back under the real names. The mock
+  // then survives teardown and every later test file in the process inherits
+  // it — order-dependent false positives, from the one line meant to prevent
+  // exactly that. Copying the values first is what makes restoring real.
+  const actual = PRISTINE_TELEGRAM;
   const telegram = new FakeTelegram();
 
   mock.module(TELEGRAM_MODULE, () => ({
@@ -105,7 +113,18 @@ export async function installFakeTelegram(): Promise<{ telegram: FakeTelegram; r
   return {
     telegram,
     restore: () => {
-      mock.module(TELEGRAM_MODULE, () => actual);
+      mock.module(TELEGRAM_MODULE, () => ({ ...actual }));
     },
   };
 }
+
+/**
+ * The real exports, captured when this fixture is first imported — before any
+ * `installFakeTelegram()` can have run.
+ *
+ * Exported so a test can assert that teardown put the real function back rather
+ * than a copy of the fake. Re-importing the module at assertion time would not
+ * do: after mocking, that hands back whatever is installed, which is the very
+ * thing being checked.
+ */
+export const PRISTINE_TELEGRAM: Record<string, unknown> = { ...(await import(TELEGRAM_MODULE)) };

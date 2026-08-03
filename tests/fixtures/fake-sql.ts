@@ -14,14 +14,18 @@
  *   threw on the first unprogrammed query would fail tests for the wrong
  *   reason, and the failure would point at the fixture instead of the code.
  *
- * - **Recording happens when the query is issued, not when it resolves.**
- *   `channel/permissions.ts` has three updates written as
- *   ``sql`UPDATE …`.catch(() => {})`` — fired and never awaited. A fake that
- *   recorded on resolution would drop exactly the queries hardest to observe
- *   any other way.
+ * - **A query is lazy, exactly as postgres.js makes it.** Building the tagged
+ *   template sends nothing; the query goes out when something calls `.then`,
+ *   `.catch` or `.finally` on it. The first version of this fake recorded at
+ *   construction, which is a comfortable lie: `utils/skill-handlers.ts` fires a
+ *   log insert and never awaits it except through `.catch()`, and with an eager
+ *   fake, deleting that `.catch()` would leave the assertions passing while
+ *   production stopped sending the query altogether. A fixture that cannot fail
+ *   when the code breaks is worse than no fixture.
  *
- * - **The result is a real Promise.** `.catch()` on it has to work, because
- *   that is how those three are written.
+ * - **`.catch()` on a result nobody awaits has to work**, because that is how
+ *   those fire-and-forget queries are written — and it counts as executing
+ *   them, which is why they are still recorded.
  */
 
 /** One query as it was issued. */
@@ -47,20 +51,47 @@ interface Program extends QueryResponse {
   hits: number;
 }
 
-/** The marker `sql(value)` returns — postgres.js's fragment/identifier form. */
-export interface SqlFragment {
-  readonly __fragment: unknown;
+/**
+ * A query that has been built but not necessarily sent.
+ *
+ * postgres.js returns a lazy `Query`; it starts when awaited or when `.then`,
+ * `.catch` or `.finally` is called. This mirrors that, because the difference
+ * is observable: a fire-and-forget query whose `.catch()` is removed stops
+ * being sent, and a fake that ran it anyway would hide the change.
+ */
+export class FakeQuery implements PromiseLike<unknown[]> {
+  private started: Promise<unknown[]> | null = null;
+
+  constructor(private readonly run: () => Promise<unknown[]>) {}
+
+  /** Has anything caused this query to be sent? */
+  get executed(): boolean {
+    return this.started !== null;
+  }
+
+  private exec(): Promise<unknown[]> {
+    if (!this.started) this.started = this.run();
+    return this.started;
+  }
+
+  then<A = unknown[], B = never>(
+    onFulfilled?: ((rows: unknown[]) => A | PromiseLike<A>) | null,
+    onRejected?: ((reason: unknown) => B | PromiseLike<B>) | null,
+  ): Promise<A | B> {
+    return this.exec().then(onFulfilled, onRejected);
+  }
+
+  catch<B = never>(onRejected?: ((reason: unknown) => B | PromiseLike<B>) | null): Promise<unknown[] | B> {
+    return this.exec().catch(onRejected);
+  }
+
+  finally(onFinally?: (() => void) | null): Promise<unknown[]> {
+    return this.exec().finally(onFinally);
+  }
 }
 
-export function isSqlFragment(value: unknown): value is SqlFragment {
-  return typeof value === "object" && value !== null && "__fragment" in value;
-}
-
-/** The callable shape production code sees: a tagged template that is also a function. */
-export type FakeSqlTag = {
-  (strings: TemplateStringsArray, ...values: unknown[]): Promise<unknown[]>;
-  (value: unknown): SqlFragment;
-};
+/** The shape production code sees: a tagged template returning a lazy query. */
+export type FakeSqlTag = (strings: TemplateStringsArray, ...values: unknown[]) => FakeQuery;
 
 function normalize(raw: string): string {
   return raw.replace(/\s+/g, " ").trim();
@@ -77,7 +108,12 @@ function normalize(raw: string): string {
  * ```
  */
 export class FakeSql {
-  /** Every query issued, in order, including ones nobody awaited. */
+  /**
+   * Every query actually sent, in execution order.
+   *
+   * "Sent" and "written" are different things — a tagged template nothing ever
+   * awaits or `.catch()`es is never sent, by postgres.js or by this.
+   */
   readonly queries: RecordedQuery[] = [];
 
   private readonly programs: Program[] = [];
@@ -152,34 +188,31 @@ export class FakeSql {
    * Bound rather than a method so it can be passed around detached, which is
    * how every caller uses it — `{ sql: db.sql }`.
    */
-  readonly sql: FakeSqlTag = ((first: TemplateStringsArray | unknown, ...values: unknown[]) => {
-    // postgres.js's `sql` is overloaded: tagged-template for queries, plain call
-    // for fragments and identifier lists (`... IN ${sql(ids)}`). A template
-    // literal always arrives with a frozen `raw` array, which nothing else has.
-    if (!isTemplateStrings(first)) {
-      return { __fragment: first } satisfies SqlFragment;
-    }
-
-    const raw = first.reduce((acc, part, i) => acc + part + (i < values.length ? "?" : ""), "");
+  readonly sql: FakeSqlTag = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+    const raw = strings.reduce((acc, part, i) => acc + part + (i < values.length ? "?" : ""), "");
     const text = normalize(raw);
-    this.queries.push({ text, raw, values });
 
-    const program = this.programs.find((p) => this.hits(p.match, text));
-    if (!program) return Promise.resolve([]);
+    // Nothing is recorded yet. The query exists; it has not been sent.
+    return new FakeQuery(() => {
+      this.queries.push({ text, raw, values });
 
-    const nth = program.hits++;
-    if (program.error) {
-      const err = typeof program.error === "function" ? program.error(values, nth) : program.error;
-      return Promise.reject(err);
-    }
-    try {
-      const rows = program.rows ?? [];
-      return Promise.resolve(typeof rows === "function" ? rows(values, nth) : rows);
-    } catch (err) {
-      // A `rows` function may throw to signal a query failure — programSequence
-      // uses that to place an error at one step of a sequence.
-      return Promise.reject(err);
-    }
+      const program = this.programs.find((p) => this.hits(p.match, text));
+      if (!program) return Promise.resolve([]);
+
+      const nth = program.hits++;
+      if (program.error) {
+        const err = typeof program.error === "function" ? program.error(values, nth) : program.error;
+        return Promise.reject(err);
+      }
+      try {
+        const rows = program.rows ?? [];
+        return Promise.resolve(typeof rows === "function" ? rows(values, nth) : rows);
+      } catch (err) {
+        // A `rows` function may throw to signal a query failure — programSequence
+        // uses that to place an error at one step of a sequence.
+        return Promise.reject(err);
+      }
+    });
   }) as FakeSqlTag;
 }
 
@@ -190,6 +223,3 @@ function sameMatch(a: string | RegExp, b: string | RegExp): boolean {
   return false;
 }
 
-function isTemplateStrings(value: unknown): value is TemplateStringsArray {
-  return Array.isArray(value) && Array.isArray((value as unknown as TemplateStringsArray).raw);
-}

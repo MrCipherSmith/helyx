@@ -18,11 +18,12 @@
  * whole, so nothing has to be remembered and nothing can be left behind.
  */
 
-import { describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
 import { TEST_DATABASE_ENV } from "../preload.ts";
 import { NO_DATABASE_MESSAGE } from "../fixtures/test-db.ts";
 
-const HAS_DB = Boolean(process.env[TEST_DATABASE_ENV]);
+const EXPECTED_DB = process.env[TEST_DATABASE_ENV];
+const HAS_DB = Boolean(EXPECTED_DB);
 
 if (!HAS_DB) console.log(`[jsonb-cast] skipped — ${NO_DATABASE_MESSAGE}`);
 
@@ -36,14 +37,22 @@ async function getSql() {
 }
 
 describe("v1.32.1 jsonb cast fix", () => {
-  test.skipIf(!HAS_DB)("the tests are pointed at a throwaway database", async () => {
-    // Stated as an assertion rather than assumed. Everything below writes
-    // through production code paths; if this run were pointed at a real
-    // database, that is where the rows would land.
+  // A gate, not a sibling test.
+  //
+  // Everything below writes through production code paths, so "are we pointed
+  // at a throwaway database?" has to be answered *before* any of them runs. As
+  // an ordinary test it would merely fail while its siblings went on writing to
+  // whatever DATABASE_URL really named — a red line in the report and rows in a
+  // real database. A throw here stops the block.
+  beforeAll(async () => {
+    if (!HAS_DB) return;
     const sql = await getSql();
     const [row] = await sql<{ current: string }[]>`SELECT current_database() AS current`;
-    expect(row!.current).toBe(process.env[TEST_DATABASE_ENV] ?? "");
-    expect(row!.current).toStartWith("helyx_test_");
+    if (row?.current !== EXPECTED_DB || !row.current.startsWith("helyx_test_")) {
+      throw new Error(
+        `refusing to run: connected to "${row?.current}", expected the provisioned "${EXPECTED_DB}"`,
+      );
+    }
   });
 
   test.skipIf(!HAS_DB)("session register: metadata + cli_config land as JSONB objects", async () => {

@@ -192,26 +192,66 @@ describe("handle — the early returns", () => {
 });
 
 describe("the permission timeout", () => {
-  test("the override is honoured", async () => {
-    const world = ordinaryWorld({ permissionTimeoutMs: 1 });
-    world.db.program(ANSWER_QUERY, { rows: [] });
+  /**
+   * A handler that answers what it passed to `pollForResponse` instead of
+   * polling.
+   *
+   * The earlier version of these tests asserted that an override finished
+   * "within five seconds" and that the default "polled at least three times".
+   * Both are true of values nobody intended — a four-second override and a
+   * five-second default would have satisfied them — so they could not tell a
+   * working forward from a broken one. What AC11 is actually about is which
+   * number arrives, so that is what this captures.
+   */
+  function spyOnTimeout(world: ReturnType<typeof ordinaryWorld>) {
+    const captured: (number | undefined)[] = [];
+    const handler = new PermissionHandler(world.ctx as never, world.status.asStatusManager());
+    // Replaced on the instance rather than by subclassing: `pollForResponse` is
+    // private, and widening it to `protected` would be changing production
+    // visibility to suit a test.
+    (handler as unknown as Record<string, unknown>).pollForResponse = async (...args: unknown[]) => {
+      captured.push(args[7] as number | undefined);
+    };
+    return { handler, captured };
+  }
 
-    const started = Date.now();
-    await new PermissionHandler(world.ctx as never, world.status.asStatusManager()).handle(params());
+  test("the override is forwarded exactly", async () => {
+    const world = ordinaryWorld({ permissionTimeoutMs: 1234 });
+    const { handler, captured } = spyOnTimeout(world);
 
-    expect(world.mcp.behaviors()).toEqual(["deny"]);
-    expect(Date.now() - started).toBeLessThan(5_000);
+    await handler.handle(params());
+
+    expect(captured).toEqual([1234]);
   });
 
-  test("without an override the default applies — a long wait, not none", async () => {
-    // Asserted by observing that the loop keeps polling rather than by waiting
-    // ten minutes for it: the third answer query throws, which ends the call.
-    // If the default were absent or zero the loop would exit before polling at
-    // all and the throw would never be reached.
-    const world = makePermissionWorld();
-    world.db.program(DEDUP_QUERY, { rows: [] });
-    world.db.program("SELECT chat_id FROM chat_sessions", { rows: [{ chat_id: CHAT_ID }] });
-    world.db.program(STILL_OPEN_QUERY, { rows: [{ "?column?": 1 }] });
+  test("with no override nothing is forwarded, so the default applies", async () => {
+    // `undefined` is the point: passing a number here — any number — would put
+    // the value in two places again, which is the defect this flow removed.
+    const world = ordinaryWorld();
+    delete (world.ctx as { permissionTimeoutMs?: unknown }).permissionTimeoutMs;
+    const { handler, captured } = spyOnTimeout(world);
+
+    await handler.handle(params());
+
+    expect(captured).toEqual([undefined]);
+  });
+
+  test("the default really is ten minutes, and it is written once", async () => {
+    const source = await Bun.file("channel/permissions.ts").text();
+    // The call site used to spell the literal out as well, which made the
+    // default dead and left the two free to drift apart.
+    expect(source.match(/600_000/g) ?? []).toHaveLength(1);
+    // And the one occurrence is the default, not some unrelated constant.
+    expect(source).toContain("timeoutMs = 600_000");
+  });
+
+  test("the loop keeps polling under the real default rather than falling out", async () => {
+    // The forwarding tests replace the poll, so something still has to run it.
+    // The third answer query throws, which ends the call: if the default were
+    // absent or zero the loop would exit before polling at all and the throw
+    // would never be reached.
+    const world = ordinaryWorld();
+    delete (world.ctx as { permissionTimeoutMs?: unknown }).permissionTimeoutMs;
     world.db.program(ANSWER_QUERY, {
       rows: (_values, nth) => {
         if (nth >= 2) throw new Error("stop polling");
@@ -224,12 +264,5 @@ describe("the permission timeout", () => {
 
     expect(world.db.count(ANSWER_QUERY)).toBe(3);
     expect(world.status.isAwaiting(CHAT_ID)).toBe(false);
-  });
-
-  test("the ten minutes is written once", async () => {
-    // The call site used to spell the literal out as well, which made the
-    // default dead and left the two free to drift apart.
-    const source = await Bun.file("channel/permissions.ts").text();
-    expect(source.match(/600_000/g) ?? []).toHaveLength(1);
   });
 });

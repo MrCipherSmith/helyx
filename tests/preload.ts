@@ -26,19 +26,35 @@ import { databaseAvailable, provisionTestDatabase, NO_DATABASE_MESSAGE } from ".
 /** Set to the provisioned database's name when the run has one. */
 export const TEST_DATABASE_ENV = "HELYX_TEST_DATABASE";
 
+// Cleared before anything else. The marker means "this run provisioned a
+// database"; inherited from a parent shell or a previous run it would mean
+// nothing, and a test file reading it would take a stale value as proof of
+// isolation and go on to write to whatever DATABASE_URL really names.
+delete process.env[TEST_DATABASE_ENV];
+
 const verdict = await databaseAvailable();
 
 if (verdict.available) {
-  const db = await provisionTestDatabase();
-  // The server stays where it was; only the database name changes. Read before
-  // it is overwritten, so a later provision still knows which server to use.
-  process.env.TEST_DATABASE_URL ??= process.env.DATABASE_URL;
-  process.env.DATABASE_URL = db.url;
-  process.env[TEST_DATABASE_ENV] = db.name;
+  try {
+    const db = await provisionTestDatabase();
+    // The server stays where it was; only the database name changes. Read
+    // before it is overwritten, so a later provision still knows which server
+    // to use.
+    process.env.TEST_DATABASE_URL ??= process.env.DATABASE_URL;
+    process.env.DATABASE_URL = db.url;
+    process.env[TEST_DATABASE_ENV] = db.name;
 
-  afterAll(async () => {
-    await db.drop();
-  });
+    afterAll(async () => {
+      await db.drop();
+    });
+  } catch (err) {
+    // Provisioning failed after the server said it was reachable — a role
+    // without CREATEDB, a migration that will not apply. The marker stays
+    // unset and DATABASE_URL stays untouched, so database tests skip rather
+    // than quietly running against the real one.
+    delete process.env[TEST_DATABASE_ENV];
+    console.log(`[test-db] could not provision a test database: ${err instanceof Error ? err.message : err}`);
+  }
 } else {
   // Not a failure. Said out loud rather than silently, because "the database
   // tests all passed" and "the database tests were all skipped" look identical
