@@ -11,6 +11,7 @@ import { describe, test, expect } from "bun:test";
 import { FakeSql } from "../fixtures/fake-sql.ts";
 import { isStray, permittedServer } from "../fixtures/test-db.ts";
 import { installFakeTelegram, PRISTINE_TELEGRAM } from "../fixtures/fake-telegram.ts";
+import { installFakeFetch, installNetworkGuard } from "../fixtures/fake-fetch.ts";
 
 describe("FakeSql — a query is lazy, as postgres.js makes it", () => {
   test("building a query sends nothing", () => {
@@ -179,5 +180,66 @@ describe("test-db — deciding what is a stray", () => {
     expect(isStray("helyx_production", self, dead)).toBe(false);
     expect(isStray("helyx_test_backup", self, dead)).toBe(false);
     expect(isStray("helyx_test_abc1234_notapid_1", self, dead)).toBe(false);
+  });
+});
+
+describe("the network is off unless a test asks for it", () => {
+  test("an unfaked request is refused, and the error says which URL and how to fake it", async () => {
+    // The reason this exists: scripts/supervisor.ts reads TELEGRAM_BOT_TOKEN
+    // and SUPERVISOR_CHAT_ID at import, .env is loaded under `bun test`, and
+    // its alert helpers call fetch directly. Without this guard the first
+    // honest test of those loops posts to the real bot in the real chat.
+    await expect(fetch("https://api.telegram.org/botX/sendMessage")).rejects.toThrow(/network blocked/);
+    await expect(fetch("https://api.telegram.org/botX/sendMessage")).rejects.toThrow(/api.telegram.org/);
+    await expect(fetch("https://example.test/x")).rejects.toThrow(/installFakeFetch/);
+  });
+
+  test("an installed fake records method, url, headers and a JSON body", async () => {
+    const { http, restore } = installFakeFetch();
+    http.program("example.test", { json: { ok: true } });
+
+    const res = await fetch("https://example.test/hook", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-token": "t" },
+      body: JSON.stringify({ a: 1 }),
+    });
+
+    expect(await res.json()).toEqual({ ok: true });
+    const req = http.last("example.test")!;
+    expect(req.method).toBe("POST");
+    expect(req.url).toBe("https://example.test/hook");
+    expect(req.headers["x-token"]).toBe("t");
+    expect(req.body).toEqual({ a: 1 });
+    restore();
+  });
+
+  test("a request the test did not program is an error, not an empty 200", async () => {
+    // An empty default would let a test pass while the code under test talked
+    // to an endpoint its author never considered.
+    const { http, restore } = installFakeFetch();
+    http.program("expected.test");
+
+    await expect(fetch("https://surprise.test/x", { method: "PUT" })).rejects.toThrow(/PUT https:\/\/surprise.test\/x/);
+    // Still recorded, so the test can see what was attempted.
+    expect(http.count("surprise.test")).toBe(1);
+    restore();
+  });
+
+  test("restoring puts the guard back, not the real fetch", async () => {
+    // A teardown that handed the real one back would reopen the network for
+    // everything that ran after it.
+    const { restore } = installFakeFetch();
+    restore();
+    await expect(fetch("https://example.test/x")).rejects.toThrow(/network blocked/);
+  });
+
+  test("responses can vary by call, for code that retries", async () => {
+    const { http, restore } = installFakeFetch();
+    http.program("retry.test", (_req, nth) => (nth === 0 ? { status: 429, json: {} } : { json: { ok: true } }));
+
+    expect((await fetch("https://retry.test/")).status).toBe(429);
+    expect((await fetch("https://retry.test/")).status).toBe(200);
+    restore();
+    installNetworkGuard();
   });
 });

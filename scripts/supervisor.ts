@@ -304,7 +304,7 @@ async function logIncident(
 
 // --- Loop 1: Session heartbeat monitor ---
 
-async function checkHungSessions(sql: postgres.Sql, runShell?: RunShell): Promise<void> {
+export async function checkHungSessions(sql: postgres.Sql, runShell?: RunShell): Promise<void> {
   try {
     await refreshAcks(sql);
 
@@ -396,7 +396,7 @@ async function checkHungSessions(sql: postgres.Sql, runShell?: RunShell): Promis
 
 // --- Loop 2: Stuck queue monitor ---
 
-async function checkStuckQueue(sql: postgres.Sql, runShell?: RunShell): Promise<void> {
+export async function checkStuckQueue(sql: postgres.Sql, runShell?: RunShell): Promise<void> {
   try {
     await refreshAcks(sql);
 
@@ -847,7 +847,7 @@ const UNANSWERED_DEDUP_MS    = 10 * 60 * 1000; // 10 min dedup window per sessio
 
 const unansweredAlertedAt = new Map<string, number>();
 
-async function checkUnansweredMessages(sql: postgres.Sql): Promise<void> {
+export async function checkUnansweredMessages(sql: postgres.Sql): Promise<void> {
   try {
     const rows = await sql`
       SELECT

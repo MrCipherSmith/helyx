@@ -7,6 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { installFakeFetch, type FakeFetch } from "../fixtures/fake-fetch.ts";
 import {
   validateProviderInput,
   parseModelsResponse,
@@ -249,39 +250,39 @@ describe("parseClaudeCredentials", () => {
 });
 
 describe("fetchProviderModels headers", () => {
-  const seen: { url: string; headers: Record<string, string> }[] = [];
-  const realFetch = globalThis.fetch;
+  // Was a hand-rolled globalThis.fetch swap — the third of its kind in this
+  // repository, after skill-handlers' own FakeSql and jsonb-cast's own
+  // DATABASE_URL check. Restoring now puts the run's network guard back rather
+  // than the real fetch, so a teardown cannot reopen the network for whatever
+  // runs next.
+  let seen: FakeFetch;
+  let restore: () => void;
 
   beforeEach(() => {
-    seen.length = 0;
-    globalThis.fetch = (async (url: string, init?: RequestInit) => {
-      seen.push({ url: String(url), headers: (init?.headers ?? {}) as Record<string, string> });
-      return new Response(JSON.stringify({ data: [{ id: "m" }] }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      });
-    }) as unknown as typeof fetch;
+    ({ http: seen, restore } = installFakeFetch());
+    seen.program("/v1/models", { json: { data: [{ id: "m" }] } });
+    seen.program("/models", { json: { data: [{ id: "m" }] } });
   });
   afterEach(() => {
-    globalThis.fetch = realFetch;
+    restore();
   });
 
   test("sends anthropic-version under bearer too — Anthropic answers 400 without it", async () => {
     // A Claude Code session token authenticates as a bearer, so omitting the
     // header here is what made the default endpoint unrefreshable.
     await fetchProviderModels("https://api.anthropic.com", "tok", "bearer");
-    expect(seen[0]?.headers["anthropic-version"]).toBe("2023-06-01");
-    expect(seen[0]?.headers.authorization).toBe("Bearer tok");
+    expect(seen.requests[0]?.headers["anthropic-version"]).toBe("2023-06-01");
+    expect(seen.requests[0]?.headers.authorization).toBe("Bearer tok");
   });
 
   test("api_key goes in x-api-key, never in authorization", async () => {
     await fetchProviderModels("https://api.anthropic.com", "sk-test", "api_key");
-    expect(seen[0]?.headers["x-api-key"]).toBe("sk-test");
-    expect(seen[0]?.headers.authorization).toBeUndefined();
+    expect(seen.requests[0]?.headers["x-api-key"]).toBe("sk-test");
+    expect(seen.requests[0]?.headers.authorization).toBeUndefined();
   });
 
   test("tries /v1/models first and strips a trailing slash from the base url", async () => {
     await fetchProviderModels("https://api.z.ai/api/anthropic/", "tok", "bearer");
-    expect(seen[0]?.url).toBe("https://api.z.ai/api/anthropic/v1/models");
+    expect(seen.requests[0]?.url).toBe("https://api.z.ai/api/anthropic/v1/models");
   });
 });
