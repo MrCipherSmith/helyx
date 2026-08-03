@@ -1,0 +1,270 @@
+{
+  "schemaVersion": 2,
+  "id": "008",
+  "slug": "one-pane-parser-not-two-the-duplication-",
+  "title": "one pane parser, not two — the duplication the detector named",
+  "status": "done",
+  "createdAt": "2026-08-03T08:26:53.649Z",
+  "updatedAt": "2026-08-03T08:47:29.762Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:060cd9e095591d2995fbe17a61d361b172fe580930bf862e6c8392ed89c549f5",
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-03T08:47:05.953Z",
+      "note": "utils/pane-parse.ts exports CHROME_PATTERNS, isChrome, parseLine, parseStatus (plus SCRIPT_WRAPPER_PATTERNS and MAX_STATUS_LINES); both monitors import from it"
+    },
+    "AC2": {
+      "at": "2026-08-03T08:47:06.042Z",
+      "note": "neither monitor contains any of the twelve patterns, isChrome, parseLine or parseStatus — verified by grep and by the dupes report"
+    },
+    "AC3": {
+      "at": "2026-08-03T08:47:06.130Z",
+      "note": "T5: dupes 19 -> 5, zero shared by the two monitors; the drop is 14, above the twelve required"
+    },
+    "AC4": {
+      "at": "2026-08-03T08:47:06.216Z",
+      "note": "parseLine strips on every path; tests cover an escape before the marker for spinner and tool lines, and a coloured prompt still ending the parseStatus scan"
+    },
+    "AC5": {
+      "at": "2026-08-03T08:47:06.299Z",
+      "note": "extraChrome is a parameter; /^\\x1b/ is gone and a test asserts CHROME_PATTERNS carries no escape-anchored pattern and that a stripped line still parses"
+    },
+    "AC6": {
+      "at": "2026-08-03T08:47:27.668Z",
+      "note": "a test asserts no earlier branch can match a line starting Error:, so the two copies' opposite orderings agreed"
+    },
+    "AC7": {
+      "at": "2026-08-03T08:47:27.758Z",
+      "note": "every parseLine branch covered: spinner, all tool shapes, self-tool suppression, truncation, sub-operations, agent tree, +N more, Running N agents, Tip, fall-through, tabs"
+    },
+    "AC8": {
+      "at": "2026-08-03T08:47:27.849Z",
+      "note": "parseStatus tested for bottom-up order, the 12-line cap, keeping the newest when capping, the prompt boundary, an ANSI-decorated prompt, and null on nothing"
+    },
+    "AC9": {
+      "at": "2026-08-03T08:47:27.939Z",
+      "note": "T6: three panes captured from live helyx/keryx/goodai sessions, parsed before and after — byte-identical, re-run after each of the three review fixes"
+    },
+    "AC10": {
+      "at": "2026-08-03T08:47:28.027Z",
+      "note": "bun run typecheck clean; bun run lint 0 errors (208 warnings, pre-existing); 696 unit tests pass, none skipped or removed"
+    }
+  },
+  "pr": {
+    "url": "https://github.com/MrCipherSmith/helyx/pull/44"
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T5",
+      "title": "bun run dupes: no pattern shared by the two monitors, total down by twelve",
+      "kind": "review",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T6",
+      "title": "Status block byte-identical on real recorded pane output, before vs after",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-03T08:26:53.649Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-03T08:27:48.169Z",
+      "event": "frozen",
+      "detail": "10 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-03T08:27:48.253Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-03T08:27:48.338Z",
+      "event": "task-added",
+      "detail": "T5: bun run dupes: no pattern shared by the two monitors, total down by twelve"
+    },
+    {
+      "at": "2026-08-03T08:27:48.421Z",
+      "event": "task-added",
+      "detail": "T6: Status block byte-identical on real recorded pane output, before vs after"
+    },
+    {
+      "at": "2026-08-03T08:27:48.504Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-03T08:32:23.223Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-03T08:32:23.311Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-03T08:32:23.401Z",
+      "event": "task-done",
+      "detail": "T5: bun run dupes: no pattern shared by the two monitors, total down by twelve"
+    },
+    {
+      "at": "2026-08-03T08:32:23.515Z",
+      "event": "task-done",
+      "detail": "T6: Status block byte-identical on real recorded pane output, before vs after"
+    },
+    {
+      "at": "2026-08-03T08:47:03.892Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-03T08:47:05.867Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/44"
+    },
+    {
+      "at": "2026-08-03T08:47:05.953Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: utils/pane-parse.ts exports CHROME_PATTERNS, isChrome, parseLine, parseStatus (plus SCRIPT_WRAPPER_PATTERNS and MAX_STATUS_LINES); both monitors import from it"
+    },
+    {
+      "at": "2026-08-03T08:47:06.042Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: neither monitor contains any of the twelve patterns, isChrome, parseLine or parseStatus — verified by grep and by the dupes report"
+    },
+    {
+      "at": "2026-08-03T08:47:06.130Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: T5: dupes 19 -> 5, zero shared by the two monitors; the drop is 14, above the twelve required"
+    },
+    {
+      "at": "2026-08-03T08:47:06.216Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: parseLine strips on every path; tests cover an escape before the marker for spinner and tool lines, and a coloured prompt still ending the parseStatus scan"
+    },
+    {
+      "at": "2026-08-03T08:47:06.299Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: extraChrome is a parameter; /^\\x1b/ is gone and a test asserts CHROME_PATTERNS carries no escape-anchored pattern and that a stripped line still parses"
+    },
+    {
+      "at": "2026-08-03T08:47:27.668Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: a test asserts no earlier branch can match a line starting Error:, so the two copies' opposite orderings agreed"
+    },
+    {
+      "at": "2026-08-03T08:47:27.758Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: every parseLine branch covered: spinner, all tool shapes, self-tool suppression, truncation, sub-operations, agent tree, +N more, Running N agents, Tip, fall-through, tabs"
+    },
+    {
+      "at": "2026-08-03T08:47:27.849Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: parseStatus tested for bottom-up order, the 12-line cap, keeping the newest when capping, the prompt boundary, an ANSI-decorated prompt, and null on nothing"
+    },
+    {
+      "at": "2026-08-03T08:47:27.939Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: T6: three panes captured from live helyx/keryx/goodai sessions, parsed before and after — byte-identical, re-run after each of the three review fixes"
+    },
+    {
+      "at": "2026-08-03T08:47:28.027Z",
+      "event": "ac-confirmed",
+      "detail": "AC10: bun run typecheck clean; bun run lint 0 errors (208 warnings, pre-existing); 696 unit tests pass, none skipped or removed"
+    },
+    {
+      "at": "2026-08-03T08:47:28.116Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-03T08:47:29.762Z",
+      "event": "done",
+      "detail": "all gates passed"
+    }
+  ]
+}

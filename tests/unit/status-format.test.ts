@@ -10,7 +10,7 @@ import {
   SPINNER_FRAMES,
   SPINNER_STALE_MS,
 } from "../../utils/status-format.ts";
-import { parseStatus } from "../../utils/tmux-monitor.ts";
+import { parseStatus } from "../../utils/pane-parse.ts";
 
 /**
  * What the live status message shows while Claude works.
@@ -264,7 +264,7 @@ describe("what a permission dialog actually looks like by the time it gets here"
   ].join("\n");
 
   test("the monitor discards both signals the dialog is recognised by", () => {
-    // `^❯` is in SKIP_PATTERNS; "Do you want to proceed?" is prose and falls
+    // `^❯` is in CHROME_PATTERNS; "Do you want to proceed?" is prose and falls
     // through every branch of parseLine to null. What survives is the bullet.
     const stage = parseStatus(rawPane);
     expect(stage).toBe("● mcp__docker__docker_container_list (MCP)");

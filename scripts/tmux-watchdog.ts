@@ -96,7 +96,7 @@ async function capturePane(windowName: string, numLines = 60): Promise<string[]>
   const raw = await runShell(
     `tmux capture-pane -t "${TMUX_SESSION}:${windowName}" -p -S -${numLines} 2>/dev/null || true`,
   );
-  return raw.split("\n").map(stripAnsi);
+  return raw.split("\n").map((line) => stripAnsi(line));
 }
 
 /**
@@ -109,7 +109,7 @@ async function capturePaneVisible(windowName: string): Promise<string[]> {
   const raw = await runShell(
     `tmux capture-pane -t "${TMUX_SESSION}:${windowName}" -p 2>/dev/null || true`,
   );
-  return raw.split("\n").map(stripAnsi);
+  return raw.split("\n").map((line) => stripAnsi(line));
 }
 
 /** List windows in the bots session: [{name, index}] */
