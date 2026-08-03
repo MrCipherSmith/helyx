@@ -10,7 +10,7 @@ import {
   SPINNER_FRAMES,
   SPINNER_STALE_MS,
 } from "../../utils/status-format.ts";
-import { parseStatus } from "../../utils/tmux-monitor.ts";
+import { parseStatus } from "../../utils/pane-parse.ts";
 
 /**
  * What the live status message shows while Claude works.

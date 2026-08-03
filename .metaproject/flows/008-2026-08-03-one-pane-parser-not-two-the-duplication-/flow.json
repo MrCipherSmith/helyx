@@ -1,0 +1,159 @@
+{
+  "schemaVersion": 2,
+  "id": "008",
+  "slug": "one-pane-parser-not-two-the-duplication-",
+  "title": "one pane parser, not two — the duplication the detector named",
+  "status": "in-progress",
+  "createdAt": "2026-08-03T08:26:53.649Z",
+  "updatedAt": "2026-08-03T08:32:23.515Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:060cd9e095591d2995fbe17a61d361b172fe580930bf862e6c8392ed89c549f5",
+  "acConfirmed": {},
+  "pr": {
+    "url": null
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T5",
+      "title": "bun run dupes: no pattern shared by the two monitors, total down by twelve",
+      "kind": "review",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T6",
+      "title": "Status block byte-identical on real recorded pane output, before vs after",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-03T08:26:53.649Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-03T08:27:48.169Z",
+      "event": "frozen",
+      "detail": "10 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-03T08:27:48.253Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-03T08:27:48.338Z",
+      "event": "task-added",
+      "detail": "T5: bun run dupes: no pattern shared by the two monitors, total down by twelve"
+    },
+    {
+      "at": "2026-08-03T08:27:48.421Z",
+      "event": "task-added",
+      "detail": "T6: Status block byte-identical on real recorded pane output, before vs after"
+    },
+    {
+      "at": "2026-08-03T08:27:48.504Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-03T08:32:23.223Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-03T08:32:23.311Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-03T08:32:23.401Z",
+      "event": "task-done",
+      "detail": "T5: bun run dupes: no pattern shared by the two monitors, total down by twelve"
+    },
+    {
+      "at": "2026-08-03T08:32:23.515Z",
+      "event": "task-done",
+      "detail": "T6: Status block byte-identical on real recorded pane output, before vs after"
+    }
+  ]
+}
