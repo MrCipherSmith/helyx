@@ -3,9 +3,9 @@
   "id": "011",
   "slug": "cover-the-supervisor-s-guard-loops-and-s",
   "title": "cover the supervisor's guard loops, and stop tests from being able to reach the network",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-03T13:18:28.764Z",
-  "updatedAt": "2026-08-03T13:28:40.179Z",
+  "updatedAt": "2026-08-03T13:59:26.169Z",
   "source": {
     "type": "description",
     "ref": null
@@ -78,7 +78,7 @@
     }
   },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/47"
   },
   "tasks": [
     {
@@ -505,6 +505,20 @@
       "at": "2026-08-03T13:28:40.179Z",
       "event": "ac-confirmed",
       "detail": "AC16: typecheck clean, lint 0 errors, 791 pass, dupes 1, supervisor 5.55% to 32.07% lines and 7.69% to 54.55% funcs, health 64"
+    },
+    {
+      "at": "2026-08-03T13:59:24.152Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/47 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-08-03T13:59:24.243Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-03T13:59:26.169Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
   ]
 }
