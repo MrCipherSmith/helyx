@@ -1,5 +1,16 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { stripReasoning, REASONING_OPEN, REASONING_CLOSE } from "../utils/llm-output.ts";
+import { stripReasoning } from "../utils/llm-output.ts";
+import {
+  takeLines,
+  readSseLine,
+  parseOpenAiChunk,
+  parseOllamaLine,
+  ReasoningFilter,
+  isRetryable,
+  retryDelay,
+  selectProvider,
+  MAX_RETRIES,
+} from "../utils/llm-stream.ts";
 import { CONFIG } from "../config.ts";
 import { recordApiRequest } from "../utils/stats.ts";
 
@@ -25,22 +36,28 @@ function toTextMessages(messages: MessageParam[]): { role: string; content: stri
 
 // --- Retry with backoff ---
 
-const MAX_RETRIES = 3;
-const RETRY_BASE_MS = 2000;
-
-async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
-  let lastErr: Error | undefined;
+/**
+ * Retry a transient failure with exponential backoff.
+ *
+ * `sleep` is a parameter so the loop itself can be tested. Its default is the
+ * real wait, and the real wait is fourteen seconds across three attempts —
+ * correct for a rate-limited provider, and not something a test can sit through.
+ */
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  label: string,
+  sleep: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
+): Promise<T> {
+  let lastErr: unknown;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
       return await fn();
-    } catch (err: any) {
+    } catch (err: unknown) {
       lastErr = err;
-      const is429 = err?.message?.includes("429") || err?.message?.includes("rate");
-      const is5xx = err?.message?.match(/5\d\d/);
-      if ((is429 || is5xx) && attempt < MAX_RETRIES) {
-        const delay = RETRY_BASE_MS * Math.pow(2, attempt) + Math.random() * 1000;
-        console.log(`[client] ${label} retry ${attempt + 1}/${MAX_RETRIES} after ${Math.round(delay)}ms (${is429 ? "429" : "5xx"})`);
-        await new Promise((r) => setTimeout(r, delay));
+      if (isRetryable(err) && attempt < MAX_RETRIES) {
+        const delay = retryDelay(attempt);
+        console.log(`[client] ${label} retry ${attempt + 1}/${MAX_RETRIES} after ${Math.round(delay)}ms`);
+        await sleep(delay);
         continue;
       }
       throw err;
@@ -52,13 +69,11 @@ async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
 // Provider detection: anthropic > google-ai > openai-compatible (openrouter etc) > ollama
 const googleAiUrl = "https://generativelanguage.googleapis.com/v1beta/openai";
 
-const provider = CONFIG.ANTHROPIC_API_KEY
-  ? "anthropic"
-  : CONFIG.GOOGLE_AI_API_KEY
-    ? "google-ai"
-    : CONFIG.OPENROUTER_API_KEY
-      ? "openai"
-      : "ollama";
+const provider = selectProvider({
+  anthropic: CONFIG.ANTHROPIC_API_KEY,
+  googleAi: CONFIG.GOOGLE_AI_API_KEY,
+  openrouter: CONFIG.OPENROUTER_API_KEY,
+});
 
 const anthropic = provider === "anthropic" ? new Anthropic() : null;
 
@@ -115,7 +130,7 @@ async function fetchOpenai(
   return res;
 }
 
-async function* openaiStream(
+export async function* openaiStream(
   messages: MessageParam[],
   system: string,
   usage: StreamUsage = {},
@@ -141,25 +156,20 @@ async function* openaiStream(
     if (done) break;
 
     buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
+    const { lines, rest } = takeLines(buffer);
+    buffer = rest;
 
     for (const line of lines) {
-      if (!line.startsWith("data: ")) continue;
-      const data = line.slice(6);
-      if (data === "[DONE]") return;
-      try {
-        const parsed = JSON.parse(data);
-        // Capture usage from final chunk
-        if (parsed.usage) {
-          usage.input = parsed.usage.prompt_tokens;
-          usage.output = parsed.usage.completion_tokens;
-        }
-        const content = parsed.choices?.[0]?.delta?.content;
-        if (content) yield content;
-      } catch (e) {
-        console.warn("[client] failed to parse SSE chunk:", (e as Error)?.message);
-      }
+      const event = readSseLine(line);
+      if (event.kind === "ignore") continue;
+      if (event.kind === "done") return;
+
+      const chunk = parseOpenAiChunk(event.payload);
+      if (!chunk) continue;
+      // Usage arrives on the final chunk rather than the first.
+      if (chunk.inputTokens !== undefined) usage.input = chunk.inputTokens;
+      if (chunk.outputTokens !== undefined) usage.output = chunk.outputTokens;
+      if (chunk.content) yield chunk.content;
     }
   }
 }
@@ -170,7 +180,7 @@ interface GenerateResult {
   outputTokens?: number;
 }
 
-async function openaiGenerate(
+export async function openaiGenerate(
   messages: MessageParam[],
   system: string,
 ): Promise<GenerateResult> {
@@ -199,7 +209,7 @@ async function openaiGenerate(
 
 // --- Ollama chat API ---
 
-async function* ollamaStream(
+export async function* ollamaStream(
   messages: MessageParam[],
   system: string,
 ): AsyncGenerator<string> {
@@ -225,74 +235,29 @@ async function* ollamaStream(
   const decoder = new TextDecoder();
   let buffer = "";
 
-  // Reasoning-block state machine.
-  //
-  // The previous version skipped every chunk until it saw "</think>", which
-  // silently swallowed the entire answer from any model that does not emit a
-  // reasoning block — including the same models once `think: false` is honoured.
-  // So decide first whether a block is actually present, and only then skip.
-  let phase: "deciding" | "thinking" | "passthrough" = "deciding";
-  let pending = "";
-  // The same tags stripReasoning removes, shared rather than restated: this
-  // path sees them one token at a time and cannot match a whole block.
-  const OPEN = REASONING_OPEN;
-  const CLOSE = REASONING_CLOSE;
+  // Reasoning-block state machine — see utils/llm-stream.ts. It lives there
+  // because it is hardest exactly at a chunk boundary, which is the one thing a
+  // live model will not reproduce on request.
+  const reasoning = new ReasoningFilter();
 
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
 
     buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
+    const { lines, rest } = takeLines(buffer);
+    buffer = rest;
 
     for (const line of lines) {
-      if (!line.trim()) continue;
-      try {
-        const data = JSON.parse(line);
-        const content = data.message?.content ?? "";
-        if (!content) continue;
-
-        if (phase === "passthrough") {
-          yield content;
-          continue;
-        }
-
-        pending += content;
-
-        if (phase === "deciding") {
-          const head = pending.trimStart();
-          if (!head) continue;
-          if (head.startsWith(OPEN)) {
-            phase = "thinking";
-          } else if (head.length < OPEN.length && OPEN.startsWith(head)) {
-            continue; // still ambiguous — could yet become "<think>"
-          } else {
-            phase = "passthrough";
-            yield pending;
-            pending = "";
-            continue;
-          }
-        }
-
-        if (phase === "thinking") {
-          const idx = pending.indexOf(CLOSE);
-          if (idx !== -1) {
-            const after = pending.slice(idx + CLOSE.length);
-            phase = "passthrough";
-            pending = "";
-            if (after) yield after;
-          }
-        }
-      } catch (e) {
-        console.warn("[client] failed to parse Ollama chunk:", (e as Error)?.message);
-      }
+      const content = parseOllamaLine(line);
+      if (content === null) continue;
+      const out = reasoning.push(content);
+      if (out) yield out;
     }
   }
 
-  // A reply shorter than "<think>" ends while still ambiguous; flush it rather
-  // than dropping it. An unterminated reasoning block is discarded on purpose.
-  if (phase === "deciding" && pending) yield pending;
+  const tail = reasoning.flush();
+  if (tail) yield tail;
 }
 
 async function ollamaGenerate(

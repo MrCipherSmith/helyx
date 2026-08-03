@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "query": "migration database sqlite test fixture",
-  "generatedAt": "2026-08-03T19:15:11.295Z",
+  "query": "flow-014 llm client FakeFetch endpoint",
+  "generatedAt": "2026-08-03T21:36:11.900Z",
   "results": [
     {
       "entry": {
@@ -34,15 +34,15 @@
         "supersedes": null,
         "supersededBy": null
       },
-      "score": 2.098,
+      "score": 1.998,
       "components": {
-        "relevance": 0.6,
-        "recency": 0.996,
+        "relevance": 0.5,
+        "recency": 0.995,
         "confidence": 1,
         "status": 1,
         "scope": 0
       },
-      "reason": "matched 3/5 terms; status accepted; confidence high"
+      "reason": "matched 3/6 terms; status accepted; confidence high"
     },
     {
       "entry": {
@@ -75,15 +75,15 @@
         "supersedes": null,
         "supersededBy": null
       },
-      "score": 1.696,
+      "score": 1.662,
       "components": {
-        "relevance": 0.2,
+        "relevance": 0.167,
         "recency": 0.991,
         "confidence": 1,
         "status": 1,
         "scope": 0
       },
-      "reason": "matched 1/5 terms; status accepted; confidence high"
+      "reason": "matched 1/6 terms; status accepted; confidence high"
     },
     {
       "entry": {
@@ -116,15 +116,15 @@
         "supersedes": null,
         "supersededBy": null
       },
-      "score": 1.696,
+      "score": 1.662,
       "components": {
-        "relevance": 0.2,
+        "relevance": 0.167,
         "recency": 0.991,
         "confidence": 1,
         "status": 1,
         "scope": 0
       },
-      "reason": "matched 1/5 terms; status accepted; confidence high"
+      "reason": "matched 1/6 terms; status accepted; confidence high"
     }
   ]
 }
