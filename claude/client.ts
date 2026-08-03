@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { stripReasoning, REASONING_OPEN, REASONING_CLOSE } from "../utils/llm-output.ts";
 import { CONFIG } from "../config.ts";
 import { recordApiRequest } from "../utils/stats.ts";
 
@@ -188,7 +189,7 @@ async function openaiGenerate(
   }
   const data = (await res.json()) as OpenAIResponse;
   let content = data.choices?.[0]?.message?.content ?? "";
-  content = content.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+  content = stripReasoning(content);
   return {
     content,
     inputTokens: data.usage?.prompt_tokens,
@@ -232,8 +233,10 @@ async function* ollamaStream(
   // So decide first whether a block is actually present, and only then skip.
   let phase: "deciding" | "thinking" | "passthrough" = "deciding";
   let pending = "";
-  const OPEN = "<think>";
-  const CLOSE = "</think>";
+  // The same tags stripReasoning removes, shared rather than restated: this
+  // path sees them one token at a time and cannot match a whole block.
+  const OPEN = REASONING_OPEN;
+  const CLOSE = REASONING_CLOSE;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -313,7 +316,7 @@ async function ollamaGenerate(
 
   const data = (await res.json()) as any;
   let content = data.message?.content ?? "";
-  content = content.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+  content = stripReasoning(content);
   return {
     content,
     inputTokens: data.prompt_eval_count,
@@ -512,7 +515,7 @@ ${formatted}`;
       });
       if (res.ok) {
         const data = (await res.json()) as any;
-        const text = (data.message?.content ?? "").replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+        const text = stripReasoning(data.message?.content ?? "");
         try { return JSON.parse(text); } catch { /* fall through to main model */ }
       }
     } catch { /* timeout or connection error — fall through to main model */ }

@@ -1,4 +1,5 @@
 import type { Context } from "grammy";
+import { isValidSkillName } from "../utils/skill-format.ts";
 import { sessionManager } from "../sessions/manager.ts";
 import { sql } from "../memory/db.ts";
 import { appendLog } from "../utils/stats.ts";
@@ -128,7 +129,7 @@ async function handleSkillApprovalCallback(ctx: Context): Promise<void> {
   } else if (action === "editname") {
     setPendingInput(ctx, async (textCtx) => {
       const newName = (textCtx.message?.text ?? "").trim();
-      if (!/^[a-z][a-z0-9-]{0,63}$/.test(newName)) {
+      if (!isValidSkillName(newName)) {
         await textCtx.reply("Invalid name — must be kebab-case, 1-64 chars, lowercase + digits + hyphens.");
         return;
       }

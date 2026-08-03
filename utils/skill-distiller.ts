@@ -1,11 +1,10 @@
 import { resolve } from "node:path";
+import { isValidSkillName, INLINE_SHELL_TOKEN } from "./skill-format.ts";
 import { sql } from "../memory/db.ts";
 import { callAuxLlm } from "./aux-llm-client.ts";
 
-const NAME_RE = /^[a-z][a-z0-9-]{0,63}$/;
 const MAX_DESCRIPTION = 1024;
 const MAX_BODY = 100000;
-const SHELL_TOKEN_RE = /!`[^`\n]+`/;
 
 export interface ValidationError {
   field: string;
@@ -31,7 +30,7 @@ export function validateSkillInput(
   const errors: ValidationError[] = [];
   const warnings: ValidationWarning[] = [];
 
-  if (!NAME_RE.test(name)) {
+  if (!isValidSkillName(name)) {
     errors.push({ field: "name", message: "name must be kebab-case, 1-64 chars, lowercase + digits + hyphens only" });
   }
 
@@ -67,7 +66,7 @@ export function validateSkillInput(
   // M-08: warn (don't block) when LLM-generated body contains `!`...`` shell
   // tokens. The Telegram approval message surfaces these warnings so the
   // user sees the shell content before clicking [Save].
-  if (SHELL_TOKEN_RE.test(body)) {
+  if (INLINE_SHELL_TOKEN.test(body)) {
     warnings.push({
       field: "body",
       message: "body contains inline shell tokens (!`cmd`) — review carefully before approval",
@@ -131,6 +130,11 @@ export async function distillSkill(
   // `description: "Use when …"`, which the LLM faithfully reproduces.
   // Without stripping, validateSkillInput's `startsWith("Use when")` check
   // fails on the literal `"` character.
+  // Deliberately not shared with utils/tools-reader.ts, which strips quotes
+  // the same way. The two read different formats — skill frontmatter and
+  // tool metadata — and neither would follow if the other changed its
+  // quoting convention. Extracting this would invent a dependency and
+  // imply a rule that does not exist. See flow 009.
   const description = descMatch[1]!.trim().replace(/^["']|["']$/g, "");
   const body = content;
 

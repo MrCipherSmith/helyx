@@ -1,0 +1,284 @@
+{
+  "schemaVersion": 2,
+  "id": "009",
+  "slug": "close-the-last-five-duplicates-four-are-",
+  "title": "close the last five duplicates — four are shared knowledge, one is not",
+  "status": "done",
+  "createdAt": "2026-08-03T10:50:26.414Z",
+  "updatedAt": "2026-08-03T11:04:50.386Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:8f216bd4e1de39b43d482a50d628e2905317bf0989eb40935e6ac69e59ddfecd",
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-03T11:03:58.208Z",
+      "note": "utils/skill-format.ts exports isValidSkillName, INLINE_SHELL_TOKEN and inlineShellTokens; callbacks, distiller, handlers and preprocessor all use it with no local copy"
+    },
+    "AC2": {
+      "at": "2026-08-03T11:03:58.292Z",
+      "note": "utils/duration.ts exports parseDuration returning ms; tmux-log wraps it as durationOrHour, tmux-session-logger uses it directly; neither keeps the pattern or its own unit arithmetic"
+    },
+    "AC3": {
+      "at": "2026-08-03T11:03:58.376Z",
+      "note": "utils/llm-output.ts exports stripReasoning plus the tags; claude/client.ts (three sites incl. streaming) and scripts/supervisor.ts (two sites) use them"
+    },
+    "AC4": {
+      "at": "2026-08-03T11:03:58.460Z",
+      "note": "T5: bun run dupes reports exactly 1, the unquote idiom"
+    },
+    "AC5": {
+      "at": "2026-08-03T11:03:58.548Z",
+      "note": "both skill-distiller.ts and tools-reader.ts carry a comment stating the duplication is deliberate and that connecting the two formats would imply a rule that does not exist"
+    },
+    "AC6": {
+      "at": "2026-08-03T11:04:09.920Z",
+      "note": "parseDuration tested with the millisecond value stated for every unit, plus zero and eight malformed inputs"
+    },
+    "AC7": {
+      "at": "2026-08-03T11:04:10.008Z",
+      "note": "isValidSkillName tested for leading character, lowercase, path characters, the exact 64-char boundary and empty; plus a parity test against the rule quoted in prompts/skill-distillation.md"
+    },
+    "AC8": {
+      "at": "2026-08-03T11:04:10.093Z",
+      "note": "stripReasoning tested for one block, several, a multi-line block, non-greedy behaviour between blocks, no block, and empty"
+    },
+    "AC9": {
+      "at": "2026-08-03T11:04:10.179Z",
+      "note": "bun run typecheck clean; bun run lint 0 errors (208 warnings, pre-existing); 720 unit tests pass, none skipped or removed"
+    },
+    "AC10": {
+      "at": "2026-08-03T11:04:10.266Z",
+      "note": "T6: all three behaviours run side by side with the inline originals across 21 inputs — identical. Codex separately confirmed the 1h fallback, the exit 1 and the unchanged callback message"
+    }
+  },
+  "pr": {
+    "url": "https://github.com/MrCipherSmith/helyx/pull/45"
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T5",
+      "title": "dupes reports exactly one, the documented one",
+      "kind": "review",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T6",
+      "title": "behaviour unchanged at all seven call sites",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-03T10:50:26.414Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-03T10:50:55.702Z",
+      "event": "frozen",
+      "detail": "10 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-03T10:50:55.790Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-03T10:50:55.880Z",
+      "event": "task-added",
+      "detail": "T5: dupes reports exactly one, the documented one"
+    },
+    {
+      "at": "2026-08-03T10:50:55.970Z",
+      "event": "task-added",
+      "detail": "T6: behaviour unchanged at all seven call sites"
+    },
+    {
+      "at": "2026-08-03T10:50:56.054Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-03T10:56:02.417Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-03T10:56:02.509Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-03T10:56:02.593Z",
+      "event": "task-done",
+      "detail": "T5: dupes reports exactly one, the documented one"
+    },
+    {
+      "at": "2026-08-03T10:56:02.679Z",
+      "event": "task-done",
+      "detail": "T6: behaviour unchanged at all seven call sites"
+    },
+    {
+      "at": "2026-08-03T11:03:56.262Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-03T11:03:58.122Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/45"
+    },
+    {
+      "at": "2026-08-03T11:03:58.208Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: utils/skill-format.ts exports isValidSkillName, INLINE_SHELL_TOKEN and inlineShellTokens; callbacks, distiller, handlers and preprocessor all use it with no local copy"
+    },
+    {
+      "at": "2026-08-03T11:03:58.292Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: utils/duration.ts exports parseDuration returning ms; tmux-log wraps it as durationOrHour, tmux-session-logger uses it directly; neither keeps the pattern or its own unit arithmetic"
+    },
+    {
+      "at": "2026-08-03T11:03:58.376Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: utils/llm-output.ts exports stripReasoning plus the tags; claude/client.ts (three sites incl. streaming) and scripts/supervisor.ts (two sites) use them"
+    },
+    {
+      "at": "2026-08-03T11:03:58.460Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: T5: bun run dupes reports exactly 1, the unquote idiom"
+    },
+    {
+      "at": "2026-08-03T11:03:58.549Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: both skill-distiller.ts and tools-reader.ts carry a comment stating the duplication is deliberate and that connecting the two formats would imply a rule that does not exist"
+    },
+    {
+      "at": "2026-08-03T11:04:09.921Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: parseDuration tested with the millisecond value stated for every unit, plus zero and eight malformed inputs"
+    },
+    {
+      "at": "2026-08-03T11:04:10.008Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: isValidSkillName tested for leading character, lowercase, path characters, the exact 64-char boundary and empty; plus a parity test against the rule quoted in prompts/skill-distillation.md"
+    },
+    {
+      "at": "2026-08-03T11:04:10.093Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: stripReasoning tested for one block, several, a multi-line block, non-greedy behaviour between blocks, no block, and empty"
+    },
+    {
+      "at": "2026-08-03T11:04:10.179Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: bun run typecheck clean; bun run lint 0 errors (208 warnings, pre-existing); 720 unit tests pass, none skipped or removed"
+    },
+    {
+      "at": "2026-08-03T11:04:10.266Z",
+      "event": "ac-confirmed",
+      "detail": "AC10: T6: all three behaviours run side by side with the inline originals across 21 inputs — identical. Codex separately confirmed the 1h fallback, the exit 1 and the unchanged callback message"
+    },
+    {
+      "at": "2026-08-03T11:04:10.351Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-03T11:04:12.144Z",
+      "event": "completion-failed",
+      "detail": "pull-request: PR checks not green"
+    },
+    {
+      "at": "2026-08-03T11:04:48.349Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/45"
+    },
+    {
+      "at": "2026-08-03T11:04:48.470Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-03T11:04:50.386Z",
+      "event": "done",
+      "detail": "all gates passed"
+    }
+  ]
+}

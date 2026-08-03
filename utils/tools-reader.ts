@@ -83,6 +83,9 @@ function parseFrontmatter(content: string): { meta: Record<string, string>; body
     if (colonIdx === -1) continue;
     const key = line.slice(0, colonIdx).trim();
     const raw = line.slice(colonIdx + 1).trim();
+    // Deliberately not shared with utils/skill-distiller.ts, which strips
+    // quotes the same way. Different formats, independent conventions —
+    // connecting them would imply a rule that does not exist. See flow 009.
     meta[key] = raw.replace(/^["']|["']$/g, "");
   }
 

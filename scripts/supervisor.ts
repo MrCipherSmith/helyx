@@ -30,6 +30,7 @@ import { forceSummarize } from "../memory/summarizer.ts";
 import { clearCache } from "../memory/short-term.ts";
 import { isRequeued, markRequeued } from "../utils/requeue.ts";
 import { paneLines, hasActiveSpinner, escapeHtml } from "../utils/terminal.ts";
+import { stripReasoning } from "../utils/llm-output.ts";
 import {
   classifyContainer,
   dockerListingUsable,
@@ -212,7 +213,7 @@ async function getLlmExplanation(
     const data = await res.json() as { message?: { content?: string } };
     // `think: false` above covers current Ollama; strip as well for versions
     // that ignore it, so a reasoning trace never reaches the incident text.
-    return (data.message?.content ?? "").replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+    return stripReasoning(data.message?.content ?? "");
   } catch {
     return "";
   }
@@ -1136,9 +1137,7 @@ async function callGemmaForHealth(snapshot: string): Promise<{ ok: boolean; dige
     });
     if (!res.ok) return { ok: true, digest: "" };
     const data = await res.json() as { message?: { content?: string } };
-    const text = (data.message?.content ?? "")
-      .replace(/<think>[\s\S]*?<\/think>/g, "")
-      .trim();
+    const text = stripReasoning(data.message?.content ?? "");
     if (!text || text.toUpperCase().startsWith("OK")) return { ok: true, digest: "" };
     return { ok: false, digest: text };
   } catch {

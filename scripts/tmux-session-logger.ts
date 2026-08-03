@@ -8,6 +8,7 @@
  */
 
 import { resolve, join } from "path";
+import { parseDuration } from "../utils/duration.ts";
 import { existsSync, mkdirSync, appendFileSync, readdirSync, createReadStream } from "fs";
 import { createInterface } from "readline";
 import type postgres from "postgres";
@@ -279,12 +280,11 @@ async function runQuery(): Promise<void> {
   // Parse --last duration
   let sinceMs = 0;
   if (flags.last) {
-    const match = String(flags.last).match(/^(\d+)(m|h|d)$/);
-    if (!match) { console.error("Error: invalid --last format. Use e.g. 30m, 2h, 1d"); process.exit(1); }
-    const n = parseInt(match[1], 10);
-    const unit = match[2];
-    const mult = unit === "m" ? 60_000 : unit === "h" ? 3_600_000 : 86_400_000;
-    sinceMs = Date.now() - n * mult;
+    const ms = parseDuration(String(flags.last));
+    // This command refuses a bad value rather than defaulting, which is why
+    // parseDuration returns null instead of choosing for its callers.
+    if (ms === null) { console.error("Error: invalid --last format. Use e.g. 30m, 2h, 1d"); process.exit(1); }
+    sinceMs = Date.now() - ms;
   } else if (flags.since) {
     sinceMs = new Date(String(flags.since)).getTime();
   }

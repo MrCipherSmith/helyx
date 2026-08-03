@@ -7,13 +7,13 @@
 // write + FR-C-7 use_count increment.
 
 import { mkdir, rename, stat, writeFile } from "node:fs/promises";
+import { isValidSkillName } from "./skill-format.ts";
 import {
   expandInlineShell,
   hasInlineShellTokens,
   parseFrontmatter,
 } from "./skill-preprocessor.ts";
 
-const NAME_RE = /^[a-z][a-z0-9-]{0,63}$/;
 const AGENT_DIR_SUBPATH = "agent-created";
 
 export interface SkillSqlContext {
@@ -56,7 +56,7 @@ export async function handleSkillView(
   const skillName = String(rawSkillName ?? "");
   // B-06: path-traversal guard — reject anything outside the kebab-case grammar
   // before either filesystem or SQL access.
-  if (!NAME_RE.test(skillName)) {
+  if (!isValidSkillName(skillName)) {
     return JSON.stringify({ error: "invalid skill name", name: skillName });
   }
 

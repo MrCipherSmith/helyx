@@ -12,6 +12,7 @@
  */
 
 import { resolve, join } from "path";
+import { parseDuration } from "../../utils/duration.ts";
 import { existsSync, readdirSync, createReadStream } from "fs";
 import { createInterface } from "readline";
 import type { Context } from "grammy";
@@ -43,12 +44,9 @@ const EVENT_ICON: Record<string, string> = {
   tmux_unavailable:  "❌",
 };
 
-function parseDuration(s: string): number {
-  const m = s.match(/^(\d+)(m|h|d)$/);
-  if (!m) return 60 * 60 * 1000; // default 1h
-  const n = parseInt(m[1], 10);
-  const mult = m[2] === "m" ? 60_000 : m[2] === "h" ? 3_600_000 : 86_400_000;
-  return n * mult;
+/** An unreadable duration falls back to an hour here — see utils/duration.ts. */
+export function durationOrHour(s: string): number {
+  return parseDuration(s) ?? 60 * 60 * 1000;
 }
 
 async function queryLogs(opts: {
@@ -153,7 +151,7 @@ export async function handleTmuxLogCallback(ctx: Context): Promise<void> {
 
   if (action === "last") {
     const duration = parts[2] ?? "1h";
-    const sinceMs = Date.now() - parseDuration(duration);
+    const sinceMs = Date.now() - durationOrHour(duration);
     await ctx.answerCallbackQuery({ text: "Загружаю…" });
     const events = await queryLogs({ sinceMs });
     const labels: Record<string, string> = { "30m": "30 мин", "1h": "1 час", "6h": "6 часов", "24h": "24 часа" };
