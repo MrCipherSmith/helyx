@@ -1,49 +1,8 @@
 {
   "schemaVersion": 1,
-  "query": "questions telegram waitForAnswers answered_at mcp server catch unknown",
-  "generatedAt": "2026-08-03T15:42:23.412Z",
+  "query": "flow-012 questions telegram setupAskQuestionHook Claude settings hook cli",
+  "generatedAt": "2026-08-03T15:52:15.674Z",
   "results": [
-    {
-      "entry": {
-        "absolutePath": "/home/altsay/bots/helyx/.metaproject/memory/known-mistakes/duplicated-knowledge-diverges.md",
-        "relativePath": "known-mistakes/duplicated-knowledge-diverges.md",
-        "type": "known-mistake",
-        "title": "One rule in several files diverges, and review does not catch it",
-        "version": "1.0.0",
-        "status": "accepted",
-        "confidence": "high",
-        "summary": "Seven flows in this repository on 2026-08-02, and the underlying defect was the same every time: one piece of knowledge written out in several places, then diverging. Reading the diff does not find it — the copies are outside the diff. Run `bun run dupes` instead of looking.",
-        "details": "The instances, in order:\n\n| What was duplicated | Copies | Consequence |\n|---|---|---|\n| ANSI stripping | 5, three of them narrower | the spinner detector read half-stripped text, so a working session was reported as hung |\n| the git-ref allowlist | 2 | flow 003 moved one and left the other; found later by the detector, not by three review rounds |\n| the permission-dialog rule | restated 4 times, wrong each time | `or` for `and`, any digit for option 1, any distance for a six-line window |\n| the edit-guard protocol | 3 | a status update landing during an edit waited for the next 5s tick |\n| the pane-parsing rule set | 12 patterns across `output-monitor.ts` and `tmux-monitor.ts` | outstanding |\n\nTwo things are worth carrying forward.\n\n**Review does not catch this.** The permission rule went through eight review\nrounds across two flows, and a leftover copy in `scripts/tmux-watchdog.ts`\nsurvived all of them — because everyone was reading the diff rather than asking\nwhat remained elsewhere. `bun run dupes` found it in one run.\n\n**A comment claiming two things agree is not a mechanism.** Four separate\nattempts to restate the permission rule \"the same way `tmux-watchdog.ts` does\"\neach got it wrong, in code whose comment asserted the agreement. What fixed it\nwas sharing the predicate so there was nothing left to restate.\n\nThe rule that follows: if two places must agree, connect them with an import.\nIf that is genuinely impossible, the claim needs a test that fails when they\ndiverge — a comment is not enough.",
-        "tags": [],
-        "scopes": {
-          "module": "utils, channel, scripts, mcp",
-          "entity": "terminal parsing, permission prompt detection, status rendering",
-          "files": [],
-          "skills": []
-        },
-        "created": "2026-08-02",
-        "updated": "2026-08-02",
-        "provenance": {
-          "source": "manual",
-          "link": "flows 001, 003, 005, 006, 007 in `.metaproject/flows/`"
-        },
-        "class": "procedural",
-        "validFrom": null,
-        "validTo": null,
-        "recordedAt": "2026-08-02",
-        "supersedes": null,
-        "supersededBy": null
-      },
-      "score": 1.663,
-      "components": {
-        "relevance": 0.167,
-        "recency": 0.992,
-        "confidence": 1,
-        "status": 1,
-        "scope": 0
-      },
-      "reason": "matched 1/9 terms; status accepted; confidence high"
-    },
     {
       "entry": {
         "absolutePath": "/home/altsay/bots/helyx/.metaproject/memory/task-notes/coverage-programme-state.md",
@@ -75,15 +34,15 @@
         "supersedes": null,
         "supersededBy": null
       },
-      "score": 1.609,
+      "score": 1.832,
       "components": {
-        "relevance": 0.111,
+        "relevance": 0.333,
         "recency": 0.997,
         "confidence": 1,
         "status": 1,
         "scope": 0
       },
-      "reason": "matched 1/9 terms; status accepted; confidence high"
+      "reason": "matched 3/9 terms; status accepted; confidence high"
     },
     {
       "entry": {
@@ -108,6 +67,47 @@
         "provenance": {
           "source": "manual",
           "link": "flows 005 and 006 in `.metaproject/flows/`"
+        },
+        "class": "procedural",
+        "validFrom": null,
+        "validTo": null,
+        "recordedAt": "2026-08-02",
+        "supersedes": null,
+        "supersededBy": null
+      },
+      "score": 1.607,
+      "components": {
+        "relevance": 0.111,
+        "recency": 0.992,
+        "confidence": 1,
+        "status": 1,
+        "scope": 0
+      },
+      "reason": "matched 1/9 terms; status accepted; confidence high"
+    },
+    {
+      "entry": {
+        "absolutePath": "/home/altsay/bots/helyx/.metaproject/memory/known-mistakes/duplicated-knowledge-diverges.md",
+        "relativePath": "known-mistakes/duplicated-knowledge-diverges.md",
+        "type": "known-mistake",
+        "title": "One rule in several files diverges, and review does not catch it",
+        "version": "1.0.0",
+        "status": "accepted",
+        "confidence": "high",
+        "summary": "Seven flows in this repository on 2026-08-02, and the underlying defect was the same every time: one piece of knowledge written out in several places, then diverging. Reading the diff does not find it — the copies are outside the diff. Run `bun run dupes` instead of looking.",
+        "details": "The instances, in order:\n\n| What was duplicated | Copies | Consequence |\n|---|---|---|\n| ANSI stripping | 5, three of them narrower | the spinner detector read half-stripped text, so a working session was reported as hung |\n| the git-ref allowlist | 2 | flow 003 moved one and left the other; found later by the detector, not by three review rounds |\n| the permission-dialog rule | restated 4 times, wrong each time | `or` for `and`, any digit for option 1, any distance for a six-line window |\n| the edit-guard protocol | 3 | a status update landing during an edit waited for the next 5s tick |\n| the pane-parsing rule set | 12 patterns across `output-monitor.ts` and `tmux-monitor.ts` | outstanding |\n\nTwo things are worth carrying forward.\n\n**Review does not catch this.** The permission rule went through eight review\nrounds across two flows, and a leftover copy in `scripts/tmux-watchdog.ts`\nsurvived all of them — because everyone was reading the diff rather than asking\nwhat remained elsewhere. `bun run dupes` found it in one run.\n\n**A comment claiming two things agree is not a mechanism.** Four separate\nattempts to restate the permission rule \"the same way `tmux-watchdog.ts` does\"\neach got it wrong, in code whose comment asserted the agreement. What fixed it\nwas sharing the predicate so there was nothing left to restate.\n\nThe rule that follows: if two places must agree, connect them with an import.\nIf that is genuinely impossible, the claim needs a test that fails when they\ndiverge — a comment is not enough.",
+        "tags": [],
+        "scopes": {
+          "module": "utils, channel, scripts, mcp",
+          "entity": "terminal parsing, permission prompt detection, status rendering",
+          "files": [],
+          "skills": []
+        },
+        "created": "2026-08-02",
+        "updated": "2026-08-02",
+        "provenance": {
+          "source": "manual",
+          "link": "flows 001, 003, 005, 006, 007 in `.metaproject/flows/`"
         },
         "class": "procedural",
         "validFrom": null,
