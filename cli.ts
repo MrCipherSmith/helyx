@@ -972,11 +972,28 @@ async function setupStopHook(): Promise<StopHookResult> {
  * throwaway worktree outlives it and leaves the user's global settings
  * pointing at a script that is gone.
  */
+interface HookCommand {
+  type?: string;
+  command?: string;
+  timeout?: number;
+}
+
+interface HookEntry {
+  matcher?: string;
+  hooks?: HookCommand[];
+}
+
+/** Only the part of the settings file this function reads or writes. */
+interface ClaudeSettings {
+  hooks?: { PreToolUse?: HookEntry[] } & Record<string, unknown>;
+  [key: string]: unknown;
+}
+
 async function setupAskQuestionHook(): Promise<StopHookResult> {
   const settingsPath = `${process.env.HOME}/.claude/settings.json`;
   const hookCmd = `${BOT_DIR}/${ASK_HOOK_SCRIPT_REL}`;
 
-  let settings: Record<string, any> = {};
+  let settings: ClaudeSettings = {};
   if (existsSync(settingsPath)) {
     try {
       settings = JSON.parse(readFileSync(settingsPath, "utf-8"));
@@ -1005,8 +1022,8 @@ async function setupAskQuestionHook(): Promise<StopHookResult> {
     return { status: "skipped", reason: ephemeral };
   }
 
-  const alreadyAdded = settings.hooks.PreToolUse.some((entry: any) =>
-    Array.isArray(entry.hooks) && entry.hooks.some((h: any) => h.command === hookCmd)
+  const alreadyAdded = settings.hooks.PreToolUse.some((entry) =>
+    Array.isArray(entry.hooks) && entry.hooks.some((h) => h.command === hookCmd)
   );
   if (alreadyAdded) {
     if (removed > 0) {
