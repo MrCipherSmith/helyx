@@ -152,3 +152,18 @@ leaked the database, since the caller gets a throw rather than a handle; it is
 dropped before rethrowing (F-008).
 
 Tests 739 → 754.
+
+## Re-review: seven fixed, one genuinely still open
+
+F-001 was right to stay open. `0.0.0.0` was in the loopback allowlist and is not
+a loopback address — it is the unspecified address, which as a destination
+usually resolves to this machine and sometimes does not. "Usually" is the wrong
+standard for something that issues `DROP DATABASE … WITH (FORCE)`. Removed, and
+`permittedServer` is now exported and covered directly: loopback allowed,
+`0.0.0.0` and a remote host refused, both allowed when named in
+`TEST_DATABASE_URL`.
+
+Also took the diagnostic caveat on F-008: a failing cleanup no longer masks the
+migration error that caused it, since that message is the one worth reading.
+
+Tests 754 → 759.

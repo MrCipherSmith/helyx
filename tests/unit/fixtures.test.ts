@@ -9,7 +9,7 @@
 
 import { describe, test, expect } from "bun:test";
 import { FakeSql } from "../fixtures/fake-sql.ts";
-import { isStray } from "../fixtures/test-db.ts";
+import { isStray, permittedServer } from "../fixtures/test-db.ts";
 import { installFakeTelegram, PRISTINE_TELEGRAM } from "../fixtures/fake-telegram.ts";
 
 describe("FakeSql — a query is lazy, as postgres.js makes it", () => {
@@ -106,6 +106,45 @@ describe("fake telegram — restoring puts the real module back", () => {
     expect(typeof mod.sendTelegramPhoto).toBe("function");
     expect(typeof mod.pinTelegramMessage).toBe("function");
     restore();
+  });
+});
+
+describe("test-db — which servers may be created and dropped on", () => {
+  // The fixture issues CREATE DATABASE and DROP DATABASE … WITH (FORCE).
+  // DATABASE_URL is an application variable and on some machines points at
+  // staging, so it must not be able to authorise that by inheritance.
+  const inherited = false;
+  const named = true;
+
+  test("loopback is allowed", () => {
+    expect(permittedServer("postgres://u:p@localhost:5433/helyx", inherited).permitted).toBe(true);
+    expect(permittedServer("postgres://u:p@127.0.0.1:5433/helyx", inherited).permitted).toBe(true);
+    expect(permittedServer("postgres://u:p@[::1]:5433/helyx", inherited).permitted).toBe(true);
+  });
+
+  test("0.0.0.0 is not loopback and is refused", () => {
+    // The unspecified address. As a destination it usually resolves to this
+    // machine and sometimes does not, and "usually" is the wrong standard for
+    // something that drops databases.
+    const verdict = permittedServer("postgres://u:p@0.0.0.0:5433/helyx", inherited);
+    expect(verdict.permitted).toBe(false);
+    expect(verdict.reason).toContain("0.0.0.0");
+  });
+
+  test("a remote host inherited from DATABASE_URL is refused", () => {
+    const verdict = permittedServer("postgres://u:p@db.staging.internal:5432/helyx", inherited);
+    expect(verdict.permitted).toBe(false);
+    expect(verdict.reason).toContain("TEST_DATABASE_URL");
+  });
+
+  test("the same remote host named deliberately is allowed", () => {
+    // The whole opt-in is saying it out loud.
+    expect(permittedServer("postgres://u:p@db.staging.internal:5432/helyx", named).permitted).toBe(true);
+    expect(permittedServer("postgres://u:p@0.0.0.0:5433/helyx", named).permitted).toBe(true);
+  });
+
+  test("something that is not a URL is refused", () => {
+    expect(permittedServer("not a url", inherited).permitted).toBe(false);
   });
 });
 

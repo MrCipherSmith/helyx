@@ -46,8 +46,13 @@ export const NO_DATABASE_MESSAGE =
  * (FORCE)`, which is not something an application variable should be able to
  * authorise by accident. A remote server has to be named deliberately, through
  * `TEST_DATABASE_URL`, and that is the whole opt-in: saying it out loud.
+ *
+ * `0.0.0.0` is not on the list. It is the unspecified address, not a loopback
+ * one; as a destination it usually resolves to this machine and sometimes does
+ * not, and "usually" is the wrong standard for something that drops databases.
+ * A machine that genuinely wants it can say so in `TEST_DATABASE_URL`.
  */
-const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"]);
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 
 /**
  * A short, stable tag for this machine.
@@ -103,8 +108,11 @@ function serverUrl(): string | null {
  * inherited `DATABASE_URL` pointing at a shared or staging server must not be
  * enough to authorise DDL on it.
  */
-function permittedServer(url: string): { permitted: boolean; reason?: string } {
-  if (process.env.TEST_DATABASE_URL) return { permitted: true };
+export function permittedServer(
+  url: string,
+  namedExplicitly: boolean = Boolean(process.env.TEST_DATABASE_URL),
+): { permitted: boolean; reason?: string } {
+  if (namedExplicitly) return { permitted: true };
   let host: string;
   try {
     host = new URL(url).hostname;
@@ -187,7 +195,12 @@ export async function provisionTestDatabase(): Promise<TestDatabase> {
     // The database exists and nothing yet knows how to drop it — the caller has
     // no handle, because we are throwing instead of returning one. Take it back
     // out here or it survives until some later run decides it is a stray.
-    await dropDatabase(url, name);
+    //
+    // Swallowing a cleanup failure: the migration error is what the developer
+    // needs to read, and letting the tidy-up throw over it would replace a
+    // useful message with a less useful one. A database left behind is picked
+    // up by the next run's stray sweep.
+    await dropDatabase(url, name).catch(() => {});
     throw err;
   }
 
