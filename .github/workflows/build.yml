@@ -47,6 +47,14 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      # The e2e specs live under tests/ with their own manifest, and typecheck
+      # covers them. Without this they resolve to nothing and the typecheck
+      # fails on missing modules — which is exactly what happened the first
+      # time this job ran, and is the kind of difference between a developer's
+      # machine and a clean checkout that only CI finds.
+      - name: Install e2e dependencies
+        run: cd tests && npm ci
+
       - name: Typecheck
         run: bun run typecheck
 
