@@ -4,6 +4,7 @@ import { getCachedMessages } from "./short-term.ts";
 import { summarizeConversation, generateResponse } from "../claude/client.ts";
 import { CONFIG } from "../config.ts";
 import { logger } from "../logger.ts";
+import { isContentTrivial, isSummaryWorthSaving, timerKey } from "../utils/memory-triage.ts";
 
 /**
  * Extract durable project knowledge from session messages and work summary.
@@ -75,10 +76,6 @@ ${msgSample}`;
 // Idle timers: "sessionId:chatId" -> timeout handle
 const idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-function timerKey(sessionId: number, chatId: string): string {
-  return `${sessionId}:${chatId}`;
-}
-
 /**
  * Reset the idle timer for a session/chat.
  * Called after each new message.
@@ -143,34 +140,6 @@ export async function summarizeOnDisconnect(
   for (const row of chats) {
     await trySummarize(sessionId, row.chat_id, "disconnect", projectPath);
   }
-}
-
-/** Heuristic: is the message content trivial (chit-chat, acks, noise)? */
-function isContentTrivial(messages: { role: string; content: string }[]): boolean {
-  const userMsgs = messages.filter((m) => m.role === "user");
-  if (userMsgs.length < 2) return true;
-
-  // If average user-message length < 25 chars it's likely pure chit-chat
-  const avgLen = userMsgs.reduce((s, m) => s + m.content.trim().length, 0) / userMsgs.length;
-  if (avgLen < 25) return true;
-
-  // If fewer than 2 user messages are "substantial" (≥40 chars), skip
-  const substantial = userMsgs.filter((m) => m.content.trim().length >= 40);
-  if (substantial.length < 2) return true;
-
-  return false;
-}
-
-/** Heuristic: reject generated summary if it looks like garbage output */
-function isSummaryWorthSaving(summary: string): boolean {
-  if (!summary || summary.trim().length < 50) return false;
-  const trivialPatterns = [
-    /^(ok|yes|no|sure|thanks|hello|hi|bye)/i,
-    /nothing (significant|important|notable|relevant|useful)/i,
-    /casual conversation/i,
-    /no (tasks?|work|code|changes|questions)/i,
-  ];
-  return !trivialPatterns.some((p) => p.test(summary.trim()));
 }
 
 async function trySummarize(
@@ -294,7 +263,7 @@ export function stopAllTimers(): void {
 
 // --- Work session summarization ---
 
-function buildWorkSessionPrompt(
+export function buildWorkSessionPrompt(
   messages: { role: string; content: string }[],
   toolCalls: { tool: string; description: string; response: string | null }[],
 ): string {
