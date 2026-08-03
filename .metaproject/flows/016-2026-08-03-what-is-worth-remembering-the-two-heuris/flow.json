@@ -1,0 +1,325 @@
+{
+  "schemaVersion": 2,
+  "id": "016",
+  "slug": "what-is-worth-remembering-the-two-heuris",
+  "title": "what is worth remembering: the two heuristics that decide what disappears",
+  "status": "in-progress",
+  "createdAt": "2026-08-03T22:33:35.366Z",
+  "updatedAt": "2026-08-03T22:34:00.880Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:fc17eaf54cb6124785a67c3ec625c5b45912e0fdb09803c5e13677ae92ab22a5",
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-03T22:34:00.085Z",
+      "note": "isContentTrivial, isSummaryWorthSaving, timerKey; TRIVIAL_AVG_LENGTH, SUBSTANTIAL_LENGTH, SUBSTANTIAL_REQUIRED, MIN_SUMMARY_LENGTH named"
+    },
+    "AC2": {
+      "at": "2026-08-03T22:34:00.172Z",
+      "note": "summarizer imports all three; both heuristics removed from it"
+    },
+    "AC3": {
+      "at": "2026-08-03T22:34:00.263Z",
+      "note": "boundaries asserted at exactly the threshold and one below"
+    },
+    "AC4": {
+      "at": "2026-08-03T22:34:00.353Z",
+      "note": "a 500-char single message asserted trivial, with the comment that it is pinned rather than endorsed"
+    },
+    "AC5": {
+      "at": "2026-08-03T22:34:00.443Z",
+      "note": "a short message padded with 100 spaces stays trivial"
+    },
+    "AC6": {
+      "at": "2026-08-03T22:34:00.529Z",
+      "note": "an assistant message of 500 chars between two acknowledgements does not rescue the conversation"
+    },
+    "AC7": {
+      "at": "2026-08-03T22:34:00.615Z",
+      "note": "leading ok refused, mentioned ok kept; a real summary containing 'no changes' refused, and that cost is stated"
+    },
+    "AC8": {
+      "at": "2026-08-03T22:34:00.705Z",
+      "note": "timerKey differs by chat and by session"
+    },
+    "AC9": {
+      "at": "2026-08-03T22:34:00.794Z",
+      "note": "both halves present, 500-char truncation asserted exactly, a null response renders no arrow, five section headers asserted"
+    },
+    "AC10": {
+      "at": "2026-08-03T22:34:00.880Z",
+      "note": "typecheck clean, lint 0 errors, 981 tests, dupes 2 documented, memory-triage 100% lines"
+    }
+  },
+  "pr": {
+    "url": null
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T5",
+      "title": "utils/memory-triage.ts",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T6",
+      "title": "rewire the summarizer",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T7",
+      "title": "tests at the boundaries",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T8",
+      "title": "buildWorkSessionPrompt",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T9",
+      "title": "full gate",
+      "kind": "implement",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-03T22:33:35.366Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-03T22:33:35.458Z",
+      "event": "task-added",
+      "detail": "T5: utils/memory-triage.ts"
+    },
+    {
+      "at": "2026-08-03T22:33:35.544Z",
+      "event": "task-added",
+      "detail": "T6: rewire the summarizer"
+    },
+    {
+      "at": "2026-08-03T22:33:35.630Z",
+      "event": "task-added",
+      "detail": "T7: tests at the boundaries"
+    },
+    {
+      "at": "2026-08-03T22:33:35.721Z",
+      "event": "task-added",
+      "detail": "T8: buildWorkSessionPrompt"
+    },
+    {
+      "at": "2026-08-03T22:33:35.810Z",
+      "event": "task-added",
+      "detail": "T9: full gate"
+    },
+    {
+      "at": "2026-08-03T22:33:35.896Z",
+      "event": "frozen",
+      "detail": "10 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-03T22:33:35.982Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-03T22:33:59.361Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-03T22:33:59.453Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-03T22:33:59.543Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-03T22:33:59.641Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-03T22:33:59.731Z",
+      "event": "task-done",
+      "detail": "T5: utils/memory-triage.ts"
+    },
+    {
+      "at": "2026-08-03T22:33:59.820Z",
+      "event": "task-done",
+      "detail": "T6: rewire the summarizer"
+    },
+    {
+      "at": "2026-08-03T22:33:59.908Z",
+      "event": "task-done",
+      "detail": "T7: tests at the boundaries"
+    },
+    {
+      "at": "2026-08-03T22:33:59.997Z",
+      "event": "task-done",
+      "detail": "T8: buildWorkSessionPrompt"
+    },
+    {
+      "at": "2026-08-03T22:34:00.086Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: isContentTrivial, isSummaryWorthSaving, timerKey; TRIVIAL_AVG_LENGTH, SUBSTANTIAL_LENGTH, SUBSTANTIAL_REQUIRED, MIN_SUMMARY_LENGTH named"
+    },
+    {
+      "at": "2026-08-03T22:34:00.172Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: summarizer imports all three; both heuristics removed from it"
+    },
+    {
+      "at": "2026-08-03T22:34:00.263Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: boundaries asserted at exactly the threshold and one below"
+    },
+    {
+      "at": "2026-08-03T22:34:00.353Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: a 500-char single message asserted trivial, with the comment that it is pinned rather than endorsed"
+    },
+    {
+      "at": "2026-08-03T22:34:00.443Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: a short message padded with 100 spaces stays trivial"
+    },
+    {
+      "at": "2026-08-03T22:34:00.529Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: an assistant message of 500 chars between two acknowledgements does not rescue the conversation"
+    },
+    {
+      "at": "2026-08-03T22:34:00.615Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: leading ok refused, mentioned ok kept; a real summary containing 'no changes' refused, and that cost is stated"
+    },
+    {
+      "at": "2026-08-03T22:34:00.705Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: timerKey differs by chat and by session"
+    },
+    {
+      "at": "2026-08-03T22:34:00.794Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: both halves present, 500-char truncation asserted exactly, a null response renders no arrow, five section headers asserted"
+    },
+    {
+      "at": "2026-08-03T22:34:00.880Z",
+      "event": "ac-confirmed",
+      "detail": "AC10: typecheck clean, lint 0 errors, 981 tests, dupes 2 documented, memory-triage 100% lines"
+    }
+  ]
+}
