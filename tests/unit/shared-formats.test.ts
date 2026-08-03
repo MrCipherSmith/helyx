@@ -1,7 +1,8 @@
 import { describe, test, expect } from "bun:test";
 import { parseDuration } from "../../utils/duration.ts";
-import { stripReasoning } from "../../utils/llm-output.ts";
+import { stripReasoning, REASONING_OPEN, REASONING_CLOSE } from "../../utils/llm-output.ts";
 import { isValidSkillName, INLINE_SHELL_TOKEN, inlineShellTokens } from "../../utils/skill-format.ts";
+import { durationOrHour } from "../../bot/commands/tmux-log.ts";
 
 /**
  * Four formats that more than one module has to agree about, each of which had
@@ -136,5 +137,49 @@ describe("stripReasoning", () => {
   test("an empty response stays empty", () => {
     expect(stripReasoning("")).toBe("");
     expect(stripReasoning("<think>only reasoning</think>")).toBe("");
+  });
+});
+
+describe("the definitions reach beyond the modules that import them", () => {
+  test("the prompt tells the model the same name rule the validator enforces", async () => {
+    // prompts/skill-distillation.md states the rule in prose for the LLM that
+    // generates skill names. It is not TypeScript, so the duplicate detector
+    // does not scan it — and if the two drifted, the model would confidently
+    // produce names the validator rejects.
+    const prompt = await Bun.file("prompts/skill-distillation.md").text();
+    const quoted = prompt.match(/regex \^\[a-z\]\[a-z0-9-\]\{0,63\}\$/);
+    expect(quoted).not.toBeNull();
+
+    // And the rule it quotes agrees with the implementation on the boundaries
+    // that matter.
+    expect(isValidSkillName("git-state")).toBe(true);
+    expect(isValidSkillName("a".repeat(64))).toBe(true);
+    expect(isValidSkillName("a".repeat(65))).toBe(false);
+    expect(isValidSkillName("Git-State")).toBe(false);
+  });
+
+  test("the streaming path uses the same tags stripReasoning removes", () => {
+    // claude/client.ts decides what to forward token by token and cannot wait
+    // for a closing tag, so it needs the tags rather than the block pattern.
+    // Sharing them is what keeps the two paths agreeing about where reasoning
+    // starts and ends.
+    expect(stripReasoning(`${REASONING_OPEN}hidden${REASONING_CLOSE}shown`)).toBe("shown");
+    expect(REASONING_OPEN).toBe("<think>");
+    expect(REASONING_CLOSE).toBe("</think>");
+  });
+});
+
+describe("durationOrHour — the fallback contract", () => {
+  test("a good duration parses", () => {
+    expect(durationOrHour("30m")).toBe(1_800_000);
+  });
+
+  test("a bad one falls back to an hour rather than failing", () => {
+    // This command's contract, and the reason parseDuration returns null: the
+    // other caller exits instead, and folding either choice into the shared
+    // function would have silently changed one of them.
+    expect(durationOrHour("nonsense")).toBe(3_600_000);
+    expect(durationOrHour("")).toBe(3_600_000);
+    expect(durationOrHour("30s")).toBe(3_600_000);
   });
 });

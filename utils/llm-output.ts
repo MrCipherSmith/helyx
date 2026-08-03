@@ -10,7 +10,15 @@
  * model started tagging it differently, both would have to change together.
  */
 
-const REASONING_BLOCK = /<think>[\s\S]*?<\/think>/g;
+/**
+ * The tags themselves, exported because the streaming path needs them
+ * separately: it decides what to forward as the tokens arrive and cannot wait
+ * for a closing tag to match a whole block.
+ */
+export const REASONING_OPEN = "<think>";
+export const REASONING_CLOSE = "</think>";
+
+const REASONING_BLOCK = new RegExp(`${REASONING_OPEN}[\\s\\S]*?${REASONING_CLOSE}`, "g");
 
 /**
  * Remove reasoning blocks and surrounding whitespace.

@@ -45,7 +45,7 @@ const EVENT_ICON: Record<string, string> = {
 };
 
 /** An unreadable duration falls back to an hour here — see utils/duration.ts. */
-function durationOrHour(s: string): number {
+export function durationOrHour(s: string): number {
   return parseDuration(s) ?? 60 * 60 * 1000;
 }
 

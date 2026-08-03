@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { stripReasoning } from "../utils/llm-output.ts";
+import { stripReasoning, REASONING_OPEN, REASONING_CLOSE } from "../utils/llm-output.ts";
 import { CONFIG } from "../config.ts";
 import { recordApiRequest } from "../utils/stats.ts";
 
@@ -233,8 +233,10 @@ async function* ollamaStream(
   // So decide first whether a block is actually present, and only then skip.
   let phase: "deciding" | "thinking" | "passthrough" = "deciding";
   let pending = "";
-  const OPEN = "<think>";
-  const CLOSE = "</think>";
+  // The same tags stripReasoning removes, shared rather than restated: this
+  // path sees them one token at a time and cannot match a whole block.
+  const OPEN = REASONING_OPEN;
+  const CLOSE = REASONING_CLOSE;
 
   while (true) {
     const { done, value } = await reader.read();
