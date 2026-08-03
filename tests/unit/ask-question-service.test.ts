@@ -14,6 +14,7 @@ import {
   resolveTarget,
   hasOpenQuestion,
   cancelRequest,
+  runQuestionExchange,
   type AskDeps,
 } from "../../services/ask-question.ts";
 import { FakeSql } from "../fixtures/fake-sql.ts";
@@ -304,6 +305,8 @@ describe("waitForAnswers", () => {
       { rows: [{ answers: [1, null], expired_at: null }] },
       { rows: [{ answers: [1, 0], expired_at: null }] },
     ]);
+    // The claim on answered_at has to win, and the fake has to say so.
+    world.db.program("SET answered_at = NOW()", { rows: [{ id: "abcd1234" }] });
 
     const answers = await waitForAnswers(
       { ...world.deps, now: clock.now, sleep: clock.sleep },
@@ -500,6 +503,7 @@ describe("the atomic write", () => {
       rows: [{ questions: QUESTIONS, answers: [null, null], answered_at: null, expired_at: null, chat_id: "-1", message_ids: [] }],
     });
     world.db.program(UPDATE_ANSWERS, { rows: [] });
+    world.db.program("SELECT answered_at, expired_at FROM", { rows: [{ answered_at: new Date(), expired_at: null }] });
 
     expect(await recordAnswer(world.deps, "ask:abcd1234:0:0")).toEqual({ status: "already-answered" });
   });
@@ -518,5 +522,109 @@ describe("the atomic write", () => {
       label: "scoped",
       complete: true,
     });
+  });
+});
+
+
+describe("who wins the race decides what the operator is told", () => {
+  test("a tap that loses to a cancel is reported as expired, not as answered", async () => {
+    // The guarded update matched nothing. "Already answered" and "no longer
+    // waiting" are different messages, and guessing gets it wrong exactly when
+    // the race is real — so the state that won is read.
+    const world = makeWorld();
+    world.db.program(SELECT_ROW, {
+      rows: [{ questions: QUESTIONS, answers: [null, null], answered_at: null, expired_at: null, chat_id: "-1", message_ids: [] }],
+    });
+    world.db.program(UPDATE_ANSWERS, { rows: [] });
+    world.db.program("SELECT answered_at, expired_at FROM", { rows: [{ answered_at: null, expired_at: new Date() }] });
+
+    expect(await recordAnswer(world.deps, "ask:abcd1234:0:0")).toEqual({ status: "expired" });
+  });
+
+  test("a tap that loses to another answer is reported as answered", async () => {
+    const world = makeWorld();
+    world.db.program(SELECT_ROW, {
+      rows: [{ questions: QUESTIONS, answers: [null, null], answered_at: null, expired_at: null, chat_id: "-1", message_ids: [] }],
+    });
+    world.db.program(UPDATE_ANSWERS, { rows: [] });
+    world.db.program("SELECT answered_at, expired_at FROM", { rows: [{ answered_at: new Date(), expired_at: null }] });
+
+    expect(await recordAnswer(world.deps, "ask:abcd1234:0:0")).toEqual({ status: "already-answered" });
+  });
+
+  test("a wait whose claim loses to a cancel returns nothing", async () => {
+    // Returning the answers anyway would hand Claude a choice the operator had
+    // already been told expired.
+    const world = makeWorld();
+    world.db.program(SELECT_ANSWERS, { rows: [{ answers: [0], expired_at: null }] });
+    world.db.program("SET answered_at = NOW()", { rows: [] });
+
+    expect(
+      await waitForAnswers({ ...world.deps, now: () => 0, sleep: async () => {} }, "abcd1234", 1, 600_000),
+    ).toBeNull();
+  });
+
+  test("a wait whose claim wins returns the answers", async () => {
+    const world = makeWorld();
+    world.db.program(SELECT_ANSWERS, { rows: [{ answers: [0], expired_at: null }] });
+    world.db.program("SET answered_at = NOW()", { rows: [{ id: "abcd1234" }] });
+
+    expect(
+      await waitForAnswers({ ...world.deps, now: () => 0, sleep: async () => {} }, "abcd1234", 1, 600_000),
+    ).toEqual([0]);
+  });
+});
+
+describe("runQuestionExchange — the ordering that was wrong twice", () => {
+  test("a client that leaves while the questions are being sent cancels the request", async () => {
+    // Starting a ten-minute wait for a reader that has already gone is the
+    // exact shape of the original bug.
+    const world = makeWorld();
+    withChat(world);
+    let gone = false;
+    const deps: AskDeps = {
+      ...world.deps,
+      sendMessage: async (chatId, text, extra) => {
+        // The hook's curl gives up mid-registration.
+        gone = true;
+        world.sent.push({ chatId, text, extra });
+        return { ok: true, messageId: 700 + world.sent.length };
+      },
+    };
+
+    const answers = await runQuestionExchange(deps, hookInput(), {
+      timeoutMs: 600_000,
+      clientGone: () => gone,
+    });
+
+    expect(answers).toBeNull();
+    expect(world.db.count("SET expired_at = NOW()")).toBe(1);
+    // And no wait was started.
+    expect(world.db.count(SELECT_ANSWERS)).toBe(0);
+  });
+
+  test("a client still there gets the wait", async () => {
+    const world = makeWorld();
+    withChat(world);
+    world.db.program(SELECT_ANSWERS, { rows: [{ answers: [0, 1], expired_at: null }] });
+    world.db.program("SET answered_at = NOW()", { rows: [{ id: "x" }] });
+
+    const answers = await runQuestionExchange(world.deps, hookInput(), {
+      timeoutMs: 600_000,
+      clientGone: () => false,
+    });
+
+    expect(answers).toEqual([0, 1]);
+  });
+
+  test("nowhere to send means no wait and no cancel", async () => {
+    const world = makeWorld();
+    world.db.program(SELECT_TARGET, { rows: [] });
+
+    expect(
+      await runQuestionExchange(world.deps, hookInput(), { timeoutMs: 600_000, clientGone: () => false }),
+    ).toBeNull();
+    expect(world.db.count(SELECT_ANSWERS)).toBe(0);
+    expect(world.db.count("SET expired_at = NOW()")).toBe(0);
   });
 });

@@ -29,7 +29,7 @@ const MAX_ASK_QUESTION_BODY = 256 * 1024;
 /** Each waiter holds a socket and polls once a second. */
 const MAX_ASK_QUESTION_WAITERS = 16;
 let askQuestionWaiters = 0;
-import { registerQuestions, waitForAnswers, cancelRequest } from "../services/ask-question.ts";
+import { runQuestionExchange } from "../services/ask-question.ts";
 import { sendTelegramMessage, editTelegramMessage } from "../channel/telegram.ts";
 import { summarizeOnDisconnect, summarizeWork, extractFactsFromTranscript } from "../memory/summarizer.ts";
 import { verifyJwt } from "../dashboard/auth.ts";
@@ -533,40 +533,27 @@ export function startMcpHttpServer(bot: Bot | null): ReturnType<typeof createSer
         // Registration sends Telegram messages, so doing it first meant every
         // concurrent caller passed the capacity check and sent its prompts
         // before any of them counted — and a client that hung up during those
-        // sends was never noticed, leaving the request to wait out its full
-        // ten minutes for nobody.
+        // sends was never noticed, leaving the request to wait out its full ten
+        // minutes for nobody. The ordering itself lives in the service, where
+        // it can be tested.
         askQuestionWaiters++;
-        let requestId: string | null = null;
         let clientGone = false;
-        const onGone = () => {
-          clientGone = true;
-          if (requestId) void cancelRequest(sql, requestId);
-        };
+        const onGone = () => { clientGone = true; };
         req.on("aborted", onGone);
         res.on("close", onGone);
 
         let answers: (number | null)[] | null = null;
-        let registered: Awaited<ReturnType<typeof registerQuestions>> = null;
         try {
-          registered = await registerQuestions(deps, input);
-          if (registered) {
-            requestId = registered.requestId;
-            // Hung up while the questions were being sent: cancel now rather
-            // than start a wait nobody will collect.
-            if (clientGone) await cancelRequest(sql, requestId);
-            else answers = await waitForAnswers(deps, requestId, input.questions.length, ANSWER_TIMEOUT_MS);
-          }
+          answers = await runQuestionExchange(deps, input, {
+            timeoutMs: ANSWER_TIMEOUT_MS,
+            clientGone: () => clientGone,
+          });
         } finally {
           askQuestionWaiters--;
           req.off("aborted", onGone);
           res.off("close", onGone);
         }
 
-        if (!registered) {
-          res.writeHead(204);
-          res.end();
-          return;
-        }
         if (!answers) {
           // Timed out, or withdrawn. The hook prints nothing, Claude Code
           // proceeds as if it had not run, and the selector appears in the

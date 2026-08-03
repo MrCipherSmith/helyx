@@ -165,14 +165,18 @@ export async function waitForAnswers(
 
     const answers = normaliseAnswers(rows[0]!.answers, expected);
     if (allAnswered(answers, expected)) {
-      // `AND expired_at IS NULL`: the two terminal states are exclusive, and
-      // without this guard a request cancelled at the same moment could end up
-      // both answered and expired — with the callback then reporting a send to
-      // a waiter that had already gone.
-      await deps.sql`
+      // The transition has to win, not merely be attempted.
+      //
+      // `AND expired_at IS NULL` keeps the two terminal states exclusive, but a
+      // guarded update that matches nothing is not a failure the caller can
+      // ignore: it means a cancel landed first. Returning the answers anyway
+      // would hand Claude a choice the operator was already told had expired.
+      const claimed = await deps.sql`
         UPDATE question_requests SET answered_at = NOW()
          WHERE id = ${requestId} AND answered_at IS NULL AND expired_at IS NULL
-      `.catch(() => {});
+        RETURNING id
+      `.catch(() => [] as unknown[]);
+      if (claimed.length === 0) return null;
       return answers;
     }
     await sleep(pollMs);
@@ -248,7 +252,13 @@ export async function recordAnswer(deps: AskDeps, callbackData: string): Promise
     RETURNING answers
   `.catch(() => [] as Record<string, unknown>[]);
 
-  if (updated.length === 0) return { status: "already-answered" };
+  if (updated.length === 0) {
+    // Something beat this tap between the read above and the write. Which one
+    // decides what the operator is told, so it is read rather than assumed —
+    // "already answered" and "no longer waiting" are different messages and
+    // guessing gets it wrong exactly when the race is real.
+    return await terminalOutcome(deps, parsed.requestId);
+  }
 
   const answers = normaliseAnswers(updated[0]!.answers, questions.length);
   const complete = allAnswered(answers, questions.length);
@@ -267,8 +277,57 @@ export async function recordAnswer(deps: AskDeps, callbackData: string): Promise
   return { status: "recorded", label: option.label, complete };
 }
 
+/** Which terminal state a request ended in, for a tap that arrived too late. */
+async function terminalOutcome(deps: AskDeps, requestId: string): Promise<AnswerOutcome> {
+  const rows = await deps.sql`
+    SELECT answered_at, expired_at FROM question_requests WHERE id = ${requestId}
+  `.catch(() => [] as Record<string, unknown>[]);
+  const row = rows[0];
+  if (!row) return { status: "unknown" };
+  if (row.expired_at) return { status: "expired" };
+  if (row.answered_at) return { status: "already-answered" };
+  // Neither, which means the guard failed for a reason this code does not
+  // model. Reported as unknown rather than dressed up as one of the two.
+  return { status: "unknown" };
+}
+
 function escapeHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+export interface ExchangeLimits {
+  /** How long to wait for the operator. */
+  timeoutMs: number;
+  /** A signal that the client has gone away — the hook's curl giving up. */
+  clientGone: () => boolean;
+}
+
+/**
+ * The whole exchange: place the questions, wait, and clean up after a client
+ * that left.
+ *
+ * Extracted from the HTTP handler because the ordering here is the part that
+ * was wrong twice. Capacity and the disconnect watch have to be in place before
+ * any Telegram message is sent, and a client that hangs up mid-registration has
+ * to be noticed — neither of which is observable from a test that can only
+ * reach the endpoint.
+ */
+export async function runQuestionExchange(
+  deps: AskDeps,
+  input: HookInput,
+  limits: ExchangeLimits,
+): Promise<(number | null)[] | null> {
+  const registered = await registerQuestions(deps, input);
+  if (!registered) return null;
+
+  // Gone while the questions were being sent. Starting a ten-minute wait for a
+  // reader that has already left is the exact shape of the original bug.
+  if (limits.clientGone()) {
+    await cancelRequest(deps.sql, registered.requestId);
+    return null;
+  }
+
+  return waitForAnswers(deps, registered.requestId, input.questions.length, limits.timeoutMs);
 }
 
 /**
