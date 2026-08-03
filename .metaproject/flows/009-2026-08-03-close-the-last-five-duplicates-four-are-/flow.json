@@ -1,0 +1,159 @@
+{
+  "schemaVersion": 2,
+  "id": "009",
+  "slug": "close-the-last-five-duplicates-four-are-",
+  "title": "close the last five duplicates — four are shared knowledge, one is not",
+  "status": "in-progress",
+  "createdAt": "2026-08-03T10:50:26.414Z",
+  "updatedAt": "2026-08-03T10:56:02.679Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:8f216bd4e1de39b43d482a50d628e2905317bf0989eb40935e6ac69e59ddfecd",
+  "acConfirmed": {},
+  "pr": {
+    "url": null
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T5",
+      "title": "dupes reports exactly one, the documented one",
+      "kind": "review",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T6",
+      "title": "behaviour unchanged at all seven call sites",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-03T10:50:26.414Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-03T10:50:55.702Z",
+      "event": "frozen",
+      "detail": "10 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-03T10:50:55.790Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-03T10:50:55.880Z",
+      "event": "task-added",
+      "detail": "T5: dupes reports exactly one, the documented one"
+    },
+    {
+      "at": "2026-08-03T10:50:55.970Z",
+      "event": "task-added",
+      "detail": "T6: behaviour unchanged at all seven call sites"
+    },
+    {
+      "at": "2026-08-03T10:50:56.054Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-03T10:56:02.417Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-03T10:56:02.509Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-03T10:56:02.593Z",
+      "event": "task-done",
+      "detail": "T5: dupes reports exactly one, the documented one"
+    },
+    {
+      "at": "2026-08-03T10:56:02.679Z",
+      "event": "task-done",
+      "detail": "T6: behaviour unchanged at all seven call sites"
+    }
+  ]
+}

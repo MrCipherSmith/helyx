@@ -7,7 +7,8 @@
 // - env passed to Bun.spawn is an explicit allowlist, NOT process.env, so commands
 //   cannot read DEEPSEEK_API_KEY / DATABASE_URL / etc. via `!`echo $X`` injection.
 
-const INLINE_SHELL_DETECT_RE = /!`[^`\n]+`/;
+
+import { INLINE_SHELL_TOKEN, inlineShellTokens } from "./skill-format.ts";
 
 const DEFAULT_TIMEOUT_MS = 5000;
 const DEFAULT_OUTPUT_CAP = 4096;
@@ -104,7 +105,7 @@ async function runOneInlineShell(
 
 export async function expandInlineShell(body: string, cwd?: string): Promise<ExpandResult> {
   // Fresh, non-shared regex per call so module-level state can never bleed.
-  const re = /!`([^`\n]+)`/g;
+  const re = inlineShellTokens();
   const matches = [...body.matchAll(re)];
   if (matches.length === 0) return { body, shellCount: 0, errorsCount: 0 };
 
@@ -179,5 +180,5 @@ export function parseFrontmatter(raw: string): {
 
 // Detection uses a non-/g regex so .test() stays stateless across calls.
 export function hasInlineShellTokens(body: string): boolean {
-  return INLINE_SHELL_DETECT_RE.test(body);
+  return INLINE_SHELL_TOKEN.test(body);
 }
