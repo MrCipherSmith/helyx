@@ -48,11 +48,6 @@ function makeWorld(options: { sendOk?: boolean } = {}): World {
   const edits: World["edits"] = [];
   let nextMessageId = 700;
 
-  // `sql.json` is a postgres.js helper the service uses for JSONB columns; the
-  // fake has no such method, so it is supplied here and the value passes
-  // through as an ordinary parameter.
-  (db.sql as unknown as { json: (v: unknown) => unknown }).json = (v: unknown) => v;
-
   const deps: AskDeps = {
     sql: db.sql as never,
     sendMessage: async (chatId, text, extra) => {

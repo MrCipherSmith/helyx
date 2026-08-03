@@ -70,6 +70,89 @@ export function dockerListingUsable(rawOutput: string): boolean {
   return rawOutput.split("\n").some((l) => l.includes("\t"));
 }
 
+/**
+ * Which containers this supervisor is answerable for.
+ *
+ * The question had been open since the loop was written, and answering it is
+ * what unblocks listing *stopped* containers at all. `docker ps` shows only
+ * what is running, so a container that crashed does not appear as broken — it
+ * simply vanishes, and a vanished container is indistinguishable from one that
+ * was never there. `docker ps -a` shows it, at the price of also showing
+ * everything else on the host.
+ *
+ * The scope, decided by the maintainer: helyx's own stack, and the containers
+ * of projects running under it. Anything else on the machine belongs to someone
+ * else, and reporting it would train the operator to ignore this alert.
+ *
+ * Matched on the compose project label's naming convention — `<project>-<service>-<n>` —
+ * rather than on a substring, so a container called `my-helyx-experiment` is
+ * not adopted by accident.
+ */
+export interface ContainerIdentity {
+  name: string;
+  /** `com.docker.compose.project`, empty for a container started outside compose. */
+  composeProject: string;
+  status: string;
+}
+
+export function isOurContainer(
+  container: ContainerIdentity,
+  scope: { composeProject: string; projects: readonly string[] },
+): boolean {
+  const owners = [scope.composeProject, ...scope.projects]
+    .map((o) => o?.trim())
+    .filter((o): o is string => Boolean(o));
+  if (owners.length === 0) return false;
+
+  // The label is the only thing that actually proves ownership. A name prefix
+  // does not: a project registered as `api` would otherwise adopt an unrelated
+  // `api-worker-1`, and `docker ps -a` now lists stopped foreign containers too.
+  const label = container.composeProject.trim();
+  if (label) return owners.includes(label);
+
+  // No label: started outside compose, with an explicit name. Exact match only,
+  // for the same reason.
+  return owners.includes(container.name.trim());
+}
+
+/**
+ * The compose project name for an installation directory.
+ *
+ * Compose derives its default from the directory it runs in — lowercased, with
+ * anything outside [a-z0-9_-] dropped. Assuming the literal "helyx" excluded
+ * every installation living anywhere else: the listing came back fine, nothing
+ * in it was recognised as ours, and an empty set of owned containers reads as a
+ * healthy one.
+ */
+export function composeProjectFor(directory: string, override?: string): string {
+  if (override?.trim()) return override.trim();
+  const base = directory.replace(/\/+$/, "").split("/").pop() ?? "";
+  // Docker's rule for a project name. `services/project-service.ts` carries the
+  // same character class for tmux window names — deliberately not shared: the
+  // two sets coincide today because Docker and tmux happen to agree, and they
+  // are owned by different systems. If Docker widened its rule, sharing this
+  // would silently widen tmux's too. `bun run dupes` reports the pair; this
+  // comment is the answer to it.
+  return base.toLowerCase().replace(/[^a-z0-9_-]/g, "");
+}
+
+/**
+ * Read one line of `docker ps -a --format "{{.Names}}\t{{.Status}}"`.
+ *
+ * Returns null for a line that is not one — the shell runs the command with
+ * `2>/dev/null || true`, so an error message can arrive where a listing was
+ * expected.
+ */
+export function parseContainerLine(line: string): ContainerIdentity | null {
+  const parts = line.split("\t");
+  if (parts.length < 3) return null;
+  const composeProject = (parts[0] ?? "").trim();
+  const name = (parts[1] ?? "").trim();
+  const status = parts.slice(2).join("\t").trim();
+  if (!name || !status) return null;
+  return { name, composeProject, status };
+}
+
 export interface SessionSnapshot {
   /** `active_status_messages.updated_at` in ms, or null when there is none. */
   asmUpdatedMs: number | null;

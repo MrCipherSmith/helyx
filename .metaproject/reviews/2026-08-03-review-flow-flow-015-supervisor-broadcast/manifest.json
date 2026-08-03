@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "reviewId": "2026-08-03-review-flow-flow-015-supervisor-broadcast",
+  "mode": "review-flow",
+  "status": "draft",
+  "target": {
+    "kind": "branch",
+    "ref": "flow-015-supervisor-broadcast"
+  },
+  "artifacts": {
+    "scope": ".metaproject/reviews/2026-08-03-review-flow-flow-015-supervisor-broadcast/scope.md",
+    "coverage": ".metaproject/reviews/2026-08-03-review-flow-flow-015-supervisor-broadcast/coverage.md",
+    "report": ".metaproject/reviews/2026-08-03-review-flow-flow-015-supervisor-broadcast/report.md",
+    "findings": ".metaproject/reviews/2026-08-03-review-flow-flow-015-supervisor-broadcast/findings.json",
+    "learning": ".metaproject/reviews/2026-08-03-review-flow-flow-015-supervisor-broadcast/learning.md",
+    "decisions": ".metaproject/reviews/2026-08-03-review-flow-flow-015-supervisor-broadcast/decisions.md"
+  },
+  "coverage": [
+    {
+      "reviewer": "review-orchestrator",
+      "status": "run",
+      "reason": "selected for managed review package"
+    }
+  ],
+  "createdAt": "2026-08-03T22:11:56.336Z",
+  "updatedAt": "2026-08-03T22:11:56.336Z"
+}

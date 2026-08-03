@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "query": "flow-014 llm client FakeFetch endpoint",
-  "generatedAt": "2026-08-03T21:36:11.900Z",
+  "query": "supervisor broadcast compose project containers notification tmux",
+  "generatedAt": "2026-08-03T22:11:56.253Z",
   "results": [
     {
       "entry": {
@@ -34,15 +34,15 @@
         "supersedes": null,
         "supersededBy": null
       },
-      "score": 1.998,
+      "score": 1.926,
       "components": {
-        "relevance": 0.5,
+        "relevance": 0.429,
         "recency": 0.995,
         "confidence": 1,
         "status": 1,
         "scope": 0
       },
-      "reason": "matched 3/6 terms; status accepted; confidence high"
+      "reason": "matched 3/7 terms; status accepted; confidence high"
     },
     {
       "entry": {
@@ -75,15 +75,15 @@
         "supersedes": null,
         "supersededBy": null
       },
-      "score": 1.662,
+      "score": 1.638,
       "components": {
-        "relevance": 0.167,
-        "recency": 0.991,
+        "relevance": 0.143,
+        "recency": 0.99,
         "confidence": 1,
         "status": 1,
         "scope": 0
       },
-      "reason": "matched 1/6 terms; status accepted; confidence high"
+      "reason": "matched 1/7 terms; status accepted; confidence high"
     },
     {
       "entry": {
@@ -116,15 +116,15 @@
         "supersedes": null,
         "supersededBy": null
       },
-      "score": 1.662,
+      "score": 1.638,
       "components": {
-        "relevance": 0.167,
-        "recency": 0.991,
+        "relevance": 0.143,
+        "recency": 0.99,
         "confidence": 1,
         "status": 1,
         "scope": 0
       },
-      "reason": "matched 1/6 terms; status accepted; confidence high"
+      "reason": "matched 1/7 terms; status accepted; confidence high"
     }
   ]
 }
