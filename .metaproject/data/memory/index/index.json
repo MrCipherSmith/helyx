@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-08-02T20:28:14.687Z",
-  "entryCount": 2,
+  "generatedAt": "2026-08-03T10:49:15.024Z",
+  "entryCount": 3,
   "entries": [
     {
       "path": "known-mistakes/comment-asserts-more-than-code.md",
@@ -28,6 +28,21 @@
       "scopes": {
         "module": "utils, channel, scripts, mcp",
         "entity": "terminal parsing, permission prompt detection, status rendering",
+        "files": [],
+        "skills": []
+      }
+    },
+    {
+      "path": "task-notes/coverage-programme-state.md",
+      "type": "task-note",
+      "status": "accepted",
+      "confidence": "high",
+      "title": "Coverage programme: what is done, what is open, what is next",
+      "updated": "2026-08-03",
+      "tags": [],
+      "scopes": {
+        "module": "utils, channel, scripts, mcp, memory",
+        "entity": "coverage, terminal parsing, permission prompts, status rendering",
         "files": [],
         "skills": []
       }

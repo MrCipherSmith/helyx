@@ -1,43 +1,43 @@
 {
   "schemaVersion": 1,
-  "query": "diverges",
-  "generatedAt": "2026-08-02T20:28:41.975Z",
+  "query": "programme",
+  "generatedAt": "2026-08-03T10:49:15.127Z",
   "results": [
     {
       "entry": {
-        "absolutePath": "/home/altsay/bots/helyx/.metaproject/memory/known-mistakes/duplicated-knowledge-diverges.md",
-        "relativePath": "known-mistakes/duplicated-knowledge-diverges.md",
-        "type": "known-mistake",
-        "title": "One rule in several files diverges, and review does not catch it",
+        "absolutePath": "/home/altsay/bots/helyx/.metaproject/memory/task-notes/coverage-programme-state.md",
+        "relativePath": "task-notes/coverage-programme-state.md",
+        "type": "task-note",
+        "title": "Coverage programme: what is done, what is open, what is next",
         "version": "1.0.0",
         "status": "accepted",
         "confidence": "high",
-        "summary": "Seven flows in this repository on 2026-08-02, and the underlying defect was the same every time: one piece of knowledge written out in several places, then diverging. Reading the diff does not find it — the copies are outside the diff. Run `bun run dupes` instead of looking.",
-        "details": "The instances, in order:\n\n| What was duplicated | Copies | Consequence |\n|---|---|---|\n| ANSI stripping | 5, three of them narrower | the spinner detector read half-stripped text, so a working session was reported as hung |\n| the git-ref allowlist | 2 | flow 003 moved one and left the other; found later by the detector, not by three review rounds |\n| the permission-dialog rule | restated 4 times, wrong each time | `or` for `and`, any digit for option 1, any distance for a six-line window |\n| the edit-guard protocol | 3 | a status update landing during an edit waited for the next 5s tick |\n| the pane-parsing rule set | 12 patterns across `output-monitor.ts` and `tmux-monitor.ts` | outstanding |\n\nTwo things are worth carrying forward.\n\n**Review does not catch this.** The permission rule went through eight review\nrounds across two flows, and a leftover copy in `scripts/tmux-watchdog.ts`\nsurvived all of them — because everyone was reading the diff rather than asking\nwhat remained elsewhere. `bun run dupes` found it in one run.\n\n**A comment claiming two things agree is not a mechanism.** Four separate\nattempts to restate the permission rule \"the same way `tmux-watchdog.ts` does\"\neach got it wrong, in code whose comment asserted the agreement. What fixed it\nwas sharing the predicate so there was nothing left to restate.\n\nThe rule that follows: if two places must agree, connect them with an import.\nIf that is genuinely impossible, the claim needs a test that fails when they\ndiverge — a comment is not enough.",
+        "summary": "An eight-flow programme run on 2026-08-02/03 to raise test coverage by extracting decisions into pure modules. Tests 326 → 696, coverage 15.71% → 19.22%, health 37 → 61. It found seven real bugs on the way. The arithmetic now says extraction is spent: the remaining uncovered code is I/O, and the next useful step is a fixture layer, not another extraction.",
+        "details": "### Flows completed (all merged, `.metaproject/flows/`)\n\n| # | Subject | Bug found |\n|---|---|---|\n| 001 | one ANSI stripper instead of five | spinner detection read half-stripped text — a working session reported as hung |\n| 002 | five decisions out of `cli.ts`, which cannot be imported | — |\n| 003 | request-boundary guards in `dashboard-api.ts` | static path containment used `startsWith`: a sibling sharing a prefix, and symlinks, escaped the root |\n| 004 | supervisor status broadcast | the 🔴 container state had been unreachable since v1.49 — a crash loop showed green and notified nobody |\n| 005 | status-line classifiers | any tool call mentioning \"permission\"/\"approve\"/\"waiting\" raised the blocked-session signal |\n| 006 | latched waiting state | 💬 had never once been true for a real prompt; now it is |\n| 007 | `bun run dupes` — duplicate-definition detector | found two leftovers from flows 003 and 006 before it was finished |\n| 008 | one pane parser instead of two | the pane copy did not strip ANSI, so `^`-anchored patterns failed silently |\n\n### Mechanisms added after the retrospective\n\n- `bun run dupes` — reports literals carrying a rule that live in more than\n  one file. Report is currently at **5**, all reviewed.\n- Two `known-mistake` memories: `duplicated-knowledge-diverges` and\n  `comment-asserts-more-than-code`.\n- keryx PR 221 — verification steps in a flow plan become flow tasks, since\n  prose blocks nothing and tasks gate `flow complete`.\n- keryx PR 222 — `shared-definitions` rule: connect agreeing places with an\n  import, not a comment.\n\nBoth keryx PRs were open and awaiting the maintainer's merge as of 2026-08-03.\n\n### The arithmetic that sets the next step\n\n2378 of 12372 lines covered. Reaching the 60% floor needs roughly 5000 more.\nThe six least-covered files hold 3452 of them:\n\n| File | Uncovered |\n|---|---|\n| `scripts/supervisor.ts` | 1075 |\n| `memory/db.ts` | 578 |\n| `utils/tts.ts` | 502 |\n| `bot/commands/admin.ts` | 450 |\n| `claude/client.ts` | 430 |\n| `memory/summarizer.ts` | 417 |\n\nAll six are database, network and external processes. **Extraction cannot get\nthere** — there is little left to extract, and what remains is I/O.\n\n### Agreed plan\n\n1. **Close the last five duplicates** — one cheap flow. Four are genuine\n   shared formats: the skill slug rule (3 files), the inline-shell token, the\n   duration parser, and the `<think>` tags. Taking the report to zero makes\n   any future finding news rather than background.\n2. **A fixture layer** — a fake `ctx` for the permission handler and a\n   test-postgres helper. Deferred from flow 006 and blocking everything else.\n   It adds no coverage itself; it makes coverage possible.\n3. **Cover the I/O layer** on top of step 2, by uncovered-lines × risk:\n   supervisor first (largest, top hotspot, broke twice this week), then the\n   database layer, then the LLM client.\n4. **Two decisions for the maintainer**, not work: which containers the\n   supervisor is responsible for (blocks moving to `docker ps -a`), and what\n   E2E CI should point at (the workflow was deleted in `5bab380`).",
         "tags": [],
         "scopes": {
-          "module": "utils, channel, scripts, mcp",
-          "entity": "terminal parsing, permission prompt detection, status rendering",
+          "module": "utils, channel, scripts, mcp, memory",
+          "entity": "coverage, terminal parsing, permission prompts, status rendering",
           "files": [],
           "skills": []
         },
-        "created": "2026-08-02",
-        "updated": "2026-08-02",
+        "created": "2026-08-03",
+        "updated": "2026-08-03",
         "provenance": {
           "source": "manual",
-          "link": "flows 001, 003, 005, 006, 007 in `.metaproject/flows/`"
+          "link": "`.metaproject/flows/001-*` through `008-*`; helyx PRs #37–#44; keryx PRs #221, #222"
         },
-        "class": "procedural",
+        "class": "episodic",
         "validFrom": null,
         "validTo": null,
-        "recordedAt": "2026-08-02",
+        "recordedAt": "2026-08-03",
         "supersedes": null,
         "supersededBy": null
       },
-      "score": 2.498,
+      "score": 2.499,
       "components": {
         "relevance": 1,
-        "recency": 0.996,
+        "recency": 0.998,
         "confidence": 1,
         "status": 1,
         "scope": 0
