@@ -87,3 +87,6 @@ call for a behaviour-preserving extraction, and that they deserve a separately
 scoped follow-up rather than a silent change here.
 
 Tests 981 → 981; the count is the same and three of them now mean something.
+- 2026-08-03T23:07:17.246Z - ac-confirmed: AC3: average rule isolated so only it can decide; summary length pinned both sides of 50; response cap pinned at 200 with distinct filler — all three mutation-checked
+- 2026-08-03T23:07:17.335Z - ac-confirmed: AC9: both halves present, 500 and 200 caps pinned separately, a null response renders no arrow, five section headers asserted
+- 2026-08-03T23:07:17.421Z - ac-confirmed: AC10: typecheck clean, lint 0 errors, 981 tests, dupes 2 documented, memory-triage 100% lines
