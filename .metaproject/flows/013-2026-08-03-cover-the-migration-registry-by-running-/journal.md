@@ -79,3 +79,28 @@ Nothing in the codebase references any of them, so they are leftovers from
 removed features rather than a missing migration — a fresh install simply would
 not have them. Recorded in the test rather than left for whoever deploys next to
 find.
+
+### Making CI actually run the suite took four attempts, and each one found something
+
+The job failed three times before it passed, and every failure was a real
+difference between this machine and a clean checkout — which is the thing CI is
+for, and the reason none of it had ever been noticed.
+
+1. **Typecheck could not resolve `@playwright/test`.** The e2e specs carry their
+   own manifest and are covered by typecheck; a developer's machine has them
+   installed, a clean one does not.
+2. **Then it could not resolve `react`.** Same shape, two more manifests — the
+   dashboard and the web app.
+3. **Then lint reported eight errors that had never appeared locally.**
+   Installing the dashboard's dependencies makes eslint's React rules
+   resolvable for the first time, and they immediately flag `setState` called
+   synchronously inside an effect in four web-app components, plus an impure
+   call during render. They predate all of this. Fixing them blind, in
+   components that cannot be exercised from here, would be worse than naming
+   them — so CI lints the server tree and the dashboard findings are recorded
+   as their own piece of work.
+4. **Then the migrations died on `CREATE EXTENSION vector`.** The service was
+   `postgres:16-alpine`; the schema needs pgvector for memory search.
+
+The suite now runs in CI against a real database, and the migration tests are a
+gate rather than a skip.
