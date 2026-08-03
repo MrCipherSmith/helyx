@@ -119,3 +119,58 @@ functions. Project coverage 19.6% → **25.72%**. Tests 759 → 791. Health 63 �
 - 2026-08-03T13:28:39.999Z - ac-confirmed: AC14: stuck alert asserts count, wait, preview, pane, force-deliver by session and restart by project; healthy queue sends nothing
 - 2026-08-03T13:28:40.088Z - ac-confirmed: AC15: mutation: emptying each loop body fails 8/11, 7/9 and 6/7 of its tests; survivors are the do-nothing cases
 - 2026-08-03T13:28:40.179Z - ac-confirmed: AC16: typecheck clean, lint 0 errors, 791 pass, dupes 1, supervisor 5.55% to 32.07% lines and 7.69% to 54.55% funcs, health 64
+
+## Review: a real production bug, and three tests that were not tests
+
+### The alert about a lost message could not be delivered
+
+Operator text went into `parse_mode: "HTML"` sends without escaping, in three
+places — the stuck-queue preview, the unanswered-message preview, and the
+forwarded message, which pastes the content whole rather than a preview. One
+`<` and Telegram rejects the send; `sendAlert` and `tgPost` both swallow the
+failure. So the loop whose entire job is to say a message was lost is the one
+that goes silent when the lost message contains an angle bracket. `почему <div>
+не рендерится` is enough.
+
+The review found two of the three. The third — the forward — was found while
+writing the test for the other two, and is the worst of them: it is the
+last-resort delivery for a message nothing else managed to deliver.
+
+Mutation-checked: putting the raw interpolations back fails four tests.
+
+### The tests passed twice only by accident
+
+`bun test --rerun-each=2` gave 33 passed, 21 failed. The supervisor keeps its
+dedup state in module-level maps; a test file's own counter resets when the file
+is re-evaluated, but the supervisor module stays cached and remembers every
+project it has already alerted about. A shortened timestamp made it worse — two
+runs a few milliseconds apart produced overlapping session ids.
+
+Fixed with `tests/fixtures/unique.ts` and full-precision ids. The whole suite now
+runs twice: 1602 passed, 0 failed.
+
+That also exposed a pre-existing one: the jsonb idempotency test asserted the
+row it inserted was *first* among the matches, which is true only on a database
+nobody has run it against before.
+
+### The fake fetch was not fetch
+
+`fetch` accepts a URL, a `Request`, or both — and only the first puts the
+method, headers and body in `init`. Reading `init` alone recorded a fully-formed
+POST `Request` as a GET with no headers and no body. Now normalised through
+`new Request(input, init)`, with the body read from a clone, an already-aborted
+signal honoured, and `lastIndex` reset before a regex match so a `/g` pattern
+does not alternate between matching and missing on identical requests.
+
+### Taken, and deferred with a reason
+
+Added a forwarding-candidate case: every other queue test programmed that query
+empty, so deleting the `forwardStuckMessages(sql)` call left them all green.
+
+Not taken here: the review is right that `FakeSql` returns programmed rows
+without evaluating SQL predicates, so the qualification queries themselves —
+age windows, assistant-reply exclusion, fresh-status exclusion — are not pinned.
+That needs seeded fixtures on the real database, which exists since flow 010,
+and it is the next supervisor flow rather than a patch on this one.
+
+Tests 791 → 801.

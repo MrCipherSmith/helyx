@@ -243,3 +243,62 @@ describe("the network is off unless a test asks for it", () => {
     installNetworkGuard();
   });
 });
+
+describe("fake fetch — the three shapes fetch accepts", () => {
+  test("a Request object is recorded by what it actually is, not by an absent init", async () => {
+    // Reading `init` alone recorded a fully-formed POST Request as a GET with
+    // no headers and no body. A test asserting on any of those would have been
+    // asserting on the fixture's blind spot.
+    const { http, restore } = installFakeFetch();
+    http.program("example.test", { json: {} });
+
+    await fetch(
+      new Request("https://example.test/x", {
+        method: "POST",
+        headers: { "x-token": "t" },
+        body: JSON.stringify({ a: 1 }),
+      }),
+    );
+
+    const req = http.last("example.test")!;
+    expect(req.method).toBe("POST");
+    expect(req.headers["x-token"]).toBe("t");
+    expect(req.body).toEqual({ a: 1 });
+    restore();
+  });
+
+  test("init overrides the Request it is given, as the platform does", async () => {
+    const { http, restore } = installFakeFetch();
+    http.program("example.test", { json: {} });
+
+    await fetch(new Request("https://example.test/x", { method: "POST" }), { method: "DELETE" });
+
+    expect(http.last("example.test")!.method).toBe("DELETE");
+    restore();
+  });
+
+  test("an already-aborted signal fails before anything is sent", async () => {
+    const { http, restore } = installFakeFetch();
+    http.program("example.test", { json: {} });
+
+    await expect(
+      fetch("https://example.test/x", { signal: AbortSignal.abort() }),
+    ).rejects.toThrow(/abort/i);
+    // Recorded, because a test diagnosing a cancellation wants to see what was
+    // about to be sent.
+    expect(http.count("example.test")).toBe(1);
+    restore();
+  });
+
+  test("a global regex matches the same URL every time", async () => {
+    // A /g regex carries lastIndex, so two identical requests alternated
+    // between matching and missing — a fixture answering differently depending
+    // on how often it had been asked the same question.
+    const { http, restore } = installFakeFetch();
+    http.program(/example\.test/g, { json: { n: 1 } });
+
+    expect((await fetch("https://example.test/a")).status).toBe(200);
+    expect((await fetch("https://example.test/a")).status).toBe(200);
+    restore();
+  });
+});

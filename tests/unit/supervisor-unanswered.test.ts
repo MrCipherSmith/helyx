@@ -44,11 +44,17 @@ afterEach(() => restore());
  * an id would silence each other — and the second would pass for a reason its
  * author never chose.
  */
-let nextSessionId = 8000;
+let sessionSeq = 0;
+function freshSessionId(): number {
+  // Full millisecond precision, not a truncation of it. A shortened timestamp
+  // put two runs a few milliseconds apart into overlapping ranges, and the
+  // second pass found its ids already deduped by the first.
+  return Date.now() * 100 + (++sessionSeq % 100);
+}
 
 function unansweredRow(overrides: Record<string, unknown> = {}) {
   return {
-    session_id: nextSessionId,
+    session_id: freshSessionId(),
     project: "helyx",
     msg_id: 55,
     chat_id: "-100123",
@@ -62,9 +68,8 @@ function unansweredRow(overrides: Record<string, unknown> = {}) {
 }
 
 function worldWith(row: Record<string, unknown>) {
-  nextSessionId++;
   const db = new FakeSql();
-  const seeded = { ...unansweredRow(), session_id: nextSessionId, ...row };
+  const seeded = { ...unansweredRow(), ...row };
   db.program(SELECT_UNANSWERED, { rows: [seeded] });
   return { db, row: seeded };
 }
@@ -230,5 +235,32 @@ describe("nothing to do", () => {
     await checkUnansweredMessages(db.sql as never);
 
     expect(db.count(INSERT_QUEUE)).toBe(0);
+  });
+});
+
+describe("the alert escapes what the operator wrote", () => {
+  test("an angle bracket in the lost message does not lose the alert", async () => {
+    // The bitter case: this loop exists to say a message was lost. Its own
+    // alert is sent with parse_mode HTML, and sendAlert swallows a failed send,
+    // so before this was escaped a message containing "<" produced no alert at
+    // all. "почему <div> не рендерится" was enough to silence it.
+    const { db } = worldWith({ content: "почему <div> не рендерится?" });
+
+    await checkUnansweredMessages(db.sql as never);
+
+    const text = String((http.last(SEND)?.body as { text?: string })?.text ?? "");
+    expect(text).toContain("&lt;div&gt;");
+    expect(text).not.toContain("<div>");
+    // What the supervisor writes itself is still markup.
+    expect(text).toContain("<code>");
+  });
+
+  test("an ampersand too — the other character Telegram rejects", async () => {
+    const { db } = worldWith({ content: "R&D упал" });
+
+    await checkUnansweredMessages(db.sql as never);
+
+    const text = String((http.last(SEND)?.body as { text?: string })?.text ?? "");
+    expect(text).toContain("R&amp;D");
   });
 });

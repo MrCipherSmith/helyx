@@ -83,22 +83,40 @@ function urlOf(input: unknown): string {
   return String(input);
 }
 
-function headersOf(init: RequestInit | undefined): Record<string, string> {
-  const raw = init?.headers;
-  if (!raw) return {};
-  if (raw instanceof Headers) return Object.fromEntries(raw.entries());
-  if (Array.isArray(raw)) return Object.fromEntries(raw);
-  return { ...(raw as Record<string, string>) };
-}
-
-function bodyOf(init: RequestInit | undefined): unknown {
-  const body = init?.body;
-  if (typeof body !== "string") return body ?? null;
+/**
+ * What was actually requested, whichever of `fetch`'s three call shapes was used.
+ *
+ * `fetch(url, init)`, `fetch(request)` and `fetch(request, init)` are all
+ * valid, and only the first puts the method, headers and body in `init`.
+ * Building a `Request` resolves all three the same way the platform does.
+ */
+async function describeRequest(input: unknown, init?: RequestInit): Promise<RecordedRequest> {
+  let request: Request;
   try {
-    return JSON.parse(body);
+    request = new Request(input as RequestInfo, init);
   } catch {
-    return body;
+    // A URL the Request constructor rejects still deserves to be recorded —
+    // seeing the bad URL is how a test diagnoses what the code built.
+    return { method: (init?.method ?? "GET").toUpperCase(), url: urlOf(input), headers: {}, body: null };
   }
+
+  // A clone, so the caller's body stays readable.
+  const raw = await request.clone().text().catch(() => "");
+  let body: unknown = raw === "" ? null : raw;
+  if (typeof body === "string") {
+    try {
+      body = JSON.parse(body);
+    } catch {
+      /* not JSON — keep the string */
+    }
+  }
+
+  return {
+    method: request.method.toUpperCase(),
+    url: request.url,
+    headers: Object.fromEntries(request.headers.entries()),
+    body,
+  };
 }
 
 export class FakeFetch {
@@ -137,14 +155,20 @@ export class FakeFetch {
   }
 
   readonly fetch = (async (input: unknown, init?: RequestInit): Promise<Response> => {
-    const url = urlOf(input);
-    const request: RecordedRequest = {
-      method: (init?.method ?? "GET").toUpperCase(),
-      url,
-      headers: headersOf(init),
-      body: bodyOf(init),
-    };
+    // Normalised through Request, because `fetch` accepts three shapes and only
+    // one of them puts the method, headers and body in `init`. Reading `init`
+    // alone recorded a fully-formed POST Request as a GET with no headers and
+    // no body — a test asserting on any of those would have been asserting on
+    // the fixture's blind spot.
+    const request = await describeRequest(input, init);
     this.requests.push(request);
+    const url = request.url;
+
+    // An aborted signal fails before anything is sent, as it does for real.
+    const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined);
+    if (signal?.aborted) {
+      throw new DOMException("The operation was aborted.", "AbortError");
+    }
 
     const program = this.programs.find((p) => hits(p.match, url));
     if (!program) {
@@ -169,7 +193,13 @@ export class FakeFetch {
 }
 
 function hits(match: string | RegExp, url: string): boolean {
-  return typeof match === "string" ? url.includes(match) : match.test(url);
+  if (typeof match === "string") return url.includes(match);
+  // lastIndex is reset first: a `/g` or `/y` regex carries its position between
+  // calls, so two identical requests would alternate between matching and
+  // missing — a fixture that answers differently depending on how many times it
+  // has been asked the same question.
+  match.lastIndex = 0;
+  return match.test(url);
 }
 
 function sameMatch(a: string | RegExp, b: string | RegExp): boolean {

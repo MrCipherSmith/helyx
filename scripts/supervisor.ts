@@ -462,7 +462,11 @@ export async function checkStuckQueue(sql: postgres.Sql, runShell?: RunShell): P
         `⚠️ <b>Supervisor: очередь застряла</b>`,
         `Проект: <code>${project}</code>`,
         `Сообщений в очереди: ${stuckCount}, ждут: ${Math.round(oldestSec / 60)}m ${oldestSec % 60}s`,
-        `Первое: <i>${preview}</i>`,
+        // Escaped: this is whatever the operator typed, going into a message
+        // sent with parse_mode HTML. One "<" and Telegram rejects the whole
+        // send — and sendAlertWithButtons swallows the failure, so the alert
+        // about a stuck queue would simply never arrive.
+        `Первое: <i>${escapeHtml(preview)}</i>`,
       ];
       if (spinnerActive) {
         msgParts.push(`⚙️ Claude сейчас работает — ждёт завершения задачи`);
@@ -542,7 +546,11 @@ export async function forwardStuckMessages(sql: postgres.Sql, sessionId?: number
       `From: ${row.from_user}`,
       `Queued: ${ageMin}m ago`,
       `———`,
-      row.content,
+      // The whole message, not a preview — so this is the worst of the three
+      // places that put operator text into an HTML-parsed send. Unescaped, one
+      // angle bracket loses the forward, which is the last resort for a message
+      // nothing else managed to deliver.
+      escapeHtml(String(row.content ?? "")),
     ].join("\n");
 
     const res = await tgPost("sendMessage", {
@@ -975,7 +983,11 @@ export async function checkUnansweredMessages(sql: postgres.Sql): Promise<void> 
         `♻️ <b>Supervisor: сообщение переотправлено</b>`,
         `Проект: <code>${project}</code>`,
         `Ждало ответа: ${ageStr}`,
-        `Сообщение: <i>${preview}</i>`,
+        // Same reason, and worse here: this loop exists to say a message was
+        // lost. Unescaped, a message containing "<" makes the send fail
+        // silently — the one alert that reports a lost message is the one it
+        // cannot deliver. "почему <div> не рендерится" was enough.
+        `Сообщение: <i>${escapeHtml(preview)}</i>`,
         `Действие: переинжектировано в очередь`,
       ].join("\n"));
     }

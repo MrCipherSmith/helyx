@@ -13,6 +13,7 @@ import { checkStuckQueue } from "../../scripts/supervisor.ts";
 import { FakeSql } from "../fixtures/fake-sql.ts";
 import { installFakeFetch, type FakeFetch } from "../fixtures/fake-fetch.ts";
 import { restartCallbackData, forceDeliverCallbackData } from "../../utils/supervisor-callbacks.ts";
+import { uniqueName } from "../fixtures/unique.ts";
 
 // Narrow on purpose. `forwardStuckMessages` runs at the end of this loop and
 // selects from message_queue too, so a match on the table name alone hands it
@@ -33,10 +34,8 @@ beforeEach(() => {
 
 afterEach(() => restore());
 
-let projectCounter = 0;
-
 function stuckWorld(options: { oldestSec?: number; count?: number; content?: string } = {}) {
-  const project = `queue-proj-${++projectCounter}`;
+  const project = uniqueName("queue-proj");
   const db = new FakeSql();
   db.program(SELECT_FORWARDABLE, { rows: [] });
   db.program(SELECT_STUCK, {
@@ -146,5 +145,79 @@ describe("nothing stuck", () => {
 
     expect(http.count(SEND)).toBe(0);
     expect(db.count(INSERT_INCIDENT)).toBe(0);
+  });
+});
+
+describe("forwarding what nobody took", () => {
+  // Every other test here programs the forwarding query empty, which means
+  // deleting the `forwardStuckMessages(sql)` call at the end of the loop would
+  // leave them all green. This is the case that notices.
+  function forwardableWorld() {
+    const project = uniqueName("fwd-proj");
+    const db = new FakeSql();
+    db.program(SELECT_STUCK, { rows: [] });
+    db.program(SELECT_FORWARDABLE, {
+      rows: [
+        {
+          id: 991,
+          session_id: 77,
+          chat_id: "-100123",
+          from_user: "altsay",
+          content: "почему <div> не рендерится?",
+          project,
+          age_seconds: 900,
+        },
+      ],
+    });
+    return { db, project };
+  }
+
+  test("a message past the threshold is forwarded to the fallback channel", async () => {
+    const { db, project } = forwardableWorld();
+
+    await checkStuckQueue(db.sql as never);
+
+    const forward = http.last(SEND);
+    const body = forward!.body as { text?: string; message_thread_id?: number };
+    expect(body.text).toContain(project);
+    expect(body.text).toContain("15m ago");
+    expect(body.message_thread_id).toBe(7);
+  });
+
+  test("and marked forwarded, so it is not sent again", async () => {
+    const { db } = forwardableWorld();
+
+    await checkStuckQueue(db.sql as never);
+
+    const marks = db.matching("SET forwarded_at = NOW()");
+    expect(marks).toHaveLength(1);
+    expect(marks[0]!.values[0]).toBe(991);
+  });
+
+  test("the message is escaped — an angle bracket must not lose the forward", async () => {
+    // parse_mode is HTML and this is the operator's own text, pasted whole.
+    // Unescaped, Telegram rejects the send and tgPost swallows the failure: the
+    // last-resort delivery for a message nothing else could deliver, lost to a
+    // "<".
+    const { db } = forwardableWorld();
+
+    await checkStuckQueue(db.sql as never);
+
+    const text = String((http.last(SEND)?.body as { text?: string })?.text ?? "");
+    expect(text).toContain("&lt;div&gt;");
+    expect(text).not.toContain("<div>");
+  });
+});
+
+describe("the stuck-queue alert escapes what the operator wrote", () => {
+  test("an angle bracket in the first message does not break the send", async () => {
+    const { db } = stuckWorld({ content: "почему <b>это</b> сломалось?" });
+
+    await checkStuckQueue(db.sql as never);
+
+    const text = alertText();
+    expect(text).toContain("&lt;b&gt;");
+    // The tags the supervisor itself writes are still real markup.
+    expect(text).toContain("<code>");
   });
 });

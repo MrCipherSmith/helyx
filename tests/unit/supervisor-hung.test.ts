@@ -17,6 +17,7 @@ import { checkHungSessions } from "../../scripts/supervisor.ts";
 import { FakeSql } from "../fixtures/fake-sql.ts";
 import { installFakeFetch, type FakeFetch } from "../fixtures/fake-fetch.ts";
 import { restartCallbackData, paneCallbackData, ackCallbackData } from "../../utils/supervisor-callbacks.ts";
+import { uniqueName } from "../fixtures/unique.ts";
 
 const SELECT_HUNG = "JOIN active_status_messages asm";
 const INSERT_INCIDENT = "INSERT INTO supervisor_incidents";
@@ -35,9 +36,10 @@ beforeEach(() => {
 
 afterEach(() => restore());
 
-let projectCounter = 0;
 function freshProject(): string {
-  return `hung-proj-${++projectCounter}`;
+  // Unique across the whole process, not just this file: the supervisor's dedup
+  // maps are module state and outlive a re-run of these tests.
+  return uniqueName("hung-proj");
 }
 
 function hungWorld(options: { project?: string; staleSec?: number; projectId?: number } = {}) {
