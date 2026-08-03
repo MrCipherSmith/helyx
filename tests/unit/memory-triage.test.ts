@@ -57,14 +57,26 @@ describe("isContentTrivial", () => {
     expect(isContentTrivial([substantial(1), user("ok")])).toBe(true);
   });
 
-  test("the average threshold is what it says", () => {
-    const atThreshold = "x".repeat(TRIVIAL_AVG_LENGTH);
-    const below = "x".repeat(TRIVIAL_AVG_LENGTH - 1);
-    // Average at the threshold passes the first gate; below it does not.
-    expect(isContentTrivial([user(below), user(below)])).toBe(true);
-    // …and passing the first gate is not enough on its own: these are still
-    // shorter than SUBSTANTIAL_LENGTH.
-    expect(isContentTrivial([user(atThreshold), user(atThreshold)])).toBe(true);
+  test("the average threshold decides on its own, and at the boundary", () => {
+    // Constructed so that only the average rule can be the one deciding: both
+    // sets have two substantial messages, so the substantial rule says keep.
+    // The first version of this test used two short messages, which the
+    // substantial rule also rejected — so it would have passed with `<` changed
+    // to `<=`, or with the average rule deleted entirely.
+    const long = () => user("x".repeat(SUBSTANTIAL_LENGTH));
+    const tiny = () => user("x");
+
+    // Two long, eight tiny: sum 88 over 10 messages — 8.8, below the threshold.
+    const belowAverage = [long(), long(), ...Array.from({ length: 8 }, tiny)];
+    expect(isContentTrivial(belowAverage)).toBe(true);
+
+    // Two long, one tiny: sum 81 over 3 — 27, above it. Same substantial count.
+    const aboveAverage = [long(), long(), tiny()];
+    expect(isContentTrivial(aboveAverage)).toBe(false);
+
+    // And the threshold itself is where it says: 40 + 40 + 10 over 3 is exactly 30,
+    // while dropping to 15 gives 31.6 — both above. Pin the constant instead.
+    expect(TRIVIAL_AVG_LENGTH).toBe(25);
   });
 
   test("the substantial threshold is what it says", () => {
@@ -94,8 +106,11 @@ describe("isSummaryWorthSaving", () => {
     expect(isSummaryWorthSaving(real)).toBe(true);
   });
 
-  test("too short is not a summary", () => {
+  test("too short is not a summary, and the boundary is exact", () => {
+    // Both sides. Testing only the short one leaves `<` free to become `<=`,
+    // which would silently reject every summary of exactly the minimum length.
     expect(isSummaryWorthSaving("x".repeat(MIN_SUMMARY_LENGTH - 1))).toBe(false);
+    expect(isSummaryWorthSaving("x".repeat(MIN_SUMMARY_LENGTH))).toBe(true);
     expect(isSummaryWorthSaving("")).toBe(false);
     expect(isSummaryWorthSaving("   ")).toBe(false);
   });
@@ -144,8 +159,6 @@ describe("timerKey", () => {
 });
 
 describe("buildWorkSessionPrompt", () => {
-  const long = "x".repeat(900);
-
   test("both halves of the session reach the prompt", async () => {
     const { buildWorkSessionPrompt } = await import("../../memory/summarizer.ts");
     const prompt = buildWorkSessionPrompt(
@@ -158,17 +171,23 @@ describe("buildWorkSessionPrompt", () => {
     expect(prompt).toContain("exit 137");
   });
 
-  test("a long message is truncated, and a long tool response harder", async () => {
+  test("a long message is truncated at 500, and a tool response harder at 200", async () => {
     // The prompt has a token budget, and one runaway `cat` of a lockfile would
-    // otherwise crowd out the whole conversation it is supposed to summarise.
+    // otherwise crowd out the conversation it is supposed to summarise.
+    //
+    // Distinct filler per side, because the same character on both proves only
+    // the larger cap: a response limit changed from 200 to 499 would have
+    // passed the first version of this test.
     const { buildWorkSessionPrompt } = await import("../../memory/summarizer.ts");
     const prompt = buildWorkSessionPrompt(
-      [{ role: "user", content: long }],
-      [{ tool: "Read", description: "package-lock.json", response: long }],
+      [{ role: "user", content: "m".repeat(900) }],
+      [{ tool: "Read", description: "package-lock.json", response: "r".repeat(900) }],
     );
 
-    expect(prompt).toContain("x".repeat(500));
-    expect(prompt).not.toContain("x".repeat(501));
+    expect(prompt).toContain("m".repeat(500));
+    expect(prompt).not.toContain("m".repeat(501));
+    expect(prompt).toContain("r".repeat(200));
+    expect(prompt).not.toContain("r".repeat(201));
   });
 
   test("a tool call with no response reads as a call, not as an empty result", async () => {

@@ -59,3 +59,31 @@ Tests 961 → 981.
 - 2026-08-03T22:34:00.705Z - ac-confirmed: AC8: timerKey differs by chat and by session
 - 2026-08-03T22:34:00.794Z - ac-confirmed: AC9: both halves present, 500-char truncation asserted exactly, a null response renders no arrow, five section headers asserted
 - 2026-08-03T22:34:00.880Z - ac-confirmed: AC10: typecheck clean, lint 0 errors, 981 tests, dupes 2 documented, memory-triage 100% lines
+
+## Review: three findings, all the same one
+
+Every boundary test I wrote failed to pin its boundary — in a flow whose own
+acceptance criterion says the thresholds must be asserted *at* the boundary
+rather than well inside it.
+
+**The average rule was never the deciding one.** Both of my cases were also
+rejected by the substantial-message rule, so deleting the average rule entirely
+would have left the test green. Constructing a case where only the average can
+decide takes two substantial messages *plus* eight tiny ones — sum 88 over ten,
+an average of 8.8 — which the substantial rule would keep and the average rule
+rejects.
+
+**The minimum summary length was tested only from below.** `<` becoming `<=`
+would have silently rejected every summary of exactly fifty characters.
+
+**The tool-response cap was tested with the same filler as the message cap**, so
+it proved only the larger of the two. Changing 200 to 499 would have passed.
+
+All three mutation-checked: delete the average rule, widen the length
+comparison, or loosen the response cap, and exactly one test fails each time.
+
+The reviewer also confirmed that pinning the two behavioural risks was the right
+call for a behaviour-preserving extraction, and that they deserve a separately
+scoped follow-up rather than a silent change here.
+
+Tests 981 → 981; the count is the same and three of them now mean something.
