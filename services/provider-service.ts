@@ -247,7 +247,16 @@ export async function fetchProviderModels(
   else headers.authorization = `Bearer ${authToken}`;
 
   const root = baseUrl.replace(/\/+$/, "");
-  const candidates = [`${root}/v1/models`, `${root}/models`];
+  // Some providers mount the model list only at the bare root `/models` while
+  // the given base URL carries an Anthropic-compat suffix (`…/anthropic`).
+  // DeepSeek is the live example: it answers `https://api.deepseek.com/models`
+  // and 404s on the `…/anthropic/*` siblings. Strip a trailing `/anthropic` or
+  // `/v1` and probe the bare root too — deduped so providers without the suffix
+  // are not asked twice.
+  const bareRoot = root.replace(/\/anthropic$/, "").replace(/\/v1$/, "");
+  const candidates = Array.from(
+    new Set([`${root}/v1/models`, `${root}/models`, `${bareRoot}/v1/models`, `${bareRoot}/models`]),
+  );
 
   for (const url of candidates) {
     try {
