@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "query": "flow-012 questions Telegram ask-question waiter answer expiry stale hooks",
-  "generatedAt": "2026-08-03T15:31:14.606Z",
+  "query": "flow-012 questions telegram M3 waitForAnswers recordAnswer",
+  "generatedAt": "2026-08-03T15:36:19.741Z",
   "results": [
     {
       "entry": {
@@ -34,15 +34,15 @@
         "supersedes": null,
         "supersededBy": null
       },
-      "score": 1.589,
+      "score": 1.641,
       "components": {
-        "relevance": 0.091,
+        "relevance": 0.143,
         "recency": 0.997,
         "confidence": 1,
         "status": 1,
         "scope": 0
       },
-      "reason": "matched 1/11 terms; status accepted; confidence high"
+      "reason": "matched 1/7 terms; status accepted; confidence high"
     },
     {
       "entry": {
@@ -75,15 +75,15 @@
         "supersedes": null,
         "supersededBy": null
       },
-      "score": 1.587,
+      "score": 1.639,
       "components": {
-        "relevance": 0.091,
+        "relevance": 0.143,
         "recency": 0.992,
         "confidence": 1,
         "status": 1,
         "scope": 0
       },
-      "reason": "matched 1/11 terms; status accepted; confidence high"
+      "reason": "matched 1/7 terms; status accepted; confidence high"
     },
     {
       "entry": {
@@ -116,15 +116,15 @@
         "supersedes": null,
         "supersededBy": null
       },
-      "score": 1.587,
+      "score": 1.639,
       "components": {
-        "relevance": 0.091,
+        "relevance": 0.143,
         "recency": 0.992,
         "confidence": 1,
         "status": 1,
         "scope": 0
       },
-      "reason": "matched 1/11 terms; status accepted; confidence high"
+      "reason": "matched 1/7 terms; status accepted; confidence high"
     }
   ]
 }

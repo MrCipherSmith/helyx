@@ -565,8 +565,8 @@ export function startMcpHttpServer(bot: Bot | null): ReturnType<typeof createSer
 
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(denyWithAnswers(input.questions, answers));
-      } catch (err: any) {
-        console.error("[hooks/ask-question] error:", err?.message);
+      } catch (err: unknown) {
+        console.error("[hooks/ask-question] error:", err instanceof Error ? err.message : String(err));
         if (!res.headersSent) {
           // 204 rather than 500: whatever went wrong here, the terminal must
           // still get its selector.

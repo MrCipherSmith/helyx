@@ -174,10 +174,19 @@ export async function waitForAnswers(
       const claimed = await deps.sql`
         UPDATE question_requests SET answered_at = NOW()
          WHERE id = ${requestId} AND answered_at IS NULL AND expired_at IS NULL
-        RETURNING id
-      `.catch(() => [] as unknown[]);
+        RETURNING answers
+      `.catch(() => [] as Record<string, unknown>[]);
       if (claimed.length === 0) return null;
-      return answers;
+
+      // The answers as the claim froze them, not as they were read a statement
+      // earlier. A tap landing between the two changes a slot, and returning
+      // the older snapshot would hand Claude one option while the row and the
+      // operator's own message both record another.
+      const committed = normaliseAnswers(claimed[0]!.answers, expected);
+      // If what was committed is not a complete set after all, the terminal
+      // keeps the question. Handing Claude "(no answer)" for a slot would be a
+      // worse outcome than asking again.
+      return allAnswered(committed, expected) ? committed : null;
     }
     await sleep(pollMs);
   }

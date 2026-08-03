@@ -306,7 +306,7 @@ describe("waitForAnswers", () => {
       { rows: [{ answers: [1, 0], expired_at: null }] },
     ]);
     // The claim on answered_at has to win, and the fake has to say so.
-    world.db.program("SET answered_at = NOW()", { rows: [{ id: "abcd1234" }] });
+    world.db.program("SET answered_at = NOW()", { rows: [{ answers: [1, 0] }] });
 
     const answers = await waitForAnswers(
       { ...world.deps, now: clock.now, sleep: clock.sleep },
@@ -567,7 +567,7 @@ describe("who wins the race decides what the operator is told", () => {
   test("a wait whose claim wins returns the answers", async () => {
     const world = makeWorld();
     world.db.program(SELECT_ANSWERS, { rows: [{ answers: [0], expired_at: null }] });
-    world.db.program("SET answered_at = NOW()", { rows: [{ id: "abcd1234" }] });
+    world.db.program("SET answered_at = NOW()", { rows: [{ answers: [0] }] });
 
     expect(
       await waitForAnswers({ ...world.deps, now: () => 0, sleep: async () => {} }, "abcd1234", 1, 600_000),
@@ -607,7 +607,7 @@ describe("runQuestionExchange — the ordering that was wrong twice", () => {
     const world = makeWorld();
     withChat(world);
     world.db.program(SELECT_ANSWERS, { rows: [{ answers: [0, 1], expired_at: null }] });
-    world.db.program("SET answered_at = NOW()", { rows: [{ id: "x" }] });
+    world.db.program("SET answered_at = NOW()", { rows: [{ answers: [0, 1] }] });
 
     const answers = await runQuestionExchange(world.deps, hookInput(), {
       timeoutMs: 600_000,
@@ -626,5 +626,32 @@ describe("runQuestionExchange — the ordering that was wrong twice", () => {
     ).toBeNull();
     expect(world.db.count(SELECT_ANSWERS)).toBe(0);
     expect(world.db.count("SET expired_at = NOW()")).toBe(0);
+  });
+});
+
+
+describe("what Claude receives is what the row committed", () => {
+  test("a tap landing between the read and the claim wins", async () => {
+    // The answers are read, then claimed. A second tap in between changes a
+    // slot — and returning the earlier snapshot would hand Claude one option
+    // while the row, and the message the operator is looking at, record another.
+    const world = makeWorld();
+    world.db.program(SELECT_ANSWERS, { rows: [{ answers: [0, 0], expired_at: null }] });
+    world.db.program("SET answered_at = NOW()", { rows: [{ answers: [0, 1] }] });
+
+    expect(
+      await waitForAnswers({ ...world.deps, now: () => 0, sleep: async () => {} }, "abcd1234", 2, 600_000),
+    ).toEqual([0, 1]);
+  });
+
+  test("a claim that commits something unusable falls back to the terminal", async () => {
+    // Handing Claude "(no answer)" for a slot is worse than asking again.
+    const world = makeWorld();
+    world.db.program(SELECT_ANSWERS, { rows: [{ answers: [0], expired_at: null }] });
+    world.db.program("SET answered_at = NOW()", { rows: [{ answers: ["nonsense"] }] });
+
+    expect(
+      await waitForAnswers({ ...world.deps, now: () => 0, sleep: async () => {} }, "abcd1234", 1, 600_000),
+    ).toBeNull();
   });
 });
