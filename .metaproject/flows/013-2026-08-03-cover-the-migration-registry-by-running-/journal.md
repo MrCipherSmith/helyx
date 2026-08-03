@@ -51,3 +51,31 @@ Project coverage 25.72% → **44.21%**. Tests 875 → 884.
 - 2026-08-03T19:14:04.378Z - ac-confirmed: AC8: second run applies nothing; deleting the last version row brings up exactly that migration
 - 2026-08-03T19:14:04.600Z - ac-confirmed: AC9: registry tests run without a database; the rest use describe.skip
 - 2026-08-03T19:14:04.802Z - ac-confirmed: AC10: typecheck clean, lint 0 errors, 884 tests, dupes 1, memory/db.ts 96.81% lines
+
+## Review: two majors, and a discovery while fixing one
+
+**The test was not a gate.** The build workflow built the code and never ran a
+single test — so a broken schema, or any failing unit test, merged green. Added
+a `test` job with a Postgres service, running typecheck, lint, the unit suite
+and the duplicate check. Without a database the migration suite skips, and a
+skipped gate is not a gate, which is why the service is there rather than
+`continue-on-error`.
+
+**The schema assertions checked fourteen tables of twenty-eight**, and no
+indexes or constraints — so a migration could run and leave the schema wrong
+while the test passed. Now: the full table set, the indexes the sweeping loops
+depend on, primary keys, and the `ON DELETE SET NULL` on `projects.provider_id`
+— deliberate, because removing a provider must fall those projects back to the
+default rather than delete them, and a migration that made it `CASCADE` would
+delete a project.
+
+### The discovery
+
+Writing out the full list surfaced schema drift. The developer's database
+carries six tables no migration creates: `agent_definitions`, `agent_events`,
+`agent_instances`, `agent_tasks`, `model_profiles`, `model_providers`.
+
+Nothing in the codebase references any of them, so they are leftovers from
+removed features rather than a missing migration — a fresh install simply would
+not have them. Recorded in the test rather than left for whoever deploys next to
+find.

@@ -62,32 +62,76 @@ describeWithDb("applied to an empty database", () => {
     expect(run.applied).toHaveLength(MIGRATIONS.length);
   });
 
-  test("the tables the application queries are there", async () => {
-    // Named explicitly rather than counted. A count passes while the one table
-    // some query needs is missing; this list is the schema the rest of the
-    // codebase assumes.
+  test("every table the migrations create is there, all of them", async () => {
+    // The full set, not a sample. A partial list passes while the one table
+    // some query needs is missing — which is the failure mode this whole test
+    // exists to catch, and the first version of it checked fourteen of these.
+    // Exactly what a fresh run builds — and writing it out found something:
+    // the developer's own database carries six more (agent_definitions,
+    // agent_events, agent_instances, agent_tasks, model_profiles,
+    // model_providers) that no migration creates. Nothing in the codebase
+    // references any of them, so they are leftovers from removed features
+    // rather than a missing migration. A fresh install would not have them,
+    // and now that is written down instead of being discovered by whoever
+    // deploys next.
     const expected = [
-      "sessions",
-      "messages",
-      "message_queue",
-      "chat_sessions",
-      "projects",
-      "permission_requests",
-      "question_requests",
-      "supervisor_incidents",
-      "active_status_messages",
-      "admin_commands",
-      "agent_created_skills",
-      "providers",
-      "orchestration_runs",
-      "schema_versions",
-    ];
+      "active_status_messages", "admin_commands", "agent_created_skills", "api_request_stats",
+      "aux_llm_invocations", "bot_config", "chat_sessions", "curator_pending_actions",
+      "curator_runs", "matrix_violations", "memories", "message_queue",
+      "messages", "orchestration_runs", "pending_replies", "permission_requests",
+      "poll_sessions", "process_health", "projects", "providers",
+      "question_requests", "request_logs", "schema_versions", "sessions",
+      "skill_preprocess_log", "supervisor_incidents", "transcription_stats",
+      "voice_status_messages",
+        ];
 
     const rows = await db.sql<{ table_name: string }[]>`
       SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'
     `;
-    const present = new Set(rows.map((r) => r.table_name));
-    for (const table of expected) expect([table, present.has(table)]).toEqual([table, true]);
+    const present = rows.map((r) => r.table_name).sort();
+    expect(present).toEqual([...expected].sort());
+  });
+
+  test("the indexes the hot queries depend on exist", async () => {
+    // An index is not decoration here. The supervisor sweeps the queue every
+    // minute and the status loop reads active_status_messages on a timer; a
+    // migration that dropped one of these leaves everything correct and slow,
+    // which is the kind of regression nothing notices until production.
+    const rows = await db.sql<{ indexname: string }[]>`
+      SELECT indexname FROM pg_indexes WHERE schemaname = 'public'
+    `;
+    const names = new Set(rows.map((r) => r.indexname));
+    for (const index of [
+      "idx_question_requests_open",
+      "idx_permission_requests_archived",
+      "idx_permissions_status",
+    ]) {
+      expect([index, names.has(index)]).toEqual([index, true]);
+    }
+  });
+
+  test("the constraints that make the queries correct are there", async () => {
+    // Primary keys and the foreign key that decides what happens to a project
+    // when its provider is deleted. ON DELETE SET NULL is deliberate: removing
+    // a provider falls those projects back to the default rather than deleting
+    // them, and a migration that made it CASCADE would delete a project.
+    const pks = await db.sql<{ table_name: string }[]>`
+      SELECT tc.table_name
+      FROM information_schema.table_constraints tc
+      WHERE tc.table_schema = 'public' AND tc.constraint_type = 'PRIMARY KEY'
+    `;
+    const withPk = new Set(pks.map((r) => r.table_name));
+    for (const table of ["sessions", "projects", "providers", "question_requests", "schema_versions"]) {
+      expect([table, withPk.has(table)]).toEqual([table, true]);
+    }
+
+    const [fk] = await db.sql<{ delete_rule: string }[]>`
+      SELECT rc.delete_rule
+      FROM information_schema.referential_constraints rc
+      JOIN information_schema.key_column_usage kcu ON kcu.constraint_name = rc.constraint_name
+      WHERE kcu.table_name = 'projects' AND kcu.column_name = 'provider_id'
+    `;
+    expect(fk?.delete_rule).toBe("SET NULL");
   });
 
   test("columns added by later migrations survived to the end", async () => {

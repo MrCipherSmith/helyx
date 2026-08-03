@@ -7,6 +7,58 @@ on:
     branches: [main]
 
 jobs:
+  # The test suite was not a gate at all: this workflow built the code and never
+  # ran a single test, so a broken schema or a failing unit test merged green.
+  # Postgres is a service here because the migration suite applies every
+  # migration to a real database — without one it skips, and a skipped gate is
+  # not a gate.
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: helyx
+          POSTGRES_PASSWORD: helyx
+          POSTGRES_DB: helyx
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U helyx -d helyx"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://helyx:helyx@127.0.0.1:5432/helyx
+      TELEGRAM_BOT_TOKEN: ci-placeholder-token
+      ALLOWED_USERS: "1"
+      NODE_ENV: test
+      ANTHROPIC_API_KEY: ci-placeholder-key
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Unit tests
+        run: bun test tests/unit/
+
+      - name: No duplicated definitions beyond the documented one
+        run: bun run dupes
+
   build:
     runs-on: ubuntu-latest
     steps:
