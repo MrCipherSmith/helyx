@@ -101,3 +101,9 @@ sites, but they are changes and are recorded as such rather than described as a
 move.
 
 Tests 930 → 935.
+
+The second round found the same finding still open: the helper programmed `""`,
+which `FakeFetch` matches against every URL — so the fixture's unmatched-request
+guard could never fire and a call to the wrong endpoint would have been answered
+rather than reported. It requires the endpoint now, and the guard was checked by
+pointing it at a wrong one: nine of sixteen tests fail.

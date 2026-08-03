@@ -27,9 +27,12 @@ afterEach(() => restore());
  * sent — but the response is built here, because a streamed body arriving in
  * chosen pieces is the whole point and the fixture only serves whole values.
  */
-function serveBytes(chunks: Uint8Array[], status = 200) {
+function serveBytes(endpoint: string, chunks: Uint8Array[], status = 200) {
   const recorder = http.fetch;
-  http.program("", { json: {} });
+  // The expected endpoint, not a wildcard. Programming "" matches every URL,
+  // which defeats the fixture's unmatched-request guard: a call to somewhere
+  // nobody described would be answered rather than reported.
+  http.program(endpoint, { json: {} });
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     // Not swallowed: the recorder is what lets a test see the request, and an
     // error from it means the request went somewhere nobody described.
@@ -46,14 +49,17 @@ function serveBytes(chunks: Uint8Array[], status = 200) {
   }) as typeof globalThis.fetch;
 }
 
-function serve(_match: string, chunks: string[], status = 200) {
+const OPENAI_ENDPOINT = "/chat/completions";
+const OLLAMA_ENDPOINT = "/api/chat";
+
+function serve(endpoint: string, chunks: string[], status = 200) {
   const encoder = new TextEncoder();
-  serveBytes(chunks.map((c) => encoder.encode(c)), status);
+  serveBytes(endpoint, chunks.map((c) => encoder.encode(c)), status);
 }
 
-function serveJson(value: unknown, status = 200) {
+function serveJson(endpoint: string, value: unknown, status = 200) {
   const encoder = new TextEncoder();
-  serveBytes([encoder.encode(JSON.stringify(value))], status);
+  serveBytes(endpoint, [encoder.encode(JSON.stringify(value))], status);
 }
 
 /** Where `needle` starts inside `haystack`, or -1. */
@@ -73,7 +79,7 @@ async function collect(stream: AsyncGenerator<string>): Promise<string> {
 
 describe("the OpenAI-compatible stream", () => {
   test("assembles the deltas into an answer", async () => {
-    serve("", [
+    serve(OPENAI_ENDPOINT, [
       'data: {"choices":[{"delta":{"role":"assistant"}}]}\n',
       'data: {"choices":[{"delta":{"content":"Hello"}}]}\n',
       'data: {"choices":[{"delta":{"content":", world"}}]}\n',
@@ -98,7 +104,7 @@ describe("the OpenAI-compatible stream", () => {
   test("an event split across two reads is not lost", async () => {
     // The reason the loop carries a buffer at all. A body arrives in whatever
     // pieces the socket produced, and almost none of them end on a newline.
-    serve("", [
+    serve(OPENAI_ENDPOINT, [
       'data: {"choices":[{"delta":{"con',
       'tent":"split"}}]}\n',
       "data: [DONE]\n",
@@ -122,7 +128,7 @@ describe("the OpenAI-compatible stream", () => {
     expect(at).toBeGreaterThan(0);
 
     // One byte into the three-byte character.
-    serveBytes([encoded.slice(0, at + 1), encoded.slice(at + 1)]);
+    serveBytes(OPENAI_ENDPOINT, [encoded.slice(0, at + 1), encoded.slice(at + 1)]);
 
     expect(await collect(openaiStream([{ role: "user", content: "hi" }], ""))).toBe("жду…");
   });
@@ -131,7 +137,7 @@ describe("the OpenAI-compatible stream", () => {
     // SSE is specified with CRLF and several providers send it. Left in place,
     // the terminator arrives as "[DONE]\r" — not the terminator — and the
     // reader carries on emitting whatever follows.
-    serve("", [
+    serve(OPENAI_ENDPOINT, [
       'data: {"choices":[{"delta":{"content":"answer"}}]}\r\n',
       "data: [DONE]\r\n",
       'data: {"choices":[{"delta":{"content":"trailing"}}]}\r\n',
@@ -141,7 +147,7 @@ describe("the OpenAI-compatible stream", () => {
   });
 
   test("everything after [DONE] is ignored", async () => {
-    serve("", [
+    serve(OPENAI_ENDPOINT, [
       'data: {"choices":[{"delta":{"content":"answer"}}]}\n',
       "data: [DONE]\n",
       'data: {"choices":[{"delta":{"content":"trailing"}}]}\n',
@@ -153,7 +159,7 @@ describe("the OpenAI-compatible stream", () => {
   test("keep-alives and a malformed chunk cost nothing", async () => {
     // A provider sends comments to hold the connection open, and a truncated
     // chunk should cost that chunk rather than the answer.
-    serve("", [
+    serve(OPENAI_ENDPOINT, [
       ": keep-alive\n",
       "\n",
       "data: {oops\n",
@@ -167,7 +173,7 @@ describe("the OpenAI-compatible stream", () => {
   test("usage from the final chunk reaches the caller's object", async () => {
     // Streaming providers report tokens once, at the end. The counts are what
     // the cost tracking is built on.
-    serve("", [
+    serve(OPENAI_ENDPOINT, [
       'data: {"choices":[{"delta":{"content":"hi"}}]}\n',
       'data: {"usage":{"prompt_tokens":11,"completion_tokens":22},"choices":[]}\n',
       "data: [DONE]\n",
@@ -185,7 +191,7 @@ describe("the OpenAI-compatible stream", () => {
     // exponential backoff — correct in production, fourteen seconds in a test.
     // The retry policy itself is covered in utils/llm-stream.ts, where it costs
     // nothing.
-    serve("", ["bad key"], 401);
+    serve(OPENAI_ENDPOINT, ["bad key"], 401);
 
     await expect(collect(openaiStream([{ role: "user", content: "hi" }], ""))).rejects.toThrow(/API failed: 401/);
   });
@@ -193,7 +199,7 @@ describe("the OpenAI-compatible stream", () => {
 
 describe("the Ollama stream", () => {
   test("assembles newline-delimited chunks", async () => {
-    serve("", [
+    serve(OLLAMA_ENDPOINT, [
       '{"message":{"content":"Hel"}}\n',
       '{"message":{"content":"lo"}}\n',
       '{"done":true}\n',
@@ -211,7 +217,7 @@ describe("the Ollama stream", () => {
   test("a reasoning block is hidden even when its tag is split across reads", async () => {
     // The case the whole filter exists for, exercised through the real loop
     // rather than by handing the filter the pieces directly.
-    serve("", [
+    serve(OLLAMA_ENDPOINT, [
       '{"message":{"content":"<"}}\n{"message":{"content":"th"}}\n',
       '{"message":{"content":"ink>working</think>"}}\n',
       '{"message":{"content":"answer"}}\n',
@@ -223,13 +229,13 @@ describe("the Ollama stream", () => {
   test("a short reply that never resolves the ambiguity is still delivered", async () => {
     // "ok" is a complete answer. Dropping it because it might have become
     // "<think>" is how the previous implementation lost whole responses.
-    serve("", ['{"message":{"content":"<t"}}\n']);
+    serve(OLLAMA_ENDPOINT, ['{"message":{"content":"<t"}}\n']);
 
     expect(await collect(ollamaStream([{ role: "user", content: "hi" }], ""))).toBe("<t");
   });
 
   test("a refusal from Ollama is an error", async () => {
-    serve("", ["model not loaded"], 503);
+    serve(OLLAMA_ENDPOINT, ["model not loaded"], 503);
 
     await expect(collect(ollamaStream([{ role: "user", content: "hi" }], ""))).rejects.toThrow(/Ollama chat failed: 503/);
   });
@@ -237,7 +243,7 @@ describe("the Ollama stream", () => {
 
 describe("the non-streaming path", () => {
   test("returns the content with its token counts, reasoning removed", async () => {
-    serveJson({
+    serveJson(OPENAI_ENDPOINT, {
       choices: [{ message: { content: "<think>weighing</think>The answer" } }],
       usage: { prompt_tokens: 5, completion_tokens: 7 },
     });
