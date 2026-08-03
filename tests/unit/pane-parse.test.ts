@@ -29,8 +29,36 @@ describe("parseLine — the ANSI drift", () => {
     expect(parseLine(`${ESC}[?25l● Bash(npm test)`)).toBe("● $ npm test");
   });
 
-  test("clean input is unaffected — stripping is free in that direction", () => {
-    expect(parseLine("· Brewing…")).toBe("⏳ Brewing…");
+  test.each([
+    ["· Brewing…", "⏳ Brewing…"],
+    ["● Read(a.ts)", "● Read: a.ts"],
+    ["⎿ Grep(x)", "  └ Grep: x"],
+    ["+2 more tool uses", "  +2 more tool uses"],
+    ["Running 3 agents…", "🔄 Running 3 agents…"],
+  ])("clean input is unaffected: %s", (line, expected) => {
+    // Stripping is free in that direction, across every branch and not just
+    // the spinner the first version of this test covered.
+    expect(parseLine(line)).toBe(expected);
+  });
+
+  test("a tab after the marker still parses", () => {
+    // `stripAnsi` removes C0 controls, and a tab is one — so `●\tBash(ls)`
+    // arrived as `●Bash(ls)` and stopped matching `^●\s+`, a line the pane
+    // copy used to parse. Tabs become spaces before stripping.
+    //
+    // Parity with both originals is impossible: the pane copy did not strip
+    // and matched it, the file copy stripped and did not. The tie goes to
+    // parsing the line.
+    expect(parseLine("●\tBash(ls)")).toBe("● $ ls");
+    expect(parseLine("·\tBrewing…")).toBe("⏳ Brewing…");
+    expect(parseLine("⎿\tGrep(x)")).toBe("  └ Grep: x");
+  });
+
+  test("other control characters are still removed", () => {
+    // Only the tab is whitespace the patterns depend on; a stray CR or NUL is
+    // noise and goes.
+    expect(parseLine("● Bash(ls)\r")).toBe("● $ ls");
+    expect(parseLine("●\x00 Bash(ls)")).toBe("● $ ls");
   });
 });
 
@@ -150,6 +178,14 @@ describe("parseStatus", () => {
     // The prompt is where the previous command ended; anything above it
     // belongs to a turn that is over.
     const pane = ["● Read(old.ts)", "❯ previous command", "● Bash(npm test)"].join("\n");
+    expect(parseStatus(pane)).toBe("● $ npm test");
+  });
+
+  test("an ANSI-decorated prompt still ends the scan", () => {
+    // The boundary check strips before testing for ❯, so a coloured prompt is
+    // still a prompt. Without that, a decorated prompt would be invisible and
+    // the scan would keep walking into the previous turn.
+    const pane = ["● Read(old.ts)", `${ESC}[32m❯${ESC}[0m previous`, "● Bash(npm test)"].join("\n");
     expect(parseStatus(pane)).toBe("● $ npm test");
   });
 

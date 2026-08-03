@@ -56,7 +56,15 @@ export interface ParseOptions {
  * nothing, so unifying is free in one direction and a fix in the other.
  */
 export function parseLine(line: string, options: ParseOptions = {}): string | null {
-  const trimmed = stripAnsi(line).trim();
+  // Tabs become spaces before stripping. `stripAnsi` removes C0 controls, and
+  // a tab is one — so `●\tBash(ls)` arrived as `●Bash(ls)` and stopped
+  // matching `^●\s+`, a line the pane copy used to parse.
+  //
+  // Parity with both originals is impossible here: the pane copy did not strip
+  // and matched it, the file copy stripped and did not. The tie goes to
+  // parsing the line, since a tab after the bullet is ordinary output and
+  // dropping the line loses real activity.
+  const trimmed = stripAnsi(line.replace(/\t/g, " ")).trim();
   if (!trimmed || isChrome(trimmed, options.extraChrome)) return null;
 
   // Spinner: · Brewing… (10s · ↓ 386 tokens · thinking)

@@ -43,3 +43,32 @@ text, and an explicit skip is the cheapest way to hold that.
 Found by writing the test and watching it fail against my own expectation. I
 had asserted the wrapper would appear in the output without the parameter; it
 does not.
+
+## Codex review, 2026-08-03
+
+Verdict: REQUEST CHANGES. One major, verified before accepting.
+
+`stripAnsi` removes C0 control characters, and a tab is one. So `●\tBash(ls)`
+— a bullet separated from its call by a tab — arrived at the patterns as
+`●Bash(ls)` and stopped matching `^●\s+`. Confirmed by running it: the pane
+copy returned `● $ ls`, the merged parser returned `null`.
+
+**Parity with both originals is impossible here**, which is worth stating
+rather than papering over. The pane copy did not strip and matched the line;
+the file copy stripped and did not. Unifying has to pick one. The tie goes to
+parsing it: a tab after the bullet is ordinary output, and dropping the line
+loses real activity for no gain.
+
+Fixed by turning tabs into spaces before stripping — the patterns depend on
+`\s`, and only the tab among the C0 set is whitespace they care about. Other
+control characters still go, and a test says so.
+
+T6 re-run after the fix: all three captured panes still byte-identical.
+
+Codex also noted a stale `SKIP_PATTERNS` reference in a comment in
+`status-format.test.ts` (the list is `CHROME_PATTERNS` now) — fixed — and that
+the "clean input is unaffected" test covered only the spinner. It now covers
+every branch, plus the ANSI-decorated prompt boundary in `parseStatus`, which
+nothing had exercised.
+
+688 -> 695 tests.
