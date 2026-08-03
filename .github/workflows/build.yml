@@ -7,6 +7,87 @@ on:
     branches: [main]
 
 jobs:
+  # The test suite was not a gate at all: this workflow built the code and never
+  # ran a single test, so a broken schema or a failing unit test merged green.
+  # Postgres is a service here because the migration suite applies every
+  # migration to a real database — without one it skips, and a skipped gate is
+  # not a gate.
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # pgvector, not plain postgres: the schema creates a vector column for
+        # memory search, and a migration that cannot CREATE EXTENSION vector
+        # fails the whole run. The first CI attempt used postgres:16-alpine and
+        # died on exactly that.
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: helyx
+          POSTGRES_PASSWORD: helyx
+          POSTGRES_DB: helyx
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U helyx -d helyx"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://helyx:helyx@127.0.0.1:5432/helyx
+      TELEGRAM_BOT_TOKEN: ci-placeholder-token
+      ALLOWED_USERS: "1"
+      NODE_ENV: test
+      ANTHROPIC_API_KEY: ci-placeholder-key
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Typecheck covers the whole tree, and three parts of it carry their own
+      # manifests: the e2e specs, the dashboard, and the web app. On a
+      # developer's machine they are already installed; on a clean checkout
+      # they resolve to nothing and the typecheck fails on missing modules.
+      # That is what this job found on its first two runs, and it is exactly
+      # the difference between a working machine and a clean one that only CI
+      # ever notices.
+      - name: Install e2e dependencies
+        run: cd tests && npm ci
+
+      - name: Install dashboard dependencies
+        run: cd dashboard && bun install --frozen-lockfile
+
+      - name: Install web app dependencies
+        run: cd dashboard/webapp && bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      # Scoped to the server tree.
+      #
+      # Installing the dashboard's dependencies makes eslint's React rules
+      # resolvable for the first time, and they immediately report eight real
+      # errors in four web-app components — setState called synchronously inside
+      # an effect, and an impure call during render. They predate this change
+      # and none of them is in code this programme has touched; fixing them
+      # blind, in components that cannot be exercised from here, would be a
+      # worse decision than naming them. Tracked as its own piece of work.
+      - name: Lint
+        run: bunx eslint . --ignore-pattern "dashboard/**"
+
+      - name: Unit tests
+        run: bun test tests/unit/
+
+      - name: No duplicated definitions beyond the documented one
+        run: bun run dupes
+
   build:
     runs-on: ubuntu-latest
     steps:

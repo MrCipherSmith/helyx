@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "query": "flow-012 questions telegram setupAskQuestionHook Claude settings hook cli",
-  "generatedAt": "2026-08-03T15:52:15.674Z",
+  "query": "migration database sqlite test fixture",
+  "generatedAt": "2026-08-03T19:15:11.295Z",
   "results": [
     {
       "entry": {
@@ -34,15 +34,15 @@
         "supersedes": null,
         "supersededBy": null
       },
-      "score": 1.832,
+      "score": 2.098,
       "components": {
-        "relevance": 0.333,
-        "recency": 0.997,
+        "relevance": 0.6,
+        "recency": 0.996,
         "confidence": 1,
         "status": 1,
         "scope": 0
       },
-      "reason": "matched 3/9 terms; status accepted; confidence high"
+      "reason": "matched 3/5 terms; status accepted; confidence high"
     },
     {
       "entry": {
@@ -75,15 +75,15 @@
         "supersedes": null,
         "supersededBy": null
       },
-      "score": 1.607,
+      "score": 1.696,
       "components": {
-        "relevance": 0.111,
-        "recency": 0.992,
+        "relevance": 0.2,
+        "recency": 0.991,
         "confidence": 1,
         "status": 1,
         "scope": 0
       },
-      "reason": "matched 1/9 terms; status accepted; confidence high"
+      "reason": "matched 1/5 terms; status accepted; confidence high"
     },
     {
       "entry": {
@@ -116,15 +116,15 @@
         "supersedes": null,
         "supersededBy": null
       },
-      "score": 1.607,
+      "score": 1.696,
       "components": {
-        "relevance": 0.111,
-        "recency": 0.992,
+        "relevance": 0.2,
+        "recency": 0.991,
         "confidence": 1,
         "status": 1,
         "scope": 0
       },
-      "reason": "matched 1/9 terms; status accepted; confidence high"
+      "reason": "matched 1/5 terms; status accepted; confidence high"
     }
   ]
 }

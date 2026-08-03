@@ -1,0 +1,344 @@
+{
+  "schemaVersion": 2,
+  "id": "013",
+  "slug": "cover-the-migration-registry-by-running-",
+  "title": "cover the migration registry by running it in-process against a real database",
+  "status": "done",
+  "createdAt": "2026-08-03T19:13:21.356Z",
+  "updatedAt": "2026-08-03T19:32:11.984Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:dfe0ec9e9947d4c6c5d24770910bfab453b2779236fb6fdc24972761583df0ba",
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-03T19:14:02.907Z",
+      "note": "runMigrations(db = sql); migrate() calls it with the module connection, CLI and entrypoint unchanged"
+    },
+    "AC2": {
+      "at": "2026-08-03T19:14:03.118Z",
+      "note": "MigrationRun returns from, to and applied names"
+    },
+    "AC3": {
+      "at": "2026-08-03T19:14:03.332Z",
+      "note": "provisionTestDatabase({migrate:false}) skips the subprocess"
+    },
+    "AC4": {
+      "at": "2026-08-03T19:14:03.529Z",
+      "note": "all of them run, from nothing — from 0, to the top version, applied length equals the registry"
+    },
+    "AC5": {
+      "at": "2026-08-03T19:30:43.477Z",
+      "note": "the full 28-table set asserted, not a sample; writing it out surfaced six drifted tables no migration creates"
+    },
+    "AC6": {
+      "at": "2026-08-03T19:14:03.963Z",
+      "note": "archived_at, status, tmux_target, provider_id, model, forwarded_at, expired_at asserted at the end"
+    },
+    "AC7": {
+      "at": "2026-08-03T19:14:04.166Z",
+      "note": "schema_versions versions and names match the registry exactly"
+    },
+    "AC8": {
+      "at": "2026-08-03T19:14:04.378Z",
+      "note": "second run applies nothing; deleting the last version row brings up exactly that migration"
+    },
+    "AC9": {
+      "at": "2026-08-03T19:14:04.599Z",
+      "note": "registry tests run without a database; the rest use describe.skip"
+    },
+    "AC10": {
+      "at": "2026-08-03T19:30:43.561Z",
+      "note": "typecheck clean, lint 0 errors on the server tree, 886 tests, dupes 1, memory/db.ts 96.81% lines; CI now runs the suite against pgvector"
+    }
+  },
+  "pr": {
+    "url": "https://github.com/MrCipherSmith/helyx/pull/49"
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T5",
+      "title": "runMigrations takes its connection; migrate() wraps it",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T6",
+      "title": "provisionTestDatabase --no-migrate",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T7",
+      "title": "migrations-apply.test.ts: empty database, every migration, real schema assertions",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T8",
+      "title": "full gate and coverage record",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-03T19:13:21.356Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-03T19:13:21.578Z",
+      "event": "task-added",
+      "detail": "T5: runMigrations takes its connection; migrate() wraps it"
+    },
+    {
+      "at": "2026-08-03T19:13:21.769Z",
+      "event": "task-added",
+      "detail": "T6: provisionTestDatabase --no-migrate"
+    },
+    {
+      "at": "2026-08-03T19:13:21.955Z",
+      "event": "task-added",
+      "detail": "T7: migrations-apply.test.ts: empty database, every migration, real schema assertions"
+    },
+    {
+      "at": "2026-08-03T19:13:22.143Z",
+      "event": "task-added",
+      "detail": "T8: full gate and coverage record"
+    },
+    {
+      "at": "2026-08-03T19:13:22.353Z",
+      "event": "frozen",
+      "detail": "10 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-03T19:13:22.558Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-03T19:14:01.192Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-03T19:14:01.417Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-03T19:14:01.636Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-03T19:14:01.849Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-03T19:14:02.058Z",
+      "event": "task-done",
+      "detail": "T5: runMigrations takes its connection; migrate() wraps it"
+    },
+    {
+      "at": "2026-08-03T19:14:02.294Z",
+      "event": "task-done",
+      "detail": "T6: provisionTestDatabase --no-migrate"
+    },
+    {
+      "at": "2026-08-03T19:14:02.491Z",
+      "event": "task-done",
+      "detail": "T7: migrations-apply.test.ts: empty database, every migration, real schema assertions"
+    },
+    {
+      "at": "2026-08-03T19:14:02.683Z",
+      "event": "task-done",
+      "detail": "T8: full gate and coverage record"
+    },
+    {
+      "at": "2026-08-03T19:14:02.907Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: runMigrations(db = sql); migrate() calls it with the module connection, CLI and entrypoint unchanged"
+    },
+    {
+      "at": "2026-08-03T19:14:03.118Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: MigrationRun returns from, to and applied names"
+    },
+    {
+      "at": "2026-08-03T19:14:03.332Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: provisionTestDatabase({migrate:false}) skips the subprocess"
+    },
+    {
+      "at": "2026-08-03T19:14:03.529Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: all of them run, from nothing — from 0, to the top version, applied length equals the registry"
+    },
+    {
+      "at": "2026-08-03T19:14:03.725Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: fourteen tables asserted by name, each reported individually so the failure names the missing one"
+    },
+    {
+      "at": "2026-08-03T19:14:03.963Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: archived_at, status, tmux_target, provider_id, model, forwarded_at, expired_at asserted at the end"
+    },
+    {
+      "at": "2026-08-03T19:14:04.166Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: schema_versions versions and names match the registry exactly"
+    },
+    {
+      "at": "2026-08-03T19:14:04.378Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: second run applies nothing; deleting the last version row brings up exactly that migration"
+    },
+    {
+      "at": "2026-08-03T19:14:04.600Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: registry tests run without a database; the rest use describe.skip"
+    },
+    {
+      "at": "2026-08-03T19:14:04.802Z",
+      "event": "ac-confirmed",
+      "detail": "AC10: typecheck clean, lint 0 errors, 884 tests, dupes 1, memory/db.ts 96.81% lines"
+    },
+    {
+      "at": "2026-08-03T19:30:43.478Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: the full 28-table set asserted, not a sample; writing it out surfaced six drifted tables no migration creates"
+    },
+    {
+      "at": "2026-08-03T19:30:43.561Z",
+      "event": "ac-confirmed",
+      "detail": "AC10: typecheck clean, lint 0 errors on the server tree, 886 tests, dupes 1, memory/db.ts 96.81% lines; CI now runs the suite against pgvector"
+    },
+    {
+      "at": "2026-08-03T19:30:45.329Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/49"
+    },
+    {
+      "at": "2026-08-03T19:30:45.415Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-03T19:30:47.094Z",
+      "event": "completion-failed",
+      "detail": "pull-request: PR checks not green"
+    },
+    {
+      "at": "2026-08-03T19:32:10.164Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/49 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-08-03T19:32:10.249Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-03T19:32:11.984Z",
+      "event": "done",
+      "detail": "all gates passed"
+    }
+  ]
+}
