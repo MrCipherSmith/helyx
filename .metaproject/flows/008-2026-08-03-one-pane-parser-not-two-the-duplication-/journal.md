@@ -94,3 +94,17 @@ consumer when a shared definition changes" looks like when the language can
 help.
 
 T6 re-run again: all three panes byte-identical.
+- 2026-08-03T08:47:03.892Z - task-done: T4: Self-review and prepare draft PR
+- 2026-08-03T08:47:05.867Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/44
+- 2026-08-03T08:47:05.953Z - ac-confirmed: AC1: utils/pane-parse.ts exports CHROME_PATTERNS, isChrome, parseLine, parseStatus (plus SCRIPT_WRAPPER_PATTERNS and MAX_STATUS_LINES); both monitors import from it
+- 2026-08-03T08:47:06.042Z - ac-confirmed: AC2: neither monitor contains any of the twelve patterns, isChrome, parseLine or parseStatus — verified by grep and by the dupes report
+- 2026-08-03T08:47:06.130Z - ac-confirmed: AC3: T5: dupes 19 -> 5, zero shared by the two monitors; the drop is 14, above the twelve required
+- 2026-08-03T08:47:06.216Z - ac-confirmed: AC4: parseLine strips on every path; tests cover an escape before the marker for spinner and tool lines, and a coloured prompt still ending the parseStatus scan
+- 2026-08-03T08:47:06.299Z - ac-confirmed: AC5: extraChrome is a parameter; /^\x1b/ is gone and a test asserts CHROME_PATTERNS carries no escape-anchored pattern and that a stripped line still parses
+- 2026-08-03T08:47:27.668Z - ac-confirmed: AC6: a test asserts no earlier branch can match a line starting Error:, so the two copies' opposite orderings agreed
+- 2026-08-03T08:47:27.758Z - ac-confirmed: AC7: every parseLine branch covered: spinner, all tool shapes, self-tool suppression, truncation, sub-operations, agent tree, +N more, Running N agents, Tip, fall-through, tabs
+- 2026-08-03T08:47:27.849Z - ac-confirmed: AC8: parseStatus tested for bottom-up order, the 12-line cap, keeping the newest when capping, the prompt boundary, an ANSI-decorated prompt, and null on nothing
+- 2026-08-03T08:47:27.939Z - ac-confirmed: AC9: T6: three panes captured from live helyx/keryx/goodai sessions, parsed before and after — byte-identical, re-run after each of the three review fixes
+- 2026-08-03T08:47:28.027Z - ac-confirmed: AC10: bun run typecheck clean; bun run lint 0 errors (208 warnings, pre-existing); 696 unit tests pass, none skipped or removed
+- 2026-08-03T08:47:28.116Z - completing
+- 2026-08-03T08:47:29.762Z - done: all gates passed
