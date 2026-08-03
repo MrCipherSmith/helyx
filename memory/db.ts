@@ -817,6 +817,37 @@ const migrations: Migration[] = [
       await tx`ALTER TABLE projects ADD COLUMN IF NOT EXISTS model TEXT`;
     },
   },
+  {
+    version: 47,
+    name: "question_requests — Claude's own questions, answered from Telegram",
+    up: async (tx) => {
+      // AskUserQuestion draws its own selector in the terminal and is not a
+      // permission request, so nothing carried it to Telegram. A session sat
+      // blocked for 21 minutes on a question nobody could see.
+      //
+      // One row per tool call, not per question: the tool is answered as a
+      // whole, and answers are kept as an array indexed by question.
+      await tx`
+        CREATE TABLE IF NOT EXISTS question_requests (
+          id           TEXT PRIMARY KEY,
+          session_id   BIGINT,
+          chat_id      TEXT NOT NULL,
+          project_path TEXT,
+          questions    JSONB NOT NULL,
+          answers      JSONB NOT NULL DEFAULT '[]'::jsonb,
+          message_ids  JSONB NOT NULL DEFAULT '[]'::jsonb,
+          answered_at  TIMESTAMPTZ,
+          created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `;
+      // The supervisor reads this to tell "waiting for the operator" from
+      // "hung", which is the false alarm that made the outage visible.
+      await tx`
+        CREATE INDEX IF NOT EXISTS idx_question_requests_open
+          ON question_requests(session_id) WHERE answered_at IS NULL
+      `;
+    },
+  },
 ];
 
 // --- Public API ---

@@ -39,6 +39,7 @@ import {
   hasProblems,
   type ContainerHealth,
 } from "../utils/supervisor-status.ts";
+import { hasOpenQuestion } from "../services/ask-question.ts";
 import {
   sessionProblemKey,
   projectFromSessionProblemKey,
@@ -328,6 +329,15 @@ export async function checkHungSessions(sql: postgres.Sql, runShell?: RunShell):
       const project = String(row.project ?? "unknown");
       const sessionId = Number(row.session_id);
       const projectId = Number(row.project_id);
+      // A session that asked the operator something is waiting, not hung. Its
+      // status line stops updating either way, and before this the two were
+      // indistinguishable: the outage that produced this check showed up as
+      // two "session is not responding" alerts and no sign of the question.
+      if (await hasOpenQuestion(sql, Number(row.session_id))) {
+        console.log(`[supervisor] ${row.project}: waiting on a question, not hung`);
+        continue;
+      }
+
       const elapsedMs = Date.now() - new Date(row.updated_at).getTime();
       const elapsedSec = Math.round(elapsedMs / 1000);
       const dedupKey = sessionProblemKey(project);

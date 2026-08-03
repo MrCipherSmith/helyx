@@ -1,0 +1,281 @@
+{
+  "schemaVersion": 2,
+  "id": "012",
+  "slug": "deliver-claude-s-questions-to-telegram-a",
+  "title": "deliver Claude's questions to Telegram and answer them from there",
+  "status": "in-progress",
+  "createdAt": "2026-08-03T14:55:20.973Z",
+  "updatedAt": "2026-08-03T15:02:58.575Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:32a62fa2c14f00d5118dede348c3c9a74f15a4efde6fd10f39d790eed67b5afe",
+  "acConfirmed": {},
+  "pr": {
+    "url": null
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T5",
+      "title": "utils/ask-question.ts — parse, build, encode, format",
+      "kind": "implement",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T6",
+      "title": "services/ask-question.ts — resolve, register, wait, record",
+      "kind": "implement",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T7",
+      "title": "migration 47 — question_requests",
+      "kind": "implement",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T8",
+      "title": "endpoint /api/hooks/ask-question, blocking",
+      "kind": "implement",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T9",
+      "title": "callback handler for ask:",
+      "kind": "implement",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T10",
+      "title": "scripts/ask-question-hook.sh",
+      "kind": "implement",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T11",
+      "title": "supervisor: waiting on a question is not hung",
+      "kind": "implement",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T12",
+      "title": "cli.ts: register the PreToolUse hook",
+      "kind": "implement",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T13",
+      "title": "tests for all of the above",
+      "kind": "implement",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T14",
+      "title": "full gate",
+      "kind": "implement",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-03T14:55:20.973Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-03T15:02:57.594Z",
+      "event": "task-added",
+      "detail": "T5: utils/ask-question.ts — parse, build, encode, format"
+    },
+    {
+      "at": "2026-08-03T15:02:57.687Z",
+      "event": "task-added",
+      "detail": "T6: services/ask-question.ts — resolve, register, wait, record"
+    },
+    {
+      "at": "2026-08-03T15:02:57.779Z",
+      "event": "task-added",
+      "detail": "T7: migration 47 — question_requests"
+    },
+    {
+      "at": "2026-08-03T15:02:57.864Z",
+      "event": "task-added",
+      "detail": "T8: endpoint /api/hooks/ask-question, blocking"
+    },
+    {
+      "at": "2026-08-03T15:02:57.954Z",
+      "event": "task-added",
+      "detail": "T9: callback handler for ask:"
+    },
+    {
+      "at": "2026-08-03T15:02:58.041Z",
+      "event": "task-added",
+      "detail": "T10: scripts/ask-question-hook.sh"
+    },
+    {
+      "at": "2026-08-03T15:02:58.131Z",
+      "event": "task-added",
+      "detail": "T11: supervisor: waiting on a question is not hung"
+    },
+    {
+      "at": "2026-08-03T15:02:58.219Z",
+      "event": "task-added",
+      "detail": "T12: cli.ts: register the PreToolUse hook"
+    },
+    {
+      "at": "2026-08-03T15:02:58.308Z",
+      "event": "task-added",
+      "detail": "T13: tests for all of the above"
+    },
+    {
+      "at": "2026-08-03T15:02:58.398Z",
+      "event": "task-added",
+      "detail": "T14: full gate"
+    },
+    {
+      "at": "2026-08-03T15:02:58.488Z",
+      "event": "frozen",
+      "detail": "15 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-03T15:02:58.575Z",
+      "event": "started"
+    }
+  ]
+}

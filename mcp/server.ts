@@ -12,6 +12,9 @@ import { getForumChatId } from "../bot/forum-cache.ts";
 import { escapeHtml } from "../bot/format.ts";
 import { CONFIG } from "../config.ts";
 import { sql } from "../memory/db.ts";
+import { parseHookInput, denyWithAnswers, ANSWER_TIMEOUT_MS } from "../utils/ask-question.ts";
+import { registerQuestions, waitForAnswers } from "../services/ask-question.ts";
+import { sendTelegramMessage, editTelegramMessage } from "../channel/telegram.ts";
 import { summarizeOnDisconnect, summarizeWork, extractFactsFromTranscript } from "../memory/summarizer.ts";
 import { verifyJwt } from "../dashboard/auth.ts";
 import { IncomingMessage, ServerResponse } from "http";
@@ -442,6 +445,77 @@ export function startMcpHttpServer(bot: Bot | null): ReturnType<typeof createSer
         console.error("[api] summarize-work error:", err.message);
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: false, error: err.message }));
+      }
+      return;
+    }
+
+    // POST /api/hooks/ask-question — Claude Code PreToolUse hook for
+    // AskUserQuestion. Unlike the other hook endpoints this one *blocks*: it
+    // holds the request open until the operator taps an answer in Telegram, and
+    // the hook's own 600s timeout is what bounds it. Answering here is the
+    // whole point — a fire-and-forget notification would tell the operator
+    // about a question they still could not answer.
+    if (url.pathname === "/api/hooks/ask-question" && req.method === "POST") {
+      if (!isLocalRequest(req)) {
+        res.writeHead(403, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Forbidden" }));
+        return;
+      }
+      try {
+        const body = await new Promise<string>((resolve, reject) => {
+          let data = "";
+          req.on("data", (chunk) => (data += chunk));
+          req.on("end", () => resolve(data));
+          req.on("error", reject);
+        });
+
+        const input = parseHookInput(body);
+        // Not a question this path can carry. Silence lets the terminal have
+        // it, which is exactly the behaviour that existed before.
+        if (!input) {
+          res.writeHead(204);
+          res.end();
+          return;
+        }
+
+        const deps = {
+          sql,
+          sendMessage: async (chatId: string, text: string, extra: Record<string, unknown>) => {
+            const r = await sendTelegramMessage(CONFIG.TELEGRAM_BOT_TOKEN, chatId, text, extra);
+            return { ok: r.ok, messageId: r.messageId };
+          },
+          editMessage: async (chatId: string, messageId: number, text: string) => {
+            await editTelegramMessage(CONFIG.TELEGRAM_BOT_TOKEN, chatId, messageId, text, { parse_mode: "HTML" });
+          },
+        };
+
+        const registered = await registerQuestions(deps, input);
+        if (!registered) {
+          res.writeHead(204);
+          res.end();
+          return;
+        }
+
+        const answers = await waitForAnswers(deps, registered.requestId, input.questions.length, ANSWER_TIMEOUT_MS);
+        if (!answers) {
+          // Timed out, or withdrawn. The hook prints nothing, Claude Code
+          // proceeds as if it had not run, and the selector appears in the
+          // terminal as it always did.
+          res.writeHead(204);
+          res.end();
+          return;
+        }
+
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(denyWithAnswers(input.questions, answers));
+      } catch (err: any) {
+        console.error("[hooks/ask-question] error:", err?.message);
+        if (!res.headersSent) {
+          // 204 rather than 500: whatever went wrong here, the terminal must
+          // still get its selector.
+          res.writeHead(204);
+          res.end();
+        }
       }
       return;
     }
