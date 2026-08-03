@@ -12,6 +12,25 @@ import { getForumChatId } from "../bot/forum-cache.ts";
 import { escapeHtml } from "../bot/format.ts";
 import { CONFIG } from "../config.ts";
 import { sql } from "../memory/db.ts";
+import { parseHookInput, denyWithAnswers, ANSWER_TIMEOUT_MS } from "../utils/ask-question.ts";
+
+import { readOrCreateToken, tokenMatches } from "../utils/hook-token.ts";
+import { existsSync, readFileSync, writeFileSync } from "fs";
+
+/** The shared secret, read once — created on first start by whichever side runs first. */
+const HOOK_TOKEN = readOrCreateToken(CONFIG.HOST_CLAUDE_CONFIG, {
+  exists: existsSync,
+  read: (path) => readFileSync(path, "utf-8"),
+  write: (path, contents) => writeFileSync(path, contents, { mode: 0o600 }),
+});
+
+/** A question payload is small; anything larger is not one. */
+const MAX_ASK_QUESTION_BODY = 256 * 1024;
+/** Each waiter holds a socket and polls once a second. */
+const MAX_ASK_QUESTION_WAITERS = 16;
+let askQuestionWaiters = 0;
+import { runQuestionExchange } from "../services/ask-question.ts";
+import { sendTelegramMessage, editTelegramMessage } from "../channel/telegram.ts";
 import { summarizeOnDisconnect, summarizeWork, extractFactsFromTranscript } from "../memory/summarizer.ts";
 import { verifyJwt } from "../dashboard/auth.ts";
 import { IncomingMessage, ServerResponse } from "http";
@@ -442,6 +461,118 @@ export function startMcpHttpServer(bot: Bot | null): ReturnType<typeof createSer
         console.error("[api] summarize-work error:", err.message);
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: false, error: err.message }));
+      }
+      return;
+    }
+
+    // POST /api/hooks/ask-question — Claude Code PreToolUse hook for
+    // AskUserQuestion. Unlike the other hook endpoints this one *blocks*: it
+    // holds the request open until the operator taps an answer in Telegram, and
+    // the hook's own 600s timeout is what bounds it. Answering here is the
+    // whole point — a fire-and-forget notification would tell the operator
+    // about a question they still could not answer.
+    if (url.pathname === "/api/hooks/ask-question" && req.method === "POST") {
+      // Stricter than the other hook endpoints on purpose. This one sends a
+      // message to the operator's chat and then holds a connection open for ten
+      // minutes, while isLocalRequest trusts every container on the Docker
+      // network. The shared secret narrows that to whoever can read
+      // ~/.claude/helyx-hook-token.
+      if (!isLocalRequest(req) || !tokenMatches(HOOK_TOKEN, req.headers["x-helyx-hook-token"])) {
+        res.writeHead(403, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Forbidden" }));
+        return;
+      }
+      try {
+        if (askQuestionWaiters >= MAX_ASK_QUESTION_WAITERS) {
+          // Each waiter holds a socket and polls Postgres once a second. A cap
+          // keeps a misbehaving caller from turning that into a load source;
+          // 204 means the terminal simply keeps the question.
+          console.warn("[hooks/ask-question] too many waiters, declining");
+          res.writeHead(204);
+          res.end();
+          return;
+        }
+
+        const body = await new Promise<string>((resolve, reject) => {
+          let data = "";
+          req.on("data", (chunk) => {
+            data += chunk;
+            // Bounded: the payload is a handful of questions, and an unbounded
+            // read on a local socket is a way to spend all the memory there is.
+            if (data.length > MAX_ASK_QUESTION_BODY) {
+              reject(new Error("payload too large"));
+              req.destroy();
+            }
+          });
+          req.on("end", () => resolve(data));
+          req.on("error", reject);
+        });
+
+        const input = parseHookInput(body);
+        // Not a question this path can carry. Silence lets the terminal have
+        // it, which is exactly the behaviour that existed before.
+        if (!input) {
+          res.writeHead(204);
+          res.end();
+          return;
+        }
+
+        const deps = {
+          sql,
+          sendMessage: async (chatId: string, text: string, extra: Record<string, unknown>) => {
+            const r = await sendTelegramMessage(CONFIG.TELEGRAM_BOT_TOKEN, chatId, text, extra);
+            return { ok: r.ok, messageId: r.messageId };
+          },
+          editMessage: async (chatId: string, messageId: number, text: string) => {
+            await editTelegramMessage(CONFIG.TELEGRAM_BOT_TOKEN, chatId, messageId, text, { parse_mode: "HTML" });
+          },
+        };
+
+        // Capacity is taken, and the socket watched, before any work is done.
+        //
+        // Registration sends Telegram messages, so doing it first meant every
+        // concurrent caller passed the capacity check and sent its prompts
+        // before any of them counted — and a client that hung up during those
+        // sends was never noticed, leaving the request to wait out its full ten
+        // minutes for nobody. The ordering itself lives in the service, where
+        // it can be tested.
+        askQuestionWaiters++;
+        let clientGone = false;
+        const onGone = () => { clientGone = true; };
+        req.on("aborted", onGone);
+        res.on("close", onGone);
+
+        let answers: (number | null)[] | null = null;
+        try {
+          answers = await runQuestionExchange(deps, input, {
+            timeoutMs: ANSWER_TIMEOUT_MS,
+            clientGone: () => clientGone,
+          });
+        } finally {
+          askQuestionWaiters--;
+          req.off("aborted", onGone);
+          res.off("close", onGone);
+        }
+
+        if (!answers) {
+          // Timed out, or withdrawn. The hook prints nothing, Claude Code
+          // proceeds as if it had not run, and the selector appears in the
+          // terminal as it always did.
+          res.writeHead(204);
+          res.end();
+          return;
+        }
+
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(denyWithAnswers(input.questions, answers));
+      } catch (err: unknown) {
+        console.error("[hooks/ask-question] error:", err instanceof Error ? err.message : String(err));
+        if (!res.headersSent) {
+          // 204 rather than 500: whatever went wrong here, the terminal must
+          // still get its selector.
+          res.writeHead(204);
+          res.end();
+        }
       }
       return;
     }

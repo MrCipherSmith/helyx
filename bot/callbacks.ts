@@ -10,12 +10,16 @@ import { doSwitch } from "./commands/session.ts";
 import { permissionService } from "../services/permission-service.ts";
 import { approveSkill, rejectSkill } from "../utils/skill-distiller.ts";
 import { logger } from "../logger.ts";
+import { recordAnswer } from "../services/ask-question.ts";
+import { sendTelegramMessage, editTelegramMessage } from "../channel/telegram.ts";
+import { CONFIG } from "../config.ts";
 
 export async function handleCallbackQuery(ctx: Context): Promise<void> {
   const data = ctx.callbackQuery?.data;
   if (!data) return;
 
   if (data.startsWith("perm:")) return handlePermissionCallback(ctx);
+  if (data.startsWith("ask:")) return handleQuestionCallback(ctx, data);
   if (data.startsWith("switch:")) return handleSwitchCallback(ctx);
   // FR-C-10: agent-created skill approval. `skill:save:` / `skill:reject:` /
   // `skill:editname:` use the same `skill:` prefix as the existing tool
@@ -340,5 +344,50 @@ async function handlePermissionCallback(ctx: Context): Promise<void> {
     }
   } else {
     await ctx.answerCallbackQuery({ text: "Request expired" }).catch(() => {});
+  }
+}
+
+
+/**
+ * One tapped answer to a question Claude asked.
+ *
+ * Every outcome is answered out loud. A button that does nothing and says
+ * nothing is the same experience as the bug this whole path exists to fix: the
+ * operator taps, sees no change, and has no way to tell whether it worked.
+ */
+async function handleQuestionCallback(ctx: Context, data: string): Promise<void> {
+  const outcome = await recordAnswer(
+    {
+      sql,
+      sendMessage: async (chatId, text, extra) => {
+        const res = await sendTelegramMessage(CONFIG.TELEGRAM_BOT_TOKEN, chatId, text, extra);
+        return { ok: res.ok, messageId: res.messageId };
+      },
+      editMessage: async (chatId, messageId, text) => {
+        await editTelegramMessage(CONFIG.TELEGRAM_BOT_TOKEN, chatId, messageId, text, { parse_mode: "HTML" });
+      },
+    },
+    data,
+  ).catch((err) => {
+    logger.error({ err, data }, "question callback failed");
+    return { status: "unknown" as const };
+  });
+
+  switch (outcome.status) {
+    case "recorded":
+      await ctx.answerCallbackQuery({
+        text: outcome.complete ? `✅ ${outcome.label} — отправляю` : `✅ ${outcome.label}`,
+      }).catch(() => {});
+      return;
+    case "already-answered":
+      await ctx.answerCallbackQuery({ text: "Уже отвечено" }).catch(() => {});
+      return;
+    case "unknown":
+      // The session it belonged to is gone, or the wait timed out and the
+      // question went back to the terminal.
+      await ctx.answerCallbackQuery({ text: "Вопрос больше не ждёт ответа" }).catch(() => {});
+      return;
+    default:
+      await ctx.answerCallbackQuery({ text: "Не удалось записать ответ" }).catch(() => {});
   }
 }

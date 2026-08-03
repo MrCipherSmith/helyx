@@ -1,0 +1,501 @@
+{
+  "schemaVersion": 2,
+  "id": "012",
+  "slug": "deliver-claude-s-questions-to-telegram-a",
+  "title": "deliver Claude's questions to Telegram and answer them from there",
+  "status": "in-progress",
+  "createdAt": "2026-08-03T14:55:20.973Z",
+  "updatedAt": "2026-08-03T15:55:46.188Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:32a62fa2c14f00d5118dede348c3c9a74f15a4efde6fd10f39d790eed67b5afe",
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-03T15:55:44.906Z",
+      "note": "parseHookInput declines the whole call unless every question is representable; another tool, unparseable input, no options, multiSelect and blank all return null"
+    },
+    "AC2": {
+      "at": "2026-08-03T15:55:44.995Z",
+      "note": "questionMessage carries question, numbered options and descriptions; everything escaped, asserted with < and &"
+    },
+    "AC3": {
+      "at": "2026-08-03T15:55:45.088Z",
+      "note": "callback round-trip, foreign payloads rejected, payload within 64 bytes"
+    },
+    "AC4": {
+      "at": "2026-08-03T15:55:45.175Z",
+      "note": "denyWithAnswers is a PreToolUse deny naming each question with its chosen option"
+    },
+    "AC5": {
+      "at": "2026-08-03T15:55:45.266Z",
+      "note": "allAnswered requires every slot; option index zero counts"
+    },
+    "AC6": {
+      "at": "2026-08-03T15:55:45.352Z",
+      "note": "resolveTarget queries by project_path not by Claude's session id; forum topic preferred; half a forum config is not a target"
+    },
+    "AC7": {
+      "at": "2026-08-03T15:55:45.440Z",
+      "note": "insert-before-send asserted by observing the insert count from inside the first send"
+    },
+    "AC8": {
+      "at": "2026-08-03T15:55:45.529Z",
+      "note": "nowhere to send and any failed send both withdraw the request"
+    },
+    "AC9": {
+      "at": "2026-08-03T15:55:45.619Z",
+      "note": "jsonb_set with the guard in the statement; message edited; distinct outcome for not-ours/unknown/already-answered/expired/out-of-range"
+    },
+    "AC10": {
+      "at": "2026-08-03T15:55:45.707Z",
+      "note": "answers returned from the winning claim; null on timeout, vanished row, external expiry, non-index values, incomplete commit"
+    },
+    "AC11": {
+      "at": "2026-08-03T15:55:45.802Z",
+      "note": "local-only plus shared secret; body bounded; waiters capped; disconnect cancels; 204 on every terminal-keeps-it path"
+    },
+    "AC12": {
+      "at": "2026-08-03T15:55:45.903Z",
+      "note": "hook exits 0 silently without a token, without a bot, on timeout and on a non-question payload"
+    },
+    "AC13": {
+      "at": "2026-08-03T15:55:46.002Z",
+      "note": "hasOpenQuestion excludes answered and expired and is bounded to 15 minutes; checkHungSessions skips such a session"
+    },
+    "AC14": {
+      "at": "2026-08-03T15:55:46.095Z",
+      "note": "setupAskQuestionHook registers with matcher AskUserQuestion and timeout 600, is idempotent, prunes stale entries before the ephemeral gate"
+    },
+    "AC15": {
+      "at": "2026-08-03T15:55:46.188Z",
+      "note": "typecheck clean, lint 0 errors, 875 tests pass, dupes 1"
+    }
+  },
+  "pr": {
+    "url": null
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T5",
+      "title": "utils/ask-question.ts — parse, build, encode, format",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T6",
+      "title": "services/ask-question.ts — resolve, register, wait, record",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T7",
+      "title": "migration 47 — question_requests",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T8",
+      "title": "endpoint /api/hooks/ask-question, blocking",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T9",
+      "title": "callback handler for ask:",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T10",
+      "title": "scripts/ask-question-hook.sh",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T11",
+      "title": "supervisor: waiting on a question is not hung",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T12",
+      "title": "cli.ts: register the PreToolUse hook",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T13",
+      "title": "tests for all of the above",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T14",
+      "title": "full gate",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-03T14:55:20.973Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-03T15:02:57.594Z",
+      "event": "task-added",
+      "detail": "T5: utils/ask-question.ts — parse, build, encode, format"
+    },
+    {
+      "at": "2026-08-03T15:02:57.687Z",
+      "event": "task-added",
+      "detail": "T6: services/ask-question.ts — resolve, register, wait, record"
+    },
+    {
+      "at": "2026-08-03T15:02:57.779Z",
+      "event": "task-added",
+      "detail": "T7: migration 47 — question_requests"
+    },
+    {
+      "at": "2026-08-03T15:02:57.864Z",
+      "event": "task-added",
+      "detail": "T8: endpoint /api/hooks/ask-question, blocking"
+    },
+    {
+      "at": "2026-08-03T15:02:57.954Z",
+      "event": "task-added",
+      "detail": "T9: callback handler for ask:"
+    },
+    {
+      "at": "2026-08-03T15:02:58.041Z",
+      "event": "task-added",
+      "detail": "T10: scripts/ask-question-hook.sh"
+    },
+    {
+      "at": "2026-08-03T15:02:58.131Z",
+      "event": "task-added",
+      "detail": "T11: supervisor: waiting on a question is not hung"
+    },
+    {
+      "at": "2026-08-03T15:02:58.219Z",
+      "event": "task-added",
+      "detail": "T12: cli.ts: register the PreToolUse hook"
+    },
+    {
+      "at": "2026-08-03T15:02:58.308Z",
+      "event": "task-added",
+      "detail": "T13: tests for all of the above"
+    },
+    {
+      "at": "2026-08-03T15:02:58.398Z",
+      "event": "task-added",
+      "detail": "T14: full gate"
+    },
+    {
+      "at": "2026-08-03T15:02:58.488Z",
+      "event": "frozen",
+      "detail": "15 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-03T15:02:58.575Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-03T15:55:43.677Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-03T15:55:43.767Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-03T15:55:43.856Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-03T15:55:43.944Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-03T15:55:44.030Z",
+      "event": "task-done",
+      "detail": "T5: utils/ask-question.ts — parse, build, encode, format"
+    },
+    {
+      "at": "2026-08-03T15:55:44.116Z",
+      "event": "task-done",
+      "detail": "T6: services/ask-question.ts — resolve, register, wait, record"
+    },
+    {
+      "at": "2026-08-03T15:55:44.202Z",
+      "event": "task-done",
+      "detail": "T7: migration 47 — question_requests"
+    },
+    {
+      "at": "2026-08-03T15:55:44.291Z",
+      "event": "task-done",
+      "detail": "T8: endpoint /api/hooks/ask-question, blocking"
+    },
+    {
+      "at": "2026-08-03T15:55:44.378Z",
+      "event": "task-done",
+      "detail": "T9: callback handler for ask:"
+    },
+    {
+      "at": "2026-08-03T15:55:44.467Z",
+      "event": "task-done",
+      "detail": "T10: scripts/ask-question-hook.sh"
+    },
+    {
+      "at": "2026-08-03T15:55:44.553Z",
+      "event": "task-done",
+      "detail": "T11: supervisor: waiting on a question is not hung"
+    },
+    {
+      "at": "2026-08-03T15:55:44.640Z",
+      "event": "task-done",
+      "detail": "T12: cli.ts: register the PreToolUse hook"
+    },
+    {
+      "at": "2026-08-03T15:55:44.726Z",
+      "event": "task-done",
+      "detail": "T13: tests for all of the above"
+    },
+    {
+      "at": "2026-08-03T15:55:44.815Z",
+      "event": "task-done",
+      "detail": "T14: full gate"
+    },
+    {
+      "at": "2026-08-03T15:55:44.906Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: parseHookInput declines the whole call unless every question is representable; another tool, unparseable input, no options, multiSelect and blank all return null"
+    },
+    {
+      "at": "2026-08-03T15:55:44.995Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: questionMessage carries question, numbered options and descriptions; everything escaped, asserted with < and &"
+    },
+    {
+      "at": "2026-08-03T15:55:45.088Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: callback round-trip, foreign payloads rejected, payload within 64 bytes"
+    },
+    {
+      "at": "2026-08-03T15:55:45.175Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: denyWithAnswers is a PreToolUse deny naming each question with its chosen option"
+    },
+    {
+      "at": "2026-08-03T15:55:45.266Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: allAnswered requires every slot; option index zero counts"
+    },
+    {
+      "at": "2026-08-03T15:55:45.352Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: resolveTarget queries by project_path not by Claude's session id; forum topic preferred; half a forum config is not a target"
+    },
+    {
+      "at": "2026-08-03T15:55:45.440Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: insert-before-send asserted by observing the insert count from inside the first send"
+    },
+    {
+      "at": "2026-08-03T15:55:45.529Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: nowhere to send and any failed send both withdraw the request"
+    },
+    {
+      "at": "2026-08-03T15:55:45.619Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: jsonb_set with the guard in the statement; message edited; distinct outcome for not-ours/unknown/already-answered/expired/out-of-range"
+    },
+    {
+      "at": "2026-08-03T15:55:45.707Z",
+      "event": "ac-confirmed",
+      "detail": "AC10: answers returned from the winning claim; null on timeout, vanished row, external expiry, non-index values, incomplete commit"
+    },
+    {
+      "at": "2026-08-03T15:55:45.802Z",
+      "event": "ac-confirmed",
+      "detail": "AC11: local-only plus shared secret; body bounded; waiters capped; disconnect cancels; 204 on every terminal-keeps-it path"
+    },
+    {
+      "at": "2026-08-03T15:55:45.903Z",
+      "event": "ac-confirmed",
+      "detail": "AC12: hook exits 0 silently without a token, without a bot, on timeout and on a non-question payload"
+    },
+    {
+      "at": "2026-08-03T15:55:46.002Z",
+      "event": "ac-confirmed",
+      "detail": "AC13: hasOpenQuestion excludes answered and expired and is bounded to 15 minutes; checkHungSessions skips such a session"
+    },
+    {
+      "at": "2026-08-03T15:55:46.095Z",
+      "event": "ac-confirmed",
+      "detail": "AC14: setupAskQuestionHook registers with matcher AskUserQuestion and timeout 600, is idempotent, prunes stale entries before the ephemeral gate"
+    },
+    {
+      "at": "2026-08-03T15:55:46.188Z",
+      "event": "ac-confirmed",
+      "detail": "AC15: typecheck clean, lint 0 errors, 875 tests pass, dupes 1"
+    }
+  ]
+}

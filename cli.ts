@@ -809,6 +809,19 @@ Write as self-contained sentences. Good: \`"Port 3847 serves both MCP and dashbo
     done();
   }
 
+  // Register PreToolUse hook so Claude's own questions reach Telegram
+  step("Registering AskUserQuestion hook for questions in Telegram");
+  const askHookResult = await setupAskQuestionHook();
+  if (askHookResult.status === "skipped") {
+    console.log(` ${c.yellow(`skipped (${askHookResult.reason})`)}`);
+  } else if (askHookResult.status === "pruned") {
+    console.log(` ${c.yellow(`removed ${askHookResult.removed} stale entr${askHookResult.removed === 1 ? "y" : "ies"}`)}`);
+  } else if (askHookResult.status === "present") {
+    console.log(` ${c.yellow("already registered")}`);
+  } else {
+    done();
+  }
+
   // Install systemd service (helyx@USER) for auto-start on boot
   step("Installing systemd service");
   const svcUser = process.env.USER ?? basename(homedir());
@@ -876,6 +889,7 @@ Write as self-contained sentences. Good: \`"Port 3847 serves both MCP and dashbo
 // --- Stop hook registration ---
 
 const HOOK_SCRIPT_REL = "scripts/save-session-facts.sh";
+const ASK_HOOK_SCRIPT_REL = "scripts/ask-question-hook.sh";
 
 /**
  * The Stop hook is registered globally in ~/.claude/settings.json with an absolute
@@ -941,6 +955,90 @@ async function setupStopHook(): Promise<StopHookResult> {
 
   settings.hooks.Stop.push({
     hooks: [{ type: "command", command: hookCmd, timeout: 60 }],
+  });
+
+  writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf-8");
+  return { status: "registered" };
+}
+
+/**
+ * Register the PreToolUse hook that carries Claude's questions to Telegram.
+ *
+ * Separate from the Stop hook because it hangs off a different event and
+ * carries a matcher: only `AskUserQuestion` should reach it, and a hook that
+ * ran on every tool call would add a subprocess to each one.
+ *
+ * The same ephemeral-checkout rule applies — a registration written from a
+ * throwaway worktree outlives it and leaves the user's global settings
+ * pointing at a script that is gone.
+ */
+interface HookCommand {
+  type?: string;
+  command?: string;
+  timeout?: number;
+}
+
+interface HookEntry {
+  matcher?: string;
+  hooks?: HookCommand[];
+}
+
+/** Only the part of the settings file this function reads or writes. */
+interface ClaudeSettings {
+  hooks?: { PreToolUse?: HookEntry[] } & Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+async function setupAskQuestionHook(): Promise<StopHookResult> {
+  const settingsPath = `${process.env.HOME}/.claude/settings.json`;
+  const hookCmd = `${BOT_DIR}/${ASK_HOOK_SCRIPT_REL}`;
+
+  let settings: ClaudeSettings = {};
+  if (existsSync(settingsPath)) {
+    try {
+      settings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+    } catch { /* start fresh */ }
+  }
+
+  if (!settings.hooks) settings.hooks = {};
+  if (!Array.isArray(settings.hooks.PreToolUse)) settings.hooks.PreToolUse = [];
+
+  // Registrations left by a checkout that has moved or been reinstalled point
+  // at a script that is gone. Left in place they accumulate, and every one of
+  // them runs on an AskUserQuestion call: several prompts in Telegram for one
+  // question, and several waiters for one answer.
+  const removed = pruneStaleStopHooks(settings.hooks.PreToolUse, `/${ASK_HOOK_SCRIPT_REL}`, existsSync);
+
+  // Pruning happens before this gate, deliberately, exactly as the Stop hook
+  // does it. A throwaway checkout must not register — but it is often the very
+  // run that notices a dead entry, and returning first would leave the user's
+  // settings pointing at scripts that are gone.
+  const ephemeral = isEphemeralCheckout();
+  if (ephemeral) {
+    if (removed > 0) {
+      writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf-8");
+      return { status: "pruned", removed };
+    }
+    return { status: "skipped", reason: ephemeral };
+  }
+
+  const alreadyAdded = settings.hooks.PreToolUse.some((entry) =>
+    Array.isArray(entry.hooks) && entry.hooks.some((h) => h.command === hookCmd)
+  );
+  if (alreadyAdded) {
+    if (removed > 0) {
+      writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf-8");
+      return { status: "pruned", removed };
+    }
+    return { status: "present" };
+  }
+
+  settings.hooks.PreToolUse.push({
+    matcher: "AskUserQuestion",
+    // 600s is the PreToolUse default and the same wait the permission flow
+    // allows. Past it Claude Code proceeds as though no hook had run, so the
+    // terminal selector still appears.
+    hooks: [{ type: "command", command: hookCmd, timeout: 600 }],
   });
 
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf-8");
