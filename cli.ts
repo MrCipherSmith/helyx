@@ -814,6 +814,8 @@ Write as self-contained sentences. Good: \`"Port 3847 serves both MCP and dashbo
   const askHookResult = await setupAskQuestionHook();
   if (askHookResult.status === "skipped") {
     console.log(` ${c.yellow(`skipped (${askHookResult.reason})`)}`);
+  } else if (askHookResult.status === "pruned") {
+    console.log(` ${c.yellow(`removed ${askHookResult.removed} stale entr${askHookResult.removed === 1 ? "y" : "ies"}`)}`);
   } else if (askHookResult.status === "present") {
     console.log(` ${c.yellow("already registered")}`);
   } else {
@@ -987,10 +989,22 @@ async function setupAskQuestionHook(): Promise<StopHookResult> {
   if (!settings.hooks) settings.hooks = {};
   if (!Array.isArray(settings.hooks.PreToolUse)) settings.hooks.PreToolUse = [];
 
+  // Registrations left by a checkout that has moved or been reinstalled point
+  // at a script that is gone. Left in place they accumulate, and every one of
+  // them runs on an AskUserQuestion call: several prompts in Telegram for one
+  // question, and several waiters for one answer.
+  const removed = pruneStaleStopHooks(settings.hooks.PreToolUse, `/${ASK_HOOK_SCRIPT_REL}`, existsSync);
+
   const alreadyAdded = settings.hooks.PreToolUse.some((entry: any) =>
     Array.isArray(entry.hooks) && entry.hooks.some((h: any) => h.command === hookCmd)
   );
-  if (alreadyAdded) return { status: "present" };
+  if (alreadyAdded) {
+    if (removed > 0) {
+      writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf-8");
+      return { status: "pruned", removed };
+    }
+    return { status: "present" };
+  }
 
   settings.hooks.PreToolUse.push({
     matcher: "AskUserQuestion",

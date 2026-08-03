@@ -82,19 +82,49 @@ describe("parseHookInput", () => {
     expect(parseHookInput(raw)).toBeNull();
   });
 
-  test("blank questions and unlabelled options are dropped", () => {
+  test("one unrepresentable question declines the whole call", () => {
+    // The trap this avoids: carrying the two questions that fit and dropping
+    // the third looks accommodating, but an answer to the two denies the whole
+    // tool call — and the third is then never put to anyone at all.
     const raw = JSON.stringify({
       tool_name: "AskUserQuestion",
       tool_input: {
         questions: [
-          { question: "   ", options: [{ label: "a" }] },
-          { question: "real?", options: [{ label: "yes" }, { label: "" }, { description: "no label" }] },
+          { question: "answerable?", options: [{ label: "yes" }] },
+          { question: "free text?", options: [] },
         ],
       },
     });
-    const input = parseHookInput(raw)!;
-    expect(input.questions).toHaveLength(1);
-    expect(input.questions[0]!.options.map((o) => o.label)).toEqual(["yes"]);
+    expect(parseHookInput(raw)).toBeNull();
+  });
+
+  test("multiSelect declines the whole call", () => {
+    // One tap is one answer. A multi-select needs a way to say "these two, and
+    // now I am done", which this path does not have.
+    const raw = JSON.stringify({
+      tool_name: "AskUserQuestion",
+      tool_input: {
+        questions: [
+          { question: "single?", options: [{ label: "a" }] },
+          { question: "several?", multiSelect: true, options: [{ label: "b" }, { label: "c" }] },
+        ],
+      },
+    });
+    expect(parseHookInput(raw)).toBeNull();
+  });
+
+  test("a blank question, or an option without a label, declines the call", () => {
+    for (const questions of [
+      [{ question: "   ", options: [{ label: "a" }] }],
+      [{ question: "real?", options: [{ label: "yes" }, { label: "" }] }],
+      [{ question: "real?", options: [{ label: "yes" }, { description: "no label" }] }],
+    ]) {
+      expect(parseHookInput(JSON.stringify({ tool_name: "AskUserQuestion", tool_input: { questions } }))).toBeNull();
+    }
+  });
+
+  test("an empty question list is nothing to ask", () => {
+    expect(parseHookInput(JSON.stringify({ tool_name: "AskUserQuestion", tool_input: { questions: [] } }))).toBeNull();
   });
 
   test("several questions are all carried — the tool is one call", () => {

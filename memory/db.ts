@@ -837,6 +837,10 @@ const migrations: Migration[] = [
           answers      JSONB NOT NULL DEFAULT '[]'::jsonb,
           message_ids  JSONB NOT NULL DEFAULT '[]'::jsonb,
           answered_at  TIMESTAMPTZ,
+          -- Set when the hook stops waiting. A tap after this must be refused:
+          -- the waiter is gone, Claude is back at its terminal selector, and
+          -- telling the operator "sending" would be a lie.
+          expired_at   TIMESTAMPTZ,
           created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `;
@@ -844,7 +848,7 @@ const migrations: Migration[] = [
       // "hung", which is the false alarm that made the outage visible.
       await tx`
         CREATE INDEX IF NOT EXISTS idx_question_requests_open
-          ON question_requests(session_id) WHERE answered_at IS NULL
+          ON question_requests(session_id) WHERE answered_at IS NULL AND expired_at IS NULL
       `;
     },
   },

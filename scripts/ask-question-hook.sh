@@ -24,8 +24,18 @@ PORT="${PORT:-3847}"
 
 # --max-time is a little under the hook's own 600s budget, so the curl gives up
 # first and this script still exits cleanly.
+# Shared secret with the bot. It lives in ~/.claude, the one directory the host
+# and the container both already see; the bot creates it on first start. Without
+# it the endpoint refuses, and this hook stays silent — which is the same as not
+# being installed, so the terminal is unaffected.
+TOKEN_FILE="${HOME}/.claude/helyx-hook-token"
+[ -r "$TOKEN_FILE" ] || exit 0
+TOKEN=$(tr -d '\n' < "$TOKEN_FILE")
+[ -z "$TOKEN" ] && exit 0
+
 RESPONSE=$(printf '%s' "$INPUT" | curl -sf -X POST "http://localhost:${PORT}/api/hooks/ask-question" \
   -H "Content-Type: application/json" \
+  -H "x-helyx-hook-token: ${TOKEN}" \
   --data-binary @- \
   --max-time 590 2>/dev/null) || exit 0
 

@@ -115,9 +115,13 @@ export async function registerQuestions(
     messageIds.push(sent.ok ? sent.messageId : null);
   }
 
-  // Nothing reached the operator, so nothing can be answered. Say so rather
-  // than waiting ten minutes for a reply to a message that was never sent.
-  if (messageIds.every((id) => id === null)) {
+  // Every question must have reached the operator, not merely one of them.
+  //
+  // A partial delivery is the worst outcome available: the questions that did
+  // arrive can be answered, the one that did not never can, the call therefore
+  // never completes — and meanwhile the terminal selector is suppressed for the
+  // full ten minutes. Withdrawing puts it straight back.
+  if (messageIds.some((id) => id === null)) {
     await deps.sql`DELETE FROM question_requests WHERE id = ${requestId}`.catch(() => {});
     return null;
   }
@@ -150,11 +154,14 @@ export async function waitForAnswers(
 
   while (now() < deadline) {
     const rows = await deps.sql`
-      SELECT answers FROM question_requests WHERE id = ${requestId}
+      SELECT answers, expired_at FROM question_requests WHERE id = ${requestId}
     `.catch(() => [] as Record<string, unknown>[]);
 
     // The row is gone — cancelled, or cleaned up. Nothing left to wait for.
     if (rows.length === 0) return null;
+
+    // Cancelled from elsewhere — the client hung up and the endpoint expired it.
+    if (rows[0]!.expired_at) return null;
 
     const answers = normaliseAnswers(rows[0]!.answers, expected);
     if (allAnswered(answers, expected)) {
@@ -165,6 +172,13 @@ export async function waitForAnswers(
     }
     await sleep(pollMs);
   }
+
+  // Stopped waiting. Marked rather than left open, so the buttons still on the
+  // operator's screen say so when tapped instead of pretending to send.
+  await deps.sql`
+    UPDATE question_requests SET expired_at = NOW()
+     WHERE id = ${requestId} AND answered_at IS NULL AND expired_at IS NULL
+  `.catch(() => {});
   return null;
 }
 
@@ -184,6 +198,7 @@ export type AnswerOutcome =
   | { status: "not-ours" }
   | { status: "unknown" }
   | { status: "already-answered" }
+  | { status: "expired" }
   | { status: "out-of-range" };
 
 /**
@@ -198,25 +213,39 @@ export async function recordAnswer(deps: AskDeps, callbackData: string): Promise
   if (!parsed) return { status: "not-ours" };
 
   const rows = await deps.sql`
-    SELECT questions, answers, answered_at, chat_id, message_ids
+    SELECT questions, answers, answered_at, expired_at, chat_id, message_ids
     FROM question_requests WHERE id = ${parsed.requestId}
   `.catch(() => [] as Record<string, unknown>[]);
   const row = rows[0];
   if (!row) return { status: "unknown" };
   if (row.answered_at) return { status: "already-answered" };
+  // The hook gave up and the question went back to the terminal. Recording an
+  // answer now would tell the operator it had been sent when nothing is
+  // listening.
+  if (row.expired_at) return { status: "expired" };
 
   const questions = (Array.isArray(row.questions) ? row.questions : []) as Question[];
   const question = questions[parsed.questionIndex];
   const option = question?.options?.[parsed.optionIndex];
   if (!option) return { status: "out-of-range" };
 
-  const answers = normaliseAnswers(row.answers, questions.length);
-  answers[parsed.questionIndex] = parsed.optionIndex;
+  // One slot, set in place by the database.
+  //
+  // Reading the array here and writing it back would lose an answer whenever
+  // two buttons are tapped at once — each write carrying the other's slot as it
+  // was before. `jsonb_set` touches only the element being answered, so the two
+  // updates compose however they interleave. The row is read back rather than
+  // recomputed locally, for the same reason.
+  const updated = await deps.sql`
+    UPDATE question_requests
+       SET answers = jsonb_set(answers, ARRAY[${String(parsed.questionIndex)}], ${parsed.optionIndex}::text::jsonb, true)
+     WHERE id = ${parsed.requestId} AND answered_at IS NULL AND expired_at IS NULL
+    RETURNING answers
+  `.catch(() => [] as Record<string, unknown>[]);
 
-  await deps.sql`
-    UPDATE question_requests SET answers = ${deps.sql.json(answers as never)} WHERE id = ${parsed.requestId}
-  `;
+  if (updated.length === 0) return { status: "already-answered" };
 
+  const answers = normaliseAnswers(updated[0]!.answers, questions.length);
   const complete = allAnswered(answers, questions.length);
 
   // The keyboard is replaced with the chosen answer, so the message shows what
@@ -238,6 +267,21 @@ function escapeHtml(text: string): string {
 }
 
 /**
+ * Stop waiting on behalf of a client that hung up.
+ *
+ * The hook's curl gives up before the hook's own budget does, and when it does
+ * the endpoint is still polling for an answer nobody will collect. Expiring the
+ * request ends the poll and turns the buttons still on screen into an honest
+ * "no longer waiting".
+ */
+export async function cancelRequest(sql: postgres.Sql, requestId: string): Promise<void> {
+  await sql`
+    UPDATE question_requests SET expired_at = NOW()
+     WHERE id = ${requestId} AND answered_at IS NULL AND expired_at IS NULL
+  `.catch(() => {});
+}
+
+/**
  * Is this session waiting on a question right now?
  *
  * The supervisor asks, so that a session standing still because it asked
@@ -247,7 +291,7 @@ function escapeHtml(text: string): string {
 export async function hasOpenQuestion(sql: postgres.Sql, sessionId: number): Promise<boolean> {
   const rows = await sql`
     SELECT 1 FROM question_requests
-    WHERE session_id = ${sessionId} AND answered_at IS NULL
+    WHERE session_id = ${sessionId} AND answered_at IS NULL AND expired_at IS NULL
       AND created_at > NOW() - INTERVAL '15 minutes'
     LIMIT 1
   `.catch(() => [] as unknown[]);

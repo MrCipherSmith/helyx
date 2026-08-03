@@ -83,25 +83,36 @@ export function parseHookInput(raw: string): HookInput | null {
   const toolInput = input.tool_input as Record<string, unknown> | undefined;
   const rawQuestions = Array.isArray(toolInput?.questions) ? toolInput!.questions : [];
 
+  // All or nothing.
+  //
+  // Skipping a question this path cannot represent — one with no options, or a
+  // multi-select — and carrying the rest looks accommodating and is a trap: an
+  // answer to the others denies the *whole* tool call, and the skipped question
+  // is never put to anyone. The operator answers two of three and the third
+  // silently disappears. Better to decline the call entirely and let the
+  // terminal ask all of them, which is what happens today.
+  if (rawQuestions.length === 0) return null;
+
   const questions: Question[] = [];
   for (const q of rawQuestions as Record<string, unknown>[]) {
-    if (typeof q?.question !== "string" || !q.question.trim()) continue;
+    if (typeof q?.question !== "string" || !q.question.trim()) return null;
+    // Carried through the type but not supported here: one tap is one answer,
+    // and a multi-select needs a way to say "these two and then done".
+    if (q.multiSelect === true) return null;
+
     const options = Array.isArray(q.options) ? (q.options as Record<string, unknown>[]) : [];
     const usable = options
       .filter((o) => typeof o?.label === "string" && o.label.trim())
       .map((o) => ({ label: String(o.label), description: typeof o.description === "string" ? o.description : undefined }));
-    // A question with no options cannot be answered by tapping a button, and
-    // this path offers nothing else. Left to the terminal.
-    if (usable.length === 0) continue;
+    if (usable.length !== options.length || usable.length === 0) return null;
+
     questions.push({
       question: q.question,
       header: typeof q.header === "string" ? q.header : undefined,
-      multiSelect: q.multiSelect === true,
+      multiSelect: false,
       options: usable,
     });
   }
-
-  if (questions.length === 0) return null;
 
   return {
     sessionId: String(input.session_id ?? ""),

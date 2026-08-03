@@ -13,7 +13,23 @@ import { escapeHtml } from "../bot/format.ts";
 import { CONFIG } from "../config.ts";
 import { sql } from "../memory/db.ts";
 import { parseHookInput, denyWithAnswers, ANSWER_TIMEOUT_MS } from "../utils/ask-question.ts";
-import { registerQuestions, waitForAnswers } from "../services/ask-question.ts";
+
+import { readOrCreateToken, tokenMatches } from "../utils/hook-token.ts";
+import { existsSync, readFileSync, writeFileSync } from "fs";
+
+/** The shared secret, read once — created on first start by whichever side runs first. */
+const HOOK_TOKEN = readOrCreateToken(CONFIG.HOST_CLAUDE_CONFIG, {
+  exists: existsSync,
+  read: (path) => readFileSync(path, "utf-8"),
+  write: (path, contents) => writeFileSync(path, contents, { mode: 0o600 }),
+});
+
+/** A question payload is small; anything larger is not one. */
+const MAX_ASK_QUESTION_BODY = 256 * 1024;
+/** Each waiter holds a socket and polls once a second. */
+const MAX_ASK_QUESTION_WAITERS = 16;
+let askQuestionWaiters = 0;
+import { registerQuestions, waitForAnswers, cancelRequest } from "../services/ask-question.ts";
 import { sendTelegramMessage, editTelegramMessage } from "../channel/telegram.ts";
 import { summarizeOnDisconnect, summarizeWork, extractFactsFromTranscript } from "../memory/summarizer.ts";
 import { verifyJwt } from "../dashboard/auth.ts";
@@ -456,15 +472,38 @@ export function startMcpHttpServer(bot: Bot | null): ReturnType<typeof createSer
     // whole point — a fire-and-forget notification would tell the operator
     // about a question they still could not answer.
     if (url.pathname === "/api/hooks/ask-question" && req.method === "POST") {
-      if (!isLocalRequest(req)) {
+      // Stricter than the other hook endpoints on purpose. This one sends a
+      // message to the operator's chat and then holds a connection open for ten
+      // minutes, while isLocalRequest trusts every container on the Docker
+      // network. The shared secret narrows that to whoever can read
+      // ~/.claude/helyx-hook-token.
+      if (!isLocalRequest(req) || !tokenMatches(HOOK_TOKEN, req.headers["x-helyx-hook-token"])) {
         res.writeHead(403, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "Forbidden" }));
         return;
       }
       try {
+        if (askQuestionWaiters >= MAX_ASK_QUESTION_WAITERS) {
+          // Each waiter holds a socket and polls Postgres once a second. A cap
+          // keeps a misbehaving caller from turning that into a load source;
+          // 204 means the terminal simply keeps the question.
+          console.warn("[hooks/ask-question] too many waiters, declining");
+          res.writeHead(204);
+          res.end();
+          return;
+        }
+
         const body = await new Promise<string>((resolve, reject) => {
           let data = "";
-          req.on("data", (chunk) => (data += chunk));
+          req.on("data", (chunk) => {
+            data += chunk;
+            // Bounded: the payload is a handful of questions, and an unbounded
+            // read on a local socket is a way to spend all the memory there is.
+            if (data.length > MAX_ASK_QUESTION_BODY) {
+              reject(new Error("payload too large"));
+              req.destroy();
+            }
+          });
           req.on("end", () => resolve(data));
           req.on("error", reject);
         });
@@ -496,7 +535,22 @@ export function startMcpHttpServer(bot: Bot | null): ReturnType<typeof createSer
           return;
         }
 
-        const answers = await waitForAnswers(deps, registered.requestId, input.questions.length, ANSWER_TIMEOUT_MS);
+        // The hook's curl gives up before the hook does. When the socket
+        // closes, stop waiting and expire the request, so the buttons on the
+        // operator's screen stop claiming they can still be answered.
+        const onGone = () => { void cancelRequest(sql, registered.requestId); };
+        req.on("aborted", onGone);
+        res.on("close", onGone);
+
+        askQuestionWaiters++;
+        let answers: (number | null)[] | null = null;
+        try {
+          answers = await waitForAnswers(deps, registered.requestId, input.questions.length, ANSWER_TIMEOUT_MS);
+        } finally {
+          askQuestionWaiters--;
+          req.off("aborted", onGone);
+          res.off("close", onGone);
+        }
         if (!answers) {
           // Timed out, or withdrawn. The hook prints nothing, Claude Code
           // proceeds as if it had not run, and the selector appears in the

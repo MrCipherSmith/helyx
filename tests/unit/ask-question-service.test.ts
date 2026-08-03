@@ -13,6 +13,7 @@ import {
   recordAnswer,
   resolveTarget,
   hasOpenQuestion,
+  cancelRequest,
   type AskDeps,
 } from "../../services/ask-question.ts";
 import { FakeSql } from "../fixtures/fake-sql.ts";
@@ -20,9 +21,9 @@ import type { HookInput, Question } from "../../utils/ask-question.ts";
 
 const SELECT_TARGET = "FROM sessions s LEFT JOIN chat_sessions";
 const INSERT_REQUEST = "INSERT INTO question_requests";
-const SELECT_ANSWERS = "SELECT answers FROM question_requests";
+const SELECT_ANSWERS = "SELECT answers, expired_at FROM question_requests";
 const SELECT_ROW = "SELECT questions, answers, answered_at";
-const UPDATE_ANSWERS = "UPDATE question_requests SET answers";
+const UPDATE_ANSWERS = "SET answers = jsonb_set";
 
 const QUESTIONS: Question[] = [
   { question: "Имя пакета?", options: [{ label: "scoped" }, { label: "переименовать" }] },
@@ -191,35 +192,43 @@ describe("registerQuestions", () => {
 });
 
 describe("recordAnswer", () => {
-  function openRequest(world: World, answers: (number | null)[] = [null, null]) {
+  function openRequest(world: World, answers: (number | null)[] = [null, null], after?: (number | null)[]) {
     world.db.program(SELECT_ROW, {
       rows: [
         {
           questions: QUESTIONS,
           answers,
           answered_at: null,
+          expired_at: null,
           chat_id: "-100123",
           message_ids: [700, 701],
         },
       ],
     });
+    // The update returns the row as the database left it — that is the value
+    // the outcome is computed from, not a local guess about what it became.
+    world.db.program(UPDATE_ANSWERS, { rows: [{ answers: after ?? answers }] });
   }
 
   test("a tapped button is written to its own slot", async () => {
     const world = makeWorld();
-    openRequest(world);
+    openRequest(world, [null, null], [null, 1]);
 
     const outcome = await recordAnswer(world.deps, "ask:abcd1234:1:1");
 
     expect(outcome).toEqual({ status: "recorded", label: "0.20.0", complete: false });
-    expect(world.db.matching(UPDATE_ANSWERS)[0]!.values[0]).toEqual([null, 1]);
+    // One slot, set by the database. Reading the array and writing it back
+    // would lose an answer whenever two buttons are tapped at once.
+    const update = world.db.matching(UPDATE_ANSWERS)[0]!;
+    expect(update.text).toContain("jsonb_set");
+    expect(update.values).toEqual(["1", 1, "abcd1234"]);
   });
 
   test("complete only once every question has an answer", async () => {
     // The tool is one call: denying it after one of two answers would tell
     // Claude the other question had been declined.
     const world = makeWorld();
-    openRequest(world, [0, null]);
+    openRequest(world, [0, null], [0, 0]);
 
     const outcome = await recordAnswer(world.deps, "ask:abcd1234:1:0");
 
@@ -230,8 +239,9 @@ describe("recordAnswer", () => {
     const world = makeWorld();
     openRequest(world, [null]);
     world.db.program(SELECT_ROW, {
-      rows: [{ questions: [QUESTIONS[0]], answers: [null], answered_at: null, chat_id: "-1", message_ids: [700] }],
+      rows: [{ questions: [QUESTIONS[0]], answers: [null], answered_at: null, expired_at: null, chat_id: "-1", message_ids: [700] }],
     });
+    world.db.program(UPDATE_ANSWERS, { rows: [{ answers: [0] }] });
 
     const outcome = await recordAnswer(world.deps, "ask:abcd1234:0:0");
 
@@ -240,7 +250,7 @@ describe("recordAnswer", () => {
 
   test("the message is edited to show what was chosen", async () => {
     const world = makeWorld();
-    openRequest(world);
+    openRequest(world, [null, null], [1, null]);
 
     await recordAnswer(world.deps, "ask:abcd1234:0:1");
 
@@ -259,7 +269,7 @@ describe("recordAnswer", () => {
     expect(await recordAnswer(world.deps, "ask:gone:0:0")).toEqual({ status: "unknown" });
 
     world.db.program(SELECT_ROW, {
-      rows: [{ questions: QUESTIONS, answers: [0, 0], answered_at: new Date(), chat_id: "-1", message_ids: [] }],
+      rows: [{ questions: QUESTIONS, answers: [0, 0], answered_at: new Date(), expired_at: null, chat_id: "-1", message_ids: [] }],
     });
     expect(await recordAnswer(world.deps, "ask:done:0:0")).toEqual({ status: "already-answered" });
 
@@ -271,7 +281,7 @@ describe("recordAnswer", () => {
   test("an answered request is not rewritten by a late tap", async () => {
     const world = makeWorld();
     world.db.program(SELECT_ROW, {
-      rows: [{ questions: QUESTIONS, answers: [0, 0], answered_at: new Date(), chat_id: "-1", message_ids: [] }],
+      rows: [{ questions: QUESTIONS, answers: [0, 0], answered_at: new Date(), expired_at: null, chat_id: "-1", message_ids: [] }],
     });
 
     await recordAnswer(world.deps, "ask:done:0:1");
@@ -290,9 +300,9 @@ describe("waitForAnswers", () => {
     const world = makeWorld();
     const clock = ticker();
     world.db.programSequence(SELECT_ANSWERS, [
-      { rows: [{ answers: [null, null] }] },
-      { rows: [{ answers: [1, null] }] },
-      { rows: [{ answers: [1, 0] }] },
+      { rows: [{ answers: [null, null], expired_at: null }] },
+      { rows: [{ answers: [1, null], expired_at: null }] },
+      { rows: [{ answers: [1, 0], expired_at: null }] },
     ]);
 
     const answers = await waitForAnswers(
@@ -309,7 +319,7 @@ describe("waitForAnswers", () => {
   test("a partial answer is not enough", async () => {
     const world = makeWorld();
     const clock = ticker();
-    world.db.program(SELECT_ANSWERS, { rows: [{ answers: [1, null] }] });
+    world.db.program(SELECT_ANSWERS, { rows: [{ answers: [1, null], expired_at: null }] });
 
     const answers = await waitForAnswers(
       { ...world.deps, now: clock.now, sleep: clock.sleep },
@@ -326,7 +336,7 @@ describe("waitForAnswers", () => {
     // run: the selector is drawn and the terminal behaves exactly as before.
     const world = makeWorld();
     const clock = ticker();
-    world.db.program(SELECT_ANSWERS, { rows: [{ answers: [null] }] });
+    world.db.program(SELECT_ANSWERS, { rows: [{ answers: [null], expired_at: null }] });
 
     expect(
       await waitForAnswers({ ...world.deps, now: clock.now, sleep: clock.sleep }, "abcd1234", 1, 3_000),
@@ -349,7 +359,7 @@ describe("waitForAnswers", () => {
     // would otherwise satisfy "all answered" and be handed to Claude as a choice.
     const world = makeWorld();
     const clock = ticker();
-    world.db.program(SELECT_ANSWERS, { rows: [{ answers: ["1", -1] }] });
+    world.db.program(SELECT_ANSWERS, { rows: [{ answers: ["1", -1], expired_at: null }] });
 
     expect(
       await waitForAnswers({ ...world.deps, now: clock.now, sleep: clock.sleep }, "abcd1234", 2, 3_000),
@@ -375,5 +385,113 @@ describe("hasOpenQuestion", () => {
     world.db.program("FROM question_requests", { rows: [] });
     await hasOpenQuestion(world.deps.sql, 42);
     expect(world.db.matching("FROM question_requests")[0]!.text).toContain("INTERVAL '15 minutes'");
+  });
+});
+
+
+describe("partial delivery is not delivery", () => {
+  test("one failed send withdraws the whole request", async () => {
+    // The worst outcome available: the questions that arrived can be answered,
+    // the one that did not never can, so the call never completes — and the
+    // terminal selector stays suppressed for the full ten minutes.
+    const world = makeWorld();
+    withChat(world);
+    let call = 0;
+    const deps: AskDeps = {
+      ...world.deps,
+      sendMessage: async () => (++call === 1 ? { ok: true, messageId: 700 } : { ok: false, messageId: null }),
+    };
+
+    expect(await registerQuestions(deps, hookInput())).toBeNull();
+    expect(world.db.count("DELETE FROM question_requests")).toBe(1);
+  });
+
+  test("a send that succeeds without a message id counts as failed", async () => {
+    // No message id means no message to edit and nothing to point a button at.
+    const world = makeWorld();
+    withChat(world);
+    const deps: AskDeps = { ...world.deps, sendMessage: async () => ({ ok: true, messageId: null }) };
+
+    expect(await registerQuestions(deps, hookInput())).toBeNull();
+  });
+});
+
+describe("expiry", () => {
+  function ticker(start = 0) {
+    let t = start;
+    return { now: () => t, sleep: async (ms: number) => { t += ms; } };
+  }
+
+  test("timing out marks the request expired", async () => {
+    // Otherwise the buttons still on the operator's screen keep claiming they
+    // can be answered, while nothing is listening.
+    const world = makeWorld();
+    const clock = ticker();
+    world.db.program(SELECT_ANSWERS, { rows: [{ answers: [null], expired_at: null }] });
+
+    await waitForAnswers({ ...world.deps, now: clock.now, sleep: clock.sleep }, "abcd1234", 1, 3_000);
+
+    expect(world.db.count("SET expired_at = NOW()")).toBe(1);
+  });
+
+  test("a request expired elsewhere ends the wait", async () => {
+    // The client hung up and the endpoint cancelled it; polling on would hold a
+    // connection nobody is reading.
+    const world = makeWorld();
+    const clock = ticker();
+    world.db.program(SELECT_ANSWERS, { rows: [{ answers: [null], expired_at: new Date() }] });
+
+    expect(
+      await waitForAnswers({ ...world.deps, now: clock.now, sleep: clock.sleep }, "abcd1234", 1, 600_000),
+    ).toBeNull();
+    expect(world.db.count(SELECT_ANSWERS)).toBe(1);
+  });
+
+  test("a tap after expiry is refused rather than reported as sent", async () => {
+    const world = makeWorld();
+    world.db.program(SELECT_ROW, {
+      rows: [{ questions: QUESTIONS, answers: [null, null], answered_at: null, expired_at: new Date(), chat_id: "-1", message_ids: [] }],
+    });
+
+    expect(await recordAnswer(world.deps, "ask:abcd1234:0:0")).toEqual({ status: "expired" });
+    expect(world.db.count(UPDATE_ANSWERS)).toBe(0);
+  });
+
+  test("cancelRequest only touches a request still waiting", async () => {
+    const world = makeWorld();
+    await cancelRequest(world.deps.sql, "abcd1234");
+    const update = world.db.matching("SET expired_at = NOW()")[0]!;
+    expect(update.text).toContain("answered_at IS NULL");
+    expect(update.text).toContain("expired_at IS NULL");
+  });
+});
+
+describe("the atomic write", () => {
+  test("the update refuses a request already answered or expired", async () => {
+    // The guard lives in the statement, not in the read before it: between the
+    // read and the write another tap can land.
+    const world = makeWorld();
+    world.db.program(SELECT_ROW, {
+      rows: [{ questions: QUESTIONS, answers: [null, null], answered_at: null, expired_at: null, chat_id: "-1", message_ids: [] }],
+    });
+    world.db.program(UPDATE_ANSWERS, { rows: [] });
+
+    expect(await recordAnswer(world.deps, "ask:abcd1234:0:0")).toEqual({ status: "already-answered" });
+  });
+
+  test("completeness is read back from the database, not computed locally", async () => {
+    // Two taps at once: this one sets slot 0, the other set slot 1 a moment
+    // earlier. Only the row knows both.
+    const world = makeWorld();
+    world.db.program(SELECT_ROW, {
+      rows: [{ questions: QUESTIONS, answers: [null, null], answered_at: null, expired_at: null, chat_id: "-1", message_ids: [] }],
+    });
+    world.db.program(UPDATE_ANSWERS, { rows: [{ answers: [0, 1] }] });
+
+    expect(await recordAnswer(world.deps, "ask:abcd1234:0:0")).toEqual({
+      status: "recorded",
+      label: "scoped",
+      complete: true,
+    });
   });
 });
