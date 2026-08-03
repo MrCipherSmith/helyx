@@ -3,9 +3,9 @@
   "id": "010",
   "slug": "a-fixture-layer-a-fake-context-and-a-rea",
   "title": "a fixture layer — a fake context and a real, isolated test database",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-03T11:10:43.390Z",
-  "updatedAt": "2026-08-03T11:25:12.433Z",
+  "updatedAt": "2026-08-03T12:11:24.444Z",
   "source": {
     "type": "description",
     "ref": null
@@ -70,7 +70,7 @@
     }
   },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/46"
   },
   "tasks": [
     {
@@ -537,6 +537,20 @@
       "at": "2026-08-03T11:25:12.433Z",
       "event": "ac-confirmed",
       "detail": "AC14: typecheck clean, lint 0 errors, 739 pass 0 fail, dupes reports 1, health 63 (improved)"
+    },
+    {
+      "at": "2026-08-03T12:11:14.699Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/46 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-08-03T12:11:22.412Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-03T12:11:24.444Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
   ]
 }
