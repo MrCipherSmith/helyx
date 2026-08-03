@@ -1,0 +1,313 @@
+{
+  "schemaVersion": 2,
+  "id": "014",
+  "slug": "cover-the-model-client-the-stream-decisi",
+  "title": "cover the model client: the stream decisions and the reader loops",
+  "status": "in-progress",
+  "createdAt": "2026-08-03T21:20:20.042Z",
+  "updatedAt": "2026-08-03T21:20:47.519Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:89ac8a997d25ae16d5203ed4877e0eed9ca28d324a9d47fc0155504b68f1ca85",
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-03T21:20:46.912Z",
+      "note": "takeLines, readSseLine, parseOpenAiChunk, parseOllamaLine, ReasoningFilter, isRetryable, retryDelay, selectProvider"
+    },
+    "AC2": {
+      "at": "2026-08-03T21:20:46.999Z",
+      "note": "client.ts imports all of them; no phase/pending state machine, no inline SSE parsing, no duplicated retry predicate"
+    },
+    "AC3": {
+      "at": "2026-08-03T21:20:47.086Z",
+      "note": "opening tag split, closing tag split, <b>bold</b> not mistaken, short reply flushed, unterminated block discarded"
+    },
+    "AC4": {
+      "at": "2026-08-03T21:20:47.174Z",
+      "note": "429 and rate and 5xx retried; 401/400/model-not-found not; word-bounded so 4500 tokens and id 1500123 are not statuses"
+    },
+    "AC5": {
+      "at": "2026-08-03T21:20:47.259Z",
+      "note": "parseOpenAiChunk returns null on unparseable; the loop continues and the answer survives"
+    },
+    "AC6": {
+      "at": "2026-08-03T21:20:47.345Z",
+      "note": "twelve tests drive openaiStream, ollamaStream and openaiGenerate against a fake network"
+    },
+    "AC7": {
+      "at": "2026-08-03T21:20:47.433Z",
+      "note": "tag split across reads hidden; a reply too short to resolve the ambiguity still delivered"
+    },
+    "AC8": {
+      "at": "2026-08-03T21:20:47.519Z",
+      "note": "typecheck clean, lint 0 errors, 930 tests, dupes 1, claude/client.ts 37.30% lines"
+    }
+  },
+  "pr": {
+    "url": null
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T5",
+      "title": "utils/llm-stream.ts — the decisions",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T6",
+      "title": "rewire claude/client.ts onto it",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T7",
+      "title": "llm-stream tests incl. chunk boundaries",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T8",
+      "title": "reader loops against the fake network",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T9",
+      "title": "full gate",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-03T21:20:20.042Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-03T21:20:20.135Z",
+      "event": "task-added",
+      "detail": "T5: utils/llm-stream.ts — the decisions"
+    },
+    {
+      "at": "2026-08-03T21:20:20.224Z",
+      "event": "task-added",
+      "detail": "T6: rewire claude/client.ts onto it"
+    },
+    {
+      "at": "2026-08-03T21:20:20.308Z",
+      "event": "task-added",
+      "detail": "T7: llm-stream tests incl. chunk boundaries"
+    },
+    {
+      "at": "2026-08-03T21:20:20.393Z",
+      "event": "task-added",
+      "detail": "T8: reader loops against the fake network"
+    },
+    {
+      "at": "2026-08-03T21:20:20.476Z",
+      "event": "task-added",
+      "detail": "T9: full gate"
+    },
+    {
+      "at": "2026-08-03T21:20:20.565Z",
+      "event": "frozen",
+      "detail": "8 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-03T21:20:20.649Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-03T21:20:46.111Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-03T21:20:46.200Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-03T21:20:46.288Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-03T21:20:46.375Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-03T21:20:46.465Z",
+      "event": "task-done",
+      "detail": "T5: utils/llm-stream.ts — the decisions"
+    },
+    {
+      "at": "2026-08-03T21:20:46.554Z",
+      "event": "task-done",
+      "detail": "T6: rewire claude/client.ts onto it"
+    },
+    {
+      "at": "2026-08-03T21:20:46.646Z",
+      "event": "task-done",
+      "detail": "T7: llm-stream tests incl. chunk boundaries"
+    },
+    {
+      "at": "2026-08-03T21:20:46.738Z",
+      "event": "task-done",
+      "detail": "T8: reader loops against the fake network"
+    },
+    {
+      "at": "2026-08-03T21:20:46.824Z",
+      "event": "task-done",
+      "detail": "T9: full gate"
+    },
+    {
+      "at": "2026-08-03T21:20:46.912Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: takeLines, readSseLine, parseOpenAiChunk, parseOllamaLine, ReasoningFilter, isRetryable, retryDelay, selectProvider"
+    },
+    {
+      "at": "2026-08-03T21:20:46.999Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: client.ts imports all of them; no phase/pending state machine, no inline SSE parsing, no duplicated retry predicate"
+    },
+    {
+      "at": "2026-08-03T21:20:47.086Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: opening tag split, closing tag split, <b>bold</b> not mistaken, short reply flushed, unterminated block discarded"
+    },
+    {
+      "at": "2026-08-03T21:20:47.174Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: 429 and rate and 5xx retried; 401/400/model-not-found not; word-bounded so 4500 tokens and id 1500123 are not statuses"
+    },
+    {
+      "at": "2026-08-03T21:20:47.259Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: parseOpenAiChunk returns null on unparseable; the loop continues and the answer survives"
+    },
+    {
+      "at": "2026-08-03T21:20:47.345Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: twelve tests drive openaiStream, ollamaStream and openaiGenerate against a fake network"
+    },
+    {
+      "at": "2026-08-03T21:20:47.433Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: tag split across reads hidden; a reply too short to resolve the ambiguity still delivered"
+    },
+    {
+      "at": "2026-08-03T21:20:47.519Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: typecheck clean, lint 0 errors, 930 tests, dupes 1, claude/client.ts 37.30% lines"
+    }
+  ]
+}
