@@ -19,7 +19,16 @@ interface Migration {
   down?: (tx: postgres.TransactionSql) => Promise<void>;
 }
 
-async function ensureVersionTable(): Promise<void> {
+/**
+ * The connection to migrate. Defaults to this module's own.
+ *
+ * Passed in rather than assumed, so the migrations can be applied to a
+ * throwaway database in-process. They used to be reachable only by spawning
+ * `bun memory/db.ts` against another `DATABASE_URL` — which works, and means
+ * every migration body in this file runs where no coverage tool can see it and
+ * no test can assert on the result.
+ */
+async function ensureVersionTable(sql: postgres.Sql): Promise<void> {
   await sql`
     CREATE TABLE IF NOT EXISTS schema_versions (
       version INT PRIMARY KEY,
@@ -29,12 +38,12 @@ async function ensureVersionTable(): Promise<void> {
   `;
 }
 
-async function getCurrentVersion(): Promise<number> {
+async function getCurrentVersion(sql: postgres.Sql): Promise<number> {
   const [row] = await sql`SELECT max(version)::int as v FROM schema_versions`;
   return row?.v ?? 0;
 }
 
-async function applyMigration(m: Migration): Promise<void> {
+async function applyMigration(m: Migration, sql: postgres.Sql): Promise<void> {
   await sql.begin(async (tx) => {
     await m.up(tx);
     await tx`INSERT INTO schema_versions (version, name) VALUES (${m.version}, ${m.name})`;
@@ -905,23 +914,48 @@ export function validateMigrationRegistry(input: ReadonlyArray<{ version: number
   }
 }
 
-export async function migrate() {
+/** What a migration run did, for a caller that wants to assert on it. */
+export interface MigrationRun {
+  from: number;
+  to: number;
+  applied: string[];
+}
+
+/**
+ * Bring `db` up to the latest schema version.
+ *
+ * Takes the connection so a test can migrate a database of its own without
+ * spawning a process, and returns what it did rather than only logging it —
+ * "applied nothing" and "applied everything" are the two answers worth
+ * asserting, and a log line is not an assertion.
+ */
+export async function runMigrations(db: postgres.Sql = sql): Promise<MigrationRun> {
   validateMigrationRegistry();
-  await ensureVersionTable();
-  const current = await getCurrentVersion();
+  await ensureVersionTable(db);
+  const current = await getCurrentVersion(db);
 
   const pending = migrations.filter((m) => m.version > current);
   if (pending.length === 0) {
     console.log(`[db] schema up to date (v${current})`);
-    return;
+    return { from: current, to: current, applied: [] };
   }
 
-  console.log(`[db] applying ${pending.length} migration(s) from v${current} to v${pending[pending.length - 1].version}...`);
+  console.log(`[db] applying ${pending.length} migration(s) from v${current} to v${pending[pending.length - 1]!.version}...`);
+  const applied: string[] = [];
   for (const m of pending) {
-    await applyMigration(m);
+    await applyMigration(m, db);
+    applied.push(m.name);
   }
   console.log("[db] migrations complete");
+  return { from: current, to: pending[pending.length - 1]!.version, applied };
 }
+
+export async function migrate() {
+  await runMigrations(sql);
+}
+
+/** The registry itself, for tests that assert on its shape rather than its effect. */
+export const MIGRATIONS: ReadonlyArray<{ version: number; name: string }> = migrations;
 
 // Run migrations directly if this file is executed
 if (import.meta.main) {

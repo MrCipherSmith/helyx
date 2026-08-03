@@ -168,7 +168,17 @@ export async function databaseAvailable(): Promise<Availability> {
  * Provisioning that silently succeeded against nothing would be worse than
  * failing.
  */
-export async function provisionTestDatabase(): Promise<TestDatabase> {
+export interface ProvisionOptions {
+  /**
+   * Apply the project's migrations. Default true.
+   *
+   * A caller that is *testing* the migrations wants an empty database and will
+   * run them itself — in-process, where the result can be asserted on.
+   */
+  migrate?: boolean;
+}
+
+export async function provisionTestDatabase(options: ProvisionOptions = {}): Promise<TestDatabase> {
   const url = serverUrl();
   if (!url) throw new Error(NO_DATABASE_MESSAGE);
 
@@ -190,7 +200,7 @@ export async function provisionTestDatabase(): Promise<TestDatabase> {
 
   const dbUrl = withDatabase(url, name);
   try {
-    await migrateInSubprocess(dbUrl, name);
+    if (options.migrate !== false) await migrateInSubprocess(dbUrl, name);
   } catch (err) {
     // The database exists and nothing yet knows how to drop it — the caller has
     // no handle, because we are throwing instead of returning one. Take it back
