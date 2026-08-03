@@ -11,54 +11,51 @@
  * Reverting any patched site to `${JSON.stringify(x)}::jsonb` makes
  * the assertion fail.
  *
- * Requires DATABASE_URL.
+ * Runs against the database `tests/preload.ts` provisions for the run, and
+ * skips when there is none. It used to run against whatever `DATABASE_URL`
+ * named — the developer's own database — and undo itself by deleting the rows
+ * it had tagged. The tags and the cleanup are gone: the database is thrown away
+ * whole, so nothing has to be remembered and nothing can be left behind.
  */
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
+import { TEST_DATABASE_ENV } from "../preload.ts";
+import { NO_DATABASE_MESSAGE } from "../fixtures/test-db.ts";
 
-const HAS_DB = Boolean(process.env.DATABASE_URL);
+const HAS_DB = Boolean(process.env[TEST_DATABASE_ENV]);
 
-const RUN_TAG = `jsonb-fix-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+if (!HAS_DB) console.log(`[jsonb-cast] skipped — ${NO_DATABASE_MESSAGE}`);
 
-interface Seed {
-  cleanupSessionIds: number[];
-  cleanupAdminCommandIds: bigint[];
-}
-const seed: Seed = { cleanupSessionIds: [], cleanupAdminCommandIds: [] };
-
+/**
+ * The connection production code uses. It is bound to the provisioned database
+ * because the preload set `DATABASE_URL` before anything imported this module.
+ */
 async function getSql() {
   const { sql } = await import("../../memory/db.ts");
   return sql;
 }
 
-beforeAll(async () => {
-  if (!HAS_DB) return;
-});
-
-afterAll(async () => {
-  if (!HAS_DB) return;
-  const sql = await getSql();
-  if (seed.cleanupSessionIds.length > 0) {
-    await sql`DELETE FROM sessions WHERE id IN ${sql(seed.cleanupSessionIds as unknown as string[])}`;
-  }
-  if (seed.cleanupAdminCommandIds.length > 0) {
-    await sql`DELETE FROM admin_commands WHERE id IN ${sql(seed.cleanupAdminCommandIds as unknown as string[])}`;
-  }
-});
-
 describe("v1.32.1 jsonb cast fix", () => {
+  test.skipIf(!HAS_DB)("the tests are pointed at a throwaway database", async () => {
+    // Stated as an assertion rather than assumed. Everything below writes
+    // through production code paths; if this run were pointed at a real
+    // database, that is where the rows would land.
+    const sql = await getSql();
+    const [row] = await sql<{ current: string }[]>`SELECT current_database() AS current`;
+    expect(row!.current).toBe(process.env[TEST_DATABASE_ENV] ?? "");
+    expect(row!.current).toStartWith("helyx_test_");
+  });
+
   test.skipIf(!HAS_DB)("session register: metadata + cli_config land as JSONB objects", async () => {
     const { sessionManager } = await import("../../sessions/manager.ts");
     const sql = await getSql();
-    const clientId = `__test_${RUN_TAG}__`;
     const session = await sessionManager.register(
-      clientId,
-      `name-${RUN_TAG}`,
+      "__jsonb_cast_client__",
+      "jsonb-cast-session",
       "/tmp/fake",
-      { from: "regression-test", marker: RUN_TAG },
+      { from: "regression-test", marker: "jsonb-cast" },
       { ide: "test", session_index: 1 },
     );
-    seed.cleanupSessionIds.push(session.id);
 
     const [row] = (await sql`
       SELECT
@@ -70,7 +67,7 @@ describe("v1.32.1 jsonb cast fix", () => {
     // Pre-fix: meta_t / cli_t = 'string' (scalar JSON-as-text)
     expect(row.meta_t).toBe("object");
     expect(row.cli_t).toBe("object");
-    expect((row.metadata as any).marker).toBe(RUN_TAG);
+    expect((row.metadata as any).marker).toBe("jsonb-cast");
     expect((row.cli_config as any).ide).toBe("test");
   });
 
@@ -79,13 +76,11 @@ describe("v1.32.1 jsonb cast fix", () => {
     // The idempotency check `(payload->>'project_id')::int = id` only
     // works when payload is a real JSONB object, not a scalar string.
     const sql = await getSql();
-    const tag = `proj-test-${RUN_TAG}`;
     const [row] = (await sql`
       INSERT INTO admin_commands (command, payload, status)
-      VALUES ('proj_start', ${sql.json({ project_id: 9999, name: tag, path: "/tmp/x" })}, 'pending')
+      VALUES ('proj_start', ${sql.json({ project_id: 9999, name: "proj-test", path: "/tmp/x" })}, 'pending')
       RETURNING id
     `) as any[];
-    seed.cleanupAdminCommandIds.push(row.id);
 
     const [check] = (await sql`
       SELECT
@@ -96,7 +91,7 @@ describe("v1.32.1 jsonb cast fix", () => {
     `) as any[];
     expect(check.t).toBe("object");
     expect(Number(check.pid)).toBe(9999);
-    expect(check.name).toBe(tag);
+    expect(check.name).toBe("proj-test");
   });
 
   test.skipIf(!HAS_DB)("project-service idempotency check actually finds duplicate via jsonb operator", async () => {
@@ -106,29 +101,20 @@ describe("v1.32.1 jsonb cast fix", () => {
     // exact predicate.
     const sql = await getSql();
     const fakeProjectId = 999_998;
-    const cleanup: bigint[] = [];
-    try {
-      // Insert two rows with same project_id — second should be findable
-      // via the same predicate the service uses for idempotency.
-      const [a] = (await sql`
-        INSERT INTO admin_commands (command, payload, status)
-        VALUES ('proj_start', ${sql.json({ project_id: fakeProjectId, name: "x", path: "/x" })}, 'pending')
-        RETURNING id
-      `) as any[];
-      cleanup.push(a.id);
 
-      const matches = (await sql`
-        SELECT id FROM admin_commands
-        WHERE command = 'proj_start'
-          AND (payload->>'project_id')::int = ${fakeProjectId}
-          AND status IN ('pending', 'processing')
-      `) as any[];
-      expect(matches.length).toBeGreaterThanOrEqual(1);
-      expect(Number(matches[0].id)).toBe(Number(a.id));
-    } finally {
-      if (cleanup.length > 0) {
-        await sql`DELETE FROM admin_commands WHERE id IN ${sql(cleanup as unknown as string[])}`;
-      }
-    }
+    const [a] = (await sql`
+      INSERT INTO admin_commands (command, payload, status)
+      VALUES ('proj_start', ${sql.json({ project_id: fakeProjectId, name: "x", path: "/x" })}, 'pending')
+      RETURNING id
+    `) as any[];
+
+    const matches = (await sql`
+      SELECT id FROM admin_commands
+      WHERE command = 'proj_start'
+        AND (payload->>'project_id')::int = ${fakeProjectId}
+        AND status IN ('pending', 'processing')
+    `) as any[];
+    expect(matches.length).toBeGreaterThanOrEqual(1);
+    expect(Number(matches[0].id)).toBe(Number(a.id));
   });
 });

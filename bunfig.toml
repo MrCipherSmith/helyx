@@ -1,0 +1,5 @@
+[test]
+# Provision a database for the run before any module binds to DATABASE_URL.
+# See tests/preload.ts — this cannot be done from inside a test file, because
+# memory/db.ts builds its connection at import time.
+preload = ["./tests/preload.ts"]

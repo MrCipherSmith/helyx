@@ -1,0 +1,542 @@
+{
+  "schemaVersion": 2,
+  "id": "010",
+  "slug": "a-fixture-layer-a-fake-context-and-a-rea",
+  "title": "a fixture layer — a fake context and a real, isolated test database",
+  "status": "in-progress",
+  "createdAt": "2026-08-03T11:10:43.390Z",
+  "updatedAt": "2026-08-03T11:25:12.433Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:43aae02ca7721b12ff9992d03af09736d7a874c2250e35db9e6e45cf45601f10",
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-03T11:25:11.328Z",
+      "note": "tests/fixtures/fake-sql.ts: queries[] records {text (whitespace-collapsed, params as ?), raw, values} at call time"
+    },
+    "AC2": {
+      "at": "2026-08-03T11:25:11.411Z",
+      "note": "program()/programSequence(); unmatched query resolves to [] — asserted by skill-handlers tests that never program most queries"
+    },
+    "AC3": {
+      "at": "2026-08-03T11:25:11.494Z",
+      "note": "result is a real Promise; permission-lifecycle exercises the three fire-and-forget .catch() updates and db.count() sees them"
+    },
+    "AC4": {
+      "at": "2026-08-03T11:25:11.582Z",
+      "note": "makePermissionWorld() — 12 tests in permission-lifecycle.test.ts construct and run PermissionHandler with no db/network/fs"
+    },
+    "AC5": {
+      "at": "2026-08-03T11:25:11.669Z",
+      "note": "FakeStatusManager delegates to the real HoldCounter; 'two prompts in one chat' asserts double-release counts once and depth"
+    },
+    "AC6": {
+      "at": "2026-08-03T11:25:11.752Z",
+      "note": "FakeMcp.notifications + behaviors(); asserted in all four exits and all four early returns"
+    },
+    "AC7": {
+      "at": "2026-08-03T11:25:11.840Z",
+      "note": "provisionTestDatabase(): CREATE DATABASE helyx_test_<pid>_<n>, migrate via subprocess, drop WITH FORCE; 'it is disposable' drops a table"
+    },
+    "AC8": {
+      "at": "2026-08-03T11:25:11.926Z",
+      "note": "databaseAvailable() returns a verdict; verified by running the full suite against 127.0.0.1:1 — 731 pass, 10 skip, 0 fail"
+    },
+    "AC9": {
+      "at": "2026-08-03T11:25:12.010Z",
+      "note": "four exits, four separate tests; T14 removed the finally and all four failed; exit 4 asserts rejects.toThrow"
+    },
+    "AC10": {
+      "at": "2026-08-03T11:25:12.095Z",
+      "note": "three early returns; T15 removed each guard in turn and exactly its own test failed"
+    },
+    "AC11": {
+      "at": "2026-08-03T11:25:12.182Z",
+      "note": "600_000 appears once (asserted from source); override honoured; default-applies test proves the loop polls rather than exiting"
+    },
+    "AC12": {
+      "at": "2026-08-03T11:25:12.267Z",
+      "note": "skill-handlers.test.ts FakeSql class deleted; jsonb-cast-v1.32.test.ts has no DATABASE_URL check and no tag cleanup"
+    },
+    "AC13": {
+      "at": "2026-08-03T11:25:12.349Z",
+      "note": "'migrations were applied from empty' + 'migrating again is a no-op' — schema_versions max and row count unchanged"
+    },
+    "AC14": {
+      "at": "2026-08-03T11:25:12.433Z",
+      "note": "typecheck clean, lint 0 errors, 739 pass 0 fail, dupes reports 1, health 63 (improved)"
+    }
+  },
+  "pr": {
+    "url": null
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T5",
+      "title": "fake-sql: recording tagged template, programmed rows, [] default, survives .catch on an unawaited result",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T6",
+      "title": "fake-permission-ctx: PermissionContext + StatusManager double reusing hold-counter + MCP double",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T7",
+      "title": "rewire skill-handlers.test.ts onto the shared fake sql, delete its FakeSql",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T8",
+      "title": "permissions.ts: one 600_000, optional permissionTimeoutMs on the context, handle() passes it through",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T9",
+      "title": "permission-lifecycle.test.ts: four exits of pollForResponse, three early returns of handle()",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T10",
+      "title": "test-db.ts: provision, migrate, drop; availability verdict instead of a throw",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T11",
+      "title": "rewire jsonb-cast-v1.32.test.ts onto test-db.ts, remove the DATABASE_URL check and tag cleanup",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T12",
+      "title": "migrate() from empty and idempotent on the provisioned database",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T13",
+      "title": "VERIFY the skip path by actually running bun test against an unreachable server",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T14",
+      "title": "VERIFY the four exits by removing the finally and confirming all four fail, then restoring it",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T15",
+      "title": "VERIFY the early-return assertions fail when the guards are removed",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T16",
+      "title": "full gate: typecheck, lint, test, dupes=1, health run",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-03T11:10:43.390Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-03T11:12:34.649Z",
+      "event": "task-added",
+      "detail": "T5: fake-sql: recording tagged template, programmed rows, [] default, survives .catch on an unawaited result"
+    },
+    {
+      "at": "2026-08-03T11:12:34.736Z",
+      "event": "task-added",
+      "detail": "T6: fake-permission-ctx: PermissionContext + StatusManager double reusing hold-counter + MCP double"
+    },
+    {
+      "at": "2026-08-03T11:12:34.821Z",
+      "event": "task-added",
+      "detail": "T7: rewire skill-handlers.test.ts onto the shared fake sql, delete its FakeSql"
+    },
+    {
+      "at": "2026-08-03T11:12:34.905Z",
+      "event": "task-added",
+      "detail": "T8: permissions.ts: one 600_000, optional permissionTimeoutMs on the context, handle() passes it through"
+    },
+    {
+      "at": "2026-08-03T11:12:34.989Z",
+      "event": "task-added",
+      "detail": "T9: permission-lifecycle.test.ts: four exits of pollForResponse, three early returns of handle()"
+    },
+    {
+      "at": "2026-08-03T11:12:35.076Z",
+      "event": "task-added",
+      "detail": "T10: test-db.ts: provision, migrate, drop; availability verdict instead of a throw"
+    },
+    {
+      "at": "2026-08-03T11:12:35.166Z",
+      "event": "task-added",
+      "detail": "T11: rewire jsonb-cast-v1.32.test.ts onto test-db.ts, remove the DATABASE_URL check and tag cleanup"
+    },
+    {
+      "at": "2026-08-03T11:12:35.256Z",
+      "event": "task-added",
+      "detail": "T12: migrate() from empty and idempotent on the provisioned database"
+    },
+    {
+      "at": "2026-08-03T11:12:35.341Z",
+      "event": "task-added",
+      "detail": "T13: VERIFY the skip path by actually running bun test against an unreachable server"
+    },
+    {
+      "at": "2026-08-03T11:12:35.425Z",
+      "event": "task-added",
+      "detail": "T14: VERIFY the four exits by removing the finally and confirming all four fail, then restoring it"
+    },
+    {
+      "at": "2026-08-03T11:12:35.510Z",
+      "event": "task-added",
+      "detail": "T15: VERIFY the early-return assertions fail when the guards are removed"
+    },
+    {
+      "at": "2026-08-03T11:12:35.595Z",
+      "event": "task-added",
+      "detail": "T16: full gate: typecheck, lint, test, dupes=1, health run"
+    },
+    {
+      "at": "2026-08-03T11:12:42.689Z",
+      "event": "frozen",
+      "detail": "14 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-03T11:12:42.773Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-03T11:24:55.832Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-03T11:24:55.918Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-03T11:24:56.007Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-03T11:24:56.092Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-03T11:24:56.177Z",
+      "event": "task-done",
+      "detail": "T5: fake-sql: recording tagged template, programmed rows, [] default, survives .catch on an unawaited result"
+    },
+    {
+      "at": "2026-08-03T11:24:56.262Z",
+      "event": "task-done",
+      "detail": "T6: fake-permission-ctx: PermissionContext + StatusManager double reusing hold-counter + MCP double"
+    },
+    {
+      "at": "2026-08-03T11:24:56.348Z",
+      "event": "task-done",
+      "detail": "T7: rewire skill-handlers.test.ts onto the shared fake sql, delete its FakeSql"
+    },
+    {
+      "at": "2026-08-03T11:24:56.431Z",
+      "event": "task-done",
+      "detail": "T8: permissions.ts: one 600_000, optional permissionTimeoutMs on the context, handle() passes it through"
+    },
+    {
+      "at": "2026-08-03T11:24:56.515Z",
+      "event": "task-done",
+      "detail": "T9: permission-lifecycle.test.ts: four exits of pollForResponse, three early returns of handle()"
+    },
+    {
+      "at": "2026-08-03T11:24:56.601Z",
+      "event": "task-done",
+      "detail": "T10: test-db.ts: provision, migrate, drop; availability verdict instead of a throw"
+    },
+    {
+      "at": "2026-08-03T11:24:56.685Z",
+      "event": "task-done",
+      "detail": "T11: rewire jsonb-cast-v1.32.test.ts onto test-db.ts, remove the DATABASE_URL check and tag cleanup"
+    },
+    {
+      "at": "2026-08-03T11:24:56.774Z",
+      "event": "task-done",
+      "detail": "T12: migrate() from empty and idempotent on the provisioned database"
+    },
+    {
+      "at": "2026-08-03T11:24:56.864Z",
+      "event": "task-done",
+      "detail": "T13: VERIFY the skip path by actually running bun test against an unreachable server"
+    },
+    {
+      "at": "2026-08-03T11:24:56.952Z",
+      "event": "task-done",
+      "detail": "T14: VERIFY the four exits by removing the finally and confirming all four fail, then restoring it"
+    },
+    {
+      "at": "2026-08-03T11:24:57.045Z",
+      "event": "task-done",
+      "detail": "T15: VERIFY the early-return assertions fail when the guards are removed"
+    },
+    {
+      "at": "2026-08-03T11:24:57.130Z",
+      "event": "task-done",
+      "detail": "T16: full gate: typecheck, lint, test, dupes=1, health run"
+    },
+    {
+      "at": "2026-08-03T11:25:11.328Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: tests/fixtures/fake-sql.ts: queries[] records {text (whitespace-collapsed, params as ?), raw, values} at call time"
+    },
+    {
+      "at": "2026-08-03T11:25:11.412Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: program()/programSequence(); unmatched query resolves to [] — asserted by skill-handlers tests that never program most queries"
+    },
+    {
+      "at": "2026-08-03T11:25:11.495Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: result is a real Promise; permission-lifecycle exercises the three fire-and-forget .catch() updates and db.count() sees them"
+    },
+    {
+      "at": "2026-08-03T11:25:11.583Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: makePermissionWorld() — 12 tests in permission-lifecycle.test.ts construct and run PermissionHandler with no db/network/fs"
+    },
+    {
+      "at": "2026-08-03T11:25:11.669Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: FakeStatusManager delegates to the real HoldCounter; 'two prompts in one chat' asserts double-release counts once and depth"
+    },
+    {
+      "at": "2026-08-03T11:25:11.752Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: FakeMcp.notifications + behaviors(); asserted in all four exits and all four early returns"
+    },
+    {
+      "at": "2026-08-03T11:25:11.841Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: provisionTestDatabase(): CREATE DATABASE helyx_test_<pid>_<n>, migrate via subprocess, drop WITH FORCE; 'it is disposable' drops a table"
+    },
+    {
+      "at": "2026-08-03T11:25:11.926Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: databaseAvailable() returns a verdict; verified by running the full suite against 127.0.0.1:1 — 731 pass, 10 skip, 0 fail"
+    },
+    {
+      "at": "2026-08-03T11:25:12.010Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: four exits, four separate tests; T14 removed the finally and all four failed; exit 4 asserts rejects.toThrow"
+    },
+    {
+      "at": "2026-08-03T11:25:12.096Z",
+      "event": "ac-confirmed",
+      "detail": "AC10: three early returns; T15 removed each guard in turn and exactly its own test failed"
+    },
+    {
+      "at": "2026-08-03T11:25:12.182Z",
+      "event": "ac-confirmed",
+      "detail": "AC11: 600_000 appears once (asserted from source); override honoured; default-applies test proves the loop polls rather than exiting"
+    },
+    {
+      "at": "2026-08-03T11:25:12.267Z",
+      "event": "ac-confirmed",
+      "detail": "AC12: skill-handlers.test.ts FakeSql class deleted; jsonb-cast-v1.32.test.ts has no DATABASE_URL check and no tag cleanup"
+    },
+    {
+      "at": "2026-08-03T11:25:12.349Z",
+      "event": "ac-confirmed",
+      "detail": "AC13: 'migrations were applied from empty' + 'migrating again is a no-op' — schema_versions max and row count unchanged"
+    },
+    {
+      "at": "2026-08-03T11:25:12.433Z",
+      "event": "ac-confirmed",
+      "detail": "AC14: typecheck clean, lint 0 errors, 739 pass 0 fail, dupes reports 1, health 63 (improved)"
+    }
+  ]
+}
