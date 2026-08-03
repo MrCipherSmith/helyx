@@ -8,7 +8,7 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { openaiStream, ollamaStream, openaiGenerate } from "../../claude/client.ts";
+import { openaiStream, ollamaStream, openaiGenerate, withRetry } from "../../claude/client.ts";
 import { installFakeFetch, type FakeFetch } from "../fixtures/fake-fetch.ts";
 
 let http: FakeFetch;
@@ -31,7 +31,9 @@ function serveBytes(chunks: Uint8Array[], status = 200) {
   const recorder = http.fetch;
   http.program("", { json: {} });
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    await recorder(input, init).catch(() => undefined);
+    // Not swallowed: the recorder is what lets a test see the request, and an
+    // error from it means the request went somewhere nobody described.
+    await recorder(input, init);
     return new Response(
       new ReadableStream({
         start(controller) {
@@ -54,6 +56,15 @@ function serveJson(value: unknown, status = 200) {
   serveBytes([encoder.encode(JSON.stringify(value))], status);
 }
 
+/** Where `needle` starts inside `haystack`, or -1. */
+function indexOfBytes(haystack: Uint8Array, needle: Uint8Array): number {
+  outer: for (let i = 0; i <= haystack.length - needle.length; i++) {
+    for (let j = 0; j < needle.length; j++) if (haystack[i + j] !== needle[j]) continue outer;
+    return i;
+  }
+  return -1;
+}
+
 async function collect(stream: AsyncGenerator<string>): Promise<string> {
   let out = "";
   for await (const piece of stream) out += piece;
@@ -70,6 +81,18 @@ describe("the OpenAI-compatible stream", () => {
     ]);
 
     expect(await collect(openaiStream([{ role: "user", content: "hi" }], "be brief"))).toBe("Hello, world");
+
+    // And it asked the right thing of the right endpoint, once. Without this
+    // the suite passes with a wrong URL, a wrong method, or a system prompt
+    // that never reached the model.
+    expect(http.requests).toHaveLength(1);
+    const request = http.requests[0]!;
+    expect(request.method).toBe("POST");
+    expect(request.url).toEndWith("/chat/completions");
+    const body = request.body as { stream?: boolean; messages?: { role: string; content: string }[] };
+    expect(body.stream).toBe(true);
+    expect(body.messages?.[0]).toEqual({ role: "system", content: "be brief" });
+    expect(body.messages?.[1]).toEqual({ role: "user", content: "hi" });
   });
 
   test("an event split across two reads is not lost", async () => {
@@ -87,12 +110,34 @@ describe("the OpenAI-compatible stream", () => {
   test("a multi-byte character split across two reads survives", async () => {
     // The decoder is stateful for exactly this: "…" is three bytes, and a read
     // can end between them.
-    const encoded = new TextEncoder().encode('data: {"choices":[{"delta":{"content":"жду…"}}]}\n');
-    // Split two bytes from the end, mid-character: "…" is three bytes and a
-    // read can land between them.
-    serveBytes([encoded.slice(0, encoded.length - 2), encoded.slice(encoded.length - 2)]);
+    //
+    // The split point is found rather than guessed. The first version of this
+    // test took the last two bytes of the line — which are "}" and "\n", both
+    // ASCII — so it split nothing and would have passed with the decoder
+    // removed entirely.
+    const line = 'data: {"choices":[{"delta":{"content":"жду…"}}]}\n';
+    const encoded = new TextEncoder().encode(line);
+    const ellipsis = new TextEncoder().encode("…");
+    const at = indexOfBytes(encoded, ellipsis);
+    expect(at).toBeGreaterThan(0);
+
+    // One byte into the three-byte character.
+    serveBytes([encoded.slice(0, at + 1), encoded.slice(at + 1)]);
 
     expect(await collect(openaiStream([{ role: "user", content: "hi" }], ""))).toBe("жду…");
+  });
+
+  test("a CRLF stream still ends where it says it does", async () => {
+    // SSE is specified with CRLF and several providers send it. Left in place,
+    // the terminator arrives as "[DONE]\r" — not the terminator — and the
+    // reader carries on emitting whatever follows.
+    serve("", [
+      'data: {"choices":[{"delta":{"content":"answer"}}]}\r\n',
+      "data: [DONE]\r\n",
+      'data: {"choices":[{"delta":{"content":"trailing"}}]}\r\n',
+    ]);
+
+    expect(await collect(openaiStream([{ role: "user", content: "hi" }], ""))).toBe("answer");
   });
 
   test("everything after [DONE] is ignored", async () => {
@@ -155,6 +200,12 @@ describe("the Ollama stream", () => {
     ]);
 
     expect(await collect(ollamaStream([{ role: "user", content: "hi" }], ""))).toBe("Hello");
+
+    expect(http.requests).toHaveLength(1);
+    expect(http.requests[0]!.url).toEndWith("/api/chat");
+    // `think: false` asks the model not to produce a reasoning block at all.
+    // The filter is the fallback for models that ignore it, not the plan.
+    expect((http.requests[0]!.body as { think?: boolean }).think).toBe(false);
   });
 
   test("a reasoning block is hidden even when its tag is split across reads", async () => {
@@ -196,5 +247,65 @@ describe("the non-streaming path", () => {
       inputTokens: 5,
       outputTokens: 7,
     });
+  });
+});
+
+
+describe("withRetry — the loop, not just its predicate", () => {
+  test("a transient failure is retried and then succeeds", async () => {
+    // The pure predicate and the backoff are asserted elsewhere. This is the
+    // wiring: that the loop actually consults them, waits, and tries again.
+    const waits: number[] = [];
+    let attempts = 0;
+
+    const result = await withRetry(
+      async () => {
+        attempts++;
+        if (attempts < 3) throw new Error("API failed: 503 Service Unavailable");
+        return "answer";
+      },
+      "test",
+      async (ms) => { waits.push(ms); },
+    );
+
+    expect(result).toBe("answer");
+    expect(attempts).toBe(3);
+    expect(waits).toHaveLength(2);
+    // Exponential: the second wait is about twice the first, jitter aside.
+    expect(waits[1]!).toBeGreaterThan(waits[0]!);
+  });
+
+  test("a permanent failure is not retried at all", async () => {
+    // Retrying a bad key three times only delays the error by fourteen seconds.
+    const waits: number[] = [];
+    let attempts = 0;
+
+    await expect(
+      withRetry(
+        async () => { attempts++; throw new Error("401 Unauthorized"); },
+        "test",
+        async (ms) => { waits.push(ms); },
+      ),
+    ).rejects.toThrow("401");
+
+    expect(attempts).toBe(1);
+    expect(waits).toHaveLength(0);
+  });
+
+  test("a failure that never clears gives up after the budget", async () => {
+    const waits: number[] = [];
+    let attempts = 0;
+
+    await expect(
+      withRetry(
+        async () => { attempts++; throw new Error("429 Too Many Requests"); },
+        "test",
+        async (ms) => { waits.push(ms); },
+      ),
+    ).rejects.toThrow("429");
+
+    // Four calls: the first, plus MAX_RETRIES more.
+    expect(attempts).toBe(4);
+    expect(waits).toHaveLength(3);
   });
 });

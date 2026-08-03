@@ -36,7 +36,18 @@ function toTextMessages(messages: MessageParam[]): { role: string; content: stri
 
 // --- Retry with backoff ---
 
-async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
+/**
+ * Retry a transient failure with exponential backoff.
+ *
+ * `sleep` is a parameter so the loop itself can be tested. Its default is the
+ * real wait, and the real wait is fourteen seconds across three attempts —
+ * correct for a rate-limited provider, and not something a test can sit through.
+ */
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  label: string,
+  sleep: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
+): Promise<T> {
   let lastErr: unknown;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
@@ -46,7 +57,7 @@ async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
       if (isRetryable(err) && attempt < MAX_RETRIES) {
         const delay = retryDelay(attempt);
         console.log(`[client] ${label} retry ${attempt + 1}/${MAX_RETRIES} after ${Math.round(delay)}ms`);
-        await new Promise((r) => setTimeout(r, delay));
+        await sleep(delay);
         continue;
       }
       throw err;

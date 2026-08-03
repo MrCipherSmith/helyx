@@ -35,6 +35,14 @@ describe("takeLines", () => {
   test("a chunk with no newline is all tail", () => {
     expect(takeLines("partial")).toEqual({ lines: [], rest: "partial" });
   });
+
+  test("CRLF is a line ending, not part of the line", () => {
+    // SSE is specified with CRLF and several providers send it. Left in place,
+    // the terminator arrives as "[DONE]\r" — which is not the terminator, so
+    // the reader carries on past the end of the stream.
+    expect(takeLines("data: [DONE]\r\nnext")).toEqual({ lines: ["data: [DONE]"], rest: "next" });
+    expect(readSseLine(takeLines("data: [DONE]\r\n").lines[0]!)).toEqual({ kind: "done" });
+  });
 });
 
 describe("readSseLine", () => {

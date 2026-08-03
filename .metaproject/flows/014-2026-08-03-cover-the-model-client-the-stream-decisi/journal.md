@@ -58,3 +58,46 @@ the retry policy is asserted where it costs nothing.
 - 2026-08-03T21:20:47.345Z - ac-confirmed: AC6: twelve tests drive openaiStream, ollamaStream and openaiGenerate against a fake network
 - 2026-08-03T21:20:47.433Z - ac-confirmed: AC7: tag split across reads hidden; a reply too short to resolve the ambiguity still delivered
 - 2026-08-03T21:20:47.519Z - ac-confirmed: AC8: typecheck clean, lint 0 errors, 930 tests, dupes 1, claude/client.ts 37.30% lines
+
+## Review: four findings, and one of them was my own test lying
+
+**The UTF-8 boundary test split nothing.** It took the last two bytes of the
+line — `}` and `\n`, both ASCII — so it proved the decoder handles a split that
+never happened. It would have passed with the streaming decoder removed
+entirely. The split point is now found by locating the ellipsis in the byte
+array, and mutation-checked: replacing `decode(value, { stream: true })` with
+`decode(value)` fails it.
+
+This is the third time in this programme that a test I wrote could not fail.
+The pattern each time is the same — the test exercises the shape of the case
+rather than the case.
+
+**CRLF ended the stream nowhere.** SSE is specified with CRLF and several
+providers send it; splitting on `\n` alone leaves `\r` on every line, so the
+terminator arrives as `[DONE]\r`, which is not the terminator. The reader then
+carries on emitting whatever follows the end of the stream. Pre-existing, and
+now both fixed and covered end to end.
+
+**The fake network accepted anything.** `serve()` ignored its match argument and
+swallowed the recorder's errors, so the suite would have passed with a wrong
+URL, a wrong method, or a system prompt that never reached the model. It asserts
+the endpoint, the method, the streaming flag and both messages now — and the
+Ollama case asserts `think: false`, which is the request that makes the
+reasoning filter a fallback rather than the plan.
+
+**The retry loop was never run.** The predicate and the backoff were tested; the
+loop that consults them was not. `withRetry` takes its sleep as a parameter now,
+defaulting to the real wait, so a test can watch it retry a 503 twice and
+succeed, refuse to retry a 401, and give up after the budget on a persistent 429.
+
+### An acknowledged behaviour change
+
+The retry predicate is not a byte-for-byte extraction. It matches `rate`
+case-insensitively where the original was case-sensitive, and it requires a
+standalone three-digit 5xx where the original matched `5\d\d` anywhere — so a
+context length of 4500 or a request id of 1500123 no longer reads as a server
+error. Both are deliberate tightenings and neither affects the current call
+sites, but they are changes and are recorded as such rather than described as a
+move.
+
+Tests 930 → 935.

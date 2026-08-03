@@ -28,7 +28,11 @@ import { REASONING_OPEN, REASONING_CLOSE } from "./llm-output.ts";
 export function takeLines(buffer: string): { lines: string[]; rest: string } {
   const parts = buffer.split("\n");
   const rest = parts.pop() ?? "";
-  return { lines: parts, rest };
+  // The carriage return goes with the newline it came with. SSE is specified
+  // with CRLF and several providers send it; splitting on "\n" alone leaves a
+  // trailing "\r" on every line, which turns the terminator into "[DONE]\r" —
+  // not the terminator, so the stream is read past its own end.
+  return { lines: parts.map((line) => (line.endsWith("\r") ? line.slice(0, -1) : line)), rest };
 }
 
 /** What one SSE line means. */
