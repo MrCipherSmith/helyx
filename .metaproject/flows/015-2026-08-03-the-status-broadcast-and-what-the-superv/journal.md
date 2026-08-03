@@ -108,3 +108,6 @@ Also restored: the `parseContainerLine` tests, which a bulk edit swallowed while
 rewriting the block above them. Caught because lint reported the import as
 unused — which is the only reason it was noticed at all, and worth remembering
 about bulk edits.
+- 2026-08-03T22:15:03.347Z - ac-confirmed: AC1: ownership decided by com.docker.compose.project exactly; an unlabelled container matched by exact name; api-worker-1 not adopted by a project called api
+- 2026-08-03T22:15:03.438Z - ac-confirmed: AC5: foreign containers absent; a readable listing with none of ours raises the alarm rather than passing as health
+- 2026-08-03T22:15:03.529Z - ac-confirmed: AC10: typecheck clean, lint 0 errors, 961 tests, dupes 2 both documented, supervisor 46.76% lines

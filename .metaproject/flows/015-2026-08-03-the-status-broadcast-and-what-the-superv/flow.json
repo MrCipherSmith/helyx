@@ -5,7 +5,7 @@
   "title": "the status broadcast, and what the supervisor is answerable for",
   "status": "in-progress",
   "createdAt": "2026-08-03T21:57:55.986Z",
-  "updatedAt": "2026-08-03T21:58:22.231Z",
+  "updatedAt": "2026-08-03T22:15:03.529Z",
   "source": {
     "type": "description",
     "ref": null
@@ -13,8 +13,8 @@
   "acChecksum": "sha256:727528e9d319eba87af4b51ea7f1803d58e114dd608e52cd5fafd52ac8895dee",
   "acConfirmed": {
     "AC1": {
-      "at": "2026-08-03T21:58:21.423Z",
-      "note": "helyx-bot-1, helyx-postgres-1, carlson-bot-web-1 accepted; nginx, deprecated-postgres, my-helyx-experiment, helyxor-1 rejected"
+      "at": "2026-08-03T22:15:03.347Z",
+      "note": "ownership decided by com.docker.compose.project exactly; an unlabelled container matched by exact name; api-worker-1 not adopted by a project called api"
     },
     "AC2": {
       "at": "2026-08-03T21:58:21.513Z",
@@ -29,8 +29,8 @@
       "note": "Exited reported red, Up healthy green, via classifyContainer"
     },
     "AC5": {
-      "at": "2026-08-03T21:58:21.780Z",
-      "note": "deprecated-postgres and nginx absent from the report; a project container present when the project is known"
+      "at": "2026-08-03T22:15:03.438Z",
+      "note": "foreign containers absent; a readable listing with none of ours raises the alarm rather than passing as health"
     },
     "AC6": {
       "at": "2026-08-03T21:58:21.869Z",
@@ -49,8 +49,8 @@
       "note": "FakeSql.sql.json added; ask-question-service.test.ts no longer defines its own"
     },
     "AC10": {
-      "at": "2026-08-03T21:58:22.231Z",
-      "note": "typecheck clean, lint 0 errors, 953 tests, dupes 1, supervisor 46.76% lines"
+      "at": "2026-08-03T22:15:03.529Z",
+      "note": "typecheck clean, lint 0 errors, 961 tests, dupes 2 both documented, supervisor 46.76% lines"
     }
   },
   "pr": {
@@ -326,6 +326,21 @@
       "at": "2026-08-03T21:58:22.231Z",
       "event": "ac-confirmed",
       "detail": "AC10: typecheck clean, lint 0 errors, 953 tests, dupes 1, supervisor 46.76% lines"
+    },
+    {
+      "at": "2026-08-03T22:15:03.347Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: ownership decided by com.docker.compose.project exactly; an unlabelled container matched by exact name; api-worker-1 not adopted by a project called api"
+    },
+    {
+      "at": "2026-08-03T22:15:03.438Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: foreign containers absent; a readable listing with none of ours raises the alarm rather than passing as health"
+    },
+    {
+      "at": "2026-08-03T22:15:03.529Z",
+      "event": "ac-confirmed",
+      "detail": "AC10: typecheck clean, lint 0 errors, 961 tests, dupes 2 both documented, supervisor 46.76% lines"
     }
   ]
 }
