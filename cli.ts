@@ -976,9 +976,6 @@ async function setupAskQuestionHook(): Promise<StopHookResult> {
   const settingsPath = `${process.env.HOME}/.claude/settings.json`;
   const hookCmd = `${BOT_DIR}/${ASK_HOOK_SCRIPT_REL}`;
 
-  const ephemeral = isEphemeralCheckout();
-  if (ephemeral) return { status: "skipped", reason: ephemeral };
-
   let settings: Record<string, any> = {};
   if (existsSync(settingsPath)) {
     try {
@@ -994,6 +991,19 @@ async function setupAskQuestionHook(): Promise<StopHookResult> {
   // them runs on an AskUserQuestion call: several prompts in Telegram for one
   // question, and several waiters for one answer.
   const removed = pruneStaleStopHooks(settings.hooks.PreToolUse, `/${ASK_HOOK_SCRIPT_REL}`, existsSync);
+
+  // Pruning happens before this gate, deliberately, exactly as the Stop hook
+  // does it. A throwaway checkout must not register — but it is often the very
+  // run that notices a dead entry, and returning first would leave the user's
+  // settings pointing at scripts that are gone.
+  const ephemeral = isEphemeralCheckout();
+  if (ephemeral) {
+    if (removed > 0) {
+      writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf-8");
+      return { status: "pruned", removed };
+    }
+    return { status: "skipped", reason: ephemeral };
+  }
 
   const alreadyAdded = settings.hooks.PreToolUse.some((entry: any) =>
     Array.isArray(entry.hooks) && entry.hooks.some((h: any) => h.command === hookCmd)

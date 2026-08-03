@@ -457,6 +457,31 @@ describe("expiry", () => {
     expect(world.db.count(UPDATE_ANSWERS)).toBe(0);
   });
 
+  test("answering guards against a concurrent cancel", async () => {
+    // The two terminal states are exclusive. Without the guard a request
+    // cancelled at the same moment could end up both answered and expired, and
+    // the callback would report a send to a waiter that had already gone.
+    const world = makeWorld();
+    const clock = { now: () => 0, sleep: async () => {} };
+    world.db.program(SELECT_ANSWERS, { rows: [{ answers: [0], expired_at: null }] });
+
+    await waitForAnswers({ ...world.deps, ...clock }, "abcd1234", 1, 600_000);
+
+    const update = world.db.matching("SET answered_at = NOW()")[0]!;
+    expect(update.text).toContain("expired_at IS NULL");
+  });
+
+  test("a row carrying both states is reported as expired, not as answered", async () => {
+    // Should not happen, and if it ever does, "no longer waiting" is the true
+    // thing to say.
+    const world = makeWorld();
+    world.db.program(SELECT_ROW, {
+      rows: [{ questions: QUESTIONS, answers: [0, 0], answered_at: new Date(), expired_at: new Date(), chat_id: "-1", message_ids: [] }],
+    });
+
+    expect(await recordAnswer(world.deps, "ask:abcd1234:0:0")).toEqual({ status: "expired" });
+  });
+
   test("cancelRequest only touches a request still waiting", async () => {
     const world = makeWorld();
     await cancelRequest(world.deps.sql, "abcd1234");

@@ -165,8 +165,13 @@ export async function waitForAnswers(
 
     const answers = normaliseAnswers(rows[0]!.answers, expected);
     if (allAnswered(answers, expected)) {
+      // `AND expired_at IS NULL`: the two terminal states are exclusive, and
+      // without this guard a request cancelled at the same moment could end up
+      // both answered and expired — with the callback then reporting a send to
+      // a waiter that had already gone.
       await deps.sql`
-        UPDATE question_requests SET answered_at = NOW() WHERE id = ${requestId} AND answered_at IS NULL
+        UPDATE question_requests SET answered_at = NOW()
+         WHERE id = ${requestId} AND answered_at IS NULL AND expired_at IS NULL
       `.catch(() => {});
       return answers;
     }
@@ -218,11 +223,11 @@ export async function recordAnswer(deps: AskDeps, callbackData: string): Promise
   `.catch(() => [] as Record<string, unknown>[]);
   const row = rows[0];
   if (!row) return { status: "unknown" };
-  if (row.answered_at) return { status: "already-answered" };
-  // The hook gave up and the question went back to the terminal. Recording an
-  // answer now would tell the operator it had been sent when nothing is
-  // listening.
+  // Expiry is checked first. The two are meant to be exclusive, and if a row
+  // ever carries both, "no longer waiting" is the true thing to say — reporting
+  // a send to a waiter that has gone is the failure worth avoiding.
   if (row.expired_at) return { status: "expired" };
+  if (row.answered_at) return { status: "already-answered" };
 
   const questions = (Array.isArray(row.questions) ? row.questions : []) as Question[];
   const question = questions[parsed.questionIndex];

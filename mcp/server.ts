@@ -528,28 +528,44 @@ export function startMcpHttpServer(bot: Bot | null): ReturnType<typeof createSer
           },
         };
 
-        const registered = await registerQuestions(deps, input);
-        if (!registered) {
-          res.writeHead(204);
-          res.end();
-          return;
-        }
-
-        // The hook's curl gives up before the hook does. When the socket
-        // closes, stop waiting and expire the request, so the buttons on the
-        // operator's screen stop claiming they can still be answered.
-        const onGone = () => { void cancelRequest(sql, registered.requestId); };
+        // Capacity is taken, and the socket watched, before any work is done.
+        //
+        // Registration sends Telegram messages, so doing it first meant every
+        // concurrent caller passed the capacity check and sent its prompts
+        // before any of them counted — and a client that hung up during those
+        // sends was never noticed, leaving the request to wait out its full
+        // ten minutes for nobody.
+        askQuestionWaiters++;
+        let requestId: string | null = null;
+        let clientGone = false;
+        const onGone = () => {
+          clientGone = true;
+          if (requestId) void cancelRequest(sql, requestId);
+        };
         req.on("aborted", onGone);
         res.on("close", onGone);
 
-        askQuestionWaiters++;
         let answers: (number | null)[] | null = null;
+        let registered: Awaited<ReturnType<typeof registerQuestions>> = null;
         try {
-          answers = await waitForAnswers(deps, registered.requestId, input.questions.length, ANSWER_TIMEOUT_MS);
+          registered = await registerQuestions(deps, input);
+          if (registered) {
+            requestId = registered.requestId;
+            // Hung up while the questions were being sent: cancel now rather
+            // than start a wait nobody will collect.
+            if (clientGone) await cancelRequest(sql, requestId);
+            else answers = await waitForAnswers(deps, requestId, input.questions.length, ANSWER_TIMEOUT_MS);
+          }
         } finally {
           askQuestionWaiters--;
           req.off("aborted", onGone);
           res.off("close", onGone);
+        }
+
+        if (!registered) {
+          res.writeHead(204);
+          res.end();
+          return;
         }
         if (!answers) {
           // Timed out, or withdrawn. The hook prints nothing, Claude Code
