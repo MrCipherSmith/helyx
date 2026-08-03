@@ -107,3 +107,15 @@ which `FakeFetch` matches against every URL — so the fixture's unmatched-reque
 guard could never fire and a call to the wrong endpoint would have been answered
 rather than reported. It requires the endpoint now, and the guard was checked by
 pointing it at a wrong one: nine of sixteen tests fail.
+- 2026-08-03T21:38:08.282Z - task-done: T1: Collect remaining context
+- 2026-08-03T21:38:08.433Z - task-done: T2: Implement per plan
+- 2026-08-03T21:38:08.613Z - task-done: T3: Add/adjust tests and make them pass
+- 2026-08-03T21:38:08.800Z - task-done: T4: Self-review and prepare draft PR
+- 2026-08-03T21:38:08.972Z - task-done: T5: utils/llm-stream.ts — the decisions
+- 2026-08-03T21:38:09.208Z - task-done: T6: rewire claude/client.ts onto it
+- 2026-08-03T21:38:09.436Z - task-done: T7: llm-stream tests incl. chunk boundaries
+- 2026-08-03T21:38:09.596Z - task-done: T8: reader loops against the fake network
+- 2026-08-03T21:38:09.762Z - task-done: T9: full gate
+- 2026-08-03T21:38:09.985Z - ac-confirmed: AC5: parseOpenAiChunk returns null on unparseable; asserted end to end with a truncated chunk mid-stream
+- 2026-08-03T21:38:10.262Z - ac-confirmed: AC6: sixteen tests drive the loops; the helper requires the endpoint and the guard was checked by pointing it at a wrong one
+- 2026-08-03T21:38:10.465Z - ac-confirmed: AC8: typecheck clean, lint 0 errors, 935 tests, dupes 1, claude/client.ts 40.31% lines

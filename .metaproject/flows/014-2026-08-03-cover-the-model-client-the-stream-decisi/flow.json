@@ -5,7 +5,7 @@
   "title": "cover the model client: the stream decisions and the reader loops",
   "status": "in-progress",
   "createdAt": "2026-08-03T21:20:20.042Z",
-  "updatedAt": "2026-08-03T21:20:47.519Z",
+  "updatedAt": "2026-08-03T21:38:10.465Z",
   "source": {
     "type": "description",
     "ref": null
@@ -29,20 +29,20 @@
       "note": "429 and rate and 5xx retried; 401/400/model-not-found not; word-bounded so 4500 tokens and id 1500123 are not statuses"
     },
     "AC5": {
-      "at": "2026-08-03T21:20:47.259Z",
-      "note": "parseOpenAiChunk returns null on unparseable; the loop continues and the answer survives"
+      "at": "2026-08-03T21:38:09.985Z",
+      "note": "parseOpenAiChunk returns null on unparseable; asserted end to end with a truncated chunk mid-stream"
     },
     "AC6": {
-      "at": "2026-08-03T21:20:47.345Z",
-      "note": "twelve tests drive openaiStream, ollamaStream and openaiGenerate against a fake network"
+      "at": "2026-08-03T21:38:10.262Z",
+      "note": "sixteen tests drive the loops; the helper requires the endpoint and the guard was checked by pointing it at a wrong one"
     },
     "AC7": {
       "at": "2026-08-03T21:20:47.433Z",
       "note": "tag split across reads hidden; a reply too short to resolve the ambiguity still delivered"
     },
     "AC8": {
-      "at": "2026-08-03T21:20:47.519Z",
-      "note": "typecheck clean, lint 0 errors, 930 tests, dupes 1, claude/client.ts 37.30% lines"
+      "at": "2026-08-03T21:38:10.465Z",
+      "note": "typecheck clean, lint 0 errors, 935 tests, dupes 1, claude/client.ts 40.31% lines"
     }
   },
   "pr": {
@@ -308,6 +308,66 @@
       "at": "2026-08-03T21:20:47.519Z",
       "event": "ac-confirmed",
       "detail": "AC8: typecheck clean, lint 0 errors, 930 tests, dupes 1, claude/client.ts 37.30% lines"
+    },
+    {
+      "at": "2026-08-03T21:38:08.282Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-03T21:38:08.433Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-03T21:38:08.613Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-03T21:38:08.800Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-03T21:38:08.972Z",
+      "event": "task-done",
+      "detail": "T5: utils/llm-stream.ts — the decisions"
+    },
+    {
+      "at": "2026-08-03T21:38:09.208Z",
+      "event": "task-done",
+      "detail": "T6: rewire claude/client.ts onto it"
+    },
+    {
+      "at": "2026-08-03T21:38:09.436Z",
+      "event": "task-done",
+      "detail": "T7: llm-stream tests incl. chunk boundaries"
+    },
+    {
+      "at": "2026-08-03T21:38:09.596Z",
+      "event": "task-done",
+      "detail": "T8: reader loops against the fake network"
+    },
+    {
+      "at": "2026-08-03T21:38:09.762Z",
+      "event": "task-done",
+      "detail": "T9: full gate"
+    },
+    {
+      "at": "2026-08-03T21:38:09.985Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: parseOpenAiChunk returns null on unparseable; asserted end to end with a truncated chunk mid-stream"
+    },
+    {
+      "at": "2026-08-03T21:38:10.262Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: sixteen tests drive the loops; the helper requires the endpoint and the guard was checked by pointing it at a wrong one"
+    },
+    {
+      "at": "2026-08-03T21:38:10.465Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: typecheck clean, lint 0 errors, 935 tests, dupes 1, claude/client.ts 40.31% lines"
     }
   ]
 }
