@@ -10,6 +10,10 @@ import { appendLog } from "../utils/stats.ts";
 import { pendingInput, clearPendingInput, pendingToolInput, clearPendingTool, pendingScope, getBotRef } from "./handlers.ts";
 import { getSwitchContext, clearSwitchContext } from "./switch-cache.ts";
 import { replyInThread, escapeHtml } from "./format.ts";
+import { recordTypedAnswer } from "../services/ask-question.ts";
+import { answerToast } from "../utils/ask-question.ts";
+import { sendTelegramMessage, editTelegramMessage } from "../channel/telegram.ts";
+import { CONFIG } from "../config.ts";
 import { getForumChatId } from "./forum-cache.ts";
 import { enqueueForTopic, topicQueueKey } from "./topic-queue.ts";
 import { maybeAttachVoice } from "../utils/tts.ts";
@@ -59,6 +63,37 @@ export async function handleText(ctx: Context): Promise<void> {
     const command = `/${pendingTool.name} ${text}`.trim();
     await enqueueToolCommand(chatId, ctx.from?.username ?? ctx.from?.first_name ?? "user", command, ctx);
     return;
+  }
+
+  // An answer the operator was asked to type.
+  //
+  // Checked before routing, because this message is not a new instruction: a
+  // question is waiting for exactly these words, and forwarding them to Claude
+  // as an ordinary message would leave the question waiting behind its own
+  // answer until it timed out.
+  const typed = await recordTypedAnswer(
+    {
+      sql,
+      sendMessage: async (chat, body, extra) => {
+        const res = await sendTelegramMessage(CONFIG.TELEGRAM_BOT_TOKEN, chat, body, extra);
+        return { ok: res.ok, messageId: res.messageId };
+      },
+      editMessage: async (chat, messageId, body, extra) =>
+        editTelegramMessage(CONFIG.TELEGRAM_BOT_TOKEN, chat, messageId, body, { parse_mode: "HTML", ...extra }),
+    },
+    chatId,
+    text,
+  ).catch((err) => {
+    logger.error({ err, chatId }, "typed answer failed");
+    return null;
+  });
+
+  if (typed) {
+    await replyInThread(ctx, answerToast(typed));
+    // Only a refusal lets the message through as ordinary text: the question
+    // is still waiting, and swallowing it would lose both the answer and the
+    // message.
+    if (typed.status !== "out-of-range") return;
   }
 
   // Forum routing

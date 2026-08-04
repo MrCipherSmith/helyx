@@ -21,6 +21,7 @@ import {
   type Question,
   answerToast,
   type PressOutcome,
+  freeTextCallbackData,
 } from "../../utils/ask-question.ts";
 
 function hookPayload(overrides: Record<string, unknown> = {}): string {
@@ -146,7 +147,7 @@ describe("parseHookInput", () => {
 describe("callback payloads", () => {
   test("round-trip", () => {
     const data = answerCallbackData("a1b2c3d4", 1, 2);
-    expect(parseAnswerCallback(data)).toEqual({ requestId: "a1b2c3d4", questionIndex: 1, optionIndex: 2 });
+    expect(parseAnswerCallback(data)).toEqual({ requestId: "a1b2c3d4", questionIndex: 1, optionIndex: 2, freeText: false });
   });
 
   test("someone else's callback is not ours", () => {
@@ -191,11 +192,14 @@ describe("the Telegram message", () => {
     expect(text).toContain("2. Не публиковать");
   });
 
-  test("one button per option, each carrying its own index", () => {
+  test("one button per option, each carrying its own index, then a way to type", () => {
+    // The free-text button rides on every question, whatever its options: a
+    // question worth asking is often one where none of them is right.
     const { buttons } = questionMessage("a1b2c3d4", 3, question);
     expect(buttons.flat().map((b) => b.callback_data)).toEqual([
       "ask:a1b2c3d4:3:0",
       "ask:a1b2c3d4:3:1",
+      "ask:a1b2c3d4:3:t",
     ]);
   });
 
@@ -255,7 +259,7 @@ describe("allAnswered", () => {
     // The tool is one call. Denying after one of three answers would tell
     // Claude the other two were declined.
     expect(allAnswered([0, 1], 2)).toBe(true);
-    expect(allAnswered([0, null], 2)).toBe(false);
+    expect(allAnswered([0, null as number | null], 2)).toBe(false);
     expect(allAnswered([0], 2)).toBe(false);
     expect(allAnswered([], 0)).toBe(true);
   });
@@ -315,5 +319,77 @@ describe("what the operator sees on the button they pressed", () => {
   test("anything else admits it failed rather than claiming success", () => {
     expect(answerToast({ status: "out-of-range" })).toContain("Не удалось");
     expect(answerToast({ status: "not-ours" })).toContain("Не удалось");
+  });
+});
+
+describe("answering in the operator's own words", () => {
+  test("the free-text press is not an option press, and neither parses as the other", () => {
+    // They share a shape, and telling them apart is what stops "let me type"
+    // from being recorded as an answer nobody chose. `Number("t")` is NaN, so
+    // the marker cannot be read as an index.
+    const typed = parseAnswerCallback(freeTextCallbackData("a1b2c3d4", 2));
+    expect(typed).toEqual({ requestId: "a1b2c3d4", questionIndex: 2, optionIndex: null, freeText: true });
+
+    const chosen = parseAnswerCallback(answerCallbackData("a1b2c3d4", 2, 0));
+    expect(chosen!.freeText).toBe(false);
+    expect(chosen!.optionIndex).toBe(0);
+  });
+
+  test("an option index of zero is still an option", () => {
+    // The falsy trap: option 0 is the first choice, not "no choice".
+    expect(parseAnswerCallback("ask:id:0:0")!.freeText).toBe(false);
+    expect(parseAnswerCallback("ask:id:0:0")!.optionIndex).toBe(0);
+  });
+
+  test("a typed answer is marked as typed when Claude reads it back", () => {
+    // Printed like a label, the operator's sentence would read as one of the
+    // options offered — and a model reading it back would treat their words as
+    // its own suggestion.
+    const questions = [{ question: "Куда деплоить?", multiSelect: false, options: [{ label: "staging" }] }];
+    const out = formatAnswers(questions, ["на прод, но сначала миграции"]);
+
+    expect(out).toContain("(typed) на прод, но сначала миграции");
+    expect(out).not.toContain("staging");
+  });
+
+  test("a chosen option still reads as a label", () => {
+    const questions = [{ question: "Куда деплоить?", multiSelect: false, options: [{ label: "staging" }] }];
+    expect(formatAnswers(questions, [0])).toContain("→ staging");
+  });
+
+  test("typed and chosen answers mix in one call", () => {
+    const questions = [
+      { question: "Куда?", multiSelect: false, options: [{ label: "staging" }] },
+      { question: "Когда?", multiSelect: false, options: [{ label: "сейчас" }] },
+    ];
+    const out = formatAnswers(questions, [0, "после релиза"]);
+
+    expect(out).toContain("→ staging");
+    expect(out).toContain("(typed) после релиза");
+  });
+
+  test("typed words count as answered, blank ones do not", () => {
+    // Pressing "Свой ответ" and sending a blank line must leave the question
+    // waiting rather than closing the whole call with nothing in it.
+    expect(allAnswered(["что-нибудь"], 1)).toBe(true);
+    expect(allAnswered([""], 1)).toBe(false);
+    expect(allAnswered(["   "], 1)).toBe(false);
+    expect(allAnswered([0], 1)).toBe(true);
+    expect(allAnswered([null], 1)).toBe(false);
+  });
+
+  test("the operator is told the next message is the answer", () => {
+    // Instruction, not confirmation: nothing has been recorded yet.
+    expect(answerToast({ status: "awaiting-text", label: "Куда деплоить?" })).toContain("следующим сообщением");
+  });
+
+  test("the free-text button is on a question of its own row", () => {
+    // Its own row so it cannot be hit while aiming for the last option.
+    const { buttons } = questionMessage("id", 0, {
+      question: "q",
+      multiSelect: false,
+      options: [{ label: "a" }, { label: "b" }],
+    });
+    expect(buttons.at(-1)).toEqual([{ text: "✏️ Свой ответ", callback_data: "ask:id:0:t" }]);
   });
 });

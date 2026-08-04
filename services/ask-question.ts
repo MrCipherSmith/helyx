@@ -16,6 +16,7 @@ import {
   parseAnswerCallback,
   questionMessage,
   shortRequestId,
+  type Answer,
   type HookInput,
   type Question,
 } from "../utils/ask-question.ts";
@@ -178,7 +179,7 @@ export async function waitForAnswers(
    * question being delivered at all.
    */
   clientGone: () => boolean = () => false,
-): Promise<(number | null)[] | null> {
+): Promise<Answer[] | null> {
   const now = deps.now ?? Date.now;
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const deadline = now() + timeoutMs;
@@ -234,12 +235,18 @@ export async function waitForAnswers(
 }
 
 /** JSONB comes back as whatever was stored; only an array of indices is usable. */
-function normaliseAnswers(raw: unknown, expected: number): (number | null)[] {
+function normaliseAnswers(raw: unknown, expected: number): Answer[] {
   const list = Array.isArray(raw) ? raw : [];
-  const answers: (number | null)[] = [];
+  const answers: Answer[] = [];
   for (let i = 0; i < expected; i++) {
     const value = list[i];
-    answers.push(typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null);
+    // Words as well as indices. Dropping strings here was silent and total:
+    // the typed answer was stored in the row and then read back as nothing, so
+    // the call never completed and the operator waited out the full timeout
+    // having already answered.
+    if (typeof value === "string" && value.trim()) answers.push(value);
+    else if (typeof value === "number" && Number.isInteger(value) && value >= 0) answers.push(value);
+    else answers.push(null);
   }
   return answers;
 }
@@ -250,7 +257,8 @@ export type AnswerOutcome =
   | { status: "unknown" }
   | { status: "already-answered" }
   | { status: "expired" }
-  | { status: "out-of-range" };
+  | { status: "out-of-range" }
+  | { status: "awaiting-text"; label: string };
 
 /**
  * Record one tapped button.
@@ -277,7 +285,11 @@ export async function recordAnswer(deps: AskDeps, callbackData: string): Promise
 
   const questions = (Array.isArray(row.questions) ? row.questions : []) as Question[];
   const question = questions[parsed.questionIndex];
-  const option = question?.options?.[parsed.optionIndex];
+  if (!question) return { status: "out-of-range" };
+
+  if (parsed.freeText) return await awaitTypedAnswer(deps, parsed.requestId, parsed.questionIndex, question);
+
+  const option = question.options?.[parsed.optionIndex!];
   if (!option) return { status: "out-of-range" };
 
   // One slot, set in place by the database.
@@ -317,6 +329,81 @@ export async function recordAnswer(deps: AskDeps, callbackData: string): Promise
   }
 
   return { status: "recorded", label: option.label, complete };
+}
+
+/**
+ * Mark a question as waiting for the operator's own words.
+ *
+ * The request is not answered by this — it is answered by the message that
+ * follows. Storing which question is waiting is what lets the text handler
+ * tell "an answer" from "an ordinary message", and without it the operator's
+ * reply would be forwarded to Claude as a new instruction while the question
+ * kept waiting behind it.
+ */
+async function awaitTypedAnswer(
+  deps: AskDeps,
+  requestId: string,
+  questionIndex: number,
+  question: Question,
+): Promise<AnswerOutcome> {
+  const updated = await deps.sql`
+    UPDATE question_requests
+       SET awaiting_question = ${questionIndex}
+     WHERE id = ${requestId} AND answered_at IS NULL AND expired_at IS NULL
+    RETURNING id
+  `.catch(() => [] as Record<string, unknown>[]);
+
+  if (updated.length === 0) return await terminalOutcome(deps, requestId);
+  return { status: "awaiting-text", label: question.question };
+}
+
+/**
+ * Take the operator's typed message as the answer to whatever awaits it.
+ *
+ * Returns null when nothing was waiting, which is the ordinary case and means
+ * the caller should treat the message as it always did.
+ */
+export async function recordTypedAnswer(
+  deps: AskDeps,
+  chatId: string,
+  text: string,
+): Promise<AnswerOutcome | null> {
+  const trimmed = text.trim();
+
+  const rows = await deps.sql`
+    SELECT id, questions, awaiting_question
+      FROM question_requests
+     WHERE chat_id = ${chatId}
+       AND awaiting_question IS NOT NULL
+       AND answered_at IS NULL AND expired_at IS NULL
+     ORDER BY created_at DESC
+     LIMIT 1
+  `.catch(() => [] as Record<string, unknown>[]);
+
+  const row = rows[0];
+  if (!row) return null;
+
+  const questionIndex = Number(row.awaiting_question);
+  const questions = (Array.isArray(row.questions) ? row.questions : []) as Question[];
+  if (!questions[questionIndex]) return { status: "out-of-range" };
+
+  // An empty message is not an answer. Accepting one would close the whole
+  // call with nothing in it, and the operator would have said nothing while
+  // Claude was told they had.
+  if (!trimmed) return { status: "out-of-range" };
+
+  const updated = await deps.sql`
+    UPDATE question_requests
+       SET answers = jsonb_set(answers, ARRAY[${String(questionIndex)}], ${deps.sql.json(trimmed)}, true),
+           awaiting_question = NULL
+     WHERE id = ${row.id as string} AND answered_at IS NULL AND expired_at IS NULL
+    RETURNING answers
+  `.catch(() => [] as Record<string, unknown>[]);
+
+  if (updated.length === 0) return await terminalOutcome(deps, row.id as string);
+
+  const answers = normaliseAnswers(updated[0]!.answers, questions.length);
+  return { status: "recorded", label: trimmed, complete: allAnswered(answers, questions.length) };
 }
 
 /** Which terminal state a request ended in, for a tap that arrived too late. */
@@ -360,7 +447,7 @@ export async function runQuestionExchange(
   deps: AskDeps,
   input: HookInput,
   limits: ExchangeLimits,
-): Promise<(number | null)[] | null> {
+): Promise<Answer[] | null> {
   const registered = await registerQuestions(deps, input);
   if (!registered) return null;
 

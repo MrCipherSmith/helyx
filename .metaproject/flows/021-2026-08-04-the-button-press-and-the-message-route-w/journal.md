@@ -7,3 +7,19 @@
 - 2026-08-04T14:19:18.099Z - task-done: T2: Implement per plan
 - 2026-08-04T14:19:18.187Z - task-done: T3: Add/adjust tests and make them pass
 - 2026-08-04T14:19:18.277Z - task-done: T4: Self-review and prepare draft PR
+- 2026-08-04T14:53:19.823Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/57 (warning: PR is not a draft)
+- 2026-08-04T14:53:19.911Z - ac-confirmed: AC1
+- 2026-08-04T14:53:19.999Z - ac-confirmed: AC2
+- 2026-08-04T14:53:20.095Z - ac-confirmed: AC3
+- 2026-08-04T14:53:20.186Z - ac-confirmed: AC4
+- 2026-08-04T14:53:20.280Z - ac-confirmed: AC5
+- 2026-08-04T14:53:20.369Z - ac-confirmed: AC6
+- 2026-08-04T14:53:20.459Z - ac-confirmed: AC7
+- 2026-08-04T14:53:20.548Z - ac-confirmed: AC8
+- 2026-08-04T14:53:20.637Z - ac-confirmed: AC9
+- 2026-08-04T14:53:20.731Z - ac-confirmed: AC10
+- 2026-08-04T14:53:20.826Z - ac-confirmed: AC11
+- 2026-08-04T14:53:20.912Z - ac-confirmed: AC12
+- 2026-08-04T14:53:21.002Z - ac-confirmed: AC13
+- 2026-08-04T14:53:21.093Z - completing
+- 2026-08-04T14:53:22.860Z - done: all gates passed

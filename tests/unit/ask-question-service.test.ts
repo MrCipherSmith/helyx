@@ -11,6 +11,7 @@ import {
   registerQuestions,
   waitForAnswers,
   recordAnswer,
+  recordTypedAnswer,
   resolveTarget,
   hasOpenQuestion,
   cancelRequest,
@@ -141,6 +142,7 @@ describe("registerQuestions", () => {
     expect(keyboard.map((b) => b.callback_data)).toEqual([
       `ask:${registered!.requestId}:0:0`,
       `ask:${registered!.requestId}:0:1`,
+      `ask:${registered!.requestId}:0:t`,
     ]);
   });
 
@@ -761,9 +763,14 @@ describe("what Claude receives is what the row committed", () => {
 
   test("a claim that commits something unusable falls back to the terminal", async () => {
     // Handing Claude "(no answer)" for a slot is worse than asking again.
+    //
+    // The unusable value used to be a string. Since typed answers landed, a
+    // string *is* an answer — so this now uses something that is genuinely
+    // neither: an object, which no path can have written and no reader can
+    // turn into words or an index.
     const world = makeWorld();
     world.db.program(SELECT_ANSWERS, { rows: [{ answers: [0], expired_at: null }] });
-    world.db.program("SET answered_at = NOW()", { rows: [{ answers: ["nonsense"] }] });
+    world.db.program("SET answered_at = NOW()", { rows: [{ answers: [{ nonsense: true }] }] });
 
     expect(
       await waitForAnswers({ ...world.deps, now: () => 0, sleep: async () => {} }, "abcd1234", 1, 600_000),
@@ -816,5 +823,106 @@ describe("a failed edit is reported, not swallowed", () => {
     }
 
     expect(attempts).toBe(2);
+  });
+});
+
+describe("an answer the operator types", () => {
+  const QUESTIONS = [{ question: "Куда деплоить?", multiSelect: false, options: [{ label: "staging" }] }];
+
+  /** A request that has been told to expect words for question 0. */
+  function awaiting(world: World, row: Record<string, unknown> = {}) {
+    world.db.program("awaiting_question IS NOT NULL", {
+      rows: [{ id: "req1", questions: QUESTIONS, awaiting_question: 0, ...row }],
+    });
+    world.db.program("SET answers = jsonb_set", { rows: [{ answers: ["на прод"] }] });
+  }
+
+  test("pressing the button marks the question as waiting, without answering it", async () => {
+    // Nothing is recorded by the press. The answer is the message that
+    // follows, and saying otherwise would close the call on an empty slot.
+    const world = makeWorld();
+    world.db.program("SELECT questions, answers", { rows: [{ questions: QUESTIONS, answers: [], chat_id: "-100", message_ids: [700] }] });
+    world.db.program("SET awaiting_question", { rows: [{ id: "req1" }] });
+
+    const outcome = await recordAnswer(world.deps, "ask:req1:0:t");
+
+    expect(outcome.status).toBe("awaiting-text");
+    expect(world.db.count("SET awaiting_question")).toBe(1);
+    expect(world.db.count("SET answers = jsonb_set")).toBe(0);
+  });
+
+  test("the next message becomes the answer", async () => {
+    const world = makeWorld();
+    awaiting(world);
+
+    const outcome = await recordTypedAnswer(world.deps, "-100", "на прод");
+
+    expect(outcome).toEqual({ status: "recorded", label: "на прод", complete: true });
+  });
+
+  test("and stops the question waiting", async () => {
+    // Left set, the operator's *next* message would be eaten as an answer to
+    // a question already answered.
+    const world = makeWorld();
+    awaiting(world);
+
+    await recordTypedAnswer(world.deps, "-100", "на прод");
+
+    expect(world.db.matching("SET answers = jsonb_set")[0]!.text).toContain("awaiting_question = NULL");
+  });
+
+  test("a message with nothing waiting is not an answer", async () => {
+    // The ordinary case, and the one that must stay ordinary: null tells the
+    // caller to treat the message exactly as it always did.
+    const world = makeWorld();
+    world.db.program("awaiting_question IS NOT NULL", { rows: [] });
+
+    expect(await recordTypedAnswer(world.deps, "-100", "просто сообщение")).toBeNull();
+  });
+
+  test("an empty message is refused and the question keeps waiting", async () => {
+    // Accepting it would close the whole call with nothing in it: the operator
+    // said nothing while Claude was told they had.
+    const world = makeWorld();
+    awaiting(world);
+
+    const outcome = await recordTypedAnswer(world.deps, "-100", "   \n  ");
+
+    expect(outcome!.status).toBe("out-of-range");
+    expect(world.db.count("SET answers = jsonb_set")).toBe(0);
+  });
+
+  test("a request that ended between the press and the message is refused", async () => {
+    // The waiter is gone; telling the operator their words were sent would be
+    // a lie, and they would not retype them.
+    const world = makeWorld();
+    awaiting(world);
+    world.db.program("SET answers = jsonb_set", { rows: [] });
+    world.db.program("SELECT answered_at, expired_at", { rows: [{ answered_at: null, expired_at: new Date() }] });
+
+    expect((await recordTypedAnswer(world.deps, "-100", "на прод"))!.status).toBe("expired");
+  });
+
+  test("the answer is stored as words, not as an index", async () => {
+    // Stored as a number it would be read back as an option — and option "на
+    // прод" does not exist, so the answer would vanish into out-of-range.
+    const world = makeWorld();
+    awaiting(world);
+
+    await recordTypedAnswer(world.deps, "-100", "на прод");
+
+    const values = world.db.matching("SET answers = jsonb_set")[0]!.values;
+    expect(values).toContain("на прод");
+  });
+
+  test("the newest waiting request wins when there are two", async () => {
+    // Ordered by creation: the operator is answering the question they were
+    // just shown, not one they left open earlier.
+    const world = makeWorld();
+    awaiting(world);
+
+    await recordTypedAnswer(world.deps, "-100", "на прод");
+
+    expect(world.db.matching("awaiting_question IS NOT NULL")[0]!.text).toContain("ORDER BY created_at DESC");
   });
 });

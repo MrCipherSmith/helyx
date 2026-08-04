@@ -133,10 +133,25 @@ export function answerCallbackData(requestId: string, questionIndex: number, opt
   return `ask:${requestId}:${questionIndex}:${optionIndex}`;
 }
 
+/** The marker that means "let me type it" rather than an option index. */
+export const FREE_TEXT_MARKER = "t";
+
+/** The press that asks for a free-text answer to this question. */
+export function freeTextCallbackData(requestId: string, questionIndex: number): string {
+  return `ask:${requestId}:${questionIndex}:${FREE_TEXT_MARKER}`;
+}
+
+/**
+ * One answer slot: an option index, the operator's own words, or nothing yet.
+ */
+export type Answer = number | string | null | undefined;
+
 export interface AnswerCallback {
   requestId: string;
   questionIndex: number;
-  optionIndex: number;
+  /** The option chosen, or null when the operator asked to type instead. */
+  optionIndex: number | null;
+  freeText: boolean;
 }
 
 /** Read a callback payload, or `null` if it is not one of ours. */
@@ -144,10 +159,18 @@ export function parseAnswerCallback(data: string): AnswerCallback | null {
   const parts = data.split(":");
   if (parts.length !== 4 || parts[0] !== "ask") return null;
   const questionIndex = Number(parts[2]);
+  if (!parts[1] || !Number.isInteger(questionIndex) || questionIndex < 0) return null;
+
+  // "Let me type it" and "option t" have to be distinguishable, and they are
+  // because an option is always a number: `Number("t")` is NaN, so the marker
+  // cannot be mistaken for an index and an index cannot be mistaken for it.
+  if (parts[3] === FREE_TEXT_MARKER) {
+    return { requestId: parts[1]!, questionIndex, optionIndex: null, freeText: true };
+  }
+
   const optionIndex = Number(parts[3]);
-  if (!parts[1] || !Number.isInteger(questionIndex) || !Number.isInteger(optionIndex)) return null;
-  if (questionIndex < 0 || optionIndex < 0) return null;
-  return { requestId: parts[1]!, questionIndex, optionIndex };
+  if (!Number.isInteger(optionIndex) || optionIndex < 0) return null;
+  return { requestId: parts[1]!, questionIndex, optionIndex, freeText: false };
 }
 
 /**
@@ -201,6 +224,17 @@ export function questionMessage(
     }
   });
 
+  // On every question, whatever its options.
+  //
+  // A question worth asking is often one where none of the offered options is
+  // right, and that is exactly the question that used to stay in the terminal:
+  // the hook declined the whole call rather than send something it could not
+  // represent, and the operator never saw it.
+  const freeText = freeTextCallbackData(requestId, questionIndex);
+  if (Buffer.byteLength(freeText, "utf8") <= MAX_CALLBACK_BYTES) {
+    buttons.push([{ text: "✏️ Свой ответ", callback_data: freeText }]);
+  }
+
   return { text: lines.join("\n"), buttons };
 }
 
@@ -216,11 +250,18 @@ function trimButton(label: string): string {
  * both the question and the chosen option so the answer cannot be attached to
  * the wrong one when there were several.
  */
-export function formatAnswers(questions: Question[], choices: (number | null)[]): string {
+export function formatAnswers(questions: Question[], choices: readonly Answer[]): string {
   const lines = ["The user answered from Telegram rather than the terminal:"];
   questions.forEach((question, i) => {
     const chosen = choices[i];
-    const option = chosen === null || chosen === undefined ? undefined : question.options[chosen];
+    // Typed answers are marked as typed. Printed like a label, a sentence the
+    // operator wrote would read as one of the options offered — and a model
+    // reading it back would treat their words as its own suggestion.
+    if (typeof chosen === "string" && chosen.trim()) {
+      lines.push(`- ${question.question} → (typed) ${chosen.trim()}`);
+      return;
+    }
+    const option = typeof chosen === "number" ? question.options[chosen] : undefined;
     lines.push(
       option
         ? `- ${question.question} → ${option.label}`
@@ -231,7 +272,7 @@ export function formatAnswers(questions: Question[], choices: (number | null)[])
 }
 
 /** The JSON a PreToolUse hook prints to stop the tool and speak for the user. */
-export function denyWithAnswers(questions: Question[], choices: (number | null)[]): string {
+export function denyWithAnswers(questions: Question[], choices: readonly Answer[]): string {
   return JSON.stringify({
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
@@ -247,8 +288,20 @@ export function denyWithAnswers(questions: Question[], choices: (number | null)[
  * All of them, because the tool is one call: answering the first of three and
  * denying on that alone would tell Claude the other two were declined.
  */
-export function allAnswered(choices: (number | null)[], expected: number): boolean {
-  return choices.length === expected && choices.every((c) => c !== null && c !== undefined);
+export function allAnswered(choices: readonly Answer[], expected: number): boolean {
+  return choices.length === expected && choices.every(isAnswered);
+}
+
+/**
+ * Whether one slot holds an answer.
+ *
+ * A typed answer counts, and an empty one does not: pressing "Свой ответ" and
+ * sending a blank line must leave the question still waiting rather than
+ * closing the whole call with nothing in it.
+ */
+export function isAnswered(choice: Answer): boolean {
+  if (typeof choice === "string") return choice.trim().length > 0;
+  return typeof choice === "number";
 }
 
 /**
@@ -266,7 +319,8 @@ export type PressOutcome =
   | { status: "unknown" }
   | { status: "already-answered" }
   | { status: "expired" }
-  | { status: "out-of-range" };
+  | { status: "out-of-range" }
+  | { status: "awaiting-text"; label: string };
 
 /**
  * What the operator sees on the button they just pressed.
@@ -283,6 +337,10 @@ export function answerToast(outcome: PressOutcome): string {
       // closed and the session is moving, which is the difference between
       // waiting and being finished.
       return outcome.complete ? `✅ ${outcome.label} — отправляю` : `✅ ${outcome.label}`;
+    case "awaiting-text":
+      // Instruction rather than confirmation: nothing has been recorded yet,
+      // and the operator has to know the next thing they send is the answer.
+      return "✏️ Напишите ответ следующим сообщением";
     case "already-answered":
       return "Уже отвечено";
     case "expired":
