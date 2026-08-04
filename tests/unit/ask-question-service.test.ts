@@ -43,7 +43,8 @@ interface World {
   deps: AskDeps;
 }
 
-function makeWorld(options: { sendOk?: boolean } = {}): World {
+function makeWorld(options: { sendOk?: boolean; editOk?: boolean } = {}): World {
+  const editResult = () => (options.editOk === false ? { ok: false } : { ok: true });
   const db = new FakeSql();
   const sent: World["sent"] = [];
   const edits: World["edits"] = [];
@@ -59,6 +60,7 @@ function makeWorld(options: { sendOk?: boolean } = {}): World {
     },
     editMessage: async (chatId, messageId, text, extra) => {
       edits.push({ chatId, messageId, text, extra });
+      return editResult();
     },
     random: () => 0.5,
   };
@@ -182,9 +184,43 @@ describe("registerQuestions", () => {
     // original bug wearing a different hat.
     const world = makeWorld({ sendOk: false });
     withChat(world);
+    world.db.program("SET expired_at = NOW()", { rows: [{ chat_id: "-1", questions: QUESTIONS, message_ids: [null, null] }] });
 
     expect(await registerQuestions(world.deps, hookInput())).toBeNull();
-    expect(world.db.count("DELETE FROM question_requests")).toBe(1);
+    expect(world.db.count("SET expired_at = NOW()")).toBe(1);
+  });
+
+  test("a message that did land has its keyboard taken down when a later one fails", async () => {
+    // Deleting the row would leave the first question sitting on the operator's
+    // screen with live buttons and nothing behind them — the same complaint,
+    // moved one step earlier.
+    const world = makeWorld();
+    withChat(world);
+    let call = 0;
+    const deps: AskDeps = {
+      ...world.deps,
+      sendMessage: async () => (++call === 1 ? { ok: true, messageId: 700 } : { ok: false, messageId: null }),
+    };
+    world.db.program("SET expired_at = NOW()", {
+      rows: [{ chat_id: "-100123", questions: QUESTIONS, message_ids: [700, null] }],
+    });
+
+    expect(await registerQuestions(deps, hookInput())).toBeNull();
+
+    expect(world.edits).toHaveLength(1);
+    expect(world.edits[0]!.messageId).toBe(700);
+    expect(world.edits[0]!.extra?.reply_markup).toEqual({ inline_keyboard: [] });
+  });
+
+  test("message ids are recorded as each one lands, not once at the end", async () => {
+    // The cleanup has to be able to find a message that is already on screen
+    // when the next send fails.
+    const world = makeWorld();
+    withChat(world);
+
+    await registerQuestions(world.deps, hookInput());
+
+    expect(world.db.count("SET message_ids")).toBe(2);
   });
 });
 
@@ -395,6 +431,7 @@ describe("partial delivery is not delivery", () => {
     // terminal selector stays suppressed for the full ten minutes.
     const world = makeWorld();
     withChat(world);
+    world.db.program("SET expired_at = NOW()", { rows: [{ chat_id: "-1", questions: QUESTIONS, message_ids: [700, null] }] });
     let call = 0;
     const deps: AskDeps = {
       ...world.deps,
@@ -402,7 +439,9 @@ describe("partial delivery is not delivery", () => {
     };
 
     expect(await registerQuestions(deps, hookInput())).toBeNull();
-    expect(world.db.count("DELETE FROM question_requests")).toBe(1);
+    // Expired rather than deleted: the message that did land keeps a live
+    // keyboard until something takes it down.
+    expect(world.db.count("SET expired_at = NOW()")).toBe(1);
   });
 
   test("a send that succeeds without a message id counts as failed", async () => {
@@ -700,5 +739,53 @@ describe("what Claude receives is what the row committed", () => {
     expect(
       await waitForAnswers({ ...world.deps, now: () => 0, sleep: async () => {} }, "abcd1234", 1, 600_000),
     ).toBeNull();
+  });
+});
+
+
+describe("a failed edit is reported, not swallowed", () => {
+  test("Telegram declining the edit is retried and then logged", async () => {
+    // The row is already claimed, so this is the only chance to take the
+    // keyboard down. Swallowing the failure leaves it live for good — which is
+    // exactly the state being fixed — and says so nowhere.
+    const world = makeWorld({ editOk: false });
+    world.db.program("SET expired_at = NOW()", {
+      rows: [{ chat_id: "-100123", questions: [QUESTIONS[0]], message_ids: [700] }],
+    });
+
+    const errors: unknown[][] = [];
+    const realError = console.error;
+    console.error = (...args: unknown[]) => { errors.push(args); };
+    try {
+      await expireRequest(world.deps, "abcd1234");
+    } finally {
+      console.error = realError;
+    }
+
+    // Attempted twice before giving up.
+    expect(world.edits).toHaveLength(2);
+    expect(String(errors.at(-1)?.[0] ?? "")).toContain("stays live");
+  });
+
+  test("an edit that throws counts as a failure too", async () => {
+    const world = makeWorld();
+    world.db.program("SET expired_at = NOW()", {
+      rows: [{ chat_id: "-1", questions: [QUESTIONS[0]], message_ids: [700] }],
+    });
+    let attempts = 0;
+    const deps: AskDeps = {
+      ...world.deps,
+      editMessage: async () => { attempts++; throw new Error("network"); },
+    };
+
+    const realError = console.error;
+    console.error = () => {};
+    try {
+      await expireRequest(deps, "abcd1234");
+    } finally {
+      console.error = realError;
+    }
+
+    expect(attempts).toBe(2);
   });
 });

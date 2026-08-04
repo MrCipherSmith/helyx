@@ -47,3 +47,29 @@ visible lie, which is worse than the stale button it was meant to fix.
 - 2026-08-04T07:30:11.004Z - ac-confirmed: AC3: timeout, mid-wait clientGone, and registration-time clientGone all route through expireRequest
 - 2026-08-04T07:30:11.228Z - ac-confirmed: AC4: reply_markup asserted to be an empty inline_keyboard
 - 2026-08-04T07:30:11.442Z - ac-confirmed: AC5: typecheck clean, lint 0 errors, 983 tests, dupes 2 documented
+
+## Review: the same complaint, one step earlier
+
+**A partial delivery left live buttons too.** If the second of three sends
+failed, the request was *deleted* — and the first question was already on the
+operator's screen with a working keyboard and no row behind it. Tapping it found
+nothing. That is precisely the state this flow exists to remove, moved one step
+earlier and missed because the test asserted only that the delete happened.
+
+Two changes. Message ids are recorded as each one lands rather than once at the
+end, so the cleanup can find a message that is already on screen. And the
+partial-delivery path expires rather than deletes, which routes it through the
+same keyboard-retirement everything else uses.
+
+**A failed edit was swallowed, permanently.** The row is claimed before the edits
+run, so a Telegram refusal — which the helper returns rather than throws — left
+the keyboard live with no second chance and nothing said anywhere. Edits now
+report their result, are retried once, and a persistent failure is logged
+naming the message. Logging is not a repair; a keyboard that stays live *and*
+says nothing is strictly worse than one that stays live and is recorded.
+
+The reviewer also confirmed what the guard already did right: an answered
+request cannot be rewritten as expired, because both writes require the other
+column to be null.
+
+Tests 983 → 987.

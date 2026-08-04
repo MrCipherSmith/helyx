@@ -32,7 +32,12 @@ export interface AskDeps {
    * `extra` carries `reply_markup` — an empty keyboard removes the buttons.
    * Optional so existing callers are unaffected.
    */
-  editMessage: (chatId: string, messageId: number, text: string, extra?: Record<string, unknown>) => Promise<void>;
+  editMessage: (
+    chatId: string,
+    messageId: number,
+    text: string,
+    extra?: Record<string, unknown>,
+  ) => Promise<{ ok: boolean } | void>;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
   random?: () => number;
@@ -117,22 +122,27 @@ export async function registerQuestions(
       ...target.extra,
     });
     messageIds.push(sent.ok ? sent.messageId : null);
+    // Recorded as each one lands, not once at the end. A message already on the
+    // operator's screen has a live keyboard, and if the next send fails, the
+    // cleanup has to be able to find it and take that keyboard down.
+    await deps.sql`
+      UPDATE question_requests SET message_ids = ${deps.sql.json(messageIds as never)} WHERE id = ${requestId}
+    `.catch(() => {});
   }
 
   // Every question must have reached the operator, not merely one of them.
   //
   // A partial delivery is the worst outcome available: the questions that did
-  // arrive can be answered, the one that did not never can, the call therefore
-  // never completes — and meanwhile the terminal selector is suppressed for the
-  // full ten minutes. Withdrawing puts it straight back.
+  // arrive can be answered, the one that did not never can, and the call
+  // therefore never completes — while the terminal selector stays suppressed.
+  //
+  // Expired rather than deleted. Deleting leaves the messages that *did* arrive
+  // sitting there with live buttons and no row behind them, which is the exact
+  // complaint this flow exists to fix, moved one step earlier.
   if (messageIds.some((id) => id === null)) {
-    await deps.sql`DELETE FROM question_requests WHERE id = ${requestId}`.catch(() => {});
+    await expireRequest(deps, requestId);
     return null;
   }
-
-  await deps.sql`
-    UPDATE question_requests SET message_ids = ${deps.sql.json(messageIds as never)} WHERE id = ${requestId}
-  `.catch(() => {});
 
   return { requestId, chatId: target.chatId, questions: input.questions };
 }
@@ -391,11 +401,42 @@ export async function expireRequest(deps: AskDeps, requestId: string): Promise<v
     const question = questions[index];
     if (!question) continue;
     const { text } = questionMessage(requestId, index, question);
-    await deps
-      .editMessage(String(row.chat_id), messageId, `${text}\n\n⌛ <b>Вопрос больше не ждёт ответа</b>`, {
-        reply_markup: { inline_keyboard: [] },
-      })
-      .catch(() => {});
+    const body = `${text}\n\n⌛ <b>Вопрос больше не ждёт ответа</b>`;
+
+    // Retried once, then reported. The row is already claimed, so this is the
+    // only chance to take the keyboard down — a swallowed failure leaves it
+    // live for good, which is precisely the state being fixed. Logging is not
+    // a repair, but a keyboard that stays live *and* says nothing anywhere is
+    // strictly worse than one that stays live and is recorded.
+    const edited = await attemptEdit(deps, String(row.chat_id), messageId, body);
+    if (!edited) {
+      const retried = await attemptEdit(deps, String(row.chat_id), messageId, body);
+      if (!retried) {
+        console.error(
+          `[ask-question] could not retire the keyboard on message ${messageId} of ${requestId}; it stays live`,
+        );
+      }
+    }
+  }
+}
+
+/** One edit attempt. False when Telegram refused it or the call threw. */
+async function attemptEdit(
+  deps: AskDeps,
+  chatId: string,
+  messageId: number,
+  text: string,
+): Promise<boolean> {
+  try {
+    const result = await deps.editMessage(chatId, messageId, text, {
+      reply_markup: { inline_keyboard: [] },
+    });
+    // A void return is the older contract and means "no news is good news";
+    // an explicit `{ ok: false }` is Telegram declining, which the helper
+    // returns rather than throwing.
+    return result === undefined || result.ok !== false;
+  } catch {
+    return false;
   }
 }
 
