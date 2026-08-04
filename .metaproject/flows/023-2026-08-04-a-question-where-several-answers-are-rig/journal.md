@@ -6,3 +6,27 @@
 - 2026-08-04T17:00:18.226Z - task-done: T1: Collect remaining context
 - 2026-08-04T17:00:18.316Z - task-done: T2: Implement per plan
 - 2026-08-04T17:00:18.404Z - task-done: T3: Add/adjust tests and make them pass
+- 2026-08-04T17:02:16.996Z - task-done: T4: Self-review and prepare draft PR
+- 2026-08-04T17:02:19.178Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/59 (warning: PR is not a draft)
+- 2026-08-04T17:02:19.266Z - ac-confirmed: AC1
+- 2026-08-04T17:02:19.355Z - ac-confirmed: AC2
+- 2026-08-04T17:02:19.443Z - ac-confirmed: AC3
+- 2026-08-04T17:02:19.537Z - ac-confirmed: AC4
+- 2026-08-04T17:02:19.626Z - ac-confirmed: AC5
+- 2026-08-04T17:02:19.713Z - ac-confirmed: AC6
+- 2026-08-04T17:02:19.801Z - ac-confirmed: AC7
+- 2026-08-04T17:02:19.893Z - ac-confirmed: AC8
+- 2026-08-04T17:02:19.982Z - ac-confirmed: AC9
+- 2026-08-04T17:02:20.072Z - ac-confirmed: AC10
+- 2026-08-04T17:02:20.163Z - ac-confirmed: AC11
+- 2026-08-04T17:02:20.252Z - completing
+- 2026-08-04T17:02:22.113Z - completion-failed: pull-request: PR checks not green
+- 2026-08-04T17:02:43.038Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/59 (warning: PR is not a draft)
+- 2026-08-04T17:02:43.127Z - completing
+- 2026-08-04T17:02:45.051Z - completion-failed: pull-request: PR checks not green
+- 2026-08-04T17:02:53.718Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/59 (warning: PR is not a draft)
+- 2026-08-04T17:02:53.891Z - completing
+- 2026-08-04T17:02:55.706Z - completion-failed: pull-request: PR checks not green
+- 2026-08-04T17:28:48.946Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/59 (warning: PR is not a draft)
+- 2026-08-04T17:28:49.035Z - completing
+- 2026-08-04T17:28:50.715Z - done: all gates passed
