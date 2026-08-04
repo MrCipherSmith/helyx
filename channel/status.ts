@@ -11,6 +11,7 @@ import type postgres from "postgres";
 import { startTypingRaw, type TypingHandle } from "../utils/typing.ts";
 import { startTmuxMonitor, type TmuxMonitorHandle } from "../utils/tmux-monitor.ts";
 import { startOutputMonitor, getOutputFilePath, type OutputMonitorHandle } from "../utils/output-monitor.ts";
+import { startTranscriptMonitor, type TranscriptMonitorHandle } from "../utils/transcript-monitor.ts";
 import { editTelegramMessage, deleteTelegramMessage, sendTelegramMessage, pinTelegramMessage, unpinTelegramMessage } from "./telegram.ts";
 import { channelLogger } from "../logger.ts";
 import {
@@ -37,6 +38,15 @@ export interface StatusContext {
   sessionId: () => number | null;
   sessionName: () => string;
   projectName: string;
+  /**
+   * Absolute path of the project directory.
+   *
+   * Optional because the terminal monitors only ever needed the name, and every
+   * existing caller passes one. The transcript monitor needs the path: it finds
+   * the session's own record by matching the `cwd` written inside it, and a
+   * basename cannot be matched against an absolute path.
+   */
+  projectPath?: string;
   token: () => string | undefined;
   /** Forum supergroup chat ID. When set together with forumTopicId, status goes to the topic. */
   forumChatId?: () => string | null;
@@ -125,7 +135,7 @@ export class StatusManager {
   private sessionStats = new Map<string, SessionStats>();
   private activeTyping = new Map<string, TypingHandle>();
   private readonly typingTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  private activeMonitors = new Map<string, TmuxMonitorHandle | OutputMonitorHandle>();
+  private activeMonitors = new Map<string, TmuxMonitorHandle | OutputMonitorHandle | TranscriptMonitorHandle>();
   private responseGuards = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly responseGuardRearmCount = new Map<string, number>();
   private readonly postReplyCheckTimers = new Set<ReturnType<typeof setTimeout>>();
@@ -1050,7 +1060,22 @@ export class StatusManager {
       this.updateStatus(chatId, status);
     };
 
-    let monitor = await startTmuxMonitor(this.ctx.projectName, onStatus);
+    // Tried first, and it is the only one of the three that sees everything the
+    // session did rather than what its terminal happened to be showing when the
+    // poll landed. The two below stay wired for a project with no transcript —
+    // nothing mounted at the config root, or a CLI started some other way.
+    if (this.ctx.projectPath) {
+      const transcript = await startTranscriptMonitor(this.ctx.projectPath, onStatus);
+      if (transcript) {
+        this.activeMonitors.set(key, transcript);
+        channelLogger.info({ projectPath: this.ctx.projectPath }, "transcript monitor started");
+        return;
+      }
+      channelLogger.debug({ projectPath: this.ctx.projectPath }, "no transcript for this project, trying tmux");
+    }
+
+    let monitor: TmuxMonitorHandle | OutputMonitorHandle | null =
+      await startTmuxMonitor(this.ctx.projectName, onStatus);
     if (monitor) {
       this.activeMonitors.set(key, monitor);
       channelLogger.info({ project: this.ctx.projectName }, "tmux monitor started");

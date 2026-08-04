@@ -1,0 +1,10 @@
+{
+  "mode": "advisory",
+  "policies": {
+    "secrets": true,
+    "pii": true,
+    "promptInjection": true,
+    "egress": true,
+    "artifactSafety": true
+  }
+}

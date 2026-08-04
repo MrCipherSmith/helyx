@@ -1,0 +1,396 @@
+{
+  "schemaVersion": 2,
+  "id": "025",
+  "slug": "read-the-session-s-own-transcript-instea",
+  "title": "read the session's own transcript instead of scraping its terminal",
+  "status": "in-progress",
+  "createdAt": "2026-08-04T22:16:41.006Z",
+  "updatedAt": "2026-08-04T22:32:45.216Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:f3fd93cfe8d0601783501ba7ed45c61e8ec140e131dc65cc7e32cd8824b53e83",
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-04T22:32:20.864Z",
+      "note": "resolveTranscript reads each candidate's own cwd (transcript-locate.ts:declaredCwd); tests/unit/transcript-reader.test.ts puts a decoy under the exact directory name a slug derivation would produce and the real file under one it never would — resolution picks the real one; unmatched project path returns null"
+    },
+    "AC2": {
+      "at": "2026-08-04T22:32:20.950Z",
+      "note": "TranscriptTail.atEnd seeds the offset with the file size; 'a first attach does not replay what was already written' asserts the pre-existing entry never appears and the next-appended one does. Mutating atEnd to offset 0 fails 5 tests"
+    },
+    "AC3": {
+      "at": "2026-08-04T22:32:21.037Z",
+      "note": "offset carried in TranscriptTail; 'an unterminated line is held' splits an object across two appends and asserts one whole line; 'a file that shrank is read from the start' and 'a fragment from a replaced file is not spliced' cover the reset. Dropping the held partial fails 1 test"
+    },
+    "AC4": {
+      "at": "2026-08-04T22:32:21.124Z",
+      "note": "renderBlock covers all four block types; test.each over attachment/mode/permission-mode/last-prompt/queue-operation/system/unknown-type/no-type/null asserts no lines and no throw; parseEntry returns null for a half-written line, a bare array and a number"
+    },
+    "AC5": {
+      "at": "2026-08-04T22:32:32.118Z",
+      "note": "the 'existing consumers still understand these lines' block feeds produced lines back through the real detectPhase and scrapeTokenInfo and through accumulateTurnActivity's and accumulateStats' own patterns; mutating resolution or vocabulary surfaces here"
+    },
+    "AC6": {
+      "at": "2026-08-04T22:32:32.206Z",
+      "note": "startTranscriptMonitor returns { stop() } and null when attach fails; channel/status.ts:1063 tries it first when projectPath is set and falls through to startTmuxMonitor then startOutputMonitor unchanged"
+    },
+    "AC7": {
+      "at": "2026-08-04T22:32:32.298Z",
+      "note": "git diff touches channel/index.ts, channel/status.ts, utils/status-render.ts, docs/dev/modules.md only; scripts/run-cli.sh unchanged, no CLI flag added, transcript is read from a file the running session already writes"
+    },
+    "AC8": {
+      "at": "2026-08-04T22:32:32.385Z",
+      "note": "renderEntry prefixes sidechain lines with SIDECHAIN_PREFIX; 'the buffer is bounded' pushes 50 sidechain entries into a 5-line buffer and asserts 5 lines, the newest present, and the marker visible"
+    },
+    "AC9": {
+      "at": "2026-08-04T22:32:45.216Z",
+      "note": "bun run typecheck clean; bun run lint 206 problems 0 errors, the same count as before this flow; bun test tests/unit/ 1288 pass 0 fail across 63 files, up from 1217 across 61 at the start of the flow"
+    }
+  },
+  "pr": {
+    "url": null
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T5",
+      "title": "transcript-locate: resolve by cwd match, tail by offset",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T6",
+      "title": "transcript-events: entry to display line, existing vocabulary",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T7",
+      "title": "transcript-monitor: poll loop, ring buffer, stop handle",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T8",
+      "title": "wire into StatusManager ahead of tmux, keep fallbacks",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T9",
+      "title": "raise ACTIVITY_LINES, leave the character budget alone",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T10",
+      "title": "tests: fixtures with decoys, truncated write, oversized file, unknown entry",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T11",
+      "title": "full gate: typecheck, lint, unit suite",
+      "kind": "review",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T12",
+      "title": "keep the completion summary's line counts working on the transcript path",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-04T22:16:41.006Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-04T22:19:53.518Z",
+      "event": "task-added",
+      "detail": "T5: transcript-locate: resolve by cwd match, tail by offset"
+    },
+    {
+      "at": "2026-08-04T22:19:53.604Z",
+      "event": "task-added",
+      "detail": "T6: transcript-events: entry to display line, existing vocabulary"
+    },
+    {
+      "at": "2026-08-04T22:19:53.691Z",
+      "event": "task-added",
+      "detail": "T7: transcript-monitor: poll loop, ring buffer, stop handle"
+    },
+    {
+      "at": "2026-08-04T22:19:53.777Z",
+      "event": "task-added",
+      "detail": "T8: wire into StatusManager ahead of tmux, keep fallbacks"
+    },
+    {
+      "at": "2026-08-04T22:19:53.861Z",
+      "event": "task-added",
+      "detail": "T9: raise ACTIVITY_LINES, leave the character budget alone"
+    },
+    {
+      "at": "2026-08-04T22:19:53.947Z",
+      "event": "task-added",
+      "detail": "T10: tests: fixtures with decoys, truncated write, oversized file, unknown entry"
+    },
+    {
+      "at": "2026-08-04T22:19:54.035Z",
+      "event": "task-added",
+      "detail": "T11: full gate: typecheck, lint, unit suite"
+    },
+    {
+      "at": "2026-08-04T22:20:27.288Z",
+      "event": "frozen",
+      "detail": "9 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-04T22:20:27.372Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-04T22:30:04.300Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-04T22:30:04.388Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-04T22:30:04.474Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-04T22:30:04.560Z",
+      "event": "task-done",
+      "detail": "T5: transcript-locate: resolve by cwd match, tail by offset"
+    },
+    {
+      "at": "2026-08-04T22:30:04.646Z",
+      "event": "task-done",
+      "detail": "T6: transcript-events: entry to display line, existing vocabulary"
+    },
+    {
+      "at": "2026-08-04T22:30:04.735Z",
+      "event": "task-done",
+      "detail": "T7: transcript-monitor: poll loop, ring buffer, stop handle"
+    },
+    {
+      "at": "2026-08-04T22:30:04.823Z",
+      "event": "task-done",
+      "detail": "T8: wire into StatusManager ahead of tmux, keep fallbacks"
+    },
+    {
+      "at": "2026-08-04T22:30:04.908Z",
+      "event": "task-done",
+      "detail": "T9: raise ACTIVITY_LINES, leave the character budget alone"
+    },
+    {
+      "at": "2026-08-04T22:30:04.996Z",
+      "event": "task-done",
+      "detail": "T10: tests: fixtures with decoys, truncated write, oversized file, unknown entry"
+    },
+    {
+      "at": "2026-08-04T22:30:05.082Z",
+      "event": "task-done",
+      "detail": "T11: full gate: typecheck, lint, unit suite"
+    },
+    {
+      "at": "2026-08-04T22:31:13.737Z",
+      "event": "task-added",
+      "detail": "T12: keep the completion summary's line counts working on the transcript path"
+    },
+    {
+      "at": "2026-08-04T22:32:20.768Z",
+      "event": "task-done",
+      "detail": "T12: keep the completion summary's line counts working on the transcript path"
+    },
+    {
+      "at": "2026-08-04T22:32:20.864Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: resolveTranscript reads each candidate's own cwd (transcript-locate.ts:declaredCwd); tests/unit/transcript-reader.test.ts puts a decoy under the exact directory name a slug derivation would produce and the real file under one it never would — resolution picks the real one; unmatched project path returns null"
+    },
+    {
+      "at": "2026-08-04T22:32:20.950Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: TranscriptTail.atEnd seeds the offset with the file size; 'a first attach does not replay what was already written' asserts the pre-existing entry never appears and the next-appended one does. Mutating atEnd to offset 0 fails 5 tests"
+    },
+    {
+      "at": "2026-08-04T22:32:21.037Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: offset carried in TranscriptTail; 'an unterminated line is held' splits an object across two appends and asserts one whole line; 'a file that shrank is read from the start' and 'a fragment from a replaced file is not spliced' cover the reset. Dropping the held partial fails 1 test"
+    },
+    {
+      "at": "2026-08-04T22:32:21.124Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: renderBlock covers all four block types; test.each over attachment/mode/permission-mode/last-prompt/queue-operation/system/unknown-type/no-type/null asserts no lines and no throw; parseEntry returns null for a half-written line, a bare array and a number"
+    },
+    {
+      "at": "2026-08-04T22:32:32.119Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: the 'existing consumers still understand these lines' block feeds produced lines back through the real detectPhase and scrapeTokenInfo and through accumulateTurnActivity's and accumulateStats' own patterns; mutating resolution or vocabulary surfaces here"
+    },
+    {
+      "at": "2026-08-04T22:32:32.207Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: startTranscriptMonitor returns { stop() } and null when attach fails; channel/status.ts:1063 tries it first when projectPath is set and falls through to startTmuxMonitor then startOutputMonitor unchanged"
+    },
+    {
+      "at": "2026-08-04T22:32:32.298Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: git diff touches channel/index.ts, channel/status.ts, utils/status-render.ts, docs/dev/modules.md only; scripts/run-cli.sh unchanged, no CLI flag added, transcript is read from a file the running session already writes"
+    },
+    {
+      "at": "2026-08-04T22:32:32.385Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: renderEntry prefixes sidechain lines with SIDECHAIN_PREFIX; 'the buffer is bounded' pushes 50 sidechain entries into a 5-line buffer and asserts 5 lines, the newest present, and the marker visible"
+    },
+    {
+      "at": "2026-08-04T22:32:32.474Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: bun run typecheck clean; bun run lint 206 problems 0 errors (unchanged from the pre-flow baseline); bun test tests/unit/ 1288 pass 0 fail across 63 files, up from 1284/61 before the new suites"
+    },
+    {
+      "at": "2026-08-04T22:32:45.216Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: bun run typecheck clean; bun run lint 206 problems 0 errors, the same count as before this flow; bun test tests/unit/ 1288 pass 0 fail across 63 files, up from 1217 across 61 at the start of the flow"
+    }
+  ]
+}

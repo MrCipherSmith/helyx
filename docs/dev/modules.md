@@ -382,8 +382,11 @@ To add a new CLI runtime (e.g., Codex): implement `CliAdapter`, register it in `
 | `utils/skill-handlers.ts` | `handleSkillView()` — DB-first then filesystem lookup; inline shell expansion; disk materialization |
 | `utils/skill-preprocessor.ts` | `` !`cmd` `` inline shell expansion with restricted env; `expandInlineShell()` |
 | `utils/tools-reader.ts` | `readSkills()`, `readCommands()`, `readHooks()` from host Claude config dir |
-| `utils/tmux-monitor.ts` | Polls tmux pane output; parses tool calls/thinking/progress for status updates |
-| `utils/output-monitor.ts` | File-based alternative to tmux-monitor (uses `script` capture files) |
+| `utils/transcript-locate.ts` | Finds a session's own JSONL transcript by matching the `cwd` inside it; incremental offset tail |
+| `utils/transcript-events.ts` | Transcript entry → status line (`thinking`, `text`, `tool_use`, `tool_result`), in the vocabulary `pane-parse.ts` already speaks |
+| `utils/transcript-monitor.ts` | Preferred status monitor: polls the transcript, keeps a bounded line buffer; falls back to tmux when nothing resolves |
+| `utils/tmux-monitor.ts` | Fallback: polls tmux pane output; parses tool calls/thinking/progress for status updates |
+| `utils/output-monitor.ts` | Fallback: file-based alternative to tmux-monitor (uses `script` capture files) |
 | `utils/stream-json-parser.ts` | Streaming JSONL parser for Claude Code stdout |
 | `utils/claude-usage.ts` | Parses Claude Code `.jsonl` session files for per-model token stats |
 | `utils/chunk.ts` | `chunkText()` — splits text at Telegram's 4096-char limit |

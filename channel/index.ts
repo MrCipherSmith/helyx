@@ -104,6 +104,7 @@ const statusMgr = new StatusManager({
   sessionId: () => sessionMgr.sessionId,
   sessionName: () => sessionMgr.sessionName,
   projectName,
+  projectPath,
   token: () => ENV.TELEGRAM_BOT_TOKEN,
   forumChatId: () => forumChatId,
   forumTopicId: () => forumTopicId,
