@@ -27,6 +27,7 @@ import { HoldCounter } from "../utils/hold-counter.ts";
 import { renderStatus, clampEscaped } from "../utils/status-render.ts";
 import { escapeHtml } from "../utils/html.ts";
 import { isRequeued, markRequeued } from "../utils/requeue.ts";
+import { hasOpenQuestion } from "../services/ask-question.ts";
 
 /** How much of a captured file path the completion notice may carry. */
 const FILE_LABEL_CHARS = 80;
@@ -177,7 +178,25 @@ export class StatusManager {
     const existing = this.responseGuards.get(key);
     if (existing) clearTimeout(existing);
 
-    const timer = setTimeout(async () => {
+    const timer = setTimeout(() => void this.runResponseGuard(chatId), this.RESPONSE_GUARD_MS);
+
+    this.responseGuards.set(key, timer);
+  }
+
+  /**
+   * What the guard does when it fires.
+   *
+   * A named method rather than the timer's callback, because five minutes of
+   * waiting is not a test: the decision it makes — is this session silent, or
+   * is it blocked on the operator? — is the whole point, and it had no way in.
+   *
+   * `now` is passed in for the same reason the spinner takes it: what this
+   * decides is entirely a question about elapsed time, and a caller that cannot
+   * say what time it is can only test the branch where no time has passed.
+   */
+  async runResponseGuard(chatId: string, now: number = Date.now()): Promise<void> {
+    {
+      const key = this.stateKey(chatId);
       this.responseGuards.delete(key);
       const state = this.activeStatus.get(key);
       if (!state) return; // already responded
@@ -188,14 +207,31 @@ export class StatusManager {
       const effectiveChatId = forum?.chatId ?? chatId;
       const extra = forum?.extra ?? {};
 
-      const silentMs = Date.now() - state.lastUpdateAt;
+      const silentMs = now - state.lastUpdateAt;
       const silentStr = formatElapsed(silentMs);
       const stageText = state.stage ?? "";
       const lastActivity = this.lastMonitorActivity.get(key) ?? 0;
-      const hadRecentMonitorActivity = (Date.now() - lastActivity) < this.RESPONSE_GUARD_MS;
+      const hadRecentMonitorActivity = (now - lastActivity) < this.RESPONSE_GUARD_MS;
       // The `u` flag matters: ⏳ and 🔄 are surrogate pairs, and without it the
       // class matches their halves individually rather than the emoji.
       const looksActive = hadRecentMonitorActivity || /[·●⏳🔄⎿]/u.test(stageText) || /Brewing|Thinking|Running|agents?/i.test(stageText);
+
+      // Case 0: the session is not silent, it is waiting on the operator.
+      //
+      // A question with buttons blocks the turn until one is pressed, and the
+      // guard read that as Claude having gone quiet: it announced "думает уже
+      // 5+ мин" underneath the very question it was waiting for, and the
+      // operator was told the session was stuck by the thing that was stuck on
+      // them. Re-arm silently — the wait is legitimate and the guard should
+      // still be watching for after the answer lands.
+      const sessionId = this.ctx.sessionId();
+      const awaitingAnswer = sessionId !== null &&
+        await hasOpenQuestion(this.ctx.sql, sessionId).catch(() => false);
+      if (awaitingAnswer) {
+        channelLogger.info({ chatId, silentMs }, "response guard: question open, re-arming silently");
+        this.armResponseGuard(chatId);
+        return;
+      }
 
       // Case 1: tmux was active very recently — Claude is alive, just working slowly.
       // Re-arm silently so the guard keeps watching without alarming the user.
@@ -282,9 +318,7 @@ export class StatusManager {
           extra,
         );
       }
-    }, this.RESPONSE_GUARD_MS);
-
-    this.responseGuards.set(key, timer);
+    }
   }
 
   /**

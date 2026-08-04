@@ -142,6 +142,76 @@ export const MAX_STATUS_LINES = 18;
  * the scan stops at the prompt line above it, which is where the previous
  * command ended.
  */
+/**
+ * The footer Claude Code draws under an interactive menu.
+ *
+ * The signal, and the only one used. A menu is a run of numbered options, and
+ * numbered options are also just ordinary output — a shell printing a list, a
+ * test runner counting cases. Keying on the footer means an ordinary list is
+ * never mistaken for a prompt, at the cost of leaving a menu in place if Claude
+ * Code ever stops drawing it.
+ */
+export const MENU_FOOTER_RE = /Enter to select|Tab\/Arrow keys to navigate/i;
+
+/** A menu option, highlighted or not. */
+const MENU_OPTION_RE = /^\s*[❯>]?\s*\d+[.)]\s+\S/;
+
+/**
+ * Drop an interactive menu from captured output.
+ *
+ * The operator already has the question as Telegram buttons. Mirroring the
+ * terminal's own copy of it into the status put "3. Досылать + пометка" and
+ * "Enter to select · Esc to cancel" under the buttons that asked the same
+ * thing — unpressable, and read as garbage.
+ *
+ * Only the option run directly above the footer goes: the work above the menu
+ * is what the operator is watching, and the menu is what interrupted it.
+ */
+export function stripInteractiveMenu(lines: readonly string[]): string[] {
+  // Every menu, not the first one.
+  //
+  // A pane is sixty lines of scrollback and may hold several. Taking only the
+  // first left the *newest* menu in place — and the snapshot keeps the last few
+  // lines, so the one that survived was precisely the one on screen. Scanned
+  // bottom-up so each removal cannot disturb the index of the next.
+  const out = [...lines];
+  for (let i = out.length - 1; i >= 0; i--) {
+    if (!MENU_FOOTER_RE.test(stripAnsi(out[i]!))) continue;
+
+    let start = i;
+    for (let j = i - 1; j >= 0; j--) {
+      const line = stripAnsi(out[j]!);
+      if (MENU_OPTION_RE.test(line) || line.trim() === "") start = j;
+      else break;
+    }
+    out.splice(start, i - start + 1);
+    i = start;
+  }
+  return out;
+}
+
+/** Spinner frames and box-drawing — a line of these carries nothing. */
+export const PANE_NOISE_RE = /^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏○◐◑◒◓●▸▹►▻◆◇■□▪▫─│╭╮╰╯┌┐└┘├┤┬┴┼\s]*$/;
+
+/** How many lines of raw pane the status carries. */
+export const PANE_SNAPSHOT_LINES = 6;
+
+/**
+ * The lines of a captured pane worth storing as the live snapshot.
+ *
+ * This is what reaches the operator's status message, and it used to be the
+ * last six lines of whatever the terminal drew — including an open menu. The
+ * operator had the same question in front of them as Telegram buttons, so the
+ * status showed "3. Досылать + пометка" and "Enter to select · Esc to cancel"
+ * underneath the buttons that asked it: unpressable, and read as garbage.
+ */
+export function meaningfulPaneLines(lines: readonly string[]): string[] {
+  return stripInteractiveMenu(lines)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0 && !PANE_NOISE_RE.test(l))
+    .slice(-PANE_SNAPSHOT_LINES);
+}
+
 export function parseStatus(output: string, options: ParseOptions = {}): string | null {
   const lines = output.split("\n");
   const parsed: string[] = [];

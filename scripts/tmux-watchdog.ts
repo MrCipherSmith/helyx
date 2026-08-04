@@ -29,6 +29,7 @@ import type postgres from "postgres";
 import { stripAnsi } from "../utils/terminal.ts";
 import { isPermissionPrompt, findPromptSignal, PERM_SIGNAL_RE, PERM_CHOICE_RE } from "../utils/permission-prompt.ts";
 import { escapeHtml } from "../utils/html.ts";
+import { meaningfulPaneLines } from "../utils/pane-parse.ts";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -497,15 +498,9 @@ async function fetchActiveSessions(sql: postgres.Sql): Promise<ActiveSession[]> 
   }));
 }
 
-// Chars to filter from pane snapshot (spinner frames, box-drawing, etc.)
-const NOISE_RE = /^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏○◐◑◒◓●▸▹►▻◆◇■□▪▫─│╭╮╰╯┌┐└┘├┤┬┴┼\s]*$/;
-
 /** Write last N meaningful lines of the pane to sessions.pane_snapshot. */
-async function writePaneSnapshot(sql: postgres.Sql, sessionId: number, lines: string[]): Promise<void> {
-  const meaningful = lines
-    .map(l => l.trim())
-    .filter(l => l.length > 0 && !NOISE_RE.test(l))
-    .slice(-6);
+export async function writePaneSnapshot(sql: postgres.Sql, sessionId: number, lines: string[]): Promise<void> {
+  const meaningful = meaningfulPaneLines(lines);
   if (meaningful.length === 0) return;
   const snapshot = meaningful.join("\n");
   await sql`
