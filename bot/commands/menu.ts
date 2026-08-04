@@ -120,6 +120,8 @@ const GROUPS: Group[] = [
     commands: [
       { name: "codex_setup",  label: "🔑 Setup" },
       { name: "codex_review", label: "👁 Review" },
+      { name: "reviewers",          label: "🔀 Reviewers" },
+      { name: "reviewers_status",   label: "📊 Status" },
     ],
   },
   {

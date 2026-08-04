@@ -111,6 +111,13 @@ import { handleSystem } from "./commands/system.ts";
 import { handleMenu } from "./commands/menu.ts";
 import { handleResume } from "./commands/resume.ts";
 import { handleCodexSetup, handleCodexStatus, handleCodexReview } from "./commands/codex.ts";
+import {
+  handleReviewers,
+  handleReviewersAdd,
+  handleReviewersDefault,
+  handleReviewersRemove,
+  handleReviewersStatus,
+} from "./commands/reviewers.ts";
 import { handleVoice, handlePhoto, handleDocument, handleVideo, handleVideoNote, handleSticker } from "./media.ts";
 import { handleCallbackQuery } from "./callbacks.ts";
 import { handleText } from "./text-handler.ts";
@@ -209,6 +216,13 @@ export function registerHandlers(b: Bot): void {
   b.command("codex_setup", handleCodexSetup);
   b.command("codex_status", handleCodexStatus);
   b.command("codex_review", handleCodexReview);
+
+  // Independent reviewers (parallel pipeline)
+  b.command("reviewers", handleReviewers);
+  b.command("reviewers_status", handleReviewersStatus);
+  b.command("reviewers_add", handleReviewersAdd);
+  b.command("reviewers_remove", handleReviewersRemove);
+  b.command("reviewers_default", handleReviewersDefault);
 
   // System control
   b.command("system", handleSystem);
