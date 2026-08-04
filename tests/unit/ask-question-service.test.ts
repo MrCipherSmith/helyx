@@ -981,3 +981,40 @@ describe("the waiting marker is cleared by everything that ends the wait", () =>
     expect(world.db.matching("SET expired_at = NOW()")[0]!.text).toContain("awaiting_question = NULL");
   });
 });
+
+describe("a typed answer belongs to the topic it was typed in", () => {
+  const QUESTIONS = [{ question: "Куда?", multiSelect: false, options: [{ label: "staging" }] }];
+
+  test("the project scopes the lookup", async () => {
+    // In a forum every topic shares one chat id. Matching on chat alone let
+    // words typed in one project's topic answer — and consume — a question
+    // waiting in another's: the operator answers a question they never saw,
+    // and the one in front of them is still waiting.
+    const world = makeWorld();
+    world.db.program("awaiting_question IS NOT NULL", {
+      rows: [{ id: "req1", questions: QUESTIONS, awaiting_question: 0 }],
+    });
+    world.db.program("SET answers = jsonb_set", { rows: [{ answers: ["на прод"] }] });
+
+    await recordTypedAnswer(world.deps, "-100", "на прод", "/home/altsay/bots/helyx");
+
+    const query = world.db.matching("awaiting_question IS NOT NULL")[0]!;
+    expect(query.text).toContain("project_path");
+    expect(query.values).toContain("/home/altsay/bots/helyx");
+  });
+
+  test("a direct message has no project and matches on the chat alone", async () => {
+    // Outside a forum there is one conversation and no topic to scope by;
+    // requiring a project there would answer nothing at all.
+    const world = makeWorld();
+    world.db.program("awaiting_question IS NOT NULL", {
+      rows: [{ id: "req1", questions: QUESTIONS, awaiting_question: 0 }],
+    });
+    world.db.program("SET answers = jsonb_set", { rows: [{ answers: ["на прод"] }] });
+
+    const outcome = await recordTypedAnswer(world.deps, "-100", "на прод", null);
+
+    expect(outcome!.status).toBe("recorded");
+    expect(world.db.matching("awaiting_question IS NOT NULL")[0]!.values).toContain(null);
+  });
+});

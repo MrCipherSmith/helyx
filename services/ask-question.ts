@@ -372,13 +372,21 @@ export async function recordTypedAnswer(
   deps: AskDeps,
   chatId: string,
   text: string,
+  projectPath?: string | null,
 ): Promise<AnswerOutcome | null> {
   const trimmed = text.trim();
 
+  // Scoped to the project when there is one.
+  //
+  // In a forum every topic shares one chat id, so matching on chat alone let
+  // words typed in one project's topic answer — and consume — a question
+  // waiting in another's. The operator would have answered a question they
+  // never saw, and the question they were looking at would still be waiting.
   const rows = await deps.sql`
     SELECT id, questions, awaiting_question
       FROM question_requests
      WHERE chat_id = ${chatId}
+       AND (${projectPath ?? null}::text IS NULL OR project_path = ${projectPath ?? null})
        AND awaiting_question IS NOT NULL
        AND answered_at IS NULL AND expired_at IS NULL
      ORDER BY created_at DESC

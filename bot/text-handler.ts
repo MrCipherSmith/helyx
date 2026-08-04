@@ -65,12 +65,34 @@ export async function handleText(ctx: Context): Promise<void> {
     return;
   }
 
+  // Forum routing
+  const forumTopicId = ctx.message?.message_thread_id;
+  const forumChatId = await getForumChatId();
+  const isForumMessage = forumChatId !== null && chatId === forumChatId;
+
+  // General topic (threadId=1 or no thread) in forum mode → control channel only.
+  // Commands still work (handled before this point by grammY command handlers).
+  if (isForumMessage && (!forumTopicId || forumTopicId === 1)) {
+    await replyInThread(ctx, "💡 General — только команды.\nОткрой топик проекта чтобы работать с сессией.");
+    return;
+  }
+
   // An answer the operator was asked to type.
   //
   // Checked before routing, because this message is not a new instruction: a
   // question is waiting for exactly these words, and forwarding them to Claude
   // as an ordinary message would leave the question waiting behind its own
   // answer until it timed out.
+  //
+  // Placed after the forum resolution rather than before it, because the scope
+  // is the point: every topic shares one chat id, and without the project a
+  // message typed in one topic could answer a question waiting in another.
+  const answeringProject = isForumMessage && forumTopicId
+    ? await sql`SELECT path FROM projects WHERE forum_topic_id = ${forumTopicId}`
+        .then((rows) => (rows[0]?.path as string | undefined) ?? null)
+        .catch(() => null)
+    : null;
+
   const typed = await recordTypedAnswer(
     {
       sql,
@@ -83,6 +105,7 @@ export async function handleText(ctx: Context): Promise<void> {
     },
     chatId,
     text,
+    answeringProject,
   ).catch((err) => {
     logger.error({ err, chatId }, "typed answer failed");
     return null;
@@ -94,18 +117,6 @@ export async function handleText(ctx: Context): Promise<void> {
     // is still waiting, and swallowing it would lose both the answer and the
     // message.
     if (typed.status !== "out-of-range") return;
-  }
-
-  // Forum routing
-  const forumTopicId = ctx.message?.message_thread_id;
-  const forumChatId = await getForumChatId();
-  const isForumMessage = forumChatId !== null && chatId === forumChatId;
-
-  // General topic (threadId=1 or no thread) in forum mode → control channel only.
-  // Commands still work (handled before this point by grammY command handlers).
-  if (isForumMessage && (!forumTopicId || forumTopicId === 1)) {
-    await replyInThread(ctx, "💡 General — только команды.\nОткрой топик проекта чтобы работать с сессией.");
-    return;
   }
 
   // Fire typing indicator immediately — user sees feedback before routeMessage DB query
