@@ -309,6 +309,41 @@ describe("what reaches the operator's status pane", () => {
     );
   });
 
+  test("the newest menu goes too, not just the first one", () => {
+    // A pane is sixty lines of scrollback and may hold several menus. Taking
+    // only the first left the newest one in place — and the snapshot keeps the
+    // *last* few lines, so the menu that survived was exactly the one on
+    // screen. The fix looked done and changed nothing the operator could see.
+    const pane = [
+      "● earlier work",
+      "  1. old option",
+      "Enter to select",
+      "● later work",
+      "  1. current option",
+      "  2. another",
+      "Enter to select · Esc to cancel",
+    ];
+
+    const out = stripInteractiveMenu(pane);
+
+    expect(out).toEqual(["● earlier work", "● later work"]);
+  });
+
+  test("and the snapshot of such a pane is work, not a menu", () => {
+    const pane = [
+      ...Array.from({ length: 8 }, (_, i) => `● work ${i}`),
+      "  1. old", "Enter to select",
+      ...Array.from({ length: 3 }, (_, i) => `● work ${i + 8}`),
+      "  1. current", "  2. another", "Enter to select · Esc to cancel",
+    ];
+
+    const out = meaningfulPaneLines(pane).join("\n");
+
+    expect(out).not.toContain("Enter to select");
+    expect(out).not.toContain("current");
+    expect(out).toContain("work 10");
+  });
+
   test("the strip stops at the first line that is not an option", () => {
     // Without that stop it scans to the top of the pane and any earlier
     // numbered line — a shell's own list, a test count — drags everything

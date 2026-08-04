@@ -499,7 +499,7 @@ async function fetchActiveSessions(sql: postgres.Sql): Promise<ActiveSession[]> 
 }
 
 /** Write last N meaningful lines of the pane to sessions.pane_snapshot. */
-async function writePaneSnapshot(sql: postgres.Sql, sessionId: number, lines: string[]): Promise<void> {
+export async function writePaneSnapshot(sql: postgres.Sql, sessionId: number, lines: string[]): Promise<void> {
   const meaningful = meaningfulPaneLines(lines);
   if (meaningful.length === 0) return;
   const snapshot = meaningful.join("\n");

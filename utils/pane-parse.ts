@@ -168,16 +168,26 @@ const MENU_OPTION_RE = /^\s*[❯>]?\s*\d+[.)]\s+\S/;
  * is what the operator is watching, and the menu is what interrupted it.
  */
 export function stripInteractiveMenu(lines: readonly string[]): string[] {
-  const footer = lines.findIndex((l) => MENU_FOOTER_RE.test(stripAnsi(l)));
-  if (footer === -1) return [...lines];
+  // Every menu, not the first one.
+  //
+  // A pane is sixty lines of scrollback and may hold several. Taking only the
+  // first left the *newest* menu in place — and the snapshot keeps the last few
+  // lines, so the one that survived was precisely the one on screen. Scanned
+  // bottom-up so each removal cannot disturb the index of the next.
+  const out = [...lines];
+  for (let i = out.length - 1; i >= 0; i--) {
+    if (!MENU_FOOTER_RE.test(stripAnsi(out[i]!))) continue;
 
-  let start = footer;
-  for (let i = footer - 1; i >= 0; i--) {
-    const line = stripAnsi(lines[i]!);
-    if (MENU_OPTION_RE.test(line) || line.trim() === "") start = i;
-    else break;
+    let start = i;
+    for (let j = i - 1; j >= 0; j--) {
+      const line = stripAnsi(out[j]!);
+      if (MENU_OPTION_RE.test(line) || line.trim() === "") start = j;
+      else break;
+    }
+    out.splice(start, i - start + 1);
+    i = start;
   }
-  return [...lines.slice(0, start), ...lines.slice(footer + 1)];
+  return out;
 }
 
 /** Spinner frames and box-drawing — a line of these carries nothing. */

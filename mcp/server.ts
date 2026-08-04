@@ -298,13 +298,28 @@ function readBody(req: IncomingMessage): Promise<string> {
  * Every failure is silent by design. This is a courtesy at the end of work that
  * already succeeded; it must never be the reason a turn appears to fail.
  */
-async function deliverTurnSummary(transcriptPath: string, projectPath: string): Promise<void> {
-  const token = CONFIG.TELEGRAM_BOT_TOKEN;
-  if (!token) return;
+export interface TurnSummaryDeps {
+  sql: typeof sql;
+  token: string | undefined;
+  read: (path: string) => string;
+  send: typeof sendTelegramMessage;
+}
+
+export async function deliverTurnSummary(
+  transcriptPath: string,
+  projectPath: string,
+  deps: TurnSummaryDeps = {
+    sql,
+    token: CONFIG.TELEGRAM_BOT_TOKEN,
+    read: (path) => readFileSync(path, "utf-8"),
+    send: sendTelegramMessage,
+  },
+): Promise<void> {
+  if (!deps.token) return;
 
   let transcript: string;
   try {
-    transcript = readFileSync(transcriptPath, "utf-8");
+    transcript = deps.read(transcriptPath);
   } catch {
     return;
   }
@@ -315,10 +330,10 @@ async function deliverTurnSummary(transcriptPath: string, projectPath: string): 
   // The same resolution the question hook uses: by working directory, to the
   // project's topic. A summary in the forum's General is a summary the operator
   // does not read — and this whole feature exists to be read.
-  const target = await resolveTarget(sql, { sessionId: "", cwd: projectPath });
+  const target = await resolveTarget(deps.sql, { sessionId: "", cwd: projectPath });
   if (!target) return;
 
-  await sendTelegramMessage(token, target.chatId, summary, {
+  await deps.send(deps.token, target.chatId, summary, {
     parse_mode: "HTML",
     ...target.extra,
   });
