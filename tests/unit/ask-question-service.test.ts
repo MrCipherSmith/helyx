@@ -1119,6 +1119,19 @@ describe("toggling and submitting a multi-select question", () => {
     expect(outcome).toEqual({ status: "recorded", label: "тесты, линт", complete: true });
   });
 
+  test("submitting takes the toggles away with it", async () => {
+    // Left behind they still look pressable, and every further tap is refused
+    // with "уже отвечено" — a question that reads as open and answers as
+    // closed.
+    const world = makeWorld();
+    open(world, [{ picked: [0], done: false }], [{ picked: [0], done: true }]);
+
+    await recordAnswer(world.deps, "ask:req1:0:s");
+
+    const edit = world.edits.at(-1)!;
+    expect(edit.extra!.reply_markup).toEqual({ inline_keyboard: [] });
+  });
+
   test("submitting nothing is refused and the question keeps waiting", async () => {
     // An empty submit would close it with nothing in it. "None of these" is a
     // real answer, but it belongs to the free-text button.

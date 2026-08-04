@@ -565,7 +565,15 @@ async function submitMultiAnswer(
   if (typeof messageId === "number") {
     const { text } = questionMessage(requestId, questionIndex, question, slot.picked);
     await deps
-      .editMessage(String(row.chat_id), messageId, `${text}\n\n✅ <b>Выбрано: ${escapeHtml(labels.join(", "))}</b>`)
+      .editMessage(
+        String(row.chat_id),
+        messageId,
+        `${text}\n\n✅ <b>Выбрано: ${escapeHtml(labels.join(", "))}</b>`,
+        // The toggles go with the answer. Left behind they still look
+        // pressable, and every further tap is refused with "уже отвечено" —
+        // a question that reads as open and answers as closed.
+        { reply_markup: { inline_keyboard: [] } },
+      )
       .catch(() => {});
   }
 
