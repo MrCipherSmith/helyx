@@ -15,8 +15,9 @@ import { maybeAttachVoice } from "../utils/tts.ts";
 import { getForumChatId } from "./forum-cache.ts";
 import { replyInThread } from "./format.ts";
 import { enqueueForTopic, topicQueueKey, getQueueDepth } from "./topic-queue.ts";
+import { attachmentFor, isImage, fitsInline } from "../utils/media-attachment.ts";
 
-const IMAGE_INLINE_MAX_BYTES = 5 * 1024 * 1024; // 5 MB — include base64 inline
+
 
 /** Deliver a downloaded file to Claude (cli queue or standalone LLM). */
 async function deliverMedia(
@@ -38,20 +39,18 @@ async function deliverMedia(
   const text = `${description}: ${caption}\n[file: ${hostPath}]`;
 
   if (route.mode === "cli") {
-    const isImage = (mimeType ?? "").startsWith("image/") || description.startsWith("Photo");
-    let attachment: Record<string, unknown>;
-
-    if (isImage) {
+    const facts = { description, mimeType, hostPath, filename, caption };
+    // Read only when it could be inlined. Pulling a 40 MB video into memory to
+    // decide it is not an image would be the cost of asking the question in
+    // the wrong order.
+    let base64: string | undefined;
+    let byteLength: number | undefined;
+    if (isImage(facts)) {
       const fileData = await Bun.file(filePath).arrayBuffer();
-      if (fileData.byteLength <= IMAGE_INLINE_MAX_BYTES) {
-        const base64 = Buffer.from(fileData).toString("base64");
-        attachment = { type: "image", base64, mime: mimeType ?? "image/jpeg", path: hostPath, caption };
-      } else {
-        attachment = { type: "image", path: hostPath, mime: mimeType ?? "image/jpeg", caption };
-      }
-    } else {
-      attachment = { type: "file", path: hostPath, name: filename ?? null, mime: mimeType ?? null, caption };
+      byteLength = fileData.byteLength;
+      if (fitsInline(byteLength)) base64 = Buffer.from(fileData).toString("base64");
     }
+    const attachment = attachmentFor({ ...facts, byteLength }, base64) as unknown as Record<string, unknown>;
 
     await addMessage({
       sessionId: route.sessionId,

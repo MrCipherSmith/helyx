@@ -3,17 +3,51 @@
   "id": "023",
   "slug": "a-question-where-several-answers-are-rig",
   "title": "a question where several answers are right",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-04T16:52:41.258Z",
-  "updatedAt": "2026-08-04T17:00:18.404Z",
+  "updatedAt": "2026-08-04T17:28:50.715Z",
   "source": {
     "type": "description",
     "ref": null
   },
   "acChecksum": "sha256:1144fdf2d3b48a87b280d81a5df59439e7e5793321f17d541b0b1879a529fd85",
-  "acConfirmed": {},
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-04T17:02:19.266Z"
+    },
+    "AC2": {
+      "at": "2026-08-04T17:02:19.355Z"
+    },
+    "AC3": {
+      "at": "2026-08-04T17:02:19.443Z"
+    },
+    "AC4": {
+      "at": "2026-08-04T17:02:19.536Z"
+    },
+    "AC5": {
+      "at": "2026-08-04T17:02:19.626Z"
+    },
+    "AC6": {
+      "at": "2026-08-04T17:02:19.713Z"
+    },
+    "AC7": {
+      "at": "2026-08-04T17:02:19.801Z"
+    },
+    "AC8": {
+      "at": "2026-08-04T17:02:19.893Z"
+    },
+    "AC9": {
+      "at": "2026-08-04T17:02:19.982Z"
+    },
+    "AC10": {
+      "at": "2026-08-04T17:02:20.072Z"
+    },
+    "AC11": {
+      "at": "2026-08-04T17:02:20.163Z"
+    }
+  },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/59"
   },
   "tasks": [
     {
@@ -65,7 +99,7 @@
       "id": "T4",
       "title": "Self-review and prepare draft PR",
       "kind": "review",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -73,7 +107,8 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     }
   ],
   "history": [
@@ -104,6 +139,122 @@
       "at": "2026-08-04T17:00:18.404Z",
       "event": "task-done",
       "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-04T17:02:16.996Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-04T17:02:19.178Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/59 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-08-04T17:02:19.266Z",
+      "event": "ac-confirmed",
+      "detail": "AC1"
+    },
+    {
+      "at": "2026-08-04T17:02:19.355Z",
+      "event": "ac-confirmed",
+      "detail": "AC2"
+    },
+    {
+      "at": "2026-08-04T17:02:19.443Z",
+      "event": "ac-confirmed",
+      "detail": "AC3"
+    },
+    {
+      "at": "2026-08-04T17:02:19.537Z",
+      "event": "ac-confirmed",
+      "detail": "AC4"
+    },
+    {
+      "at": "2026-08-04T17:02:19.626Z",
+      "event": "ac-confirmed",
+      "detail": "AC5"
+    },
+    {
+      "at": "2026-08-04T17:02:19.713Z",
+      "event": "ac-confirmed",
+      "detail": "AC6"
+    },
+    {
+      "at": "2026-08-04T17:02:19.801Z",
+      "event": "ac-confirmed",
+      "detail": "AC7"
+    },
+    {
+      "at": "2026-08-04T17:02:19.893Z",
+      "event": "ac-confirmed",
+      "detail": "AC8"
+    },
+    {
+      "at": "2026-08-04T17:02:19.982Z",
+      "event": "ac-confirmed",
+      "detail": "AC9"
+    },
+    {
+      "at": "2026-08-04T17:02:20.072Z",
+      "event": "ac-confirmed",
+      "detail": "AC10"
+    },
+    {
+      "at": "2026-08-04T17:02:20.163Z",
+      "event": "ac-confirmed",
+      "detail": "AC11"
+    },
+    {
+      "at": "2026-08-04T17:02:20.252Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-04T17:02:22.113Z",
+      "event": "completion-failed",
+      "detail": "pull-request: PR checks not green"
+    },
+    {
+      "at": "2026-08-04T17:02:43.038Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/59 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-08-04T17:02:43.127Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-04T17:02:45.051Z",
+      "event": "completion-failed",
+      "detail": "pull-request: PR checks not green"
+    },
+    {
+      "at": "2026-08-04T17:02:53.718Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/59 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-08-04T17:02:53.891Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-04T17:02:55.706Z",
+      "event": "completion-failed",
+      "detail": "pull-request: PR checks not green"
+    },
+    {
+      "at": "2026-08-04T17:28:48.946Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/59 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-08-04T17:28:49.035Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-04T17:28:50.715Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
   ]
 }

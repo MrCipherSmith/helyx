@@ -2,6 +2,7 @@ import type { Context } from "grammy";
 import { InputFile } from "grammy";
 import { sessionManager } from "../../sessions/manager.ts";
 import { sql } from "../../memory/db.ts";
+import { parseDaysArg, percentOf, histogramBar } from "../../utils/admin-format.ts";
 import { getApiStats, getTranscriptionStats, getMessageStats, getSessionLogs } from "../../utils/stats.ts";
 import { readSkills, readCommands, readHooks, toolIcon } from "../../utils/tools-reader.ts";
 import { CONFIG } from "../../config.ts";
@@ -191,8 +192,7 @@ export async function handlePending(ctx: Context): Promise<void> {
 
 export async function handlePermissionStats(ctx: Context): Promise<void> {
   const text = ctx.message?.text ?? "";
-  const arg = text.replace(/^\/permission_stats\s*/, "").trim();
-  const days = Math.min(Number(arg) || 30, 365);
+  const days = parseDaysArg(text.replace(/^\/permission_stats\s*/, ""));
 
   const [summary, topTools] = await Promise.all([
     sql`
@@ -226,7 +226,7 @@ export async function handlePermissionStats(ctx: Context): Promise<void> {
     return;
   }
 
-  const pct = (n: number) => s.total > 0 ? `${Math.round((n / s.total) * 100)}%` : "0%";
+  const pct = (n: number) => percentOf(n, s.total);
 
   const lines: string[] = [
     `Permission Stats (${days}d)\n`,
@@ -240,7 +240,7 @@ export async function handlePermissionStats(ctx: Context): Promise<void> {
   ];
 
   for (const t of topTools) {
-    const bar = "█".repeat(Math.round((t.total / (topTools[0]?.total || 1)) * 8)).padEnd(8, "░");
+    const bar = histogramBar(t.total, topTools[0]?.total ?? 0);
     lines.push(`${bar} ${t.tool_name} (${t.total})`);
   }
 
