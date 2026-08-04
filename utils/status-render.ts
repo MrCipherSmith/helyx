@@ -36,6 +36,18 @@ export const TELEGRAM_MAX_CHARS = 4096;
  */
 export const WORK_BUDGET_CHARS = 3400;
 
+/**
+ * How long the header may be.
+ *
+ * The header is the elapsed time and the token count, which are a dozen
+ * characters between them. It is bounded here rather than trusted because the
+ * token count is scraped out of terminal output with a regex — `[\d.]+` will
+ * match a thousand digits as happily as three — and it is added *outside* the
+ * work budget, so an oversized one pushes the whole message past the limit no
+ * matter how well the work half behaves.
+ */
+export const HEADER_BUDGET_CHARS = 64;
+
 /** Lines of recent activity to keep. */
 export const ACTIVITY_LINES = 15;
 /** Lines of raw pane to show. */
@@ -85,10 +97,15 @@ export function tailWithinBudget(lines: readonly string[], budget: number): stri
   return kept;
 }
 
+/** Cut to length, marking the cut so a trimmed value does not read as a whole one. */
+function clamp(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
 /** The statistics line — the part read at a glance rather than followed. */
 export function renderStats(parts: StatusParts): string {
   const bits: string[] = [];
-  if (parts.tokens) bits.push(parts.tokens.replace(/^\s*·\s*/, "").trim());
+  if (parts.tokens) bits.push(clamp(parts.tokens.replace(/^\s*·\s*/, "").trim(), HEADER_BUDGET_CHARS));
   if ((parts.toolCount ?? 0) > 0) {
     bits.push(`🔧 ${parts.toolCount} tools · ${parts.fileCount ?? 0} files`);
   }
@@ -117,7 +134,10 @@ export function renderStats(parts: StatusParts): string {
 export function renderStatus(parts: StatusParts): string {
   const icon = parts.spinner ?? "";
   const phase = parts.phaseEmoji ? ` ${parts.phaseEmoji}` : "";
-  const header = `${icon} <i>${parts.elapsed}</i>${phase}`.trim();
+  // Bounded and escaped: this is caller text, it carries the scraped token
+  // count, and it sits outside the work budget.
+  const elapsed = escapeHtml(clamp(parts.elapsed, HEADER_BUDGET_CHARS));
+  const header = `${icon} <i>${elapsed}</i>${phase}`.trim();
 
   const stats = renderStats(parts);
   const statsBlock = stats ? `\n${stats}` : "";

@@ -14,6 +14,7 @@ import {
   tailWithinBudget,
   TELEGRAM_MAX_CHARS,
   WORK_BUDGET_CHARS,
+  HEADER_BUDGET_CHARS,
   ACTIVITY_LINES,
   PANE_LINES,
 } from "../../utils/status-render.ts";
@@ -161,6 +162,49 @@ describe("the message always fits", () => {
       fileCount: 7,
     });
     expect(out.length).toBeLessThan(TELEGRAM_MAX_CHARS);
+  });
+
+  test("an absurd token count cannot push the message over", () => {
+    // The token count is scraped out of terminal output with a regex whose
+    // `[\d.]+` will match a thousand digits as happily as three, and it lands
+    // in the header — outside the work budget, where no amount of trimming
+    // elsewhere can compensate for it.
+    const out = renderStatus({ ...base, elapsed: `2m 26s · ↓ ${"9".repeat(4097)} tokens` });
+    expect(out.length).toBeLessThan(TELEGRAM_MAX_CHARS);
+    expect(out).toContain("2m 26s");
+  });
+
+  test("every field oversized at once still fits", () => {
+    const out = renderStatus({
+      elapsed: "9".repeat(5000),
+      stage: Array.from({ length: 300 }, (_, i) => `step ${i} ${"x".repeat(200)}`).join("\n"),
+      pane: Array.from({ length: 300 }, () => "y".repeat(300)).join("\n"),
+      tokens: "z".repeat(5000),
+      question: "q".repeat(5000),
+      spinner: "✶",
+      phaseEmoji: "🧠",
+      toolCount: 99,
+      fileCount: 99,
+    });
+    expect(out.length).toBeLessThan(TELEGRAM_MAX_CHARS);
+  });
+
+  test("the header budget is what it says", () => {
+    const out = renderStatus({ ...base, elapsed: "e".repeat(HEADER_BUDGET_CHARS + 50) });
+    expect(out).toContain(`${"e".repeat(HEADER_BUDGET_CHARS - 1)}…`);
+    expect(out).not.toContain("e".repeat(HEADER_BUDGET_CHARS + 1));
+  });
+
+  test("an elapsed value at the budget is left alone", () => {
+    // Both sides, so `>` cannot quietly become `>=` and clip every header.
+    const exact = "e".repeat(HEADER_BUDGET_CHARS);
+    expect(renderStatus({ ...base, elapsed: exact })).toContain(exact);
+  });
+
+  test("the header is escaped like everything else", () => {
+    // It carries text scraped from the terminal, and the message is sent with
+    // parse_mode HTML — an unescaped bracket fails the send outright.
+    expect(renderStatus({ ...base, elapsed: "<b>2m</b>" })).toContain("&lt;b&gt;");
   });
 
   test("the budget leaves room for everything else", () => {

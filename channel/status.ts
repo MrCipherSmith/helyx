@@ -1000,7 +1000,11 @@ export class StatusManager {
     const key = this.stateKey(chatId);
     const onStatus = (status: string) => {
       const tokenMatch = status.match(/↓\s*([\d.]+[kmKM]?\s*tokens)/i);
-      if (tokenMatch) this.lastTokenInfo.set(key, tokenMatch[1].trim());
+      // Capped at the source as well as in the renderer. `[\d.]+` matches a
+      // thousand digits as happily as three, and this is scraped from whatever
+      // the terminal drew — a redraw artefact should not be kept whole in a map
+      // that outlives the turn.
+      if (tokenMatch) this.lastTokenInfo.set(key, tokenMatch[1].trim().slice(0, 32));
       this.updateStatus(chatId, status);
     };
 
