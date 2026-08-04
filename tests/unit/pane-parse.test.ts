@@ -6,6 +6,9 @@ import {
   CHROME_PATTERNS,
   SCRIPT_WRAPPER_PATTERNS,
   MAX_STATUS_LINES,
+  stripInteractiveMenu,
+  meaningfulPaneLines,
+  PANE_SNAPSHOT_LINES,
 } from "../../utils/pane-parse.ts";
 
 /**
@@ -236,5 +239,91 @@ describe("parseStatus", () => {
     // rejected as chrome, which is a different route to the same answer.
     expect(isChrome("Script started on 2026-08-03")).toBe(false);
     expect(isChrome("Script started on 2026-08-03", SCRIPT_WRAPPER_PATTERNS)).toBe(true);
+  });
+});
+
+describe("what reaches the operator's status pane", () => {
+  test("the menu the operator already has as buttons is dropped", () => {
+    // The screenshot that started this: "3. Досылать + пометка", "4. Type
+    // something", "Enter to select · Esc to cancel" — mirrored under the very
+    // Telegram buttons that asked the same question. Unpressable, and it reads
+    // as garbage.
+    const pane = [
+      "● Running tests",
+      "  ⎿ 1039 passed",
+      "",
+      "  1. Досылать автоматически",
+      "  2. Только пометка",
+      "❯ 3. Досылать + пометка",
+      "  4. Type something",
+      "Enter to select · Tab/Arrow keys to navigate · Esc to cancel",
+    ];
+
+    const out = meaningfulPaneLines(pane).join("\n");
+
+    expect(out).not.toContain("Enter to select");
+    expect(out).not.toContain("Досылать + пометка");
+    expect(out).not.toContain("Type something");
+  });
+
+  test("the work above the menu survives it", () => {
+    // The menu is what interrupted the work; the work is what the operator is
+    // watching. Dropping both would trade one blank status for another.
+    const pane = ["● Running tests", "  ⎿ 1039 passed", "  1. one", "  2. two", "Enter to select · Esc to cancel"];
+    const out = meaningfulPaneLines(pane).join("\n");
+
+    expect(out).toContain("Running tests");
+    expect(out).toContain("1039 passed");
+  });
+
+  test("an ordinary numbered list is not a menu", () => {
+    // Numbered lines are also just output — a shell printing a list, a runner
+    // counting cases. Keying on the footer is what keeps this narrow.
+    const pane = ["● Steps:", "1. build", "2. deploy", "3. verify"];
+    expect(meaningfulPaneLines(pane).join("\n")).toContain("build");
+  });
+
+  test("spinner frames and box drawing carry nothing", () => {
+    expect(meaningfulPaneLines(["⠋", "  ", "─────", "● real work"])).toEqual(["● real work"]);
+  });
+
+  test("only the last few lines are kept", () => {
+    const many = Array.from({ length: 40 }, (_, i) => `● line ${i}`);
+    const out = meaningfulPaneLines(many);
+
+    expect(out.length).toBe(PANE_SNAPSHOT_LINES);
+    expect(out.at(-1)).toBe("● line 39");
+  });
+
+  test("a menu does not eat the window it sat in", () => {
+    // The menu occupied the newest lines; dropping it must let the work above
+    // through rather than leaving a short snapshot of nothing.
+    const pane = [
+      ...Array.from({ length: 10 }, (_, i) => `● work ${i}`),
+      "  1. yes",
+      "  2. no",
+      "Enter to select",
+    ];
+    expect(meaningfulPaneLines(pane)).toEqual(
+      Array.from({ length: PANE_SNAPSHOT_LINES }, (_, i) => `● work ${i + 4}`),
+    );
+  });
+
+  test("the strip stops at the first line that is not an option", () => {
+    // Without that stop it scans to the top of the pane and any earlier
+    // numbered line — a shell's own list, a test count — drags everything
+    // between it and the menu away with it.
+    const lines = ["1. an old list from a command", "● real work", "  1. a", "Enter to select"];
+    expect(stripInteractiveMenu(lines)).toEqual(["1. an old list from a command", "● real work"]);
+  });
+
+  test("stripInteractiveMenu leaves surrounding lines alone", () => {
+    const lines = ["before", "  1. a", "  2. b", "Enter to select", "after"];
+    expect(stripInteractiveMenu(lines)).toEqual(["before", "after"]);
+  });
+
+  test("and returns the lines unchanged when there is no footer", () => {
+    const lines = ["before", "  1. a", "  2. b", "after"];
+    expect(stripInteractiveMenu(lines)).toEqual(lines);
   });
 });

@@ -3,9 +3,9 @@
   "id": "019",
   "slug": "the-status-message-bigger-work-half-and-",
   "title": "the status message: bigger work half, and a statistics half",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-04T08:47:23.088Z",
-  "updatedAt": "2026-08-04T08:47:51.406Z",
+  "updatedAt": "2026-08-04T09:29:44.573Z",
   "source": {
     "type": "description",
     "ref": null
@@ -13,52 +13,41 @@
   "acChecksum": "sha256:b212bf4fac7ca47d0204285bbd16f0d3b4b8cd714c9a60cad9e5fc12f3eae2e4",
   "acConfirmed": {
     "AC1": {
-      "at": "2026-08-04T08:47:50.556Z",
-      "note": "renderStatus/renderStats/tailWithinBudget in utils/status-render.ts; formatStatusText delegates"
+      "at": "2026-08-04T09:29:41.773Z"
     },
     "AC2": {
-      "at": "2026-08-04T08:47:50.639Z",
-      "note": "multi-line gives blockquote expandable; a single line gives none"
+      "at": "2026-08-04T09:29:41.859Z"
     },
     "AC3": {
-      "at": "2026-08-04T08:47:50.725Z",
-      "note": "pane wrapped in <pre>, asserted with box-drawing characters"
+      "at": "2026-08-04T09:29:41.943Z"
     },
     "AC4": {
-      "at": "2026-08-04T08:47:50.810Z",
-      "note": "ACTIVITY_LINES 15, PANE_LINES 9, pane-parse slices 75/83/90/98"
+      "at": "2026-08-04T09:29:42.030Z"
     },
     "AC5": {
-      "at": "2026-08-04T08:47:50.895Z",
-      "note": "tailWithinBudget keeps the tail; under pressure step 199 survives"
+      "at": "2026-08-04T09:29:42.116Z"
     },
     "AC6": {
-      "at": "2026-08-04T08:47:50.980Z",
-      "note": "a single over-long line is clipped rather than dropped"
+      "at": "2026-08-04T09:29:42.204Z"
     },
     "AC7": {
-      "at": "2026-08-04T08:47:51.064Z",
-      "note": "question shown, previewed past 120 chars, whitespace collapsed, escaped"
+      "at": "2026-08-04T09:29:42.289Z"
     },
     "AC8": {
-      "at": "2026-08-04T08:47:51.152Z",
-      "note": "activity, pane and question all asserted escaped"
+      "at": "2026-08-04T09:29:42.377Z"
     },
     "AC9": {
-      "at": "2026-08-04T08:47:51.237Z",
-      "note": "400 activity lines plus 200 pane lines plus a 300-char question stays under 4096"
+      "at": "2026-08-04T09:29:42.463Z"
     },
     "AC10": {
-      "at": "2026-08-04T08:47:51.322Z",
-      "note": "renderStats returns empty and renderStatus emits no blank section"
+      "at": "2026-08-04T09:29:42.554Z"
     },
     "AC11": {
-      "at": "2026-08-04T08:47:51.406Z",
-      "note": "typecheck clean, lint 0 errors, 1013 tests, dupes 2 documented"
+      "at": "2026-08-04T09:29:42.640Z"
     }
   },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/55"
   },
   "tasks": [
     {
@@ -335,6 +324,75 @@
       "at": "2026-08-04T08:47:51.406Z",
       "event": "ac-confirmed",
       "detail": "AC11: typecheck clean, lint 0 errors, 1013 tests, dupes 2 documented"
+    },
+    {
+      "at": "2026-08-04T09:29:41.687Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/55 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-08-04T09:29:41.773Z",
+      "event": "ac-confirmed",
+      "detail": "AC1"
+    },
+    {
+      "at": "2026-08-04T09:29:41.859Z",
+      "event": "ac-confirmed",
+      "detail": "AC2"
+    },
+    {
+      "at": "2026-08-04T09:29:41.943Z",
+      "event": "ac-confirmed",
+      "detail": "AC3"
+    },
+    {
+      "at": "2026-08-04T09:29:42.030Z",
+      "event": "ac-confirmed",
+      "detail": "AC4"
+    },
+    {
+      "at": "2026-08-04T09:29:42.116Z",
+      "event": "ac-confirmed",
+      "detail": "AC5"
+    },
+    {
+      "at": "2026-08-04T09:29:42.204Z",
+      "event": "ac-confirmed",
+      "detail": "AC6"
+    },
+    {
+      "at": "2026-08-04T09:29:42.289Z",
+      "event": "ac-confirmed",
+      "detail": "AC7"
+    },
+    {
+      "at": "2026-08-04T09:29:42.377Z",
+      "event": "ac-confirmed",
+      "detail": "AC8"
+    },
+    {
+      "at": "2026-08-04T09:29:42.463Z",
+      "event": "ac-confirmed",
+      "detail": "AC9"
+    },
+    {
+      "at": "2026-08-04T09:29:42.554Z",
+      "event": "ac-confirmed",
+      "detail": "AC10"
+    },
+    {
+      "at": "2026-08-04T09:29:42.640Z",
+      "event": "ac-confirmed",
+      "detail": "AC11"
+    },
+    {
+      "at": "2026-08-04T09:29:42.726Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-04T09:29:44.573Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
   ]
 }

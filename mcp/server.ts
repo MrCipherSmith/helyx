@@ -15,6 +15,7 @@ import { sql } from "../memory/db.ts";
 import { parseHookInput, denyWithAnswers, ANSWER_TIMEOUT_MS } from "../utils/ask-question.ts";
 
 import { readOrCreateToken, tokenMatches } from "../utils/hook-token.ts";
+import { summaryFor } from "../utils/turn-summary.ts";
 import { existsSync, readFileSync, writeFileSync, chmodSync } from "fs";
 
 /** The shared secret, read once — created on first start by whichever side runs first. */
@@ -36,7 +37,7 @@ const MAX_ASK_QUESTION_BODY = 256 * 1024;
 /** Each waiter holds a socket and polls once a second. */
 const MAX_ASK_QUESTION_WAITERS = 16;
 let askQuestionWaiters = 0;
-import { runQuestionExchange } from "../services/ask-question.ts";
+import { runQuestionExchange, resolveTarget } from "../services/ask-question.ts";
 import { sendTelegramMessage, editTelegramMessage } from "../channel/telegram.ts";
 import { summarizeOnDisconnect, summarizeWork, extractFactsFromTranscript } from "../memory/summarizer.ts";
 import { verifyJwt } from "../dashboard/auth.ts";
@@ -283,6 +284,43 @@ function readBody(req: IncomingMessage): Promise<string> {
     req.on("data", (chunk) => { data += String(chunk); });
     req.on("end", () => resolve(data));
     req.on("error", reject);
+  });
+}
+
+/**
+ * Say that the turn is over, when the session did not.
+ *
+ * Only what a session sends through the `reply` tool reaches Telegram, so a
+ * turn that ends without one delivers nothing and the status message freezes on
+ * the terminal's last line — finished and hung become indistinguishable. This
+ * runs at the end of every turn and fills that silence.
+ *
+ * Every failure is silent by design. This is a courtesy at the end of work that
+ * already succeeded; it must never be the reason a turn appears to fail.
+ */
+async function deliverTurnSummary(transcriptPath: string, projectPath: string): Promise<void> {
+  const token = CONFIG.TELEGRAM_BOT_TOKEN;
+  if (!token) return;
+
+  let transcript: string;
+  try {
+    transcript = readFileSync(transcriptPath, "utf-8");
+  } catch {
+    return;
+  }
+
+  const summary = summaryFor(transcript);
+  if (!summary) return;
+
+  // The same resolution the question hook uses: by working directory, to the
+  // project's topic. A summary in the forum's General is a summary the operator
+  // does not read — and this whole feature exists to be read.
+  const target = await resolveTarget(sql, { sessionId: "", cwd: projectPath });
+  if (!target) return;
+
+  await sendTelegramMessage(token, target.chatId, summary, {
+    parse_mode: "HTML",
+    ...target.extra,
   });
 }
 
@@ -616,6 +654,8 @@ export function startMcpHttpServer(bot: Bot | null): ReturnType<typeof createSer
         res.end(JSON.stringify({ ok: true }));
         extractFactsFromTranscript(transcript_path as string, project_path as string)
           .catch((err) => console.error("[hooks/stop] extractFactsFromTranscript error:", err?.message));
+        deliverTurnSummary(transcript_path as string, project_path as string)
+          .catch((err) => console.error("[hooks/stop] deliverTurnSummary error:", err?.message));
       } catch (err: any) {
         if (!res.headersSent) {
           res.writeHead(500, { "Content-Type": "application/json" });
