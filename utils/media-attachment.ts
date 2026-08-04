@@ -77,3 +77,21 @@ export function attachmentFor(facts: MediaFacts, base64?: string): Attachment {
   }
   return { type: "image", path: facts.hostPath, mime, caption: facts.caption };
 }
+
+/** The image types the Anthropic API accepts as base64 blocks. */
+export const ANTHROPIC_IMAGE_MIMES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
+export type AnthropicImageMime = (typeof ANTHROPIC_IMAGE_MIMES)[number];
+
+/**
+ * The media type to declare for an inline image block.
+ *
+ * The API takes four and no others, and the previous code declared every
+ * picture as JPEG whatever it was — so a PNG was handed over under the wrong
+ * name and the model was left to sort it out. Narrowed here: the true type
+ * when it is one the API knows, JPEG when it is not, because a picture
+ * declared wrongly still beats a request refused.
+ */
+export function anthropicImageMime(mimeType: string | null | undefined): AnthropicImageMime {
+  const found = ANTHROPIC_IMAGE_MIMES.find((m) => m === mimeType);
+  return found ?? "image/jpeg";
+}

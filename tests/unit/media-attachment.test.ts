@@ -13,6 +13,8 @@ import {
   isImage,
   fitsInline,
   IMAGE_INLINE_MAX_BYTES,
+  anthropicImageMime,
+  ANTHROPIC_IMAGE_MIMES,
 } from "../../utils/media-attachment.ts";
 
 const base = { hostPath: "/home/altsay/downloads/a.jpg", caption: "смотри" };
@@ -129,6 +131,32 @@ describe("what Claude receives", () => {
     for (const shape of shapes) {
       expect([shape.type, shape.caption]).toEqual([shape.type, "смотри"]);
       expect([shape.type, shape.path]).toEqual([shape.type, base.hostPath]);
+    }
+  });
+});
+
+describe("what an inline image is declared as", () => {
+  test("its own type, when the API knows it", () => {
+    // The previous code declared every picture as JPEG whatever it was, so a
+    // PNG went over under the wrong name and the model sorted it out.
+    expect(anthropicImageMime("image/png")).toBe("image/png");
+    expect(anthropicImageMime("image/webp")).toBe("image/webp");
+    expect(anthropicImageMime("image/gif")).toBe("image/gif");
+  });
+
+  test("and JPEG when it does not", () => {
+    // A picture declared wrongly still beats a request refused outright.
+    expect(anthropicImageMime("image/heic")).toBe("image/jpeg");
+    expect(anthropicImageMime("image/svg+xml")).toBe("image/jpeg");
+    expect(anthropicImageMime(undefined)).toBe("image/jpeg");
+    expect(anthropicImageMime(null)).toBe("image/jpeg");
+  });
+
+  test("every accepted type maps to itself", () => {
+    // Walked from the list, so adding a type without handling it is a failure
+    // here rather than a rejected request the operator sees as silence.
+    for (const mime of ANTHROPIC_IMAGE_MIMES) {
+      expect([mime, anthropicImageMime(mime)]).toEqual([mime, mime]);
     }
   });
 });

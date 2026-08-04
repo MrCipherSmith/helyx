@@ -15,7 +15,7 @@ import { maybeAttachVoice } from "../utils/tts.ts";
 import { getForumChatId } from "./forum-cache.ts";
 import { replyInThread } from "./format.ts";
 import { enqueueForTopic, topicQueueKey, getQueueDepth } from "./topic-queue.ts";
-import { attachmentFor, isImage, fitsInline } from "../utils/media-attachment.ts";
+import { attachmentFor, isImage, fitsInline, anthropicImageMime } from "../utils/media-attachment.ts";
 
 
 
@@ -86,12 +86,20 @@ async function deliverMedia(
     metadata: { fileId, filePath, messageId },
   });
 
-  const isPhoto = description.startsWith("Photo");
-  if (provider === "anthropic" && isPhoto) {
+  // The same question as the CLI path asks, asked the same way.
+  //
+  // It used to ask a narrower one — the description only — so a document
+  // arriving as `image/png` was inlined for a session and not for a standalone
+  // chat. And it had no size limit at all: a forty-megabyte picture went into
+  // the request whole, where the other path had guarded against exactly that
+  // since it was written.
+  const photo = isImage({ description, mimeType });
+  if (provider === "anthropic" && photo) {
     try {
       const fileData = await Bun.file(filePath).arrayBuffer();
+      if (!fitsInline(fileData.byteLength)) throw new Error("image too large to inline");
       const base64 = Buffer.from(fileData).toString("base64");
-      const imageMime = "image/jpeg";
+      const imageMime = anthropicImageMime(mimeType);
       const { system, messages } = await composePrompt(sessionId, chatId, caption);
       const lastMsg = messages[messages.length - 1];
       const imageBlocks: ContentBlock[] = [
