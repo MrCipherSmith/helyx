@@ -22,6 +22,9 @@ import {
   answerToast,
   type PressOutcome,
   freeTextCallbackData,
+  submitCallbackData,
+  isAnswered,
+  isMultiAnswer,
 } from "../../utils/ask-question.ts";
 
 function hookPayload(overrides: Record<string, unknown> = {}): string {
@@ -101,9 +104,11 @@ describe("parseHookInput", () => {
     expect(parseHookInput(raw)).toBeNull();
   });
 
-  test("multiSelect declines the whole call", () => {
-    // One tap is one answer. A multi-select needs a way to say "these two, and
-    // now I am done", which this path does not have.
+  test("multiSelect is accepted, and carries its flag", () => {
+    // It used to decline the whole call, because one tap is one answer and a
+    // multi-select needs a way to say "these two, and now I am done". It has
+    // one now — toggles and a submit — so the question travels instead of
+    // being asked in a terminal nobody is watching.
     const raw = JSON.stringify({
       tool_name: "AskUserQuestion",
       tool_input: {
@@ -113,7 +118,11 @@ describe("parseHookInput", () => {
         ],
       },
     });
-    expect(parseHookInput(raw)).toBeNull();
+    const parsed = parseHookInput(raw);
+
+    expect(parsed).not.toBeNull();
+    expect(parsed!.questions[0]!.multiSelect).toBe(false);
+    expect(parsed!.questions[1]!.multiSelect).toBe(true);
   });
 
   test("a blank question, or an option without a label, declines the call", () => {
@@ -147,7 +156,7 @@ describe("parseHookInput", () => {
 describe("callback payloads", () => {
   test("round-trip", () => {
     const data = answerCallbackData("a1b2c3d4", 1, 2);
-    expect(parseAnswerCallback(data)).toEqual({ requestId: "a1b2c3d4", questionIndex: 1, optionIndex: 2, freeText: false });
+    expect(parseAnswerCallback(data)).toEqual({ requestId: "a1b2c3d4", questionIndex: 1, optionIndex: 2, freeText: false, submit: false });
   });
 
   test("someone else's callback is not ours", () => {
@@ -328,7 +337,7 @@ describe("answering in the operator's own words", () => {
     // from being recorded as an answer nobody chose. `Number("t")` is NaN, so
     // the marker cannot be read as an index.
     const typed = parseAnswerCallback(freeTextCallbackData("a1b2c3d4", 2));
-    expect(typed).toEqual({ requestId: "a1b2c3d4", questionIndex: 2, optionIndex: null, freeText: true });
+    expect(typed).toEqual({ requestId: "a1b2c3d4", questionIndex: 2, optionIndex: null, freeText: true, submit: false });
 
     const chosen = parseAnswerCallback(answerCallbackData("a1b2c3d4", 2, 0));
     expect(chosen!.freeText).toBe(false);
@@ -423,5 +432,101 @@ describe("typed words cannot forge an answer", () => {
 
     expect(out.split("\n")).toHaveLength(2);
     expect(out).toContain("нет");
+  });
+});
+
+describe("a question where several answers are right", () => {
+  const multi = { question: "Что включить?", multiSelect: true, options: [{ label: "тесты" }, { label: "линт" }, { label: "дубли" }] };
+  const single = { question: "Куда?", multiSelect: false, options: [{ label: "staging" }, { label: "прод" }] };
+
+  test("options are toggles, and a submit sits under them", () => {
+    const { buttons } = questionMessage("id", 0, multi);
+    const captions = buttons.flat().map((b) => b.text);
+
+    expect(captions.filter((c) => c.startsWith("☐"))).toHaveLength(3);
+    // Submit last: it is the press that closes the question, and it should sit
+    // where the operator lands after working down the options.
+    expect(captions.at(-1)).toContain("Готово");
+    expect(captions.at(-2)).toContain("Свой ответ");
+  });
+
+  test("the toggles show what is currently chosen", () => {
+    // The operator is building a set over several taps and the message text
+    // cannot say "and now these two" — the buttons have to.
+    const { buttons } = questionMessage("id", 0, multi, [0, 2]);
+    const captions = buttons.flat().map((b) => b.text);
+
+    expect(captions[0]).toContain("☑");
+    expect(captions[1]).toContain("☐");
+    expect(captions[2]).toContain("☑");
+    expect(captions.find((c) => c.includes("Готово"))).toContain("(2)");
+  });
+
+  test("a single-select question gets no submit and keeps its numbers", () => {
+    // One tap is still one answer; a submit there would ask for a second press
+    // that means nothing.
+    const captions = questionMessage("id", 0, single).buttons.flat().map((b) => b.text);
+
+    expect(captions.some((c) => c.includes("Готово"))).toBe(false);
+    expect(captions[0]).toContain("1.");
+  });
+
+  test("submit and option presses cannot be mistaken for one another", () => {
+    const submit = parseAnswerCallback(submitCallbackData("id", 1));
+    expect(submit).toEqual({ requestId: "id", questionIndex: 1, optionIndex: null, freeText: false, submit: true });
+
+    const option = parseAnswerCallback(answerCallbackData("id", 1, 0));
+    expect(option!.submit).toBe(false);
+
+    const typed = parseAnswerCallback(freeTextCallbackData("id", 1));
+    expect([typed!.submit, typed!.freeText]).toEqual([false, true]);
+  });
+
+  test("nothing is answered until it is submitted", () => {
+    // The whole difference from single select. Without it the first tap is the
+    // answer, which is why these questions used to be refused outright.
+    expect(isAnswered({ picked: [0, 1], done: false })).toBe(false);
+    expect(isAnswered({ picked: [0, 1], done: true })).toBe(true);
+  });
+
+  test("an empty submission is not an answer", () => {
+    // "None of these" is a real thing to say, but it is the free-text button's
+    // answer, not an empty list.
+    expect(isAnswered({ picked: [], done: true })).toBe(false);
+  });
+
+  test("several options reach Claude as several answers", () => {
+    const out = formatAnswers([multi], [{ picked: [0, 2], done: true }]);
+    expect(out).toContain("тесты, дубли");
+  });
+
+  test("and one option is still one, not a list of one", () => {
+    expect(formatAnswers([multi], [{ picked: [1], done: true }])).toContain("→ линт");
+  });
+
+  test("a submitted set of nothing reads as no answer", () => {
+    expect(formatAnswers([multi], [{ picked: [], done: true }])).toContain("(no answer)");
+  });
+
+  test("an option index that no longer exists is dropped, not printed as undefined", () => {
+    // The questions come from Claude and the indices from a button pressed
+    // minutes later; a mismatch must not reach the model as the word
+    // "undefined" sitting where an answer should be.
+    expect(formatAnswers([multi], [{ picked: [0, 99], done: true }])).toContain("→ тесты");
+    expect(formatAnswers([multi], [{ picked: [0, 99], done: true }])).not.toContain("undefined");
+  });
+
+  test("the running set is shown on every tap", () => {
+    expect(answerToast({ status: "toggled", label: "тесты, линт", picked: 2 })).toContain("тесты, линт");
+    expect(answerToast({ status: "toggled", label: "—", picked: 0 })).toContain("Ничего не выбрано");
+  });
+
+  test("a multi answer is recognised, and other shapes are not", () => {
+    expect(isMultiAnswer({ picked: [1], done: false })).toBe(true);
+    expect(isMultiAnswer({ picked: [1] })).toBe(false);
+    expect(isMultiAnswer({ done: true })).toBe(false);
+    expect(isMultiAnswer(null)).toBe(false);
+    expect(isMultiAnswer(3)).toBe(false);
+    expect(isMultiAnswer("текст")).toBe(false);
   });
 });

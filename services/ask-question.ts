@@ -17,6 +17,8 @@ import {
   questionMessage,
   shortRequestId,
   type Answer,
+  type MultiAnswer,
+  isMultiAnswer,
   type HookInput,
   type Question,
 } from "../utils/ask-question.ts";
@@ -246,6 +248,10 @@ function normaliseAnswers(raw: unknown, expected: number): Answer[] {
     // having already answered.
     if (typeof value === "string" && value.trim()) answers.push(value);
     else if (typeof value === "number" && Number.isInteger(value) && value >= 0) answers.push(value);
+    // The same trap the typed answers fell into: an unrecognised shape becomes
+    // null, so the slot reads as unanswered and the call never completes while
+    // the row plainly holds an answer.
+    else if (isMultiAnswer(value)) answers.push(value);
     else answers.push(null);
   }
   return answers;
@@ -258,7 +264,8 @@ export type AnswerOutcome =
   | { status: "already-answered" }
   | { status: "expired" }
   | { status: "out-of-range" }
-  | { status: "awaiting-text"; label: string };
+  | { status: "awaiting-text"; label: string }
+  | { status: "toggled"; label: string; picked: number };
 
 /**
  * Record one tapped button.
@@ -288,9 +295,14 @@ export async function recordAnswer(deps: AskDeps, callbackData: string): Promise
   if (!question) return { status: "out-of-range" };
 
   if (parsed.freeText) return await awaitTypedAnswer(deps, parsed.requestId, parsed.questionIndex, question);
+  if (parsed.submit) return await submitMultiAnswer(deps, parsed.requestId, parsed.questionIndex, questions, row);
 
   const option = question.options?.[parsed.optionIndex!];
   if (!option) return { status: "out-of-range" };
+
+  if (question.multiSelect) {
+    return await toggleMultiAnswer(deps, parsed.requestId, parsed.questionIndex, parsed.optionIndex!, question, row);
+  }
 
   // One slot, set in place by the database.
   //
@@ -438,6 +450,145 @@ export async function recordTypedAnswer(
 
   const answers = normaliseAnswers(updated[0]!.answers, questions.length);
   return { status: "recorded", label: trimmed, complete: allAnswered(answers, questions.length) };
+}
+
+/** The slot for one question, as the row currently holds it. */
+function multiSlot(answers: unknown, index: number): MultiAnswer {
+  const list = Array.isArray(answers) ? answers : [];
+  const value = list[index];
+  return isMultiAnswer(value) ? value : { picked: [], done: false };
+}
+
+/**
+ * Add or remove one option from a multi-select answer.
+ *
+ * The toggle happens inside the statement rather than here.
+ *
+ * Read the array, change it and write it back, and two taps landing together
+ * lose one of them: each write carries the other's selection as it was before
+ * it. The single-select path is careful about this for the same reason, and a
+ * toggle is read-modify-write by its nature, so the care has to move into SQL
+ * rather than be dropped. `jsonb_set` on the one slot, with the array built by
+ * the database from the value it is replacing, composes however the two taps
+ * interleave.
+ */
+async function toggleMultiAnswer(
+  deps: AskDeps,
+  requestId: string,
+  questionIndex: number,
+  optionIndex: number,
+  question: Question,
+  row: Record<string, unknown>,
+): Promise<AnswerOutcome> {
+  // The path is a string for `jsonb_set` and an explicitly cast integer for `->`.
+  //
+  // Neither is interchangeable and both fail silently. `answers` is a jsonb
+  // *array*, so `array -> '0'` is NULL rather than the first element — and a
+  // bind parameter arrives as text, so even `-> ${i}` picks the text overload
+  // unless it is cast. Either way every read comes back empty, and a toggle
+  // can only ever add: never remove, never accumulate past the last tap.
+  //
+  // The fake database records queries without executing them, so nothing in
+  // the unit suite could see this. `multi-answer-toggle.test.ts` runs against
+  // a real one, which is what caught it — twice, once for each mistake.
+  const path = String(questionIndex);
+  const updated = await deps.sql`
+    UPDATE question_requests
+       SET answers = jsonb_set(
+             answers,
+             ARRAY[${path}],
+             jsonb_build_object(
+               'done', false,
+               'picked', CASE
+                 WHEN COALESCE(answers -> ${questionIndex}::int -> 'picked', '[]'::jsonb) @> ${deps.sql.json([optionIndex] as never)}
+                 THEN (
+                   SELECT COALESCE(jsonb_agg(v ORDER BY ord), '[]'::jsonb)
+                     FROM jsonb_array_elements(COALESCE(answers -> ${questionIndex}::int -> 'picked', '[]'::jsonb))
+                          WITH ORDINALITY AS t(v, ord)
+                    WHERE v <> to_jsonb(${optionIndex}::int)
+                 )
+                 ELSE COALESCE(answers -> ${questionIndex}::int -> 'picked', '[]'::jsonb) || to_jsonb(${optionIndex}::int)
+               END
+             ),
+             true
+           ),
+           awaiting_question = CASE WHEN awaiting_question = ${questionIndex} THEN NULL ELSE awaiting_question END
+     WHERE id = ${requestId} AND answered_at IS NULL AND expired_at IS NULL
+    RETURNING answers
+  `.catch(() => [] as Record<string, unknown>[]);
+
+  if (updated.length === 0) return await terminalOutcome(deps, requestId);
+
+  const slot = multiSlot(updated[0]!.answers, questionIndex);
+  await rerenderQuestion(deps, requestId, questionIndex, question, row, slot.picked);
+
+  const chosen = slot.picked
+    .map((i) => question.options[i]?.label)
+    .filter((l): l is string => typeof l === "string");
+  return { status: "toggled", label: chosen.join(", ") || "—", picked: slot.picked.length };
+}
+
+/** Close a multi-select question, if anything is in it. */
+async function submitMultiAnswer(
+  deps: AskDeps,
+  requestId: string,
+  questionIndex: number,
+  questions: Question[],
+  row: Record<string, unknown>,
+): Promise<AnswerOutcome> {
+  const question = questions[questionIndex]!;
+  const before = multiSlot(row.answers, questionIndex);
+  // Refused rather than recorded. An empty submit would close the question
+  // with nothing in it, and "none of these" is a real answer — but it is the
+  // free-text button's answer, not an empty list.
+  if (before.picked.length === 0) return { status: "out-of-range" };
+
+  const updated = await deps.sql`
+    UPDATE question_requests
+       SET answers = jsonb_set(answers, ARRAY[${String(questionIndex)}], jsonb_set(
+             COALESCE(answers -> ${questionIndex}::int, '{"picked":[],"done":false}'::jsonb),
+             ARRAY['done'], 'true'::jsonb, true), true)
+     WHERE id = ${requestId} AND answered_at IS NULL AND expired_at IS NULL
+    RETURNING answers
+  `.catch(() => [] as Record<string, unknown>[]);
+
+  if (updated.length === 0) return await terminalOutcome(deps, requestId);
+
+  const answers = normaliseAnswers(updated[0]!.answers, questions.length);
+  const slot = multiSlot(updated[0]!.answers, questionIndex);
+  const labels = slot.picked
+    .map((i) => question.options[i]?.label)
+    .filter((l): l is string => typeof l === "string");
+
+  const messageIds = (Array.isArray(row.message_ids) ? row.message_ids : []) as (number | null)[];
+  const messageId = messageIds[questionIndex];
+  if (typeof messageId === "number") {
+    const { text } = questionMessage(requestId, questionIndex, question, slot.picked);
+    await deps
+      .editMessage(String(row.chat_id), messageId, `${text}\n\n✅ <b>Выбрано: ${escapeHtml(labels.join(", "))}</b>`)
+      .catch(() => {});
+  }
+
+  return { status: "recorded", label: labels.join(", "), complete: allAnswered(answers, questions.length) };
+}
+
+/** Redraw a question so its toggles show what is currently chosen. */
+async function rerenderQuestion(
+  deps: AskDeps,
+  requestId: string,
+  questionIndex: number,
+  question: Question,
+  row: Record<string, unknown>,
+  picked: readonly number[],
+): Promise<void> {
+  const messageIds = (Array.isArray(row.message_ids) ? row.message_ids : []) as (number | null)[];
+  const messageId = messageIds[questionIndex];
+  if (typeof messageId !== "number") return;
+
+  const { text, buttons } = questionMessage(requestId, questionIndex, question, picked);
+  await deps
+    .editMessage(String(row.chat_id), messageId, text, { reply_markup: { inline_keyboard: buttons } })
+    .catch(() => {});
 }
 
 /** Which terminal state a request ended in, for a tap that arrived too late. */

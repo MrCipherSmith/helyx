@@ -96,9 +96,6 @@ export function parseHookInput(raw: string): HookInput | null {
   const questions: Question[] = [];
   for (const q of rawQuestions as Record<string, unknown>[]) {
     if (typeof q?.question !== "string" || !q.question.trim()) return null;
-    // Carried through the type but not supported here: one tap is one answer,
-    // and a multi-select needs a way to say "these two and then done".
-    if (q.multiSelect === true) return null;
 
     const options = Array.isArray(q.options) ? (q.options as Record<string, unknown>[]) : [];
     const usable = options
@@ -109,7 +106,7 @@ export function parseHookInput(raw: string): HookInput | null {
     questions.push({
       question: q.question,
       header: typeof q.header === "string" ? q.header : undefined,
-      multiSelect: false,
+      multiSelect: q.multiSelect === true,
       options: usable,
     });
   }
@@ -135,6 +132,13 @@ export function answerCallbackData(requestId: string, questionIndex: number, opt
 
 /** The marker that means "let me type it" rather than an option index. */
 export const FREE_TEXT_MARKER = "t";
+/** The marker that means "these are my answers, send them". */
+export const SUBMIT_MARKER = "s";
+
+/** The press that submits a multi-select question. */
+export function submitCallbackData(requestId: string, questionIndex: number): string {
+  return `ask:${requestId}:${questionIndex}:${SUBMIT_MARKER}`;
+}
 
 /** The press that asks for a free-text answer to this question. */
 export function freeTextCallbackData(requestId: string, questionIndex: number): string {
@@ -144,7 +148,26 @@ export function freeTextCallbackData(requestId: string, questionIndex: number): 
 /**
  * One answer slot: an option index, the operator's own words, or nothing yet.
  */
-export type Answer = number | string | null | undefined;
+export type Answer = number | string | MultiAnswer | null | undefined;
+
+/**
+ * A multi-select answer while it is being made.
+ *
+ * `done` is the point. A half-toggled question must keep the call waiting —
+ * without it the first tap would be the answer, which is exactly why
+ * multi-select questions used to be refused rather than sent.
+ */
+export interface MultiAnswer {
+  picked: number[];
+  done: boolean;
+}
+
+/** Whether a slot holds a multi-select answer in progress. */
+export function isMultiAnswer(value: unknown): value is MultiAnswer {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return Array.isArray(v.picked) && typeof v.done === "boolean";
+}
 
 export interface AnswerCallback {
   requestId: string;
@@ -152,6 +175,7 @@ export interface AnswerCallback {
   /** The option chosen, or null when the operator asked to type instead. */
   optionIndex: number | null;
   freeText: boolean;
+  submit: boolean;
 }
 
 /** Read a callback payload, or `null` if it is not one of ours. */
@@ -165,12 +189,15 @@ export function parseAnswerCallback(data: string): AnswerCallback | null {
   // because an option is always a number: `Number("t")` is NaN, so the marker
   // cannot be mistaken for an index and an index cannot be mistaken for it.
   if (parts[3] === FREE_TEXT_MARKER) {
-    return { requestId: parts[1]!, questionIndex, optionIndex: null, freeText: true };
+    return { requestId: parts[1]!, questionIndex, optionIndex: null, freeText: true, submit: false };
+  }
+  if (parts[3] === SUBMIT_MARKER) {
+    return { requestId: parts[1]!, questionIndex, optionIndex: null, freeText: false, submit: true };
   }
 
   const optionIndex = Number(parts[3]);
   if (!Number.isInteger(optionIndex) || optionIndex < 0) return null;
-  return { requestId: parts[1]!, questionIndex, optionIndex, freeText: false };
+  return { requestId: parts[1]!, questionIndex, optionIndex, freeText: false, submit: false };
 }
 
 /**
@@ -203,6 +230,7 @@ export function questionMessage(
   requestId: string,
   questionIndex: number,
   question: Question,
+  picked: readonly number[] = [],
 ): { text: string; buttons: { text: string; callback_data: string }[][] } {
   const lines: string[] = [];
   const header = question.header ? ` · ${escapeHtml(question.header)}` : "";
@@ -220,7 +248,11 @@ export function questionMessage(
     // A payload too long for Telegram is dropped by the API and the button
     // silently does nothing, so an over-long one is left out rather than sent.
     if (Buffer.byteLength(callback, "utf8") <= MAX_CALLBACK_BYTES) {
-      buttons.push([{ text: `${optionIndex + 1}. ${trimButton(option.label)}`, callback_data: callback }]);
+      // A multi-select button shows its own state: the operator is building a
+      // set over several taps and has to see what is in it, since the message
+      // text cannot say "and now these two".
+      const mark = question.multiSelect ? (picked.includes(optionIndex) ? "☑ " : "☐ ") : `${optionIndex + 1}. `;
+      buttons.push([{ text: `${mark}${trimButton(option.label)}`, callback_data: callback }]);
     }
   });
 
@@ -233,6 +265,16 @@ export function questionMessage(
   const freeText = freeTextCallbackData(requestId, questionIndex);
   if (Buffer.byteLength(freeText, "utf8") <= MAX_CALLBACK_BYTES) {
     buttons.push([{ text: "✏️ Свой ответ", callback_data: freeText }]);
+  }
+
+  if (question.multiSelect) {
+    const submit = submitCallbackData(requestId, questionIndex);
+    if (Buffer.byteLength(submit, "utf8") <= MAX_CALLBACK_BYTES) {
+      // Without it there is no moment at which the answer is final, and the
+      // first tap would be the answer — which is why these questions used to
+      // be refused rather than sent.
+      buttons.push([{ text: picked.length > 0 ? `✅ Готово (${picked.length})` : "✅ Готово", callback_data: submit }]);
+    }
   }
 
   return { text: lines.join("\n"), buttons };
@@ -267,6 +309,17 @@ export function formatAnswers(questions: Question[], choices: readonly Answer[])
       // to the operator. `JSON.stringify` escapes the newline, so the whole
       // answer stays on the line that says it was typed.
       lines.push(`- ${question.question} → (typed) ${JSON.stringify(chosen.trim())}`);
+      return;
+    }
+    if (isMultiAnswer(chosen)) {
+      const labels = chosen.picked
+        .map((i) => question.options[i]?.label)
+        .filter((l): l is string => typeof l === "string");
+      lines.push(
+        labels.length > 0
+          ? `- ${question.question} → ${labels.join(", ")}`
+          : `- ${question.question} → (no answer)`,
+      );
       return;
     }
     const option = typeof chosen === "number" ? question.options[chosen] : undefined;
@@ -309,6 +362,10 @@ export function allAnswered(choices: readonly Answer[], expected: number): boole
  */
 export function isAnswered(choice: Answer): boolean {
   if (typeof choice === "string") return choice.trim().length > 0;
+  // Submitted, and not empty. Toggling three options and walking away is not
+  // an answer, and neither is submitting none — "none of these" is a real
+  // thing to say, but it is the free-text button's answer, not an empty list.
+  if (isMultiAnswer(choice)) return choice.done && choice.picked.length > 0;
   return typeof choice === "number";
 }
 
@@ -328,7 +385,8 @@ export type PressOutcome =
   | { status: "already-answered" }
   | { status: "expired" }
   | { status: "out-of-range" }
-  | { status: "awaiting-text"; label: string };
+  | { status: "awaiting-text"; label: string }
+  | { status: "toggled"; label: string; picked: number };
 
 /**
  * What the operator sees on the button they just pressed.
@@ -345,6 +403,11 @@ export function answerToast(outcome: PressOutcome): string {
       // closed and the session is moving, which is the difference between
       // waiting and being finished.
       return outcome.complete ? `✅ ${outcome.label} — отправляю` : `✅ ${outcome.label}`;
+    case "toggled":
+      // The running set, on every tap. The operator is building an answer over
+      // several presses and the toast is the only place that says what is in
+      // it so far without opening the message.
+      return outcome.picked > 0 ? `☑ ${outcome.label}` : "☐ Ничего не выбрано";
     case "awaiting-text":
       // Instruction rather than confirmation: nothing has been recorded yet,
       // and the operator has to know the next thing they send is the answer.
