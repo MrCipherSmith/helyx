@@ -15,6 +15,25 @@
 /** File name inside the shared Claude config directory. */
 export const HOOK_TOKEN_FILE = "helyx-hook-token";
 
+/**
+ * A curl config file carrying the header, written beside the token.
+ *
+ * The token used to be passed as `-H "x-helyx-hook-token: …"`, which puts it in
+ * the process's argument list — visible to every `ps` on the machine, and to
+ * anything that reads `/proc`. It was a secret protecting an endpoint that
+ * messages the operator's chat, published to every local process for the
+ * lifetime of each question.
+ *
+ * A config file keeps it out of argv. Same directory, same 0600, and curl reads
+ * it directly.
+ */
+export const HOOK_CURL_CONFIG_FILE = "helyx-hook-curl.conf";
+
+/** The contents of that config file for a given token. */
+export function curlConfigFor(token: string): string {
+  return `header = "x-helyx-hook-token: ${token}"\n`;
+}
+
 export interface TokenStore {
   exists: (path: string) => boolean;
   read: (path: string) => string;
@@ -39,10 +58,17 @@ export function readOrCreateToken(
       const existing = store.read(path).trim();
       // A blank or truncated file is replaced rather than trusted: a token
       // short enough to guess is worse than no token, because it looks like one.
-      if (existing.length >= 32) return existing;
+      if (existing.length >= 32) {
+        // Written every time rather than only on creation: an installation that
+        // predates the config file has a token and no way for the hook to send
+        // it, and would silently stop asking questions.
+        store.write(`${configDir}/${HOOK_CURL_CONFIG_FILE}`, curlConfigFor(existing));
+        return existing;
+      }
     }
     const created = generate();
     store.write(path, `${created}\n`);
+    store.write(`${configDir}/${HOOK_CURL_CONFIG_FILE}`, curlConfigFor(created));
     return created;
   } catch {
     return null;

@@ -8,7 +8,14 @@
  */
 
 import { describe, test, expect } from "bun:test";
-import { readOrCreateToken, tokenMatches, HOOK_TOKEN_FILE, type TokenStore } from "../../utils/hook-token.ts";
+import {
+  readOrCreateToken,
+  tokenMatches,
+  curlConfigFor,
+  HOOK_TOKEN_FILE,
+  HOOK_CURL_CONFIG_FILE,
+  type TokenStore,
+} from "../../utils/hook-token.ts";
 
 function memoryStore(initial: Record<string, string> = {}): TokenStore & { files: Record<string, string> } {
   const files = { ...initial };
@@ -26,6 +33,29 @@ describe("readOrCreateToken", () => {
     const token = readOrCreateToken("/cfg", store, () => "x".repeat(64));
     expect(token).toBe("x".repeat(64));
     expect(store.files[`/cfg/${HOOK_TOKEN_FILE}`]).toBe("x".repeat(64) + "\n");
+  });
+
+  test("the curl config is written too, so the token stays out of argv", () => {
+    // Passed as -H, the secret sits in the hook's argument list where every
+    // `ps` on the machine can read it — for as long as the question is open,
+    // guarding an endpoint that messages the operator's chat.
+    const store = memoryStore();
+    readOrCreateToken("/cfg", store, () => "y".repeat(64));
+    expect(store.files[`/cfg/${HOOK_CURL_CONFIG_FILE}`]).toBe(curlConfigFor("y".repeat(64)));
+    expect(store.files[`/cfg/${HOOK_CURL_CONFIG_FILE}`]).toContain("x-helyx-hook-token: " + "y".repeat(64));
+  });
+
+  test("an installation that predates the config file gets one", () => {
+    // It has a token already, and without the config the hook has no way to
+    // send it — questions would silently stop arriving.
+    const store = memoryStore({ [`/cfg/${HOOK_TOKEN_FILE}`]: `${"a".repeat(40)}\n` });
+    readOrCreateToken("/cfg", store);
+    expect(store.files[`/cfg/${HOOK_CURL_CONFIG_FILE}`]).toContain("a".repeat(40));
+  });
+
+  test("the config is a single header line curl will accept", () => {
+    const config = curlConfigFor("tok");
+    expect(config).toBe('header = "x-helyx-hook-token: tok"\n');
   });
 
   test("reuses the existing one, trailing newline and all", () => {

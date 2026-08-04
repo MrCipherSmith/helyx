@@ -28,14 +28,17 @@ PORT="${PORT:-3847}"
 # and the container both already see; the bot creates it on first start. Without
 # it the endpoint refuses, and this hook stays silent — which is the same as not
 # being installed, so the terminal is unaffected.
-TOKEN_FILE="${HOME}/.claude/helyx-hook-token"
-[ -r "$TOKEN_FILE" ] || exit 0
-TOKEN=$(tr -d '\n' < "$TOKEN_FILE")
-[ -z "$TOKEN" ] && exit 0
+# The header comes from a curl config file rather than the command line.
+# Passing it as -H puts the secret in this process's argument list, where every
+# `ps` on the machine can read it for as long as the question is open — and it
+# protects an endpoint that messages the operator's chat. The bot writes the
+# config beside the token, both 0600.
+CURL_CONFIG="${HOME}/.claude/helyx-hook-curl.conf"
+[ -r "$CURL_CONFIG" ] || exit 0
 
 RESPONSE=$(printf '%s' "$INPUT" | curl -sf -X POST "http://localhost:${PORT}/api/hooks/ask-question" \
+  --config "$CURL_CONFIG" \
   -H "Content-Type: application/json" \
-  -H "x-helyx-hook-token: ${TOKEN}" \
   --data-binary @- \
   --max-time 590 2>/dev/null) || exit 0
 
