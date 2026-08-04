@@ -1,0 +1,340 @@
+{
+  "schemaVersion": 2,
+  "id": "019",
+  "slug": "the-status-message-bigger-work-half-and-",
+  "title": "the status message: bigger work half, and a statistics half",
+  "status": "in-progress",
+  "createdAt": "2026-08-04T08:47:23.088Z",
+  "updatedAt": "2026-08-04T08:47:51.406Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:b212bf4fac7ca47d0204285bbd16f0d3b4b8cd714c9a60cad9e5fc12f3eae2e4",
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-04T08:47:50.556Z",
+      "note": "renderStatus/renderStats/tailWithinBudget in utils/status-render.ts; formatStatusText delegates"
+    },
+    "AC2": {
+      "at": "2026-08-04T08:47:50.639Z",
+      "note": "multi-line gives blockquote expandable; a single line gives none"
+    },
+    "AC3": {
+      "at": "2026-08-04T08:47:50.725Z",
+      "note": "pane wrapped in <pre>, asserted with box-drawing characters"
+    },
+    "AC4": {
+      "at": "2026-08-04T08:47:50.810Z",
+      "note": "ACTIVITY_LINES 15, PANE_LINES 9, pane-parse slices 75/83/90/98"
+    },
+    "AC5": {
+      "at": "2026-08-04T08:47:50.895Z",
+      "note": "tailWithinBudget keeps the tail; under pressure step 199 survives"
+    },
+    "AC6": {
+      "at": "2026-08-04T08:47:50.980Z",
+      "note": "a single over-long line is clipped rather than dropped"
+    },
+    "AC7": {
+      "at": "2026-08-04T08:47:51.064Z",
+      "note": "question shown, previewed past 120 chars, whitespace collapsed, escaped"
+    },
+    "AC8": {
+      "at": "2026-08-04T08:47:51.152Z",
+      "note": "activity, pane and question all asserted escaped"
+    },
+    "AC9": {
+      "at": "2026-08-04T08:47:51.237Z",
+      "note": "400 activity lines plus 200 pane lines plus a 300-char question stays under 4096"
+    },
+    "AC10": {
+      "at": "2026-08-04T08:47:51.322Z",
+      "note": "renderStats returns empty and renderStatus emits no blank section"
+    },
+    "AC11": {
+      "at": "2026-08-04T08:47:51.406Z",
+      "note": "typecheck clean, lint 0 errors, 1013 tests, dupes 2 documented"
+    }
+  },
+  "pr": {
+    "url": null
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T5",
+      "title": "utils/status-render.ts",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T6",
+      "title": "wire channel/status.ts to it",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T7",
+      "title": "widen pane-parse clipping",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T8",
+      "title": "plumb the current question",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T9",
+      "title": "tests",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-04T08:47:23.088Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-04T08:47:23.181Z",
+      "event": "task-added",
+      "detail": "T5: utils/status-render.ts"
+    },
+    {
+      "at": "2026-08-04T08:47:23.270Z",
+      "event": "task-added",
+      "detail": "T6: wire channel/status.ts to it"
+    },
+    {
+      "at": "2026-08-04T08:47:23.357Z",
+      "event": "task-added",
+      "detail": "T7: widen pane-parse clipping"
+    },
+    {
+      "at": "2026-08-04T08:47:23.444Z",
+      "event": "task-added",
+      "detail": "T8: plumb the current question"
+    },
+    {
+      "at": "2026-08-04T08:47:23.533Z",
+      "event": "task-added",
+      "detail": "T9: tests"
+    },
+    {
+      "at": "2026-08-04T08:47:23.621Z",
+      "event": "frozen",
+      "detail": "11 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-04T08:47:23.709Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-04T08:47:49.781Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-04T08:47:49.869Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-04T08:47:49.954Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-04T08:47:50.041Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-04T08:47:50.128Z",
+      "event": "task-done",
+      "detail": "T5: utils/status-render.ts"
+    },
+    {
+      "at": "2026-08-04T08:47:50.213Z",
+      "event": "task-done",
+      "detail": "T6: wire channel/status.ts to it"
+    },
+    {
+      "at": "2026-08-04T08:47:50.299Z",
+      "event": "task-done",
+      "detail": "T7: widen pane-parse clipping"
+    },
+    {
+      "at": "2026-08-04T08:47:50.384Z",
+      "event": "task-done",
+      "detail": "T8: plumb the current question"
+    },
+    {
+      "at": "2026-08-04T08:47:50.471Z",
+      "event": "task-done",
+      "detail": "T9: tests"
+    },
+    {
+      "at": "2026-08-04T08:47:50.556Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: renderStatus/renderStats/tailWithinBudget in utils/status-render.ts; formatStatusText delegates"
+    },
+    {
+      "at": "2026-08-04T08:47:50.639Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: multi-line gives blockquote expandable; a single line gives none"
+    },
+    {
+      "at": "2026-08-04T08:47:50.725Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: pane wrapped in <pre>, asserted with box-drawing characters"
+    },
+    {
+      "at": "2026-08-04T08:47:50.810Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: ACTIVITY_LINES 15, PANE_LINES 9, pane-parse slices 75/83/90/98"
+    },
+    {
+      "at": "2026-08-04T08:47:50.895Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: tailWithinBudget keeps the tail; under pressure step 199 survives"
+    },
+    {
+      "at": "2026-08-04T08:47:50.980Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: a single over-long line is clipped rather than dropped"
+    },
+    {
+      "at": "2026-08-04T08:47:51.064Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: question shown, previewed past 120 chars, whitespace collapsed, escaped"
+    },
+    {
+      "at": "2026-08-04T08:47:51.152Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: activity, pane and question all asserted escaped"
+    },
+    {
+      "at": "2026-08-04T08:47:51.237Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: 400 activity lines plus 200 pane lines plus a 300-char question stays under 4096"
+    },
+    {
+      "at": "2026-08-04T08:47:51.322Z",
+      "event": "ac-confirmed",
+      "detail": "AC10: renderStats returns empty and renderStatus emits no blank section"
+    },
+    {
+      "at": "2026-08-04T08:47:51.406Z",
+      "event": "ac-confirmed",
+      "detail": "AC11: typecheck clean, lint 0 errors, 1013 tests, dupes 2 documented"
+    }
+  ]
+}

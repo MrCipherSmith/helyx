@@ -299,6 +299,10 @@ export class MessageQueuePoller {
           }
           processedChats.add(row.chat_id);
           this.status.startTypingForChat(row.chat_id);
+          // The status says what it is working on, not only how long it has
+          // been working: four minutes means something different depending on
+          // the question.
+          this.status.setQuestion(row.chat_id, row.content);
           const stage = carriedOverChats.has(row.chat_id)
             ? "➕ Догнал ещё один вопрос"
             : "Thinking...";

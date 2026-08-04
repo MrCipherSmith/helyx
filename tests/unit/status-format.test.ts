@@ -9,6 +9,8 @@ import {
   isPermissionPrompt,
   SPINNER_FRAMES,
   SPINNER_STALE_MS,
+  scrapeTokenInfo,
+  TOKEN_INFO_MAX_CHARS,
 } from "../../utils/status-format.ts";
 import { parseStatus } from "../../utils/pane-parse.ts";
 
@@ -354,5 +356,38 @@ describe("resolvePhase — the latch outranks the classifier", () => {
     // The latch is what makes the signal reachable in production; it is not
     // the only thing that can produce it.
     expect(resolvePhase("Do you want to proceed?\n❯ 1. Yes", false)).toBe("waiting");
+  });
+});
+
+describe("scrapeTokenInfo", () => {
+  test("pulls the count out of a status line", () => {
+    expect(scrapeTokenInfo("✻ Thinking… (2m 26s · ↓ 12.4k tokens · esc to interrupt)")).toBe("12.4k tokens");
+  });
+
+  test("no count, no value", () => {
+    expect(scrapeTokenInfo("✻ Thinking… (2m 26s · esc to interrupt)")).toBeNull();
+    expect(scrapeTokenInfo("")).toBeNull();
+  });
+
+  test("a redraw artefact is dropped, not cut down", () => {
+    // `[\d.]+` matches a thousand digits as happily as three. What it captures
+    // is kept in a map that outlives the turn and is later added to the status
+    // header — outside the work budget, where nothing below can compensate for
+    // it, and an over-long message is rejected rather than trimmed.
+    // Cutting it takes the ` tokens` off the end and leaves thirty-two
+    // unlabelled digits in the header — a number the operator is invited to
+    // make something of, and there is nothing to make of it.
+    expect(scrapeTokenInfo(`↓ ${"9".repeat(4097)} tokens`)).toBeNull();
+    expect(scrapeTokenInfo(`↓ ${"9".repeat(TOKEN_INFO_MAX_CHARS)} tokens`)).toBeNull();
+  });
+
+  test("an ordinary count is not clipped", () => {
+    // The other side of the bound: a real value must survive it whole.
+    expect(scrapeTokenInfo("↓ 1.2M tokens")).toBe("1.2M tokens");
+    expect(scrapeTokenInfo("↓ 15234 tokens")).toBe("15234 tokens");
+    expect(TOKEN_INFO_MAX_CHARS).toBeGreaterThan("1.2M tokens".length);
+    // The boundary itself, so the bound cannot drift into rejecting real values.
+    const atBound = `${"9".repeat(TOKEN_INFO_MAX_CHARS - " tokens".length)} tokens`;
+    expect(scrapeTokenInfo(`↓ ${atBound}`)).toBe(atBound);
   });
 });

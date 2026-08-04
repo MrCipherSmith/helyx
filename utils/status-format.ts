@@ -9,6 +9,34 @@
 
 import { isPermissionPrompt as isPromptLines } from "./permission-prompt.ts";
 
+/**
+ * The longest a scraped token count may be kept.
+ *
+ * "1.2M tokens" is eleven characters. The cap is not about those — it is about
+ * what the pattern below will accept from a terminal redraw, and about the fact
+ * that this value is stored in a map that outlives the turn and is later added
+ * to the status header, outside the work budget.
+ */
+export const TOKEN_INFO_MAX_CHARS = 32;
+
+/**
+ * Pull the token count out of a status line, bounded.
+ *
+ * Extracted from the tmux monitor callback so the bound is reachable: inside
+ * the closure the only way to exercise it was to have a real tmux session draw
+ * a pathological line.
+ */
+export function scrapeTokenInfo(status: string): string | null {
+  const m = status.match(/↓\s*([\d.]+[kmKM]?\s*tokens)/i);
+  if (!m) return null;
+  const info = m[1]!.trim();
+  // Dropped rather than cut. Slicing takes the ` tokens` off the end and leaves
+  // thirty-two unlabelled digits in the header, which reads as a number the
+  // operator is meant to make something of. A value this long is a redraw
+  // artefact, and showing nothing is the honest answer.
+  return info.length > TOKEN_INFO_MAX_CHARS ? null : info;
+}
+
 /** Parse `"2.5k tokens"`, `"15,234 tokens"`, `"1.2M tokens"` → an integer. */
 export function parseTokenCount(s: string): number | null {
   // NOTE: the character class admits several dots, so "1.2.3 tokens" reaches

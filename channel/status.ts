@@ -15,6 +15,7 @@ import { editTelegramMessage, deleteTelegramMessage, sendTelegramMessage, pinTel
 import { channelLogger } from "../logger.ts";
 import {
   parseTokenCount,
+  scrapeTokenInfo,
   formatElapsed,
   getSpinnerIcon as spinnerIconAt,
   computeSignature,
@@ -23,8 +24,12 @@ import {
   PHASE_LABEL,
 } from "../utils/status-format.ts";
 import { HoldCounter } from "../utils/hold-counter.ts";
+import { renderStatus, clampEscaped } from "../utils/status-render.ts";
 import { escapeHtml } from "../utils/html.ts";
 import { isRequeued, markRequeued } from "../utils/requeue.ts";
+
+/** How much of a captured file path the completion notice may carry. */
+const FILE_LABEL_CHARS = 80;
 
 export interface StatusContext {
   sql: postgres.Sql;
@@ -67,12 +72,6 @@ interface SessionStats {
 }
 
 
-function normalizeStage(stage: string): string {
-  return stage.replace(/^⏳\s*/, "");
-}
-
-const STATUS_VISIBLE_LINES = 10;
-const STATUS_MAX_LINES = 40;
 const SPINNER_INTERVAL_ACTIVE_MS = 3_000;   // when monitor has been active recently
 const SPINNER_INTERVAL_IDLE_MS   = 15_000;  // when no monitor activity for >IDLE_THRESHOLD_MS
 const IDLE_THRESHOLD_MS          = 12_000;  // switch to idle after 12s of silence
@@ -81,43 +80,25 @@ interface StatusExtras {
   phaseEmoji?: string;
   toolCount?: number;
   fileCount?: number;
+  /** What the operator asked — the second half of the status is about this. */
+  question?: string | null;
 }
 
 function formatStatusText(stage: string, elapsed: string, tokens: string, paneSnapshot?: string | null, spinnerIcon?: string, extras?: StatusExtras): string {
-  const normalized = normalizeStage(stage);
-  const icon = spinnerIcon ?? SPINNER_FRAMES[0];
-  const phase = extras?.phaseEmoji ? ` ${extras.phaseEmoji}` : '';
-  const header = `${icon} <i>${elapsed}${tokens}</i>${phase}`;
-
-  let stageBody: string;
-  if (normalized.includes("\n")) {
-    const lines = normalized.split("\n").slice(0, STATUS_MAX_LINES);
-    const visible = lines.slice(0, STATUS_VISIBLE_LINES);
-    const hidden = lines.slice(STATUS_VISIBLE_LINES);
-    stageBody = `<blockquote>${escapeHtml(visible.join("\n"))}</blockquote>`;
-    if (hidden.length > 0) {
-      stageBody += `<blockquote><tg-spoiler>${escapeHtml(hidden.join("\n"))}</tg-spoiler></blockquote>`;
-    }
-  } else {
-    stageBody = `  ${escapeHtml(normalized)}`;
-  }
-
-  // Compute footer once; empty string if no tool activity yet
-  const footer = (extras?.toolCount ?? 0) > 0
-    ? `\n🔧 ${extras!.toolCount} tools · ${extras!.fileCount ?? 0} files`
-    : '';
-
-  // Path 1 — pane snapshot early return (must include footer)
-  if (paneSnapshot && paneSnapshot.trim()) {
-    const paneLines = paneSnapshot.trim().split("\n").slice(-6);
-    const paneText = escapeHtml(paneLines.join("\n"));
-    return `${header}\n${stageBody}\n<blockquote><tg-spoiler>🖥 ${paneText}</tg-spoiler></blockquote>${footer}`;
-  }
-
-  // Path 2/3 — preserve existing single-line compact vs multi-line distinction
-  return normalized.includes("\n")
-    ? `${header}\n${stageBody}${footer}`
-    : `${header}${stageBody}${footer}`;
+  // The rendering itself lives in utils/status-render.ts: it is pure, it is the
+  // part the operator actually reads, and it was previously reachable only by
+  // having a session produce output.
+  return renderStatus({
+    stage,
+    elapsed: `${elapsed}${tokens}`,
+    tokens: undefined,
+    pane: paneSnapshot,
+    spinner: spinnerIcon ?? SPINNER_FRAMES[0],
+    phaseEmoji: extras?.phaseEmoji,
+    toolCount: extras?.toolCount,
+    fileCount: extras?.fileCount,
+    question: extras?.question,
+  });
 }
 
 export class StatusManager {
@@ -131,6 +112,15 @@ export class StatusManager {
    */
   private awaitingPermission = new HoldCounter();
   private lastTokenInfo = new Map<string, string>();
+  /**
+   * What the operator asked, per chat.
+   *
+   * Shown in the statistics half of the status so the message says what it is
+   * working on rather than only how long it has been at it — a status that has
+   * been spinning for four minutes means something different depending on the
+   * question.
+   */
+  private currentQuestion = new Map<string, string>();
   private sessionStats = new Map<string, SessionStats>();
   private activeTyping = new Map<string, TypingHandle>();
   private readonly typingTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -555,6 +545,17 @@ export class StatusManager {
     return isActive ? "" : `📌 ${this.ctx.sessionName()} · `;
   }
 
+  /** Record the request this chat's status is about. */
+  setQuestion(chatId: string, question: string | null | undefined): void {
+    // The same key everything else in this class uses. In forum mode the state
+    // is keyed by chat *and* topic, so storing this under the bare chat id
+    // would file it where nothing looks for it.
+    const key = this.stateKey(chatId);
+    const trimmed = question?.trim();
+    if (trimmed) this.currentQuestion.set(key, trimmed);
+    else this.currentQuestion.delete(key);
+  }
+
   async sendStatusMessage(chatId: string, stage: string, replyToMsgId?: number): Promise<string | null> {
     const token = this.ctx.token();
     if (!token) {
@@ -592,7 +593,12 @@ export class StatusManager {
 
     try {
       const t0 = Date.now();
-      const initialText = formatStatusText(`${prefix}${stage}`, "0s", "", null, SPINNER_FRAMES[0]);
+      // The question belongs on the first render too. The poller records it
+      // before the status is created, so leaving it out here means the message
+      // spends its first seconds unable to say what it is working on.
+      const initialText = formatStatusText(`${prefix}${stage}`, "0s", "", null, SPINNER_FRAMES[0], {
+        question: this.currentQuestion.get(key),
+      });
       const extra: Record<string, unknown> = {
         parse_mode: "HTML",
         ...(forum?.extra ?? {}),
@@ -806,6 +812,7 @@ export class StatusManager {
       phaseEmoji: phase ? PHASE_LABEL[phase] : undefined,
       toolCount: state.turnToolCount,
       fileCount: state.turnFileCount,
+      question: this.currentQuestion.get(key),
     };
 
     // SU-1: compute signature from CONTENT ONLY, excluding the spinner icon.
@@ -856,6 +863,9 @@ export class StatusManager {
   async deleteStatusMessage(chatId: string): Promise<void> {
     this.disarmResponseGuard(chatId); // reply received — cancel fallback
     const key = this.stateKey(chatId);
+    // The turn is over, so the question it was about is too. Left behind, it
+    // would head the next turn's status with the previous turn's request.
+    this.currentQuestion.delete(key);
 
     // Bump generation so any in-flight sendStatusMessage that resolves late will
     // see a mismatch and self-delete its orphan message instead of registering it.
@@ -910,8 +920,12 @@ export class StatusManager {
 
     const parts: string[] = [`⏱ ${elapsed}`];
     if (stats?.filesEdited.size) {
+      // The label is captured from terminal output with `[^\s\n]+`, and this
+      // message is sent with parse_mode HTML: an unescaped bracket in it fails
+      // the send outright, so the completion notice for the turn simply never
+      // arrives and nothing says why.
       const fileStr = stats.filesEdited.size === 1
-        ? [...stats.filesEdited][0]
+        ? clampEscaped(escapeHtml([...stats.filesEdited][0]!), FILE_LABEL_CHARS)
         : `${stats.filesEdited.size} files`;
       const diffStr = (stats.linesAdded || stats.linesRemoved)
         ? ` <code>+${stats.linesAdded}/-${stats.linesRemoved}</code>`
@@ -994,8 +1008,11 @@ export class StatusManager {
     this.stopProgressMonitorForChat(chatId);
     const key = this.stateKey(chatId);
     const onStatus = (status: string) => {
-      const tokenMatch = status.match(/↓\s*([\d.]+[kmKM]?\s*tokens)/i);
-      if (tokenMatch) this.lastTokenInfo.set(key, tokenMatch[1].trim());
+      // Capped at the source as well as in the renderer: this is scraped from
+      // whatever the terminal drew, and it is kept in a map that outlives the
+      // turn.
+      const tokenInfo = scrapeTokenInfo(status);
+      if (tokenInfo) this.lastTokenInfo.set(key, tokenInfo);
       this.updateStatus(chatId, status);
     };
 

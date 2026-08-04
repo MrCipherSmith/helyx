@@ -41,6 +41,8 @@ export class FakeTelegram {
   readonly sent: SentMessage[] = [];
   readonly edits: EditedMessage[] = [];
   readonly deletes: DeletedMessage[] = [];
+  readonly pins: DeletedMessage[] = [];
+  readonly unpins: DeletedMessage[] = [];
 
   /**
    * What the next send returns. Replaceable, because "Telegram refused the
@@ -107,6 +109,17 @@ export async function installFakeTelegram(): Promise<{ telegram: FakeTelegram; r
     },
     deleteTelegramMessage: (_token: string, chatId: string, messageId: number) => {
       telegram.deletes.push({ chatId, messageId });
+    },
+    // Stubbed for the same reason as the rest: these are called and not
+    // awaited, so left real they reach the network guard as an unhandled
+    // rejection in whichever test happens to be running when they land.
+    pinTelegramMessage: async (_token: string, chatId: string, messageId: number) => {
+      telegram.pins.push({ chatId, messageId });
+      return { ok: true };
+    },
+    unpinTelegramMessage: async (_token: string, chatId: string, messageId: number) => {
+      telegram.unpins.push({ chatId, messageId });
+      return { ok: true };
     },
   }));
 
