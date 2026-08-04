@@ -29,7 +29,12 @@ export const TOKEN_INFO_MAX_CHARS = 32;
 export function scrapeTokenInfo(status: string): string | null {
   const m = status.match(/↓\s*([\d.]+[kmKM]?\s*tokens)/i);
   if (!m) return null;
-  return m[1]!.trim().slice(0, TOKEN_INFO_MAX_CHARS);
+  const info = m[1]!.trim();
+  // Dropped rather than cut. Slicing takes the ` tokens` off the end and leaves
+  // thirty-two unlabelled digits in the header, which reads as a number the
+  // operator is meant to make something of. A value this long is a redraw
+  // artefact, and showing nothing is the honest answer.
+  return info.length > TOKEN_INFO_MAX_CHARS ? null : info;
 }
 
 /** Parse `"2.5k tokens"`, `"15,234 tokens"`, `"1.2M tokens"` → an integer. */

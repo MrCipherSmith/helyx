@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "reviewId": "2026-08-04-review-flow-55",
+  "mode": "review-flow",
+  "status": "draft",
+  "target": {
+    "kind": "pr",
+    "ref": "55"
+  },
+  "artifacts": {
+    "scope": ".metaproject/reviews/2026-08-04-review-flow-55/scope.md",
+    "coverage": ".metaproject/reviews/2026-08-04-review-flow-55/coverage.md",
+    "report": ".metaproject/reviews/2026-08-04-review-flow-55/report.md",
+    "findings": ".metaproject/reviews/2026-08-04-review-flow-55/findings.json",
+    "learning": ".metaproject/reviews/2026-08-04-review-flow-55/learning.md",
+    "decisions": ".metaproject/reviews/2026-08-04-review-flow-55/decisions.md"
+  },
+  "coverage": [
+    {
+      "reviewer": "review-orchestrator",
+      "status": "run",
+      "reason": "selected for managed review package"
+    }
+  ],
+  "createdAt": "2026-08-04T09:17:01.462Z",
+  "updatedAt": "2026-08-04T09:17:01.462Z"
+}

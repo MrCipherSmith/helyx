@@ -24,8 +24,12 @@ import {
   PHASE_LABEL,
 } from "../utils/status-format.ts";
 import { HoldCounter } from "../utils/hold-counter.ts";
-import { renderStatus } from "../utils/status-render.ts";
+import { renderStatus, clampEscaped } from "../utils/status-render.ts";
+import { escapeHtml } from "../utils/html.ts";
 import { isRequeued, markRequeued } from "../utils/requeue.ts";
+
+/** How much of a captured file path the completion notice may carry. */
+const FILE_LABEL_CHARS = 80;
 
 export interface StatusContext {
   sql: postgres.Sql;
@@ -916,8 +920,12 @@ export class StatusManager {
 
     const parts: string[] = [`⏱ ${elapsed}`];
     if (stats?.filesEdited.size) {
+      // The label is captured from terminal output with `[^\s\n]+`, and this
+      // message is sent with parse_mode HTML: an unescaped bracket in it fails
+      // the send outright, so the completion notice for the turn simply never
+      // arrives and nothing says why.
       const fileStr = stats.filesEdited.size === 1
-        ? [...stats.filesEdited][0]
+        ? clampEscaped(escapeHtml([...stats.filesEdited][0]!), FILE_LABEL_CHARS)
         : `${stats.filesEdited.size} files`;
       const diffStr = (stats.linesAdded || stats.linesRemoved)
         ? ` <code>+${stats.linesAdded}/-${stats.linesRemoved}</code>`

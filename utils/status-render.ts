@@ -48,6 +48,9 @@ export const WORK_BUDGET_CHARS = 3400;
  */
 export const HEADER_BUDGET_CHARS = 64;
 
+/** A spinner frame and a phase marker are one glyph each. */
+export const GLYPH_BUDGET_CHARS = 8;
+
 /** Lines of recent activity to keep. */
 export const ACTIVITY_LINES = 15;
 /** Lines of raw pane to show. */
@@ -164,8 +167,12 @@ export function renderStats(parts: StatusParts): string {
  * ones cost the same message, and only one of those was previously allowed.
  */
 export function renderStatus(parts: StatusParts): string {
-  const icon = parts.spinner ?? "";
-  const phase = parts.phaseEmoji ? ` ${parts.phaseEmoji}` : "";
+  // Ours today — a spinner frame and a phase emoji, both constants. Bounded
+  // anyway: the contract this module is meant to keep is that its output fits
+  // and is well-formed, not that it fits as long as every caller behaves.
+  const icon = clampEscaped(escaped(parts.spinner ?? ""), GLYPH_BUDGET_CHARS);
+  const phaseIcon = clampEscaped(escaped(parts.phaseEmoji ?? ""), GLYPH_BUDGET_CHARS);
+  const phase = phaseIcon ? ` ${phaseIcon}` : "";
   // Bounded and escaped: this is caller text, it carries the scraped token
   // count, and it sits outside the work budget.
   const elapsed = clampEscaped(escaped(parts.elapsed), HEADER_BUDGET_CHARS);

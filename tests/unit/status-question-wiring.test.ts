@@ -15,6 +15,7 @@ import { describe, test, expect, afterEach } from "bun:test";
 import { installFakeTelegram, type FakeTelegram } from "../fixtures/fake-telegram.ts";
 import { FakeSql } from "../fixtures/fake-sql.ts";
 import type { StatusContext } from "../../channel/status.ts";
+import { TELEGRAM_MAX_CHARS } from "../../utils/status-render.ts";
 
 const CHAT = "-1001234";
 const QUESTION = "почему упал деплой на стейдже?";
@@ -142,5 +143,45 @@ describe("the question reaches the status message", () => {
     await status.sendStatusMessage(CHAT, "Working");
 
     expect(telegram.sent[0]!.text).not.toContain("❓");
+  });
+});
+
+describe("the completion notice", () => {
+  test("a captured file path is escaped", async () => {
+    // The label is scraped out of terminal output with `[^\s\n]+` and the
+    // message is sent with parse_mode HTML. An unescaped bracket fails the send
+    // outright, so the notice for the turn never arrives and nothing says why —
+    // the same failure that once hid a supervisor alert about a lost message.
+    const { status, telegram } = await manager();
+
+    await status.sendStatusMessage(CHAT, "Working");
+    await status.updateStatus(CHAT, "Editing: src/<b>.ts");
+    await status.deleteStatusMessage(CHAT);
+
+    const summary = telegram.edits.at(-1)!.text;
+    expect(summary).toContain("✅");
+    expect(summary).toContain("&lt;b&gt;");
+    expect(summary).not.toContain("<b>");
+  });
+
+  test("and bounded", async () => {
+    const { status, telegram } = await manager();
+
+    await status.sendStatusMessage(CHAT, "Working");
+    await status.updateStatus(CHAT, `Editing: ${"p".repeat(5000)}.ts`);
+    await status.deleteStatusMessage(CHAT);
+
+    expect(telegram.edits.at(-1)!.text.length).toBeLessThan(TELEGRAM_MAX_CHARS);
+  });
+
+  test("an ordinary path is shown whole", async () => {
+    // The other side of the bound: the notice exists to say what was touched.
+    const { status, telegram } = await manager();
+
+    await status.sendStatusMessage(CHAT, "Working");
+    await status.updateStatus(CHAT, "Editing: channel/status.ts");
+    await status.deleteStatusMessage(CHAT);
+
+    expect(telegram.edits.at(-1)!.text).toContain("channel/status.ts");
   });
 });

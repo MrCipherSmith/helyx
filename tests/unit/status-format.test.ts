@@ -369,19 +369,25 @@ describe("scrapeTokenInfo", () => {
     expect(scrapeTokenInfo("")).toBeNull();
   });
 
-  test("a redraw artefact is cut down to size", () => {
+  test("a redraw artefact is dropped, not cut down", () => {
     // `[\d.]+` matches a thousand digits as happily as three. What it captures
     // is kept in a map that outlives the turn and is later added to the status
     // header — outside the work budget, where nothing below can compensate for
     // it, and an over-long message is rejected rather than trimmed.
-    const scraped = scrapeTokenInfo(`↓ ${"9".repeat(4097)} tokens`);
-    expect(scraped).not.toBeNull();
-    expect(scraped!.length).toBe(TOKEN_INFO_MAX_CHARS);
+    // Cutting it takes the ` tokens` off the end and leaves thirty-two
+    // unlabelled digits in the header — a number the operator is invited to
+    // make something of, and there is nothing to make of it.
+    expect(scrapeTokenInfo(`↓ ${"9".repeat(4097)} tokens`)).toBeNull();
+    expect(scrapeTokenInfo(`↓ ${"9".repeat(TOKEN_INFO_MAX_CHARS)} tokens`)).toBeNull();
   });
 
   test("an ordinary count is not clipped", () => {
     // The other side of the bound: a real value must survive it whole.
     expect(scrapeTokenInfo("↓ 1.2M tokens")).toBe("1.2M tokens");
+    expect(scrapeTokenInfo("↓ 15234 tokens")).toBe("15234 tokens");
     expect(TOKEN_INFO_MAX_CHARS).toBeGreaterThan("1.2M tokens".length);
+    // The boundary itself, so the bound cannot drift into rejecting real values.
+    const atBound = `${"9".repeat(TOKEN_INFO_MAX_CHARS - " tokens".length)} tokens`;
+    expect(scrapeTokenInfo(`↓ ${atBound}`)).toBe(atBound);
   });
 });

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "query": "status rendering StatusManager currentQuestion Telegram chat topic",
-  "generatedAt": "2026-08-04T09:00:55.137Z",
+  "query": "status message Telegram escaping",
+  "generatedAt": "2026-08-04T09:16:16.138Z",
   "results": [
     {
       "entry": {
@@ -34,15 +34,15 @@
         "supersedes": null,
         "supersededBy": null
       },
-      "score": 1.639,
+      "score": 1.747,
       "components": {
-        "relevance": 0.143,
+        "relevance": 0.25,
         "recency": 0.993,
         "confidence": 1,
         "status": 1,
         "scope": 0
       },
-      "reason": "matched 1/7 terms; status accepted; confidence high"
+      "reason": "matched 1/4 terms; status accepted; confidence high"
     },
     {
       "entry": {
@@ -75,15 +75,15 @@
         "supersedes": null,
         "supersededBy": null
       },
-      "score": 1.637,
+      "score": 1.744,
       "components": {
-        "relevance": 0.143,
+        "relevance": 0.25,
         "recency": 0.988,
         "confidence": 1,
         "status": 1,
         "scope": 0
       },
-      "reason": "matched 1/7 terms; status accepted; confidence high"
+      "reason": "matched 1/4 terms; status accepted; confidence high"
     }
   ]
 }

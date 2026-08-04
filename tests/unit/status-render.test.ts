@@ -256,6 +256,15 @@ describe("the message always fits", () => {
     expect(clampEscaped("abc", 10)).toBe("abc");
   });
 
+  test("even the spinner cannot blow the message up", () => {
+    // Ours today, and bounded anyway: the contract is that the output fits and
+    // is well-formed, not that it does so as long as every caller behaves.
+    const out = renderStatus({ ...base, spinner: "<b>".repeat(1400), phaseEmoji: "<i>".repeat(1400) });
+    expect(out.length).toBeLessThan(TELEGRAM_MAX_CHARS);
+    expect(out).not.toContain("<b>");
+    expect(out).not.toContain("<i>&");
+  });
+
   test("the budget leaves room for everything else", () => {
     expect(WORK_BUDGET_CHARS).toBeLessThan(TELEGRAM_MAX_CHARS);
     expect(TELEGRAM_MAX_CHARS - WORK_BUDGET_CHARS).toBeGreaterThan(500);
