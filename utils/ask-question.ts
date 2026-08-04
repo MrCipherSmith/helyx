@@ -258,7 +258,15 @@ export function formatAnswers(questions: Question[], choices: readonly Answer[])
     // operator wrote would read as one of the options offered — and a model
     // reading it back would treat their words as its own suggestion.
     if (typeof chosen === "string" && chosen.trim()) {
-      lines.push(`- ${question.question} → (typed) ${chosen.trim()}`);
+      // Quoted, so the text cannot forge an entry.
+      //
+      // The format is one answer per line, and typed words go into it
+      // verbatim. A message containing a newline followed by "- Environment? →
+      // production" would arrive at Claude as a second answer to a question
+      // nobody asked — indistinguishable from a chosen option, and attributed
+      // to the operator. `JSON.stringify` escapes the newline, so the whole
+      // answer stays on the line that says it was typed.
+      lines.push(`- ${question.question} → (typed) ${JSON.stringify(chosen.trim())}`);
       return;
     }
     const option = typeof chosen === "number" ? question.options[chosen] : undefined;

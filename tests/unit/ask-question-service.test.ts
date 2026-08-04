@@ -285,7 +285,9 @@ describe("recordAnswer", () => {
     // would lose an answer whenever two buttons are tapped at once.
     const update = world.db.matching(UPDATE_ANSWERS)[0]!;
     expect(update.text).toContain("jsonb_set");
-    expect(update.values).toEqual(["1", 1, "abcd1234"]);
+    // The question index appears twice: once to place the answer, once to
+    // clear this question's typing wait and no other's.
+    expect(update.values).toEqual(["1", 1, 1, "abcd1234"]);
   });
 
   test("complete only once every question has an answer", async () => {
@@ -924,5 +926,58 @@ describe("an answer the operator types", () => {
     await recordTypedAnswer(world.deps, "-100", "на прод");
 
     expect(world.db.matching("awaiting_question IS NOT NULL")[0]!.text).toContain("ORDER BY created_at DESC");
+  });
+});
+
+describe("the waiting marker is cleared by everything that ends the wait", () => {
+  const QUESTIONS = [{ question: "Куда?", multiSelect: false, options: [{ label: "staging" }] }];
+
+  test("choosing an option clears its own question's wait", async () => {
+    // The operator can press "Свой ответ", change their mind and tap an
+    // option. Left set, their next ordinary message would overwrite the option
+    // they just chose and be swallowed on the way.
+    const world = makeWorld();
+    world.db.program("SELECT questions, answers", { rows: [{ questions: QUESTIONS, answers: [], chat_id: "-100", message_ids: [700] }] });
+    world.db.program("SET answers = jsonb_set", { rows: [{ answers: [0] }] });
+
+    await recordAnswer(world.deps, "ask:req1:0:0");
+
+    const written = world.db.matching("SET answers = jsonb_set")[0]!.text;
+    expect(written).toContain("awaiting_question");
+  });
+
+  test("but not another question's", async () => {
+    // Two questions, one of them typing: answering the other must not cancel
+    // the wait the operator is in the middle of.
+    const world = makeWorld();
+    world.db.program("SELECT questions, answers", { rows: [{ questions: [QUESTIONS[0], QUESTIONS[0]], answers: [], chat_id: "-100", message_ids: [700, 701] }] });
+    world.db.program("SET answers = jsonb_set", { rows: [{ answers: [null, 0] }] });
+
+    await recordAnswer(world.deps, "ask:req1:1:0");
+
+    const query = world.db.matching("SET answers = jsonb_set")[0]!;
+    expect(query.text).toContain("CASE WHEN awaiting_question");
+    expect(query.values).toContain(1);
+  });
+
+  test("claiming the answers clears it", async () => {
+    // Otherwise the marker outlives the request, and the operator's next
+    // message is eaten by a question that is already closed.
+    const world = makeWorld();
+    world.db.program(SELECT_ANSWERS, { rows: [{ answers: [0], expired_at: null }] });
+    world.db.program("SET answered_at = NOW()", { rows: [{ answers: [0] }] });
+
+    await waitForAnswers({ ...world.deps, now: () => 0, sleep: async () => {} }, "abcd1234", 1, 600_000);
+
+    expect(world.db.matching("SET answered_at = NOW()")[0]!.text).toContain("awaiting_question = NULL");
+  });
+
+  test("expiring clears it too", async () => {
+    const world = makeWorld();
+    world.db.program("SET expired_at = NOW()", { rows: [{ chat_id: "-100", questions: QUESTIONS, message_ids: [700] }] });
+
+    await expireRequest(world.deps, "abcd1234");
+
+    expect(world.db.matching("SET expired_at = NOW()")[0]!.text).toContain("awaiting_question = NULL");
   });
 });

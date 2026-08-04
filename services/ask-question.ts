@@ -209,7 +209,7 @@ export async function waitForAnswers(
       // ignore: it means a cancel landed first. Returning the answers anyway
       // would hand Claude a choice the operator was already told had expired.
       const claimed = await deps.sql`
-        UPDATE question_requests SET answered_at = NOW()
+        UPDATE question_requests SET answered_at = NOW(), awaiting_question = NULL
          WHERE id = ${requestId} AND answered_at IS NULL AND expired_at IS NULL
         RETURNING answers
       `.catch(() => [] as Record<string, unknown>[]);
@@ -301,7 +301,12 @@ export async function recordAnswer(deps: AskDeps, callbackData: string): Promise
   // recomputed locally, for the same reason.
   const updated = await deps.sql`
     UPDATE question_requests
-       SET answers = jsonb_set(answers, ARRAY[${String(parsed.questionIndex)}], ${parsed.optionIndex}::text::jsonb, true)
+       SET answers = jsonb_set(answers, ARRAY[${String(parsed.questionIndex)}], ${parsed.optionIndex}::text::jsonb, true),
+           -- Only this question's wait, and only if it was this question's.
+           -- The operator can press "Свой ответ", change their mind and tap an
+           -- option; left set, their next ordinary message would overwrite the
+           -- option they just chose and be swallowed on the way.
+           awaiting_question = CASE WHEN awaiting_question = ${parsed.questionIndex} THEN NULL ELSE awaiting_question END
      WHERE id = ${parsed.requestId} AND answered_at IS NULL AND expired_at IS NULL
     RETURNING answers
   `.catch(() => [] as Record<string, unknown>[]);
@@ -492,7 +497,7 @@ export async function expireRequest(
   alsoRetire: readonly (number | null)[] = [],
 ): Promise<void> {
   const claimed = await deps.sql`
-    UPDATE question_requests SET expired_at = NOW()
+    UPDATE question_requests SET expired_at = NOW(), awaiting_question = NULL
      WHERE id = ${requestId} AND answered_at IS NULL AND expired_at IS NULL
     RETURNING chat_id, questions, message_ids
   `.catch(() => [] as Record<string, unknown>[]);
