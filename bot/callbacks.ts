@@ -13,79 +13,90 @@ import { logger } from "../logger.ts";
 import { recordAnswer } from "../services/ask-question.ts";
 import { sendTelegramMessage, editTelegramMessage } from "../channel/telegram.ts";
 import { CONFIG } from "../config.ts";
-import { routeCallback } from "../utils/callback-route.ts";
+import { routeCallback, callbackPayload, type CallbackRoute } from "../utils/callback-route.ts";
 import { answerToast } from "../utils/ask-question.ts";
 
-export async function handleCallbackQuery(ctx: Context): Promise<void> {
+/** One handler per route. Injected so the dispatch itself can be driven by a test. */
+export type CallbackHandlers = Record<CallbackRoute, (ctx: Context, data: string) => Promise<void>>;
+
+/**
+ * The real handlers.
+ *
+ * The dynamic imports stay: this file is on the bot's startup path, and pulling
+ * twenty command modules in eagerly is exactly what they avoid.
+ */
+export const defaultCallbackHandlers: CallbackHandlers = {
+  permission: (ctx) => handlePermissionCallback(ctx),
+  question: (ctx, data) => handleQuestionCallback(ctx, data),
+  switch: (ctx) => handleSwitchCallback(ctx),
+  "skill-approval": (ctx) => handleSkillApprovalCallback(ctx),
+  "curator-approval": (ctx) => handleCuratorApprovalCallback(ctx),
+  tool: (ctx) => handleToolCallback(ctx),
+  "set-model": async (ctx, data) => {
+    const { handleSetModelCallback } = await import("./commands/model.ts");
+    return handleSetModelCallback(ctx, callbackPayload(data));
+  },
+  "remote-control": async (ctx) => {
+    const { handleRemoteControlCallback } = await import("./commands/remote-control.ts");
+    return handleRemoteControlCallback(ctx);
+  },
+  "poll-submit": async (ctx, data) => {
+    const { handlePollSubmit } = await import("./poll-handler.ts");
+    return handlePollSubmit(ctx, Number(callbackPayload(data)));
+  },
+  project: async (ctx) => {
+    const { handleProjectCallback } = await import("./commands/projects.ts");
+    return handleProjectCallback(ctx);
+  },
+  provider: async (ctx) => {
+    const { handleProviderCallback } = await import("./commands/providers.ts");
+    return handleProviderCallback(ctx);
+  },
+  "project-model": async (ctx) => {
+    const { handleProjectModelCallback } = await import("./commands/providers.ts");
+    return handleProjectModelCallback(ctx);
+  },
+  "delete-session": async (ctx) => {
+    const { handleDeleteSession } = await import("./commands/session.ts");
+    return handleDeleteSession(ctx);
+  },
+  "tmux-action": async (ctx) => {
+    const { handleTmuxActionCallback } = await import("./commands/tmux-actions.ts");
+    return handleTmuxActionCallback(ctx);
+  },
+  monitor: async (ctx) => {
+    const { handleMonitorCallback } = await import("./commands/monitor.ts");
+    return handleMonitorCallback(ctx);
+  },
+  system: async (ctx) => {
+    const { handleSystemCallback } = await import("./commands/system.ts");
+    return handleSystemCallback(ctx);
+  },
+  menu: async (ctx) => {
+    const { handleMenuCallback } = await import("./commands/menu.ts");
+    return handleMenuCallback(ctx);
+  },
+  supervisor: async (ctx) => {
+    const { handleSupervisorCallback } = await import("./commands/supervisor-actions.ts");
+    return handleSupervisorCallback(ctx);
+  },
+  "tmux-log": async (ctx) => {
+    const { handleTmuxLogCallback } = await import("./commands/tmux-log.ts");
+    return handleTmuxLogCallback(ctx);
+  },
+};
+
+export async function handleCallbackQuery(
+  ctx: Context,
+  handlers: CallbackHandlers = defaultCallbackHandlers,
+): Promise<void> {
   const data = ctx.callbackQuery?.data;
   const route = routeCallback(data);
   if (!route || !data) {
     await ctx.answerCallbackQuery({ text: "Unknown action" });
     return;
   }
-
-  // The dynamic imports stay: this file is on the bot's startup path, and
-  // pulling twenty command modules in eagerly is what they avoid.
-  switch (route) {
-    case "permission": return handlePermissionCallback(ctx);
-    case "question": return handleQuestionCallback(ctx, data);
-    case "switch": return handleSwitchCallback(ctx);
-    case "skill-approval": return handleSkillApprovalCallback(ctx);
-    case "curator-approval": return handleCuratorApprovalCallback(ctx);
-    case "tool": return handleToolCallback(ctx);
-    case "set-model": {
-      const { handleSetModelCallback } = await import("./commands/model.ts");
-      return handleSetModelCallback(ctx, data.slice("set_model:".length));
-    }
-    case "remote-control": {
-      const { handleRemoteControlCallback } = await import("./commands/remote-control.ts");
-      return handleRemoteControlCallback(ctx);
-    }
-    case "poll-submit": {
-      const { handlePollSubmit } = await import("./poll-handler.ts");
-      return handlePollSubmit(ctx, Number(data.slice("poll_submit:".length)));
-    }
-    case "project": {
-      const { handleProjectCallback } = await import("./commands/projects.ts");
-      return handleProjectCallback(ctx);
-    }
-    case "provider": {
-      const { handleProviderCallback } = await import("./commands/providers.ts");
-      return handleProviderCallback(ctx);
-    }
-    case "project-model": {
-      const { handleProjectModelCallback } = await import("./commands/providers.ts");
-      return handleProjectModelCallback(ctx);
-    }
-    case "delete-session": {
-      const { handleDeleteSession } = await import("./commands/session.ts");
-      return handleDeleteSession(ctx);
-    }
-    case "tmux-action": {
-      const { handleTmuxActionCallback } = await import("./commands/tmux-actions.ts");
-      return handleTmuxActionCallback(ctx);
-    }
-    case "monitor": {
-      const { handleMonitorCallback } = await import("./commands/monitor.ts");
-      return handleMonitorCallback(ctx);
-    }
-    case "system": {
-      const { handleSystemCallback } = await import("./commands/system.ts");
-      return handleSystemCallback(ctx);
-    }
-    case "menu": {
-      const { handleMenuCallback } = await import("./commands/menu.ts");
-      return handleMenuCallback(ctx);
-    }
-    case "supervisor": {
-      const { handleSupervisorCallback } = await import("./commands/supervisor-actions.ts");
-      return handleSupervisorCallback(ctx);
-    }
-    case "tmux-log": {
-      const { handleTmuxLogCallback } = await import("./commands/tmux-log.ts");
-      return handleTmuxLogCallback(ctx);
-    }
-  }
+  await handlers[route](ctx, data);
 }
 
 // FR-C-10: handle [Save] / [Reject] / [Edit name…] inline buttons on the

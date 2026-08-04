@@ -83,3 +83,22 @@ export function routeCallback(data: string | undefined | null): CallbackRoute | 
   }
   return null;
 }
+
+/**
+ * What follows the prefix.
+ *
+ * The dispatcher used to slice with a hand-written `"set_model:".length`, which
+ * is the prefix written twice — once in the table and once in the arithmetic —
+ * and only one of the two would be updated when a prefix changed. Derived from
+ * the same table that matched it, so they cannot disagree.
+ *
+ * Empty string when nothing claims the data, which the caller has already
+ * refused by then.
+ */
+export function callbackPayload(data: string | undefined | null): string {
+  if (!data) return "";
+  for (const [prefix] of CALLBACK_ROUTES) {
+    if (data.startsWith(prefix)) return data.slice(prefix.length);
+  }
+  return "";
+}

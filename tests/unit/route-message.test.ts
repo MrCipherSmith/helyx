@@ -37,18 +37,30 @@ function world(options: {
   db.program("FROM projects p", { rows: options.topicRows ?? [] });
 
   const switched: { chatId: string; sessionId: number }[] = [];
+  // Every argument recorded, not just the ones a mutation happened to change.
+  // The first version of these fakes took none at all, so passing the wrong
+  // chat id or looking up the wrong session left all ten tests green — the
+  // fake answered correctly regardless of what it was asked.
+  const asked = { activeSessionFor: [] as string[], sessionFor: [] as number[] };
+
   const deps: RouterDeps = {
     sql: db.sql as unknown as RouterDeps["sql"],
     sessions: {
-      getActiveSession: async () => options.activeSession ?? 0,
-      get: async () => (options.session ?? null) as never,
+      getActiveSession: async (chatId: string) => {
+        asked.activeSessionFor.push(chatId);
+        return options.activeSession ?? 0;
+      },
+      get: async (sessionId: number) => {
+        asked.sessionFor.push(sessionId);
+        return (options.session ?? null) as never;
+      },
       switchSession: async (chatId: string, sessionId: number) => {
         switched.push({ chatId, sessionId });
       },
     } as unknown as RouterDeps["sessions"],
   };
 
-  return { deps, db, switched };
+  return { deps, db, switched, asked };
 }
 
 const liveSession: FakeSession = {
@@ -62,7 +74,7 @@ const liveSession: FakeSession = {
 
 describe("routing by forum topic", () => {
   test("an active session in the topic's project takes the message", async () => {
-    const { deps } = world({
+    const { deps, db } = world({
       topicRows: [{
         path: "/home/altsay/bots/helyx",
         name: "helyx",
@@ -75,6 +87,8 @@ describe("routing by forum topic", () => {
 
     const route = await routeMessage(CHAT, FORUM_TOPIC, deps);
 
+    // Asked about the topic it was handed, not some other one.
+    expect(db.matching("FROM projects p")[0]!.values).toContain(FORUM_TOPIC);
     expect(route).toEqual({
       mode: "cli",
       sessionId: 7,
@@ -111,12 +125,14 @@ describe("routing by forum topic", () => {
     // The whole reason this branch exists. With a live DM session waiting,
     // falling through would hand one project's message to another's session —
     // and the operator would have no way to tell it happened.
-    const { deps, db } = world({ topicRows: [], activeSession: 7, session: liveSession });
+    const { deps, db, asked } = world({ topicRows: [], activeSession: 7, session: liveSession });
 
     const route = await routeMessage(CHAT, 9999, deps);
 
     expect(route).toEqual({ mode: "disconnected", sessionId: 0, sessionName: null, projectPath: null });
     expect(db.count("FROM projects p")).toBe(1);
+    // And it never got as far as asking about the DM session.
+    expect(asked.activeSessionFor).toEqual([]);
   });
 });
 
@@ -165,6 +181,18 @@ describe("routing without a topic", () => {
       sessionName: "helyx",
       projectPath: "/home/altsay/bots/helyx",
     });
+  });
+
+  test("the lookups are made for this chat and this session", async () => {
+    // The fakes answer the same either way, so nothing else here notices the
+    // router asking about the wrong chat — and asking about the wrong chat is
+    // how a message reaches someone else's session.
+    const { deps, asked } = world({ activeSession: 7, session: liveSession });
+
+    await routeMessage(CHAT, undefined, deps);
+
+    expect(asked.activeSessionFor).toEqual([CHAT]);
+    expect(asked.sessionFor).toEqual([7]);
   });
 
   test("a live session carries its client id and config", async () => {
