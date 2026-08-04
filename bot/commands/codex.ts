@@ -2,6 +2,7 @@ import type { Context } from "grammy";
 import { InlineKeyboard } from "grammy";
 import { logger } from "../../logger.ts";
 import { stripAnsi } from "../../utils/terminal.ts";
+import { runSingleReviewer } from "../../services/reviewer-service.ts";
 
 export async function handleCodexSetup(ctx: Context): Promise<void> {
   const statusMsg = await ctx.reply("Starting Codex device auth...");
@@ -160,56 +161,30 @@ export async function handleCodexReview(ctx: Context): Promise<void> {
 
   let codexFailed = false;
 
-  try {
-    const proc = Bun.spawn(["npx", "@openai/codex", "--no-interactive", "-m", CODEX_MODEL, prompt], {
-      stdout: "pipe",
-      stderr: "pipe",
-      env: { ...process.env, FORCE_COLOR: "0" },
-    });
+  // Delegate the invocation and limit detection to the reviewer service so the
+  // /codex_review path and the parallel pipeline share one implementation.
+  const report = await runSingleReviewer({ id: "codex", kind: "codex", model: CODEX_MODEL, enabled: true }, prompt);
 
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-      proc.exited,
-    ]);
-
-    const output = stripAnsi(stdout).trim();
-    const errOut = stripAnsi(stderr).trim().toLowerCase();
-
-    // Detect quota/auth errors
-    const isLimitError =
-      exitCode !== 0 ||
-      !output ||
-      errOut.includes("rate limit") ||
-      errOut.includes("quota") ||
-      errOut.includes("unauthorized") ||
-      errOut.includes("not logged") ||
-      output.toLowerCase().includes("rate limit") ||
-      output.toLowerCase().includes("quota exceeded");
-
-    if (isLimitError) {
-      logger.warn({ exitCode, errOut: errOut.slice(0, 200) }, "codex review: failed or quota exceeded — fallback");
-      codexFailed = true;
+  if (!report.ok) {
+    logger.warn({ error: report.error }, "codex review: failed or quota exceeded — fallback");
+    codexFailed = true;
+  } else {
+    // Send Codex output
+    const output = report.content ?? "";
+    const MAX = 4000;
+    if (output.length <= MAX) {
+      await ctx.reply(`*Codex Review* (${CODEX_MODEL})\n\n${output}`, { parse_mode: "Markdown" }).catch(() =>
+        ctx.reply(`Codex Review (${CODEX_MODEL})\n\n${output}`)
+      );
     } else {
-      // Send Codex output
-      const MAX = 4000;
-      if (output.length <= MAX) {
-        await ctx.reply(`*Codex Review* (${CODEX_MODEL})\n\n${output}`, { parse_mode: "Markdown" }).catch(() =>
-          ctx.reply(`Codex Review (${CODEX_MODEL})\n\n${output}`)
+      const chunks = output.match(/.{1,4000}/gs) ?? [output];
+      for (const [i, chunk] of chunks.entries()) {
+        const header = i === 0 ? `*Codex Review* (${CODEX_MODEL})\n\n` : `*(continued ${i + 1}/${chunks.length})*\n\n`;
+        await ctx.reply(header + chunk, { parse_mode: "Markdown" }).catch(() =>
+          ctx.reply(header + chunk)
         );
-      } else {
-        const chunks = output.match(/.{1,4000}/gs) ?? [output];
-        for (const [i, chunk] of chunks.entries()) {
-          const header = i === 0 ? `*Codex Review* (${CODEX_MODEL})\n\n` : `*(continued ${i + 1}/${chunks.length})*\n\n`;
-          await ctx.reply(header + chunk, { parse_mode: "Markdown" }).catch(() =>
-            ctx.reply(header + chunk)
-          );
-        }
       }
     }
-  } catch (err) {
-    logger.error({ err }, "codex review error");
-    codexFailed = true;
   }
 
   if (codexFailed) {

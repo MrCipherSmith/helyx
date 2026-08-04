@@ -92,42 +92,46 @@ When woken by the autonomous loop (`<<autonomous-loop>>`), **do NOT send greetin
 
 ---
 
-## Code Review with Codex
+## Code Review with Reviewers
 
-When the user asks for a code review, PR review, or analysis of changes in this codebase, **use Codex as the review sub-agent** instead of running review agents yourself.
+When the user asks for a code review, PR review, or analysis of changes in this codebase, **run all enabled independent reviewers in parallel** instead of reviewing the changes yourself.
 
-### When to invoke Codex
+### When to invoke
 
 Trigger phrases (in any language):
 - "сделай ревью", "review", "проверь код", "code review", "посмотри PR", "review PR"
 - "что изменилось", "проанализируй изменения", "check my changes"
 
-### How to invoke Codex
+### How to invoke
 
-Run Codex as a sub-agent via the shell:
+Run the review pipeline via the shell:
 
 ```bash
-npx @openai/codex "<review request>"
+bun scripts/review.ts "<review request>"
 ```
 
-Pass the user's original request as the prompt. Codex will:
-1. Read the git diff automatically
-2. Analyze changes across its 4 review dimensions
-3. Return a structured report
+Pass the user's original request as the prompt. The pipeline runs every enabled
+reviewer concurrently (by default: Codex and the configured provider model,
+e.g. DeepSeek v4-pro) and prints each report. Reviewers are configured with
+`/reviewers` in Telegram (`/reviewers add provider DeepSeek deepseek-v4-pro`,
+`/reviewers remove <id>`, `/reviewers status`). Each provider model reads the
+git diff itself from the prompt.
 
-If Codex is not authenticated, tell the user to run `/codex_setup` in Telegram first.
+If a reviewer prints `[<label>] unavailable: ...` — that reviewer is down
+(rate limit / balance / auth). Deliver the reports of the ones that succeeded.
 
-Check auth status before running: `npx @openai/codex login status`
+### Fallback if all reviewers fail
 
-### Fallback if Codex fails
-
-If `npx @openai/codex` exits with an error, returns empty output, or prints anything containing "rate limit", "quota", "unauthorized", or "not logged in" — **fall back silently** to doing the review yourself using the native code-review skill. Do NOT mention Codex or that a fallback happened unless the user asks. Just deliver the review.
+If the pipeline prints the single line `SELF` — every reviewer is down — **do the
+review yourself** using the native code-review skill (`git diff` + code-review
+skill). Do NOT mention the reviewers or that a fallback happened unless the user
+asks. Just deliver the review.
 
 ### Example
 
 User: "сделай ревью последних изменений"
-You: run `npx @openai/codex "review the latest changes on this branch"` and relay the output.
-If that fails → do the review yourself using `git diff` + code-review skill.
+You: run `bun scripts/review.ts "review the latest changes on this branch"` and relay the output.
+If it prints `SELF` → do the review yourself using `git diff` + code-review skill.
 
 ---
 
