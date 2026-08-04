@@ -1051,3 +1051,128 @@ describe("a typed answer belongs to the topic it was typed in", () => {
     expect(world.db.count("awaiting_question IS NOT NULL")).toBe(0);
   });
 });
+
+describe("toggling and submitting a multi-select question", () => {
+  const MULTI = [{ question: "Что включить?", multiSelect: true, options: [{ label: "тесты" }, { label: "линт" }] }];
+
+  function open(world: World, answers: unknown[] = [], after: unknown[] = []) {
+    world.db.program("SELECT questions, answers", {
+      rows: [{ questions: MULTI, answers, chat_id: "-100", message_ids: [700] }],
+    });
+    world.db.program("SET answers = jsonb_set", { rows: [{ answers: after }] });
+  }
+
+  test("a tap adds the option and does not answer the question", async () => {
+    // Toggling is not answering: the call must keep waiting until the operator
+    // says they are done, or the first tap becomes the whole answer.
+    const world = makeWorld();
+    open(world, [], [{ picked: [0], done: false }]);
+
+    const outcome = await recordAnswer(world.deps, "ask:req1:0:0");
+
+    expect(outcome.status).toBe("toggled");
+    expect(world.db.count("SET answered_at = NOW()")).toBe(0);
+  });
+
+  test("the toggle happens in the database, not in this process", async () => {
+    // Read the array here, change it and write it back, and two taps landing
+    // together lose one — each write carrying the other's selection as it was
+    // before it. The single-select path is careful about exactly this.
+    const world = makeWorld();
+    open(world, [], [{ picked: [0], done: false }]);
+
+    await recordAnswer(world.deps, "ask:req1:0:0");
+
+    const sql = world.db.matching("SET answers = jsonb_set")[0]!.text;
+    expect(sql).toContain("jsonb_build_object");
+    expect(sql).toContain("CASE");
+  });
+
+  test("tapping a chosen option removes it", async () => {
+    const world = makeWorld();
+    open(world, [{ picked: [0, 1], done: false }], [{ picked: [1], done: false }]);
+
+    const outcome = await recordAnswer(world.deps, "ask:req1:0:0");
+
+    expect(outcome).toEqual({ status: "toggled", label: "линт", picked: 1 });
+  });
+
+  test("the message is redrawn so the toggles show the set", async () => {
+    // The only place the operator can see what they have chosen so far.
+    const world = makeWorld();
+    open(world, [], [{ picked: [1], done: false }]);
+
+    await recordAnswer(world.deps, "ask:req1:0:0");
+
+    const edit = world.edits.at(-1)!;
+    expect(edit.text).toContain("Что включить?");
+    const keyboard = (edit.extra!.reply_markup as { inline_keyboard: { text: string }[][] }).inline_keyboard.flat();
+    expect(keyboard[1]!.text).toContain("☑");
+  });
+
+  test("submitting closes the question and names what was chosen", async () => {
+    const world = makeWorld();
+    open(world, [{ picked: [0, 1], done: false }], [{ picked: [0, 1], done: true }]);
+
+    const outcome = await recordAnswer(world.deps, "ask:req1:0:s");
+
+    expect(outcome).toEqual({ status: "recorded", label: "тесты, линт", complete: true });
+  });
+
+  test("submitting takes the toggles away with it", async () => {
+    // Left behind they still look pressable, and every further tap is refused
+    // with "уже отвечено" — a question that reads as open and answers as
+    // closed.
+    const world = makeWorld();
+    open(world, [{ picked: [0], done: false }], [{ picked: [0], done: true }]);
+
+    await recordAnswer(world.deps, "ask:req1:0:s");
+
+    const edit = world.edits.at(-1)!;
+    expect(edit.extra!.reply_markup).toEqual({ inline_keyboard: [] });
+  });
+
+  test("submitting nothing is refused and the question keeps waiting", async () => {
+    // An empty submit would close it with nothing in it. "None of these" is a
+    // real answer, but it belongs to the free-text button.
+    const world = makeWorld();
+    open(world, [{ picked: [], done: false }]);
+
+    const outcome = await recordAnswer(world.deps, "ask:req1:0:s");
+
+    expect(outcome.status).toBe("out-of-range");
+    expect(world.db.count("SET answers = jsonb_set")).toBe(0);
+  });
+
+  test("a submitted set counts as answered", async () => {
+    // The bug this shape exists to avoid: stored and then read back as
+    // nothing, so the call never completes while the row holds the answer.
+    const world = makeWorld();
+    open(world, [{ picked: [0], done: false }], [{ picked: [0], done: true }]);
+
+    expect((await recordAnswer(world.deps, "ask:req1:0:s")) as { complete?: boolean }).toHaveProperty("complete", true);
+  });
+
+  test("a single-select question is untouched by any of this", async () => {
+    // One tap is still one answer, written as an index.
+    const world = makeWorld();
+    world.db.program("SELECT questions, answers", {
+      rows: [{ questions: [{ question: "Куда?", multiSelect: false, options: [{ label: "staging" }] }], answers: [], chat_id: "-100", message_ids: [700] }],
+    });
+    world.db.program("SET answers = jsonb_set", { rows: [{ answers: [0] }] });
+
+    const outcome = await recordAnswer(world.deps, "ask:req1:0:0");
+
+    expect(outcome).toEqual({ status: "recorded", label: "staging", complete: true });
+    expect(world.db.matching("SET answers = jsonb_set")[0]!.text).not.toContain("jsonb_build_object");
+  });
+
+  test("a tap on an expired request is refused", async () => {
+    const world = makeWorld();
+    open(world, [], []);
+    world.db.program("SET answers = jsonb_set", { rows: [] });
+    world.db.program("SELECT answered_at, expired_at", { rows: [{ answered_at: null, expired_at: new Date() }] });
+
+    expect((await recordAnswer(world.deps, "ask:req1:0:0")).status).toBe("expired");
+  });
+});
