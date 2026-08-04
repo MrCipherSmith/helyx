@@ -73,3 +73,6 @@ Now the existing token is re-written with identical content, which is what
 applies the permissions, and the tests go through `readOrCreateToken` against a
 real filesystem starting from 0644. Mutation-checked: remove the re-write and
 one test fails.
+- 2026-08-04T08:30:52.252Z - ac-confirmed: AC1: config written beside the token; both forced to 0600 by an explicit chmod after every write
+- 2026-08-04T08:30:52.340Z - ac-confirmed: AC2: an existing token is re-written and re-hardened, and gets a config; asserted through readOrCreateToken on a real 0644 file
+- 2026-08-04T08:30:52.429Z - ac-confirmed: AC5: typecheck clean, lint 0 errors, 993 tests, dupes 2 documented
