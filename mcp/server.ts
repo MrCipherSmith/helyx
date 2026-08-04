@@ -523,8 +523,11 @@ export function startMcpHttpServer(bot: Bot | null): ReturnType<typeof createSer
             const r = await sendTelegramMessage(CONFIG.TELEGRAM_BOT_TOKEN, chatId, text, extra);
             return { ok: r.ok, messageId: r.messageId };
           },
-          editMessage: async (chatId: string, messageId: number, text: string) => {
-            await editTelegramMessage(CONFIG.TELEGRAM_BOT_TOKEN, chatId, messageId, text, { parse_mode: "HTML" });
+          editMessage: async (chatId: string, messageId: number, text: string, extra?: Record<string, unknown>) => {
+            await editTelegramMessage(CONFIG.TELEGRAM_BOT_TOKEN, chatId, messageId, text, {
+              parse_mode: "HTML",
+              ...extra,
+            });
           },
         };
 

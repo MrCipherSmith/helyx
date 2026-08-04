@@ -14,6 +14,7 @@ import {
   resolveTarget,
   hasOpenQuestion,
   cancelRequest,
+  expireRequest,
   runQuestionExchange,
   type AskDeps,
 } from "../../services/ask-question.ts";
@@ -38,7 +39,7 @@ function hookInput(questions: Question[] = QUESTIONS): HookInput {
 interface World {
   db: FakeSql;
   sent: { chatId: string; text: string; extra: Record<string, unknown> }[];
-  edits: { chatId: string; messageId: number; text: string }[];
+  edits: { chatId: string; messageId: number; text: string; extra?: Record<string, unknown> }[];
   deps: AskDeps;
 }
 
@@ -56,8 +57,8 @@ function makeWorld(options: { sendOk?: boolean } = {}): World {
         ? { ok: false, messageId: null }
         : { ok: true, messageId: nextMessageId++ };
     },
-    editMessage: async (chatId, messageId, text) => {
-      edits.push({ chatId, messageId, text });
+    editMessage: async (chatId, messageId, text, extra) => {
+      edits.push({ chatId, messageId, text, extra });
     },
     random: () => 0.5,
   };
@@ -482,10 +483,38 @@ describe("expiry", () => {
 
   test("cancelRequest only touches a request still waiting", async () => {
     const world = makeWorld();
-    await cancelRequest(world.deps.sql, "abcd1234");
+    await cancelRequest(world.deps, "abcd1234");
     const update = world.db.matching("SET expired_at = NOW()")[0]!;
     expect(update.text).toContain("answered_at IS NULL");
     expect(update.text).toContain("expired_at IS NULL");
+  });
+
+  test("expiring takes the buttons down and says why", async () => {
+    // The complaint this fixes: an operator taps a question ten minutes old,
+    // is told it is no longer waiting, and had no way to know that before
+    // tapping. The hook cannot warn them — it cannot tell either — so the
+    // message says so when the wait ends.
+    const world = makeWorld();
+    world.db.program("SET expired_at = NOW()", {
+      rows: [{ chat_id: "-100123", questions: QUESTIONS, message_ids: [700, 701] }],
+    });
+
+    await expireRequest(world.deps, "abcd1234");
+
+    expect(world.edits).toHaveLength(2);
+    expect(world.edits[0]!.text).toContain("больше не ждёт ответа");
+    expect(world.edits[0]!.extra?.reply_markup).toEqual({ inline_keyboard: [] });
+  });
+
+  test("a request already settled is left alone", async () => {
+    // The update claims nothing, so there is no live keyboard of ours to take
+    // down — and editing an answered question back to "expired" would be a lie.
+    const world = makeWorld();
+    world.db.program("SET expired_at = NOW()", { rows: [] });
+
+    await expireRequest(world.deps, "abcd1234");
+
+    expect(world.edits).toHaveLength(0);
   });
 });
 

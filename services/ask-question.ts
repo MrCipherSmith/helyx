@@ -28,7 +28,11 @@ export interface SendResult {
 export interface AskDeps {
   sql: postgres.Sql;
   sendMessage: (chatId: string, text: string, extra: Record<string, unknown>) => Promise<SendResult>;
-  editMessage: (chatId: string, messageId: number, text: string) => Promise<void>;
+  /**
+   * `extra` carries `reply_markup` — an empty keyboard removes the buttons.
+   * Optional so existing callers are unaffected.
+   */
+  editMessage: (chatId: string, messageId: number, text: string, extra?: Record<string, unknown>) => Promise<void>;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
   random?: () => number;
@@ -161,7 +165,7 @@ export async function waitForAnswers(
 
   while (now() < deadline) {
     if (clientGone()) {
-      await cancelRequest(deps.sql, requestId);
+      await expireRequest(deps, requestId);
       return null;
     }
 
@@ -203,12 +207,9 @@ export async function waitForAnswers(
     await sleep(pollMs);
   }
 
-  // Stopped waiting. Marked rather than left open, so the buttons still on the
-  // operator's screen say so when tapped instead of pretending to send.
-  await deps.sql`
-    UPDATE question_requests SET expired_at = NOW()
-     WHERE id = ${requestId} AND answered_at IS NULL AND expired_at IS NULL
-  `.catch(() => {});
+  // Stopped waiting. The messages say so and lose their buttons, rather than
+  // sitting there looking live until someone taps one and is told otherwise.
+  await expireRequest(deps, requestId);
   return null;
 }
 
@@ -346,7 +347,7 @@ export async function runQuestionExchange(
   // Gone while the questions were being sent. Starting a ten-minute wait for a
   // reader that has already left is the exact shape of the original bug.
   if (limits.clientGone()) {
-    await cancelRequest(deps.sql, registered.requestId);
+    await expireRequest(deps, registered.requestId);
     return null;
   }
 
@@ -361,6 +362,44 @@ export async function runQuestionExchange(
 }
 
 /**
+ * What an expired question's message says instead of offering a choice.
+ *
+ * The buttons are removed, not just annotated. Left in place they look live —
+ * and that is the whole complaint: an operator taps a question ten minutes old,
+ * gets told it is no longer waiting, and has no way to have known that before
+ * tapping. The hook cannot tell them, because it cannot tell either: it posts
+ * the question, and if the tool call was abandoned in the terminal meanwhile,
+ * nothing informs it. So the message says so when the wait ends.
+ */
+export async function expireRequest(deps: AskDeps, requestId: string): Promise<void> {
+  const claimed = await deps.sql`
+    UPDATE question_requests SET expired_at = NOW()
+     WHERE id = ${requestId} AND answered_at IS NULL AND expired_at IS NULL
+    RETURNING chat_id, questions, message_ids
+  `.catch(() => [] as Record<string, unknown>[]);
+
+  // Nothing claimed: already answered, already expired, or gone. Either way
+  // there is no live keyboard of ours left to take down.
+  const row = claimed[0];
+  if (!row) return;
+
+  const questions = (Array.isArray(row.questions) ? row.questions : []) as Question[];
+  const messageIds = (Array.isArray(row.message_ids) ? row.message_ids : []) as (number | null)[];
+
+  for (const [index, messageId] of messageIds.entries()) {
+    if (typeof messageId !== "number") continue;
+    const question = questions[index];
+    if (!question) continue;
+    const { text } = questionMessage(requestId, index, question);
+    await deps
+      .editMessage(String(row.chat_id), messageId, `${text}\n\n⌛ <b>Вопрос больше не ждёт ответа</b>`, {
+        reply_markup: { inline_keyboard: [] },
+      })
+      .catch(() => {});
+  }
+}
+
+/**
  * Stop waiting on behalf of a client that hung up.
  *
  * The hook's curl gives up before the hook's own budget does, and when it does
@@ -368,11 +407,8 @@ export async function runQuestionExchange(
  * request ends the poll and turns the buttons still on screen into an honest
  * "no longer waiting".
  */
-export async function cancelRequest(sql: postgres.Sql, requestId: string): Promise<void> {
-  await sql`
-    UPDATE question_requests SET expired_at = NOW()
-     WHERE id = ${requestId} AND answered_at IS NULL AND expired_at IS NULL
-  `.catch(() => {});
+export async function cancelRequest(deps: AskDeps, requestId: string): Promise<void> {
+  await expireRequest(deps, requestId);
 }
 
 /**

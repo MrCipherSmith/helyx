@@ -363,8 +363,11 @@ async function handleQuestionCallback(ctx: Context, data: string): Promise<void>
         const res = await sendTelegramMessage(CONFIG.TELEGRAM_BOT_TOKEN, chatId, text, extra);
         return { ok: res.ok, messageId: res.messageId };
       },
-      editMessage: async (chatId, messageId, text) => {
-        await editTelegramMessage(CONFIG.TELEGRAM_BOT_TOKEN, chatId, messageId, text, { parse_mode: "HTML" });
+      editMessage: async (chatId, messageId, text, extra) => {
+        await editTelegramMessage(CONFIG.TELEGRAM_BOT_TOKEN, chatId, messageId, text, {
+          parse_mode: "HTML",
+          ...extra,
+        });
       },
     },
     data,
