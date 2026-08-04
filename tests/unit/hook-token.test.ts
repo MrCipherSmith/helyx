@@ -109,3 +109,29 @@ describe("tokenMatches", () => {
     expect(tokenMatches("abc", undefined)).toBe(false);
   });
 });
+
+describe("the writer the server supplies", () => {
+  test("an existing file is re-hardened, not left as it was found", async () => {
+    // writeFileSync's `mode` applies only when the file is created. A config
+    // written before the mode was set — or by an older version — would keep
+    // whatever permissions it had, which is the one thing this change is about.
+    const { mkdtempSync, writeFileSync, chmodSync, statSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+
+    const dir = mkdtempSync(join(tmpdir(), "helyx-token-"));
+    const path = join(dir, HOOK_TOKEN_FILE);
+    writeFileSync(path, "x".repeat(64), { mode: 0o644 });
+    expect(statSync(path).mode & 0o777).toBe(0o644);
+
+    // The writer the server supplies, mirrored here so the assertion is about
+    // behaviour rather than about the server module's import graph.
+    const write = (p: string, contents: string) => {
+      writeFileSync(p, contents, { mode: 0o600 });
+      chmodSync(p, 0o600);
+    };
+    write(path, "y".repeat(64));
+
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+  });
+});

@@ -52,3 +52,11 @@ works through the timeout, which is the path that actually fires.
 - 2026-08-04T08:17:04.768Z - ac-confirmed: AC3: the hook passes --config and exits 0 when it is unreadable; no -H carrying the token remains
 - 2026-08-04T08:17:04.855Z - ac-confirmed: AC4: curlConfigFor asserted to be exactly one header line
 - 2026-08-04T08:17:04.941Z - ac-confirmed: AC5: typecheck clean, lint 0 errors, 991 tests, dupes 2 documented
+
+### Review: the mode was applied only on creation
+
+`writeFileSync(path, contents, { mode: 0o600 })` sets the mode when it creates
+the file and ignores it otherwise. A config or token that already existed with
+looser permissions kept them — which is precisely and only what this change was
+about. An explicit `chmodSync` follows every write now, and a test starts from
+0644 on a real file and asserts it ends at 0600.
