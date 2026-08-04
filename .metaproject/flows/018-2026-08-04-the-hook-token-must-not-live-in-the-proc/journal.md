@@ -76,3 +76,8 @@ one test fails.
 - 2026-08-04T08:30:52.252Z - ac-confirmed: AC1: config written beside the token; both forced to 0600 by an explicit chmod after every write
 - 2026-08-04T08:30:52.340Z - ac-confirmed: AC2: an existing token is re-written and re-hardened, and gets a config; asserted through readOrCreateToken on a real 0644 file
 - 2026-08-04T08:30:52.429Z - ac-confirmed: AC5: typecheck clean, lint 0 errors, 993 tests, dupes 2 documented
+- 2026-08-04T14:11:28.795Z - task-done: T6: hook uses --config
+- 2026-08-04T14:11:28.883Z - task-done: T7: tests
+- 2026-08-04T14:11:42.177Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/54 (warning: PR is not a draft)
+- 2026-08-04T14:11:46.450Z - completing
+- 2026-08-04T14:11:48.665Z - done: all gates passed

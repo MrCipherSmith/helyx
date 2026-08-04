@@ -3,17 +3,51 @@
   "id": "020",
   "slug": "always-end-the-turn-with-a-summary-the-o",
   "title": "always end the turn with a summary the operator can read",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-04T11:16:27.423Z",
-  "updatedAt": "2026-08-04T11:26:43.321Z",
+  "updatedAt": "2026-08-04T11:40:47.027Z",
   "source": {
     "type": "description",
     "ref": null
   },
   "acChecksum": "sha256:8b169167234e18bb35581971cbb9f125d5afa52ccdafc534370beeeeb1cdd3db",
-  "acConfirmed": {},
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-04T11:40:44.328Z"
+    },
+    "AC2": {
+      "at": "2026-08-04T11:40:44.417Z"
+    },
+    "AC3": {
+      "at": "2026-08-04T11:40:44.501Z"
+    },
+    "AC4": {
+      "at": "2026-08-04T11:40:44.589Z"
+    },
+    "AC5": {
+      "at": "2026-08-04T11:40:44.679Z"
+    },
+    "AC6": {
+      "at": "2026-08-04T11:40:44.768Z"
+    },
+    "AC7": {
+      "at": "2026-08-04T11:40:44.854Z"
+    },
+    "AC8": {
+      "at": "2026-08-04T11:40:44.944Z"
+    },
+    "AC9": {
+      "at": "2026-08-04T11:40:45.032Z"
+    },
+    "AC10": {
+      "at": "2026-08-04T11:40:45.120Z"
+    },
+    "AC11": {
+      "at": "2026-08-04T11:40:45.208Z"
+    }
+  },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/56"
   },
   "tasks": [
     {
@@ -110,6 +144,75 @@
       "at": "2026-08-04T11:26:43.321Z",
       "event": "task-done",
       "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-04T11:40:44.242Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/56 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-08-04T11:40:44.329Z",
+      "event": "ac-confirmed",
+      "detail": "AC1"
+    },
+    {
+      "at": "2026-08-04T11:40:44.417Z",
+      "event": "ac-confirmed",
+      "detail": "AC2"
+    },
+    {
+      "at": "2026-08-04T11:40:44.501Z",
+      "event": "ac-confirmed",
+      "detail": "AC3"
+    },
+    {
+      "at": "2026-08-04T11:40:44.589Z",
+      "event": "ac-confirmed",
+      "detail": "AC4"
+    },
+    {
+      "at": "2026-08-04T11:40:44.680Z",
+      "event": "ac-confirmed",
+      "detail": "AC5"
+    },
+    {
+      "at": "2026-08-04T11:40:44.768Z",
+      "event": "ac-confirmed",
+      "detail": "AC6"
+    },
+    {
+      "at": "2026-08-04T11:40:44.854Z",
+      "event": "ac-confirmed",
+      "detail": "AC7"
+    },
+    {
+      "at": "2026-08-04T11:40:44.944Z",
+      "event": "ac-confirmed",
+      "detail": "AC8"
+    },
+    {
+      "at": "2026-08-04T11:40:45.032Z",
+      "event": "ac-confirmed",
+      "detail": "AC9"
+    },
+    {
+      "at": "2026-08-04T11:40:45.120Z",
+      "event": "ac-confirmed",
+      "detail": "AC10"
+    },
+    {
+      "at": "2026-08-04T11:40:45.208Z",
+      "event": "ac-confirmed",
+      "detail": "AC11"
+    },
+    {
+      "at": "2026-08-04T11:40:45.297Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-04T11:40:47.027Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
   ]
 }

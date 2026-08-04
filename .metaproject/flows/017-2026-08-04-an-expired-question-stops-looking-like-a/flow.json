@@ -3,9 +3,9 @@
   "id": "017",
   "slug": "an-expired-question-stops-looking-like-a",
   "title": "an expired question stops looking like a live one",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-04T07:29:40.155Z",
-  "updatedAt": "2026-08-04T07:44:48.811Z",
+  "updatedAt": "2026-08-04T14:11:46.364Z",
   "source": {
     "type": "description",
     "ref": null
@@ -34,7 +34,7 @@
     }
   },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/53"
   },
   "tasks": [
     {
@@ -246,6 +246,20 @@
       "at": "2026-08-04T07:44:48.811Z",
       "event": "ac-confirmed",
       "detail": "AC5: typecheck clean, lint 0 errors, 988 tests, dupes 2 documented"
+    },
+    {
+      "at": "2026-08-04T14:11:40.297Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/53 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-08-04T14:11:44.351Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-04T14:11:46.364Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
   ]
 }

@@ -8,6 +8,22 @@ export type RouteTarget =
   | { mode: "disconnected"; sessionId: number; sessionName: string | null; projectPath?: string | null };
 
 /**
+ * What routing needs from the outside world.
+ *
+ * Injected rather than imported, for the same reason the ask-question service
+ * does it: this decides which session receives a message, and its most
+ * consequential branch is one that must *not* happen — an unmapped topic
+ * falling through to DM routing would deliver the operator's message to a
+ * different project's session. A rule of that weight should be reachable by a
+ * test, and with module-level imports it was not: the only existing test of
+ * this file is a private reimplementation of its rules.
+ */
+export interface RouterDeps {
+  sql: typeof sql;
+  sessions: Pick<typeof sessionManager, "getActiveSession" | "get" | "switchSession">;
+}
+
+/**
  * Resolve the route for an incoming message.
  *
  * @param chatId      The Telegram chat_id (DM or forum supergroup).
@@ -15,10 +31,14 @@ export type RouteTarget =
  *                    When set and > 1, route is resolved by forum_topic_id → project.
  *                    topic_id=1 (General topic) falls through to chat_sessions lookup.
  */
-export async function routeMessage(chatId: string, forumTopicId?: number): Promise<RouteTarget> {
+export async function routeMessage(
+  chatId: string,
+  forumTopicId?: number,
+  deps: RouterDeps = { sql, sessions: sessionManager },
+): Promise<RouteTarget> {
   // Forum routing: topic > 1 → look up project by forum_topic_id
   if (forumTopicId !== undefined && forumTopicId > 1) {
-    const rows = await sql`
+    const rows = await deps.sql`
       SELECT p.path, p.name,
              s.id    AS session_id,
              s.status,
@@ -55,17 +75,17 @@ export async function routeMessage(chatId: string, forumTopicId?: number): Promi
   }
 
   // Existing DM routing: look up active session via chat_sessions
-  const sessionId = await sessionManager.getActiveSession(chatId);
+  const sessionId = await deps.sessions.getActiveSession(chatId);
 
   if (sessionId === 0) {
     return { mode: "standalone", sessionId: 0 };
   }
 
-  const session = await sessionManager.get(sessionId);
+  const session = await deps.sessions.get(sessionId);
 
   if (!session) {
     // Session was deleted, reset to standalone
-    await sessionManager.switchSession(chatId, 0);
+    await deps.sessions.switchSession(chatId, 0);
     return { mode: "standalone", sessionId: 0 };
   }
 

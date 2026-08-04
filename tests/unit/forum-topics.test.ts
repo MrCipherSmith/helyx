@@ -4,48 +4,17 @@ import { describe, test, expect } from "bun:test";
  * Forum Topics — pure unit tests.
  *
  * No database, no Telegram API calls. Tests cover:
- *   - routeMessage forum routing decision logic (pure function extracted)
+ *
+ * The routing rules that used to be reimplemented here are gone. A private
+ * copy of production logic agrees with it by coincidence and cannot notice it
+ * changing — it reads like a test and is not one. `route-message.test.ts`
+ * drives the real `routeMessage`, and `status-question-wiring.test.ts` the
+ * real `StatusManager`.
+
  *   - FORUM_ICON_COLORS round-robin assignment
  *   - replyInThread helper: injects message_thread_id when present
- *   - StatusManager forum target resolution
- *   - StatusManager state key in forum vs DM mode
  *   - Forum prefix suppression (FR-10)
- *   - PermissionHandler forum target resolution
- *   - Migration v13 schema shape
  */
-
-// ---------------------------------------------------------------------------
-// 1. routeMessage forum routing decision
-// ---------------------------------------------------------------------------
-
-/**
- * Pure routing decision: given a forumTopicId, should we use forum routing?
- * Rules (from FR-3):
- *   forumTopicId === undefined → DM routing
- *   forumTopicId === 1         → General topic → DM routing
- *   forumTopicId > 1           → forum routing by project
- */
-function shouldUseForumRouting(forumTopicId: number | undefined): boolean {
-  return forumTopicId !== undefined && forumTopicId > 1;
-}
-
-describe("routeMessage — forum routing decision", () => {
-  test("no thread ID → DM routing", () => {
-    expect(shouldUseForumRouting(undefined)).toBe(false);
-  });
-
-  test("thread ID = 1 (General topic) → DM routing", () => {
-    expect(shouldUseForumRouting(1)).toBe(false);
-  });
-
-  test("thread ID = 2 → forum routing", () => {
-    expect(shouldUseForumRouting(2)).toBe(true);
-  });
-
-  test("thread ID = 1337 → forum routing", () => {
-    expect(shouldUseForumRouting(1337)).toBe(true);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // 2. Forum icon color round-robin
@@ -141,74 +110,6 @@ describe("replyInThread — message_thread_id injection", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 4. StatusManager forum target resolution
-// ---------------------------------------------------------------------------
-
-/**
- * Pure simulation of StatusManager.getForumTarget() logic.
- */
-function getForumTarget(
-  forumChatId: (() => string | null) | undefined,
-  forumTopicId: (() => number | null) | undefined,
-): { chatId: string; threadId: number; extra: Record<string, unknown> } | null {
-  const chatId = forumChatId?.();
-  const topicId = forumTopicId?.();
-  if (chatId && topicId) {
-    return { chatId, threadId: topicId, extra: { message_thread_id: topicId } };
-  }
-  return null;
-}
-
-function getStateKey(
-  chatId: string,
-  forumChatId: (() => string | null) | undefined,
-  forumTopicId: (() => number | null) | undefined,
-): string {
-  const forum = getForumTarget(forumChatId, forumTopicId);
-  return forum ? `${forum.chatId}:${forum.threadId}` : chatId;
-}
-
-describe("StatusManager — forum target resolution", () => {
-  test("no forum config → null", () => {
-    expect(getForumTarget(undefined, undefined)).toBeNull();
-  });
-
-  test("only chatId set → null (need both)", () => {
-    expect(getForumTarget(() => "-100111", undefined)).toBeNull();
-  });
-
-  test("only topicId set → null (need both)", () => {
-    expect(getForumTarget(undefined, () => 42)).toBeNull();
-  });
-
-  test("chatId empty string → null", () => {
-    expect(getForumTarget(() => "", () => 42)).toBeNull();
-  });
-
-  test("topicId = null → null", () => {
-    expect(getForumTarget(() => "-100111", () => null)).toBeNull();
-  });
-
-  test("both set → forum target", () => {
-    const target = getForumTarget(() => "-100111", () => 42);
-    expect(target).not.toBeNull();
-    expect(target!.chatId).toBe("-100111");
-    expect(target!.threadId).toBe(42);
-    expect(target!.extra.message_thread_id).toBe(42);
-  });
-});
-
-describe("StatusManager — state key", () => {
-  test("DM mode: key = chatId", () => {
-    expect(getStateKey("111222", undefined, undefined)).toBe("111222");
-  });
-
-  test("forum mode: key = chatId:threadId", () => {
-    expect(getStateKey("111222", () => "-100999", () => 7)).toBe("-100999:7");
-  });
-});
-
-// ---------------------------------------------------------------------------
 // 5. Forum prefix suppression (FR-10)
 // ---------------------------------------------------------------------------
 
@@ -239,52 +140,6 @@ describe("Status prefix — forum mode suppression (FR-10)", () => {
 
   test("DM mode, non-active session: shows project prefix", () => {
     expect(getSessionPrefix(false, false, "keryx")).toBe("📌 keryx · ");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 6. PermissionHandler forum target resolution
-// ---------------------------------------------------------------------------
-
-describe("PermissionHandler — forum target resolution", () => {
-  test("no forum config → no override (use chat_sessions lookup)", () => {
-    expect(getForumTarget(undefined, undefined)).toBeNull();
-  });
-
-  test("forum configured → override chatId + add message_thread_id to sends", () => {
-    const target = getForumTarget(() => "-100888", () => 15);
-    expect(target!.chatId).toBe("-100888");
-    expect(target!.extra).toEqual({ message_thread_id: 15 });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 7. Migration v13 — schema fields
-// ---------------------------------------------------------------------------
-
-describe("Migration v13 — schema", () => {
-  test("projects table gets forum_topic_id (INTEGER, nullable)", () => {
-    // Schema assertion: forum_topic_id must be nullable INTEGER (maps to project topics)
-    const field = { name: "forum_topic_id", type: "INTEGER", nullable: true };
-    expect(field.type).toBe("INTEGER");
-    expect(field.nullable).toBe(true);
-  });
-
-  test("bot_config table has key + value columns", () => {
-    const schema = [
-      { name: "key", type: "TEXT", primaryKey: true },
-      { name: "value", type: "TEXT", nullable: false },
-      { name: "updated_at", type: "TIMESTAMPTZ", nullable: true },
-    ];
-    expect(schema.find((c) => c.name === "key")?.primaryKey).toBe(true);
-    expect(schema.find((c) => c.name === "value")?.nullable).toBe(false);
-  });
-
-  test("forum_chat_id is seeded empty in bot_config", () => {
-    const seedValue = "";
-    // Empty string = not configured; service returns null for empty strings
-    const isConfigured = seedValue.length > 0;
-    expect(isConfigured).toBe(false);
   });
 });
 
