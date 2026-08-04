@@ -250,3 +250,48 @@ export function denyWithAnswers(questions: Question[], choices: (number | null)[
 export function allAnswered(choices: (number | null)[], expected: number): boolean {
   return choices.length === expected && choices.every((c) => c !== null && c !== undefined);
 }
+
+/**
+ * The shape of what happened to a press, without the service that decided it.
+ *
+ * Mirrors `AnswerOutcome` in `services/ask-question.ts`. Duplicated
+ * deliberately rather than imported: this file is the pure half and is loaded
+ * by the hook, which has no database and must not pull the service in behind
+ * it. The duplicate detector will name the pair, and this comment is the
+ * answer — two shapes that must agree, kept apart on purpose.
+ */
+export type PressOutcome =
+  | { status: "recorded"; label: string; complete: boolean }
+  | { status: "not-ours" }
+  | { status: "unknown" }
+  | { status: "already-answered" }
+  | { status: "expired" }
+  | { status: "out-of-range" };
+
+/**
+ * What the operator sees on the button they just pressed.
+ *
+ * A Telegram callback answer is the only acknowledgement a press ever gets: no
+ * toast means the button looks dead and gets pressed again, which is how one
+ * lost answer becomes three. Every outcome therefore has words, including the
+ * ones that mean nothing was recorded.
+ */
+export function answerToast(outcome: PressOutcome): string {
+  switch (outcome.status) {
+    case "recorded":
+      // "отправляю" only on the last one: it tells the operator the set is
+      // closed and the session is moving, which is the difference between
+      // waiting and being finished.
+      return outcome.complete ? `✅ ${outcome.label} — отправляю` : `✅ ${outcome.label}`;
+    case "already-answered":
+      return "Уже отвечено";
+    case "expired":
+      return "Вопрос больше не ждёт ответа";
+    case "unknown":
+      // The session it belonged to is gone, or the wait timed out and the
+      // question went back to the terminal.
+      return "Вопрос больше не ждёт ответа";
+    default:
+      return "Не удалось записать ответ";
+  }
+}

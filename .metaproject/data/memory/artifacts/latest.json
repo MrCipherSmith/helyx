@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "query": "turn summary stop hook forum topic response guard pending question pane parse tmux watchdog Telegram HTML message length",
-  "generatedAt": "2026-08-04T11:28:33.036Z",
+  "generatedAt": "2026-08-04T14:39:23.248Z",
   "results": [
     {
       "entry": {
@@ -37,7 +37,7 @@
       "score": 1.716,
       "components": {
         "relevance": 0.222,
-        "recency": 0.988,
+        "recency": 0.987,
         "confidence": 1,
         "status": 1,
         "scope": 0
@@ -78,7 +78,7 @@
       "score": 1.66,
       "components": {
         "relevance": 0.167,
-        "recency": 0.988,
+        "recency": 0.987,
         "confidence": 1,
         "status": 1,
         "scope": 0
@@ -119,7 +119,7 @@
       "score": 1.552,
       "components": {
         "relevance": 0.056,
-        "recency": 0.993,
+        "recency": 0.992,
         "confidence": 1,
         "status": 1,
         "scope": 0

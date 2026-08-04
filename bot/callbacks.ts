@@ -13,80 +13,90 @@ import { logger } from "../logger.ts";
 import { recordAnswer } from "../services/ask-question.ts";
 import { sendTelegramMessage, editTelegramMessage } from "../channel/telegram.ts";
 import { CONFIG } from "../config.ts";
+import { routeCallback, callbackPayload, type CallbackRoute } from "../utils/callback-route.ts";
+import { answerToast } from "../utils/ask-question.ts";
 
-export async function handleCallbackQuery(ctx: Context): Promise<void> {
-  const data = ctx.callbackQuery?.data;
-  if (!data) return;
+/** One handler per route. Injected so the dispatch itself can be driven by a test. */
+export type CallbackHandlers = Record<CallbackRoute, (ctx: Context, data: string) => Promise<void>>;
 
-  if (data.startsWith("perm:")) return handlePermissionCallback(ctx);
-  if (data.startsWith("ask:")) return handleQuestionCallback(ctx, data);
-  if (data.startsWith("switch:")) return handleSwitchCallback(ctx);
-  // FR-C-10: agent-created skill approval. `skill:save:` / `skill:reject:` /
-  // `skill:editname:` use the same `skill:` prefix as the existing tool
-  // launcher, so they must be routed FIRST by their action subkey.
-  if (
-    data.startsWith("skill:save:") ||
-    data.startsWith("skill:reject:") ||
-    data.startsWith("skill:editname:")
-  ) return handleSkillApprovalCallback(ctx);
-  if (data.startsWith("cur:approve:") || data.startsWith("cur:skip:")) return handleCuratorApprovalCallback(ctx);
-  if (data.startsWith("skill:") || data.startsWith("cmd:")) return handleToolCallback(ctx);
-  if (data.startsWith("set_model:")) {
+/**
+ * The real handlers.
+ *
+ * The dynamic imports stay: this file is on the bot's startup path, and pulling
+ * twenty command modules in eagerly is exactly what they avoid.
+ */
+export const defaultCallbackHandlers: CallbackHandlers = {
+  permission: (ctx) => handlePermissionCallback(ctx),
+  question: (ctx, data) => handleQuestionCallback(ctx, data),
+  switch: (ctx) => handleSwitchCallback(ctx),
+  "skill-approval": (ctx) => handleSkillApprovalCallback(ctx),
+  "curator-approval": (ctx) => handleCuratorApprovalCallback(ctx),
+  tool: (ctx) => handleToolCallback(ctx),
+  "set-model": async (ctx, data) => {
     const { handleSetModelCallback } = await import("./commands/model.ts");
-    return handleSetModelCallback(ctx, data.slice("set_model:".length));
-  }
-  if (data.startsWith("rc:")) {
+    return handleSetModelCallback(ctx, callbackPayload(data));
+  },
+  "remote-control": async (ctx) => {
     const { handleRemoteControlCallback } = await import("./commands/remote-control.ts");
     return handleRemoteControlCallback(ctx);
-  }
-  if (data.startsWith("poll_submit:")) {
+  },
+  "poll-submit": async (ctx, data) => {
     const { handlePollSubmit } = await import("./poll-handler.ts");
-    const pollSessionId = Number(data.slice("poll_submit:".length));
-    return handlePollSubmit(ctx, pollSessionId);
-  }
-  if (data.startsWith("proj:")) {
+    return handlePollSubmit(ctx, Number(callbackPayload(data)));
+  },
+  project: async (ctx) => {
     const { handleProjectCallback } = await import("./commands/projects.ts");
     return handleProjectCallback(ctx);
-  }
-  if (data.startsWith("prov:")) {
+  },
+  provider: async (ctx) => {
     const { handleProviderCallback } = await import("./commands/providers.ts");
     return handleProviderCallback(ctx);
-  }
-  // Per-project provider/model selection. All three prefixes route to the same
-  // handler; it distinguishes them by the first segment.
-  if (data.startsWith("pmsel:") || data.startsWith("pmchg:") || data.startsWith("pmref:")) {
+  },
+  "project-model": async (ctx) => {
     const { handleProjectModelCallback } = await import("./commands/providers.ts");
     return handleProjectModelCallback(ctx);
-  }
-  if (data.startsWith("sess:delete:")) {
+  },
+  "delete-session": async (ctx) => {
     const { handleDeleteSession } = await import("./commands/session.ts");
     return handleDeleteSession(ctx);
-  }
-  if (data.startsWith("tmux:")) {
+  },
+  "tmux-action": async (ctx) => {
     const { handleTmuxActionCallback } = await import("./commands/tmux-actions.ts");
     return handleTmuxActionCallback(ctx);
-  }
-  if (data.startsWith("mon:")) {
+  },
+  monitor: async (ctx) => {
     const { handleMonitorCallback } = await import("./commands/monitor.ts");
     return handleMonitorCallback(ctx);
-  }
-  if (data.startsWith("sys:")) {
+  },
+  system: async (ctx) => {
     const { handleSystemCallback } = await import("./commands/system.ts");
     return handleSystemCallback(ctx);
-  }
-  if (data.startsWith("menu:")) {
+  },
+  menu: async (ctx) => {
     const { handleMenuCallback } = await import("./commands/menu.ts");
     return handleMenuCallback(ctx);
-  }
-  if (data.startsWith("sup:")) {
+  },
+  supervisor: async (ctx) => {
     const { handleSupervisorCallback } = await import("./commands/supervisor-actions.ts");
     return handleSupervisorCallback(ctx);
-  }
-  if (data.startsWith("tmuxlog:")) {
+  },
+  "tmux-log": async (ctx) => {
     const { handleTmuxLogCallback } = await import("./commands/tmux-log.ts");
     return handleTmuxLogCallback(ctx);
+  },
+};
+
+export async function handleCallbackQuery(
+  ctx: Context,
+  handlers: CallbackHandlers = defaultCallbackHandlers,
+): Promise<void> {
+  const data = ctx.callbackQuery?.data;
+  const route = routeCallback(data);
+  if (!route || !data) {
+    await ctx.answerCallbackQuery({ text: "Unknown action" });
+    return;
   }
-  await ctx.answerCallbackQuery({ text: "Unknown action" });
+  await handlers[route](ctx, data);
 }
 
 // FR-C-10: handle [Save] / [Reject] / [Edit name…] inline buttons on the
@@ -375,21 +385,5 @@ async function handleQuestionCallback(ctx: Context, data: string): Promise<void>
     return { status: "unknown" as const };
   });
 
-  switch (outcome.status) {
-    case "recorded":
-      await ctx.answerCallbackQuery({
-        text: outcome.complete ? `✅ ${outcome.label} — отправляю` : `✅ ${outcome.label}`,
-      }).catch(() => {});
-      return;
-    case "already-answered":
-      await ctx.answerCallbackQuery({ text: "Уже отвечено" }).catch(() => {});
-      return;
-    case "unknown":
-      // The session it belonged to is gone, or the wait timed out and the
-      // question went back to the terminal.
-      await ctx.answerCallbackQuery({ text: "Вопрос больше не ждёт ответа" }).catch(() => {});
-      return;
-    default:
-      await ctx.answerCallbackQuery({ text: "Не удалось записать ответ" }).catch(() => {});
-  }
+  await ctx.answerCallbackQuery({ text: answerToast(outcome) }).catch(() => {});
 }

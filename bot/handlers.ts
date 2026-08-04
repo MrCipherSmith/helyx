@@ -241,8 +241,11 @@ export function registerHandlers(b: Bot): void {
   b.command("topic_close", handleTopicClose);
   b.command("topic_reopen", handleTopicReopen);
 
-  // Inline keyboard callbacks (permissions, session switch)
-  b.on("callback_query:data", handleCallbackQuery);
+  // Inline keyboard callbacks (permissions, session switch).
+  // Wrapped rather than passed directly: the handler takes an injectable
+  // handler map as an optional second parameter, and grammy would hand it its
+  // own `next` there.
+  b.on("callback_query:data", (ctx) => handleCallbackQuery(ctx));
 
   // Media handlers
   b.on("message:photo", handlePhoto);

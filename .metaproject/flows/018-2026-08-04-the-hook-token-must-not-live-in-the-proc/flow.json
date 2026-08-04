@@ -3,9 +3,9 @@
   "id": "018",
   "slug": "the-hook-token-must-not-live-in-the-proc",
   "title": "the hook token must not live in the process argument list",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-04T08:16:41.405Z",
-  "updatedAt": "2026-08-04T08:30:52.429Z",
+  "updatedAt": "2026-08-04T14:11:48.665Z",
   "source": {
     "type": "description",
     "ref": null
@@ -34,7 +34,7 @@
     }
   },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/54"
   },
   "tasks": [
     {
@@ -116,7 +116,7 @@
       "id": "T6",
       "title": "hook uses --config",
       "kind": "implement",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -124,13 +124,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T7",
       "title": "tests",
       "kind": "implement",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -138,7 +139,8 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     }
   ],
   "history": [
@@ -234,6 +236,30 @@
       "at": "2026-08-04T08:30:52.429Z",
       "event": "ac-confirmed",
       "detail": "AC5: typecheck clean, lint 0 errors, 993 tests, dupes 2 documented"
+    },
+    {
+      "at": "2026-08-04T14:11:28.795Z",
+      "event": "task-done",
+      "detail": "T6: hook uses --config"
+    },
+    {
+      "at": "2026-08-04T14:11:28.883Z",
+      "event": "task-done",
+      "detail": "T7: tests"
+    },
+    {
+      "at": "2026-08-04T14:11:42.177Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/54 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-08-04T14:11:46.450Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-04T14:11:48.665Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
   ]
 }

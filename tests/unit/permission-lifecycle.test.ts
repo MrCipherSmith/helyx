@@ -45,8 +45,15 @@ afterEach(() => {
  * production value is ten minutes, which is the right wait for a human and an
  * impossible one for a test suite.
  */
-function ordinaryWorld(options: { permissionTimeoutMs?: number } = {}) {
+function ordinaryWorld(
+  options: { permissionTimeoutMs?: number; forumChatId?: string | null; forumTopicId?: number | null } = {},
+) {
+  // Forwarded rather than named one at a time: the first version of this
+  // helper took only the timeout and silently dropped everything else, so a
+  // test asking for forum mode got a plain world and failed on the production
+  // code rather than on its own setup.
   const world = makePermissionWorld({
+    ...options,
     permissionTimeoutMs: options.permissionTimeoutMs ?? 600,
   });
   world.db.program(DEDUP_QUERY, { rows: [] });
@@ -264,5 +271,50 @@ describe("the permission timeout", () => {
 
     expect(world.db.count(ANSWER_QUERY)).toBe(3);
     expect(world.status.isAwaiting(CHAT_ID)).toBe(false);
+  });
+});
+
+describe("where a permission prompt is sent", () => {
+  test("forum mode puts it in the project's topic", async () => {
+    // The rule used to be covered by a private copy of it in
+    // forum-topics.test.ts — a reimplementation that agreed with the handler by
+    // coincidence. A prompt in the wrong chat is a prompt the operator does
+    // not see, and the turn stops until it times out.
+    const world = ordinaryWorld({ forumChatId: "-100888", forumTopicId: 15 });
+    world.db.program(ANSWER_QUERY, { rows: [{ response: "allow" }] });
+
+    await new PermissionHandler(world.ctx as never, world.status.asStatusManager()).handle(params());
+
+    const sent = telegram.sent.at(-1)!;
+    expect(sent.chatId).toBe("-100888");
+    expect(sent.extra.message_thread_id).toBe(15);
+  });
+
+  test("without a topic it stays in the chat, with no thread", async () => {
+    // Both halves: a stray message_thread_id on a DM send is a 400 from
+    // Telegram, and the prompt never arrives at all.
+    const world = ordinaryWorld();
+    world.db.program(ANSWER_QUERY, { rows: [{ response: "allow" }] });
+
+    await new PermissionHandler(world.ctx as never, world.status.asStatusManager()).handle(params());
+
+    const sent = telegram.sent.at(-1)!;
+    expect(sent.chatId).toBe(CHAT_ID);
+    expect(sent.extra.message_thread_id).toBeUndefined();
+  });
+
+  test("a forum chat with no topic id resolved sends nothing to General", async () => {
+    // Half-configured is the dangerous state: the chat is a forum but the
+    // topic is unknown, and a send without a thread lands in General for
+    // everyone to read.
+    const world = ordinaryWorld({ forumChatId: "-100888", forumTopicId: null });
+    world.db.program(ANSWER_QUERY, { rows: [{ response: "allow" }] });
+
+    await new PermissionHandler(world.ctx as never, world.status.asStatusManager()).handle(params());
+
+    for (const message of telegram.sent) {
+      expect([message.chatId, message.extra.message_thread_id === undefined && message.chatId === "-100888"])
+        .toEqual([message.chatId, false]);
+    }
   });
 });

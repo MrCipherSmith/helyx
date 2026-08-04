@@ -3,9 +3,9 @@
   "id": "016",
   "slug": "what-is-worth-remembering-the-two-heuris",
   "title": "what is worth remembering: the two heuristics that decide what disappears",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-03T22:33:35.366Z",
-  "updatedAt": "2026-08-03T23:07:17.421Z",
+  "updatedAt": "2026-08-04T14:11:44.259Z",
   "source": {
     "type": "description",
     "ref": null
@@ -54,7 +54,7 @@
     }
   },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/52"
   },
   "tasks": [
     {
@@ -181,7 +181,7 @@
       "id": "T9",
       "title": "full gate",
       "kind": "implement",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -189,7 +189,8 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     }
   ],
   "history": [
@@ -335,6 +336,25 @@
       "at": "2026-08-03T23:07:17.421Z",
       "event": "ac-confirmed",
       "detail": "AC10: typecheck clean, lint 0 errors, 981 tests, dupes 2 documented, memory-triage 100% lines"
+    },
+    {
+      "at": "2026-08-04T14:11:28.705Z",
+      "event": "task-done",
+      "detail": "T9: full gate"
+    },
+    {
+      "at": "2026-08-04T14:11:38.070Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/52 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-08-04T14:11:42.264Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-04T14:11:44.259Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
   ]
 }

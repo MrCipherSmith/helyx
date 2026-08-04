@@ -19,6 +19,8 @@ import {
   allAnswered,
   MAX_CALLBACK_BYTES,
   type Question,
+  answerToast,
+  type PressOutcome,
 } from "../../utils/ask-question.ts";
 
 function hookPayload(overrides: Record<string, unknown> = {}): string {
@@ -262,5 +264,56 @@ describe("allAnswered", () => {
     // The first option is index 0, and a falsy check here would wait forever
     // for anyone who picked it.
     expect(allAnswered([0], 1)).toBe(true);
+  });
+});
+
+describe("what the operator sees on the button they pressed", () => {
+  test("every outcome has words", () => {
+    // A callback answer is the only acknowledgement a press ever gets. No
+    // toast means the button looks dead and gets pressed again — which is how
+    // one lost answer becomes three.
+    const outcomes: PressOutcome[] = [
+      { status: "recorded", label: "Да", complete: false },
+      { status: "recorded", label: "Да", complete: true },
+      { status: "not-ours" },
+      { status: "unknown" },
+      { status: "already-answered" },
+      { status: "expired" },
+      { status: "out-of-range" },
+    ];
+
+    for (const outcome of outcomes) {
+      const toast = answerToast(outcome);
+      expect([outcome.status, toast.length > 0]).toEqual([outcome.status, true]);
+    }
+  });
+
+  test("the last answer says the set is on its way", () => {
+    // The difference between "recorded, still waiting" and "recorded, the
+    // session is moving" is the whole reason the operator watches this toast.
+    expect(answerToast({ status: "recorded", label: "Кнопки", complete: true })).toContain("отправляю");
+    expect(answerToast({ status: "recorded", label: "Кнопки", complete: false })).not.toContain("отправляю");
+  });
+
+  test("the chosen option is named back", () => {
+    // Buttons are small and several look alike; the toast is what confirms
+    // which one was actually hit.
+    expect(answerToast({ status: "recorded", label: "Кнопки и маршрутизация", complete: false }))
+      .toContain("Кнопки и маршрутизация");
+  });
+
+  test("a second press on an answered question says so", () => {
+    expect(answerToast({ status: "already-answered" })).toBe("Уже отвечено");
+  });
+
+  test("a question that stopped waiting reads the same either way", () => {
+    // Expired and unknown differ in the database and not to the operator:
+    // both mean the press changed nothing and retyping is the way forward.
+    expect(answerToast({ status: "expired" })).toBe(answerToast({ status: "unknown" }));
+  });
+
+  test("anything else admits it failed rather than claiming success", () => {
+    expect(answerToast({ status: "out-of-range" })).toContain("Не удалось");
+    expect(answerToast({ status: "not-ours" })).toContain("Не удалось");
   });
 });
