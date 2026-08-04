@@ -23,7 +23,7 @@ import {
   PHASE_LABEL,
 } from "../utils/status-format.ts";
 import { HoldCounter } from "../utils/hold-counter.ts";
-import { escapeHtml } from "../utils/html.ts";
+import { renderStatus } from "../utils/status-render.ts";
 import { isRequeued, markRequeued } from "../utils/requeue.ts";
 
 export interface StatusContext {
@@ -67,12 +67,6 @@ interface SessionStats {
 }
 
 
-function normalizeStage(stage: string): string {
-  return stage.replace(/^⏳\s*/, "");
-}
-
-const STATUS_VISIBLE_LINES = 10;
-const STATUS_MAX_LINES = 40;
 const SPINNER_INTERVAL_ACTIVE_MS = 3_000;   // when monitor has been active recently
 const SPINNER_INTERVAL_IDLE_MS   = 15_000;  // when no monitor activity for >IDLE_THRESHOLD_MS
 const IDLE_THRESHOLD_MS          = 12_000;  // switch to idle after 12s of silence
@@ -81,43 +75,25 @@ interface StatusExtras {
   phaseEmoji?: string;
   toolCount?: number;
   fileCount?: number;
+  /** What the operator asked — the second half of the status is about this. */
+  question?: string | null;
 }
 
 function formatStatusText(stage: string, elapsed: string, tokens: string, paneSnapshot?: string | null, spinnerIcon?: string, extras?: StatusExtras): string {
-  const normalized = normalizeStage(stage);
-  const icon = spinnerIcon ?? SPINNER_FRAMES[0];
-  const phase = extras?.phaseEmoji ? ` ${extras.phaseEmoji}` : '';
-  const header = `${icon} <i>${elapsed}${tokens}</i>${phase}`;
-
-  let stageBody: string;
-  if (normalized.includes("\n")) {
-    const lines = normalized.split("\n").slice(0, STATUS_MAX_LINES);
-    const visible = lines.slice(0, STATUS_VISIBLE_LINES);
-    const hidden = lines.slice(STATUS_VISIBLE_LINES);
-    stageBody = `<blockquote>${escapeHtml(visible.join("\n"))}</blockquote>`;
-    if (hidden.length > 0) {
-      stageBody += `<blockquote><tg-spoiler>${escapeHtml(hidden.join("\n"))}</tg-spoiler></blockquote>`;
-    }
-  } else {
-    stageBody = `  ${escapeHtml(normalized)}`;
-  }
-
-  // Compute footer once; empty string if no tool activity yet
-  const footer = (extras?.toolCount ?? 0) > 0
-    ? `\n🔧 ${extras!.toolCount} tools · ${extras!.fileCount ?? 0} files`
-    : '';
-
-  // Path 1 — pane snapshot early return (must include footer)
-  if (paneSnapshot && paneSnapshot.trim()) {
-    const paneLines = paneSnapshot.trim().split("\n").slice(-6);
-    const paneText = escapeHtml(paneLines.join("\n"));
-    return `${header}\n${stageBody}\n<blockquote><tg-spoiler>🖥 ${paneText}</tg-spoiler></blockquote>${footer}`;
-  }
-
-  // Path 2/3 — preserve existing single-line compact vs multi-line distinction
-  return normalized.includes("\n")
-    ? `${header}\n${stageBody}${footer}`
-    : `${header}${stageBody}${footer}`;
+  // The rendering itself lives in utils/status-render.ts: it is pure, it is the
+  // part the operator actually reads, and it was previously reachable only by
+  // having a session produce output.
+  return renderStatus({
+    stage,
+    elapsed: `${elapsed}${tokens}`,
+    tokens: undefined,
+    pane: paneSnapshot,
+    spinner: spinnerIcon ?? SPINNER_FRAMES[0],
+    phaseEmoji: extras?.phaseEmoji,
+    toolCount: extras?.toolCount,
+    fileCount: extras?.fileCount,
+    question: extras?.question,
+  });
 }
 
 export class StatusManager {
@@ -131,6 +107,15 @@ export class StatusManager {
    */
   private awaitingPermission = new HoldCounter();
   private lastTokenInfo = new Map<string, string>();
+  /**
+   * What the operator asked, per chat.
+   *
+   * Shown in the statistics half of the status so the message says what it is
+   * working on rather than only how long it has been at it — a status that has
+   * been spinning for four minutes means something different depending on the
+   * question.
+   */
+  private currentQuestion = new Map<string, string>();
   private sessionStats = new Map<string, SessionStats>();
   private activeTyping = new Map<string, TypingHandle>();
   private readonly typingTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -553,6 +538,13 @@ export class StatusManager {
     `;
     const isActive = activeCheck.length === 0 || activeCheck[0].active_session_id === sessionId;
     return isActive ? "" : `📌 ${this.ctx.sessionName()} · `;
+  }
+
+  /** Record the request this chat's status is about. */
+  setQuestion(chatId: string, question: string | null | undefined): void {
+    const trimmed = question?.trim();
+    if (trimmed) this.currentQuestion.set(chatId, trimmed);
+    else this.currentQuestion.delete(chatId);
   }
 
   async sendStatusMessage(chatId: string, stage: string, replyToMsgId?: number): Promise<string | null> {

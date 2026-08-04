@@ -112,8 +112,11 @@ describe("parseLine — tool calls", () => {
   });
 
   test("a long bash command is truncated", () => {
-    const long = "x".repeat(100);
-    expect(parseLine(`● Bash(${long})`)).toBe(`● $ ${"x".repeat(60)}`);
+    // Widened by half when the status message grew: the operator reads this to
+    // see what the session is doing, and a command cut at sixty characters
+    // usually cut off the part that said what it was doing to.
+    const long = "x".repeat(200);
+    expect(parseLine(`● Bash(${long})`)).toBe(`● $ ${"x".repeat(90)}`);
   });
 });
 

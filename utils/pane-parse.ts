@@ -79,10 +79,10 @@ export function parseLine(line: string, options: ParseOptions = {}): string | nu
     if (call.includes("reply (MCP)") || call.includes("update_status")) return null;
 
     const agentMatch = call.match(/^(Explore|Agent)\((.+)\)/);
-    if (agentMatch) return `● ${agentMatch[1]}: ${agentMatch[2]!.slice(0, 50)}`;
+    if (agentMatch) return `● ${agentMatch[1]}: ${agentMatch[2]!.slice(0, 75)}`;
 
     const bashMatch = call.match(/^Bash\((.+)\)$/);
-    if (bashMatch) return `● $ ${bashMatch[1]!.slice(0, 60)}`;
+    if (bashMatch) return `● $ ${bashMatch[1]!.slice(0, 90)}`;
 
     const fileMatch = call.match(/^(Read|Edit|Write)\((.+)\)$/);
     if (fileMatch) return `● ${fileMatch[1]}: ${fileMatch[2]!.split("/").pop()}`;
@@ -90,7 +90,7 @@ export function parseLine(line: string, options: ParseOptions = {}): string | nu
     const mcpMatch = call.match(/^\S+\s*-\s*(\w+)\s*\(MCP\)/);
     if (mcpMatch) return `● MCP: ${mcpMatch[1]}`;
 
-    return `● ${call.slice(0, 60)}`;
+    return `● ${call.slice(0, 90)}`;
   }
 
   // Sub-operation: ⎿ details
@@ -102,14 +102,14 @@ export function parseLine(line: string, options: ParseOptions = {}): string | nu
     // starts with "Error:", so the two copies checking it first and last
     // produced the same answer. Pinned by a test rather than left to be
     // re-derived by whoever next moves it.
-    if (sub.startsWith("Error:")) return `  └ ❌ ${sub.slice(0, 55)}`;
+    if (sub.startsWith("Error:")) return `  └ ❌ ${sub.slice(0, 83)}`;
 
     const subTool = sub.match(/^(\w+)\((.+)\)/);
-    if (subTool) return `  └ ${subTool[1]}: ${subTool[2]!.slice(0, 50)}`;
+    if (subTool) return `  └ ${subTool[1]}: ${subTool[2]!.slice(0, 75)}`;
 
-    if (sub.match(/^(Read|Search|Grep|Glob|Write|Edit)\s/)) return `  └ ${sub.slice(0, 55)}`;
+    if (sub.match(/^(Read|Search|Grep|Glob|Write|Edit)\s/)) return `  └ ${sub.slice(0, 83)}`;
 
-    return `  └ ${sub.slice(0, 55)}`;
+    return `  └ ${sub.slice(0, 83)}`;
   }
 
   if (trimmed.match(/^\+\d+ more tool uses/)) return `  ${trimmed}`;
@@ -121,9 +121,9 @@ export function parseLine(line: string, options: ParseOptions = {}): string | nu
   if (agentTreeMatch) {
     const content = agentTreeMatch[1]!;
     if (content.match(/^⎿\s+/)) {
-      return `  │ ⎿ ${content.replace(/^⎿\s+/, "").slice(0, 55)}`;
+      return `  │ ⎿ ${content.replace(/^⎿\s+/, "").slice(0, 83)}`;
     }
-    return `  ${trimmed.slice(0, 65)}`;
+    return `  ${trimmed.slice(0, 98)}`;
   }
 
   if (trimmed.startsWith("Tip:")) return null;
@@ -132,7 +132,7 @@ export function parseLine(line: string, options: ParseOptions = {}): string | nu
 }
 
 /** How many status lines a block carries — enough for an agent tree with sub-agents. */
-export const MAX_STATUS_LINES = 12;
+export const MAX_STATUS_LINES = 18;
 
 /**
  * A multi-line status block from raw terminal output, or null if nothing in it
