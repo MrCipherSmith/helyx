@@ -10,6 +10,10 @@ import { appendLog } from "../utils/stats.ts";
 import { pendingInput, clearPendingInput, pendingToolInput, clearPendingTool, pendingScope, getBotRef } from "./handlers.ts";
 import { getSwitchContext, clearSwitchContext } from "./switch-cache.ts";
 import { replyInThread, escapeHtml } from "./format.ts";
+import { recordTypedAnswer, type AnswerScope } from "../services/ask-question.ts";
+import { answerToast } from "../utils/ask-question.ts";
+import { sendTelegramMessage, editTelegramMessage } from "../channel/telegram.ts";
+import { CONFIG } from "../config.ts";
 import { getForumChatId } from "./forum-cache.ts";
 import { enqueueForTopic, topicQueueKey } from "./topic-queue.ts";
 import { maybeAttachVoice } from "../utils/tts.ts";
@@ -71,6 +75,54 @@ export async function handleText(ctx: Context): Promise<void> {
   if (isForumMessage && (!forumTopicId || forumTopicId === 1)) {
     await replyInThread(ctx, "💡 General — только команды.\nОткрой топик проекта чтобы работать с сессией.");
     return;
+  }
+
+  // An answer the operator was asked to type.
+  //
+  // Checked before routing, because this message is not a new instruction: a
+  // question is waiting for exactly these words, and forwarding them to Claude
+  // as an ordinary message would leave the question waiting behind its own
+  // answer until it timed out.
+  //
+  // Placed after the forum resolution rather than before it, because the scope
+  // is the point: every topic shares one chat id, and without the project a
+  // message typed in one topic could answer a question waiting in another.
+  const answerScope: AnswerScope = isForumMessage && forumTopicId
+    ? await sql`SELECT path FROM projects WHERE forum_topic_id = ${forumTopicId}`
+        .then((rows): AnswerScope => {
+          const path = rows[0]?.path as string | undefined;
+          // An unmapped topic, or a lookup that failed, is not "no scope" — it
+          // is "scope unknown", and answering anything from there would let one
+          // topic consume another's question.
+          return path ? { kind: "project", path } : { kind: "unresolved" };
+        })
+        .catch((): AnswerScope => ({ kind: "unresolved" }))
+    : { kind: "chat" };
+
+  const typed = await recordTypedAnswer(
+    {
+      sql,
+      sendMessage: async (chat, body, extra) => {
+        const res = await sendTelegramMessage(CONFIG.TELEGRAM_BOT_TOKEN, chat, body, extra);
+        return { ok: res.ok, messageId: res.messageId };
+      },
+      editMessage: async (chat, messageId, body, extra) =>
+        editTelegramMessage(CONFIG.TELEGRAM_BOT_TOKEN, chat, messageId, body, { parse_mode: "HTML", ...extra }),
+    },
+    chatId,
+    text,
+    answerScope,
+  ).catch((err) => {
+    logger.error({ err, chatId }, "typed answer failed");
+    return null;
+  });
+
+  if (typed) {
+    await replyInThread(ctx, answerToast(typed));
+    // Only a refusal lets the message through as ordinary text: the question
+    // is still waiting, and swallowing it would lose both the answer and the
+    // message.
+    if (typed.status !== "out-of-range") return;
   }
 
   // Fire typing indicator immediately — user sees feedback before routeMessage DB query

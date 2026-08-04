@@ -12,7 +12,7 @@ import { getForumChatId } from "../bot/forum-cache.ts";
 import { escapeHtml } from "../bot/format.ts";
 import { CONFIG } from "../config.ts";
 import { sql } from "../memory/db.ts";
-import { parseHookInput, denyWithAnswers, ANSWER_TIMEOUT_MS } from "../utils/ask-question.ts";
+import { parseHookInput, denyWithAnswers, ANSWER_TIMEOUT_MS, type Answer } from "../utils/ask-question.ts";
 
 import { readOrCreateToken, tokenMatches } from "../utils/hook-token.ts";
 import { summaryFor } from "../utils/turn-summary.ts";
@@ -604,7 +604,7 @@ export function startMcpHttpServer(bot: Bot | null): ReturnType<typeof createSer
         req.on("aborted", onGone);
         res.on("close", onGone);
 
-        let answers: (number | null)[] | null = null;
+        let answers: Answer[] | null = null;
         try {
           answers = await runQuestionExchange(deps, input, {
             timeoutMs: ANSWER_TIMEOUT_MS,

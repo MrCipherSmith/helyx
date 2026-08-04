@@ -11,6 +11,7 @@ import {
   registerQuestions,
   waitForAnswers,
   recordAnswer,
+  recordTypedAnswer,
   resolveTarget,
   hasOpenQuestion,
   cancelRequest,
@@ -141,6 +142,7 @@ describe("registerQuestions", () => {
     expect(keyboard.map((b) => b.callback_data)).toEqual([
       `ask:${registered!.requestId}:0:0`,
       `ask:${registered!.requestId}:0:1`,
+      `ask:${registered!.requestId}:0:t`,
     ]);
   });
 
@@ -283,7 +285,9 @@ describe("recordAnswer", () => {
     // would lose an answer whenever two buttons are tapped at once.
     const update = world.db.matching(UPDATE_ANSWERS)[0]!;
     expect(update.text).toContain("jsonb_set");
-    expect(update.values).toEqual(["1", 1, "abcd1234"]);
+    // The question index appears twice: once to place the answer, once to
+    // clear this question's typing wait and no other's.
+    expect(update.values).toEqual(["1", 1, 1, "abcd1234"]);
   });
 
   test("complete only once every question has an answer", async () => {
@@ -761,9 +765,14 @@ describe("what Claude receives is what the row committed", () => {
 
   test("a claim that commits something unusable falls back to the terminal", async () => {
     // Handing Claude "(no answer)" for a slot is worse than asking again.
+    //
+    // The unusable value used to be a string. Since typed answers landed, a
+    // string *is* an answer — so this now uses something that is genuinely
+    // neither: an object, which no path can have written and no reader can
+    // turn into words or an index.
     const world = makeWorld();
     world.db.program(SELECT_ANSWERS, { rows: [{ answers: [0], expired_at: null }] });
-    world.db.program("SET answered_at = NOW()", { rows: [{ answers: ["nonsense"] }] });
+    world.db.program("SET answered_at = NOW()", { rows: [{ answers: [{ nonsense: true }] }] });
 
     expect(
       await waitForAnswers({ ...world.deps, now: () => 0, sleep: async () => {} }, "abcd1234", 1, 600_000),
@@ -816,5 +825,229 @@ describe("a failed edit is reported, not swallowed", () => {
     }
 
     expect(attempts).toBe(2);
+  });
+});
+
+describe("an answer the operator types", () => {
+  const QUESTIONS = [{ question: "Куда деплоить?", multiSelect: false, options: [{ label: "staging" }] }];
+
+  /** A request that has been told to expect words for question 0. */
+  function awaiting(world: World, row: Record<string, unknown> = {}) {
+    world.db.program("awaiting_question IS NOT NULL", {
+      rows: [{ id: "req1", questions: QUESTIONS, awaiting_question: 0, ...row }],
+    });
+    world.db.program("SET answers = jsonb_set", { rows: [{ answers: ["на прод"] }] });
+  }
+
+  test("pressing the button marks the question as waiting, without answering it", async () => {
+    // Nothing is recorded by the press. The answer is the message that
+    // follows, and saying otherwise would close the call on an empty slot.
+    const world = makeWorld();
+    world.db.program("SELECT questions, answers", { rows: [{ questions: QUESTIONS, answers: [], chat_id: "-100", message_ids: [700] }] });
+    world.db.program("SET awaiting_question", { rows: [{ id: "req1" }] });
+
+    const outcome = await recordAnswer(world.deps, "ask:req1:0:t");
+
+    expect(outcome.status).toBe("awaiting-text");
+    expect(world.db.count("SET awaiting_question")).toBe(1);
+    expect(world.db.count("SET answers = jsonb_set")).toBe(0);
+  });
+
+  test("the next message becomes the answer", async () => {
+    const world = makeWorld();
+    awaiting(world);
+
+    const outcome = await recordTypedAnswer(world.deps, "-100", "на прод");
+
+    expect(outcome).toEqual({ status: "recorded", label: "на прод", complete: true });
+  });
+
+  test("and stops the question waiting", async () => {
+    // Left set, the operator's *next* message would be eaten as an answer to
+    // a question already answered.
+    const world = makeWorld();
+    awaiting(world);
+
+    await recordTypedAnswer(world.deps, "-100", "на прод");
+
+    expect(world.db.matching("SET answers = jsonb_set")[0]!.text).toContain("awaiting_question = NULL");
+  });
+
+  test("a message with nothing waiting is not an answer", async () => {
+    // The ordinary case, and the one that must stay ordinary: null tells the
+    // caller to treat the message exactly as it always did.
+    const world = makeWorld();
+    world.db.program("awaiting_question IS NOT NULL", { rows: [] });
+
+    expect(await recordTypedAnswer(world.deps, "-100", "просто сообщение")).toBeNull();
+  });
+
+  test("an empty message is refused and the question keeps waiting", async () => {
+    // Accepting it would close the whole call with nothing in it: the operator
+    // said nothing while Claude was told they had.
+    const world = makeWorld();
+    awaiting(world);
+
+    const outcome = await recordTypedAnswer(world.deps, "-100", "   \n  ");
+
+    expect(outcome!.status).toBe("out-of-range");
+    expect(world.db.count("SET answers = jsonb_set")).toBe(0);
+  });
+
+  test("a request that ended between the press and the message is refused", async () => {
+    // The waiter is gone; telling the operator their words were sent would be
+    // a lie, and they would not retype them.
+    const world = makeWorld();
+    awaiting(world);
+    world.db.program("SET answers = jsonb_set", { rows: [] });
+    world.db.program("SELECT answered_at, expired_at", { rows: [{ answered_at: null, expired_at: new Date() }] });
+
+    expect((await recordTypedAnswer(world.deps, "-100", "на прод"))!.status).toBe("expired");
+  });
+
+  test("the answer is stored as words, not as an index", async () => {
+    // Stored as a number it would be read back as an option — and option "на
+    // прод" does not exist, so the answer would vanish into out-of-range.
+    const world = makeWorld();
+    awaiting(world);
+
+    await recordTypedAnswer(world.deps, "-100", "на прод");
+
+    const values = world.db.matching("SET answers = jsonb_set")[0]!.values;
+    expect(values).toContain("на прод");
+  });
+
+  test("the newest waiting request wins when there are two", async () => {
+    // Ordered by creation: the operator is answering the question they were
+    // just shown, not one they left open earlier.
+    const world = makeWorld();
+    awaiting(world);
+
+    await recordTypedAnswer(world.deps, "-100", "на прод");
+
+    expect(world.db.matching("awaiting_question IS NOT NULL")[0]!.text).toContain("ORDER BY created_at DESC");
+  });
+});
+
+describe("the waiting marker is cleared by everything that ends the wait", () => {
+  const QUESTIONS = [{ question: "Куда?", multiSelect: false, options: [{ label: "staging" }] }];
+
+  test("choosing an option clears its own question's wait", async () => {
+    // The operator can press "Свой ответ", change their mind and tap an
+    // option. Left set, their next ordinary message would overwrite the option
+    // they just chose and be swallowed on the way.
+    const world = makeWorld();
+    world.db.program("SELECT questions, answers", { rows: [{ questions: QUESTIONS, answers: [], chat_id: "-100", message_ids: [700] }] });
+    world.db.program("SET answers = jsonb_set", { rows: [{ answers: [0] }] });
+
+    await recordAnswer(world.deps, "ask:req1:0:0");
+
+    const written = world.db.matching("SET answers = jsonb_set")[0]!.text;
+    expect(written).toContain("awaiting_question");
+  });
+
+  test("but not another question's", async () => {
+    // Two questions, one of them typing: answering the other must not cancel
+    // the wait the operator is in the middle of.
+    const world = makeWorld();
+    world.db.program("SELECT questions, answers", { rows: [{ questions: [QUESTIONS[0], QUESTIONS[0]], answers: [], chat_id: "-100", message_ids: [700, 701] }] });
+    world.db.program("SET answers = jsonb_set", { rows: [{ answers: [null, 0] }] });
+
+    await recordAnswer(world.deps, "ask:req1:1:0");
+
+    const query = world.db.matching("SET answers = jsonb_set")[0]!;
+    expect(query.text).toContain("CASE WHEN awaiting_question");
+    expect(query.values).toContain(1);
+  });
+
+  test("claiming the answers clears it", async () => {
+    // Otherwise the marker outlives the request, and the operator's next
+    // message is eaten by a question that is already closed.
+    const world = makeWorld();
+    world.db.program(SELECT_ANSWERS, { rows: [{ answers: [0], expired_at: null }] });
+    world.db.program("SET answered_at = NOW()", { rows: [{ answers: [0] }] });
+
+    await waitForAnswers({ ...world.deps, now: () => 0, sleep: async () => {} }, "abcd1234", 1, 600_000);
+
+    expect(world.db.matching("SET answered_at = NOW()")[0]!.text).toContain("awaiting_question = NULL");
+  });
+
+  test("expiring clears it too", async () => {
+    const world = makeWorld();
+    world.db.program("SET expired_at = NOW()", { rows: [{ chat_id: "-100", questions: QUESTIONS, message_ids: [700] }] });
+
+    await expireRequest(world.deps, "abcd1234");
+
+    expect(world.db.matching("SET expired_at = NOW()")[0]!.text).toContain("awaiting_question = NULL");
+  });
+});
+
+describe("a typed answer belongs to the topic it was typed in", () => {
+  const QUESTIONS = [{ question: "Куда?", multiSelect: false, options: [{ label: "staging" }] }];
+
+  test("the project scopes the lookup", async () => {
+    // In a forum every topic shares one chat id. Matching on chat alone let
+    // words typed in one project's topic answer — and consume — a question
+    // waiting in another's: the operator answers a question they never saw,
+    // and the one in front of them is still waiting.
+    const world = makeWorld();
+    world.db.program("awaiting_question IS NOT NULL", {
+      rows: [{ id: "req1", questions: QUESTIONS, awaiting_question: 0 }],
+    });
+    world.db.program("SET answers = jsonb_set", { rows: [{ answers: ["на прод"] }] });
+
+    await recordTypedAnswer(world.deps, "-100", "на прод", { kind: "project", path: "/home/altsay/bots/helyx" });
+
+    const query = world.db.matching("awaiting_question IS NOT NULL")[0]!;
+    expect(query.text).toContain("project_path");
+    expect(query.values).toContain("/home/altsay/bots/helyx");
+  });
+
+  test("a direct message has no project and matches on the chat alone", async () => {
+    // Outside a forum there is one conversation and no topic to scope by;
+    // requiring a project there would answer nothing at all.
+    const world = makeWorld();
+    world.db.program("awaiting_question IS NOT NULL", {
+      rows: [{ id: "req1", questions: QUESTIONS, awaiting_question: 0 }],
+    });
+    world.db.program("SET answers = jsonb_set", { rows: [{ answers: ["на прод"] }] });
+
+    const outcome = await recordTypedAnswer(world.deps, "-100", "на прод", { kind: "chat" });
+
+    expect(outcome!.status).toBe("recorded");
+    expect(world.db.matching("awaiting_question IS NOT NULL")[0]!.values).toContain(null);
+  });
+
+
+  test("the request records the project it belongs to", async () => {
+    // What scopes a typed answer later. Stored as the hook's working
+    // directory and compared against `projects.path`, which is the same
+    // equality `resolveTarget` already depends on — so if the two ever drift,
+    // they drift together rather than only here.
+    const world = makeWorld();
+    withChat(world);
+
+    await registerQuestions(world.deps, hookInput());
+
+    const insert = world.db.matching("INSERT INTO question_requests")[0]!;
+    expect(insert.text).toContain("project_path");
+    expect(insert.values).toContain("/home/altsay/keryx");
+  });
+
+  test("a topic whose project cannot be resolved answers nothing", async () => {
+    // Not "no scope" but "scope unknown". Treated as no scope, an unmapped
+    // topic — or a lookup that simply failed — would consume whichever
+    // question in the whole forum happened to be newest, and the operator who
+    // was waiting on it would never be told.
+    const world = makeWorld();
+    world.db.program("awaiting_question IS NOT NULL", {
+      rows: [{ id: "req1", questions: QUESTIONS, awaiting_question: 0 }],
+    });
+
+    const outcome = await recordTypedAnswer(world.deps, "-100", "на прод", { kind: "unresolved" });
+
+    expect(outcome).toBeNull();
+    // And it did not even look: a query here is a question that could match.
+    expect(world.db.count("awaiting_question IS NOT NULL")).toBe(0);
   });
 });

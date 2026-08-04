@@ -861,6 +861,21 @@ const migrations: Migration[] = [
       `;
     },
   },
+  {
+    version: 48,
+    name: "question_requests.awaiting_question — which question wants typed words",
+    up: async (tx) => {
+      // Only questions with ready-made options reached Telegram; anything else
+      // was declined whole and asked in the terminal, where the operator cannot
+      // see it. A question worth asking is often one where none of the offered
+      // options is right, so the ones that stayed behind were the ones that
+      // mattered.
+      //
+      // One at a time per request: the operator types one message, and a second
+      // press replaces the first rather than queueing behind it.
+      await tx`ALTER TABLE question_requests ADD COLUMN IF NOT EXISTS awaiting_question INT`;
+    },
+  },
 ];
 
 // --- Public API ---
