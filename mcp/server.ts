@@ -15,13 +15,20 @@ import { sql } from "../memory/db.ts";
 import { parseHookInput, denyWithAnswers, ANSWER_TIMEOUT_MS } from "../utils/ask-question.ts";
 
 import { readOrCreateToken, tokenMatches } from "../utils/hook-token.ts";
-import { existsSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, chmodSync } from "fs";
 
 /** The shared secret, read once — created on first start by whichever side runs first. */
 const HOOK_TOKEN = readOrCreateToken(CONFIG.HOST_CLAUDE_CONFIG, {
   exists: existsSync,
   read: (path) => readFileSync(path, "utf-8"),
-  write: (path, contents) => writeFileSync(path, contents, { mode: 0o600 }),
+  write: (path, contents) => {
+    writeFileSync(path, contents, { mode: 0o600 });
+    // `mode` only applies when the file is created. An installation whose
+    // config or token predates this — or was written before the mode was set —
+    // would keep whatever permissions it had, which is the one thing this whole
+    // change is about.
+    chmodSync(path, 0o600);
+  },
 });
 
 /** A question payload is small; anything larger is not one. */

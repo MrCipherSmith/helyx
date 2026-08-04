@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "query": "flow-017 expire questions persistence message ids rollback",
-  "generatedAt": "2026-08-04T07:41:23.045Z",
+  "query": "flow-018 hook token argv",
+  "generatedAt": "2026-08-04T08:28:40.755Z",
   "results": [
     {
       "entry": {
@@ -34,15 +34,15 @@
         "supersedes": null,
         "supersededBy": null
       },
-      "score": 1.622,
+      "score": 1.897,
       "components": {
-        "relevance": 0.125,
+        "relevance": 0.4,
         "recency": 0.993,
         "confidence": 1,
         "status": 1,
         "scope": 0
       },
-      "reason": "matched 1/8 terms; status accepted; confidence high"
+      "reason": "matched 2/5 terms; status accepted; confidence high"
     },
     {
       "entry": {
@@ -75,15 +75,15 @@
         "supersedes": null,
         "supersededBy": null
       },
-      "score": 1.619,
+      "score": 1.694,
       "components": {
-        "relevance": 0.125,
+        "relevance": 0.2,
         "recency": 0.988,
         "confidence": 1,
         "status": 1,
         "scope": 0
       },
-      "reason": "matched 1/8 terms; status accepted; confidence high"
+      "reason": "matched 1/5 terms; status accepted; confidence high"
     },
     {
       "entry": {
@@ -116,15 +116,15 @@
         "supersedes": null,
         "supersededBy": null
       },
-      "score": 1.619,
+      "score": 1.694,
       "components": {
-        "relevance": 0.125,
+        "relevance": 0.2,
         "recency": 0.988,
         "confidence": 1,
         "status": 1,
         "scope": 0
       },
-      "reason": "matched 1/8 terms; status accepted; confidence high"
+      "reason": "matched 1/5 terms; status accepted; confidence high"
     }
   ]
 }

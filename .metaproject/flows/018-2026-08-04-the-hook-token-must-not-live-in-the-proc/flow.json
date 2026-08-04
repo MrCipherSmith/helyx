@@ -1,0 +1,239 @@
+{
+  "schemaVersion": 2,
+  "id": "018",
+  "slug": "the-hook-token-must-not-live-in-the-proc",
+  "title": "the hook token must not live in the process argument list",
+  "status": "in-progress",
+  "createdAt": "2026-08-04T08:16:41.405Z",
+  "updatedAt": "2026-08-04T08:30:52.429Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:0a16dd5c12684a5db742ebf759a787646e81de0b3d75ecfb70e2e34fb9607323",
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-04T08:30:52.252Z",
+      "note": "config written beside the token; both forced to 0600 by an explicit chmod after every write"
+    },
+    "AC2": {
+      "at": "2026-08-04T08:30:52.340Z",
+      "note": "an existing token is re-written and re-hardened, and gets a config; asserted through readOrCreateToken on a real 0644 file"
+    },
+    "AC3": {
+      "at": "2026-08-04T08:17:04.768Z",
+      "note": "the hook passes --config and exits 0 when it is unreadable; no -H carrying the token remains"
+    },
+    "AC4": {
+      "at": "2026-08-04T08:17:04.855Z",
+      "note": "curlConfigFor asserted to be exactly one header line"
+    },
+    "AC5": {
+      "at": "2026-08-04T08:30:52.429Z",
+      "note": "typecheck clean, lint 0 errors, 993 tests, dupes 2 documented"
+    }
+  },
+  "pr": {
+    "url": null
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T5",
+      "title": "curl config beside the token",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T6",
+      "title": "hook uses --config",
+      "kind": "implement",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T7",
+      "title": "tests",
+      "kind": "implement",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-04T08:16:41.405Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-04T08:16:41.500Z",
+      "event": "task-added",
+      "detail": "T5: curl config beside the token"
+    },
+    {
+      "at": "2026-08-04T08:16:41.585Z",
+      "event": "task-added",
+      "detail": "T6: hook uses --config"
+    },
+    {
+      "at": "2026-08-04T08:16:41.670Z",
+      "event": "task-added",
+      "detail": "T7: tests"
+    },
+    {
+      "at": "2026-08-04T08:16:41.755Z",
+      "event": "frozen",
+      "detail": "5 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-04T08:16:41.840Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-04T08:17:04.165Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-04T08:17:04.250Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-04T08:17:04.337Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-04T08:17:04.422Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-04T08:17:04.509Z",
+      "event": "task-done",
+      "detail": "T5: curl config beside the token"
+    },
+    {
+      "at": "2026-08-04T08:17:04.594Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: readOrCreateToken writes helyx-hook-curl.conf beside the token, both via the same 0600 writer"
+    },
+    {
+      "at": "2026-08-04T08:17:04.679Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: an existing token also gets a config written — asserted with a store pre-seeded with only the token"
+    },
+    {
+      "at": "2026-08-04T08:17:04.768Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: the hook passes --config and exits 0 when it is unreadable; no -H carrying the token remains"
+    },
+    {
+      "at": "2026-08-04T08:17:04.855Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: curlConfigFor asserted to be exactly one header line"
+    },
+    {
+      "at": "2026-08-04T08:17:04.941Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: typecheck clean, lint 0 errors, 991 tests, dupes 2 documented"
+    },
+    {
+      "at": "2026-08-04T08:30:52.252Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: config written beside the token; both forced to 0600 by an explicit chmod after every write"
+    },
+    {
+      "at": "2026-08-04T08:30:52.340Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: an existing token is re-written and re-hardened, and gets a config; asserted through readOrCreateToken on a real 0644 file"
+    },
+    {
+      "at": "2026-08-04T08:30:52.429Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: typecheck clean, lint 0 errors, 993 tests, dupes 2 documented"
+    }
+  ]
+}

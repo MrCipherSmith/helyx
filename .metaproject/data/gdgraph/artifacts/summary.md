@@ -2,30 +2,30 @@
 
 ## Stats
 
-- Source files indexed: 174
+- Source files indexed: 235
 - Imported asset files indexed: 2
-- Total nodes: 176
-- Edges: 457
-- Import edges: 455
+- Total nodes: 237
+- Edges: 565
+- Import edges: 563
 - Asset edges: 2
 - Unresolved imports: 0
 - Import resolution: 100%
-- Skipped generated/static directories: 9
+- Skipped generated/static directories: 11
 
 ## Top Modules
 
 | Module | Source Files |
 |---|---:|
+| tests | 62 |
+| dashboard | 39 |
+| utils | 39 |
 | bot | 37 |
-| dashboard | 35 |
-| tests | 27 |
-| utils | 21 |
+| services | 10 |
 | channel | 9 |
-| services | 9 |
+| scripts | 7 |
 | mcp | 6 |
 | memory | 6 |
-| scripts | 5 |
-| sessions | 4 |
+| sessions | 5 |
 | adapters | 3 |
 | orchestrator | 3 |
 | claude | 2 |
@@ -46,11 +46,13 @@
 
 - `.git`
 - `.metaproject`
+- `coverage`
 - `dashboard/dist`
 - `dashboard/node_modules`
 - `dashboard/public`
 - `dashboard/webapp/dist`
 - `dashboard/webapp/node_modules`
+- `logs/tmux-sessions/.metaproject`
 - `node_modules`
 - `tests/node_modules`
 
