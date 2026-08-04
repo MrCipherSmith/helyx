@@ -110,28 +110,61 @@ describe("tokenMatches", () => {
   });
 });
 
-describe("the writer the server supplies", () => {
-  test("an existing file is re-hardened, not left as it was found", async () => {
-    // writeFileSync's `mode` applies only when the file is created. A config
-    // written before the mode was set — or by an older version — would keep
-    // whatever permissions it had, which is the one thing this change is about.
-    const { mkdtempSync, writeFileSync, chmodSync, statSync } = await import("node:fs");
+describe("permissions, on a real filesystem, through readOrCreateToken", () => {
+  test("an existing token at 0644 is brought back to 0600", async () => {
+    // The path the previous attempt missed: when the token is already valid the
+    // function used to only read it, so the file kept whatever mode it had. And
+    // the test mirrored the writer instead of calling readOrCreateToken, so it
+    // never touched that branch and passed while the real case stayed open.
+    const { mkdtempSync, writeFileSync, chmodSync, readFileSync, existsSync, statSync } =
+      await import("node:fs");
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");
 
     const dir = mkdtempSync(join(tmpdir(), "helyx-token-"));
-    const path = join(dir, HOOK_TOKEN_FILE);
-    writeFileSync(path, "x".repeat(64), { mode: 0o644 });
-    expect(statSync(path).mode & 0o777).toBe(0o644);
+    const tokenPath = join(dir, HOOK_TOKEN_FILE);
+    const configPath = join(dir, HOOK_CURL_CONFIG_FILE);
+    writeFileSync(tokenPath, `${"a".repeat(64)}\n`, { mode: 0o644 });
+    expect(statSync(tokenPath).mode & 0o777).toBe(0o644);
 
-    // The writer the server supplies, mirrored here so the assertion is about
-    // behaviour rather than about the server module's import graph.
-    const write = (p: string, contents: string) => {
-      writeFileSync(p, contents, { mode: 0o600 });
-      chmodSync(p, 0o600);
+    // The production writer, verbatim.
+    const store = {
+      exists: existsSync,
+      read: (p: string) => readFileSync(p, "utf-8"),
+      write: (p: string, contents: string) => {
+        writeFileSync(p, contents, { mode: 0o600 });
+        chmodSync(p, 0o600);
+      },
     };
-    write(path, "y".repeat(64));
 
-    expect(statSync(path).mode & 0o777).toBe(0o600);
+    const token = readOrCreateToken(dir, store);
+
+    expect(token).toBe("a".repeat(64));
+    expect(statSync(tokenPath).mode & 0o777).toBe(0o600);
+    expect(statSync(configPath).mode & 0o777).toBe(0o600);
+    expect(readFileSync(configPath, "utf-8")).toContain("a".repeat(64));
+  });
+
+  test("a token created from scratch is 0600 and keeps its config beside it", async () => {
+    const { mkdtempSync, writeFileSync, chmodSync, readFileSync, existsSync, statSync } =
+      await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+
+    const dir = mkdtempSync(join(tmpdir(), "helyx-token-"));
+    const store = {
+      exists: existsSync,
+      read: (p: string) => readFileSync(p, "utf-8"),
+      write: (p: string, contents: string) => {
+        writeFileSync(p, contents, { mode: 0o600 });
+        chmodSync(p, 0o600);
+      },
+    };
+
+    const token = readOrCreateToken(dir, store)!;
+
+    expect(token.length).toBeGreaterThanOrEqual(32);
+    expect(statSync(join(dir, HOOK_TOKEN_FILE)).mode & 0o777).toBe(0o600);
+    expect(statSync(join(dir, HOOK_CURL_CONFIG_FILE)).mode & 0o777).toBe(0o600);
   });
 });

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "query": "hook token curl configuration security migration",
-  "generatedAt": "2026-08-04T08:18:05.786Z",
+  "query": "hook token config permissions chmod argv ask-question-hook",
+  "generatedAt": "2026-08-04T08:23:16.354Z",
   "results": [
     {
       "entry": {
@@ -34,15 +34,15 @@
         "supersedes": null,
         "supersededBy": null
       },
-      "score": 1.663,
+      "score": 1.622,
       "components": {
-        "relevance": 0.167,
+        "relevance": 0.125,
         "recency": 0.993,
         "confidence": 1,
         "status": 1,
         "scope": 0
       },
-      "reason": "matched 1/6 terms; status accepted; confidence high"
+      "reason": "matched 1/8 terms; status accepted; confidence high"
     }
   ]
 }

@@ -59,6 +59,12 @@ export function readOrCreateToken(
       // A blank or truncated file is replaced rather than trusted: a token
       // short enough to guess is worse than no token, because it looks like one.
       if (existing.length >= 32) {
+        // Rewritten, not merely read. The store's write is what applies the
+        // permissions, and a token file created before this code — or by an
+        // older version — keeps whatever mode it had until something sets it.
+        // Re-writing identical content is the cheapest way to be sure, and it
+        // runs once at startup.
+        store.write(path, `${existing}\n`);
         // Written every time rather than only on creation: an installation that
         // predates the config file has a token and no way for the hook to send
         // it, and would silently stop asking questions.

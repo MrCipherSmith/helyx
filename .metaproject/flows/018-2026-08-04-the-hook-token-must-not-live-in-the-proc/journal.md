@@ -60,3 +60,16 @@ the file and ignores it otherwise. A config or token that already existed with
 looser permissions kept them — which is precisely and only what this change was
 about. An explicit `chmodSync` follows every write now, and a test starts from
 0644 on a real file and asserts it ends at 0600.
+
+The second round found the same thing still open, and it was fair. When the
+token was already valid the function only *read* it, so the file kept whatever
+mode it had — the config was hardened and the secret itself was not. And my test
+mirrored the writer rather than calling `readOrCreateToken`, so it never entered
+that branch and passed while the real case stayed open. That is the same defect
+as the UTF-8 test in flow 014 and the three boundary tests in flow 016: the test
+exercised the shape of the case instead of the case.
+
+Now the existing token is re-written with identical content, which is what
+applies the permissions, and the tests go through `readOrCreateToken` against a
+real filesystem starting from 0644. Mutation-checked: remove the re-write and
+one test fails.
