@@ -10,7 +10,7 @@ import { appendLog } from "../utils/stats.ts";
 import { pendingInput, clearPendingInput, pendingToolInput, clearPendingTool, pendingScope, getBotRef } from "./handlers.ts";
 import { getSwitchContext, clearSwitchContext } from "./switch-cache.ts";
 import { replyInThread, escapeHtml } from "./format.ts";
-import { recordTypedAnswer } from "../services/ask-question.ts";
+import { recordTypedAnswer, type AnswerScope } from "../services/ask-question.ts";
 import { answerToast } from "../utils/ask-question.ts";
 import { sendTelegramMessage, editTelegramMessage } from "../channel/telegram.ts";
 import { CONFIG } from "../config.ts";
@@ -87,11 +87,17 @@ export async function handleText(ctx: Context): Promise<void> {
   // Placed after the forum resolution rather than before it, because the scope
   // is the point: every topic shares one chat id, and without the project a
   // message typed in one topic could answer a question waiting in another.
-  const answeringProject = isForumMessage && forumTopicId
+  const answerScope: AnswerScope = isForumMessage && forumTopicId
     ? await sql`SELECT path FROM projects WHERE forum_topic_id = ${forumTopicId}`
-        .then((rows) => (rows[0]?.path as string | undefined) ?? null)
-        .catch(() => null)
-    : null;
+        .then((rows): AnswerScope => {
+          const path = rows[0]?.path as string | undefined;
+          // An unmapped topic, or a lookup that failed, is not "no scope" — it
+          // is "scope unknown", and answering anything from there would let one
+          // topic consume another's question.
+          return path ? { kind: "project", path } : { kind: "unresolved" };
+        })
+        .catch((): AnswerScope => ({ kind: "unresolved" }))
+    : { kind: "chat" };
 
   const typed = await recordTypedAnswer(
     {
@@ -105,7 +111,7 @@ export async function handleText(ctx: Context): Promise<void> {
     },
     chatId,
     text,
-    answeringProject,
+    answerScope,
   ).catch((err) => {
     logger.error({ err, chatId }, "typed answer failed");
     return null;

@@ -363,6 +363,19 @@ async function awaitTypedAnswer(
 }
 
 /**
+ * Where a typed message is allowed to answer.
+ *
+ * `chat` is a direct conversation: one thread, nothing to scope by. `project`
+ * is a forum topic that resolved. `unresolved` is a forum topic that did not,
+ * and it answers nothing — the alternative is answering whichever question in
+ * the whole forum happens to be newest.
+ */
+export type AnswerScope =
+  | { kind: "chat" }
+  | { kind: "project"; path: string }
+  | { kind: "unresolved" };
+
+/**
  * Take the operator's typed message as the answer to whatever awaits it.
  *
  * Returns null when nothing was waiting, which is the ordinary case and means
@@ -372,21 +385,29 @@ export async function recordTypedAnswer(
   deps: AskDeps,
   chatId: string,
   text: string,
-  projectPath?: string | null,
+  scope: AnswerScope = { kind: "chat" },
 ): Promise<AnswerOutcome | null> {
   const trimmed = text.trim();
 
-  // Scoped to the project when there is one.
+  // Scoped to the project, and the scope is explicit.
   //
   // In a forum every topic shares one chat id, so matching on chat alone let
   // words typed in one project's topic answer — and consume — a question
   // waiting in another's. The operator would have answered a question they
-  // never saw, and the question they were looking at would still be waiting.
+  // never saw, and the one in front of them would still be waiting.
+  //
+  // A nullable path said "no project" for two different situations: a direct
+  // chat, where there is nothing to scope by, and a forum topic whose project
+  // could not be resolved — which must answer nothing rather than everything.
+  // They are separate cases here so neither can be mistaken for the other.
+  if (scope.kind === "unresolved") return null;
+  const projectPath = scope.kind === "project" ? scope.path : null;
+
   const rows = await deps.sql`
     SELECT id, questions, awaiting_question
       FROM question_requests
      WHERE chat_id = ${chatId}
-       AND (${projectPath ?? null}::text IS NULL OR project_path = ${projectPath ?? null})
+       AND (${projectPath}::text IS NULL OR project_path = ${projectPath})
        AND awaiting_question IS NOT NULL
        AND answered_at IS NULL AND expired_at IS NULL
      ORDER BY created_at DESC

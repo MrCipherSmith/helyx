@@ -996,7 +996,7 @@ describe("a typed answer belongs to the topic it was typed in", () => {
     });
     world.db.program("SET answers = jsonb_set", { rows: [{ answers: ["на прод"] }] });
 
-    await recordTypedAnswer(world.deps, "-100", "на прод", "/home/altsay/bots/helyx");
+    await recordTypedAnswer(world.deps, "-100", "на прод", { kind: "project", path: "/home/altsay/bots/helyx" });
 
     const query = world.db.matching("awaiting_question IS NOT NULL")[0]!;
     expect(query.text).toContain("project_path");
@@ -1012,9 +1012,26 @@ describe("a typed answer belongs to the topic it was typed in", () => {
     });
     world.db.program("SET answers = jsonb_set", { rows: [{ answers: ["на прод"] }] });
 
-    const outcome = await recordTypedAnswer(world.deps, "-100", "на прод", null);
+    const outcome = await recordTypedAnswer(world.deps, "-100", "на прод", { kind: "chat" });
 
     expect(outcome!.status).toBe("recorded");
     expect(world.db.matching("awaiting_question IS NOT NULL")[0]!.values).toContain(null);
+  });
+
+  test("a topic whose project cannot be resolved answers nothing", async () => {
+    // Not "no scope" but "scope unknown". Treated as no scope, an unmapped
+    // topic — or a lookup that simply failed — would consume whichever
+    // question in the whole forum happened to be newest, and the operator who
+    // was waiting on it would never be told.
+    const world = makeWorld();
+    world.db.program("awaiting_question IS NOT NULL", {
+      rows: [{ id: "req1", questions: QUESTIONS, awaiting_question: 0 }],
+    });
+
+    const outcome = await recordTypedAnswer(world.deps, "-100", "на прод", { kind: "unresolved" });
+
+    expect(outcome).toBeNull();
+    // And it did not even look: a query here is a question that could match.
+    expect(world.db.count("awaiting_question IS NOT NULL")).toBe(0);
   });
 });
