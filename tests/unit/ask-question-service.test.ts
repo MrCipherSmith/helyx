@@ -1018,6 +1018,22 @@ describe("a typed answer belongs to the topic it was typed in", () => {
     expect(world.db.matching("awaiting_question IS NOT NULL")[0]!.values).toContain(null);
   });
 
+
+  test("the request records the project it belongs to", async () => {
+    // What scopes a typed answer later. Stored as the hook's working
+    // directory and compared against `projects.path`, which is the same
+    // equality `resolveTarget` already depends on — so if the two ever drift,
+    // they drift together rather than only here.
+    const world = makeWorld();
+    withChat(world);
+
+    await registerQuestions(world.deps, hookInput());
+
+    const insert = world.db.matching("INSERT INTO question_requests")[0]!;
+    expect(insert.text).toContain("project_path");
+    expect(insert.values).toContain("/home/altsay/keryx");
+  });
+
   test("a topic whose project cannot be resolved answers nothing", async () => {
     // Not "no scope" but "scope unknown". Treated as no scope, an unmapped
     // topic — or a lookup that simply failed — would consume whichever
