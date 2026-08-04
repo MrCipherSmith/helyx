@@ -441,6 +441,24 @@ export async function generateResponse(
   }
 }
 
+/**
+ * Coerce an LLM-produced summary payload into the shape callers expect.
+ *
+ * The model is asked for `{ summary, facts: string[] }`, but at runtime it may
+ * omit `facts`, return `facts: null`, or mix in non-strings. Returning the raw
+ * `JSON.parse` result meant `facts` was `undefined` downstream and `facts.filter`
+ * threw — crashing the disconnect handoff. This guarantees `facts` is always a
+ * string array no matter what the model emitted.
+ */
+export function normalizeSummaryResult(parsed: unknown): { summary: string; facts: string[] } {
+  const obj = (parsed && typeof parsed === "object" ? parsed : {}) as Record<string, unknown>;
+  const rawFacts = obj.facts;
+  return {
+    summary: typeof obj.summary === "string" ? obj.summary : String(obj.summary ?? ""),
+    facts: Array.isArray(rawFacts) ? rawFacts.filter((f): f is string => typeof f === "string") : [],
+  };
+}
+
 export async function summarizeConversation(
   messages: { role: string; content: string }[],
 ): Promise<{ summary: string; facts: string[] }> {
@@ -481,7 +499,7 @@ ${formatted}`;
       if (res.ok) {
         const data = (await res.json()) as any;
         const text = stripReasoning(data.message?.content ?? "");
-        try { return JSON.parse(text); } catch { /* fall through to main model */ }
+        try { return normalizeSummaryResult(JSON.parse(text)); } catch { /* fall through to main model */ }
       }
     } catch { /* timeout or connection error — fall through to main model */ }
   }
@@ -492,7 +510,7 @@ ${formatted}`;
   );
 
   try {
-    return JSON.parse(response);
+    return normalizeSummaryResult(JSON.parse(response));
   } catch {
     return { summary: response, facts: [] };
   }

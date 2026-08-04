@@ -119,3 +119,6 @@ pointing it at a wrong one: nine of sixteen tests fail.
 - 2026-08-03T21:38:09.985Z - ac-confirmed: AC5: parseOpenAiChunk returns null on unparseable; asserted end to end with a truncated chunk mid-stream
 - 2026-08-03T21:38:10.262Z - ac-confirmed: AC6: sixteen tests drive the loops; the helper requires the endpoint and the guard was checked by pointing it at a wrong one
 - 2026-08-03T21:38:10.465Z - ac-confirmed: AC8: typecheck clean, lint 0 errors, 935 tests, dupes 1, claude/client.ts 40.31% lines
+- 2026-08-04T20:45:19.213Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/50 (warning: PR is not a draft)
+- 2026-08-04T20:45:19.313Z - completing
+- 2026-08-04T20:45:21.055Z - done: all gates passed

@@ -3,9 +3,9 @@
   "id": "012",
   "slug": "deliver-claude-s-questions-to-telegram-a",
   "title": "deliver Claude's questions to Telegram and answer them from there",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-03T14:55:20.973Z",
-  "updatedAt": "2026-08-03T15:55:46.188Z",
+  "updatedAt": "2026-08-04T20:45:05.806Z",
   "source": {
     "type": "description",
     "ref": null
@@ -74,7 +74,7 @@
     }
   },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/48"
   },
   "tasks": [
     {
@@ -496,6 +496,20 @@
       "at": "2026-08-03T15:55:46.188Z",
       "event": "ac-confirmed",
       "detail": "AC15: typecheck clean, lint 0 errors, 875 tests pass, dupes 1"
+    },
+    {
+      "at": "2026-08-04T20:45:03.931Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/48 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-08-04T20:45:04.031Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-04T20:45:05.806Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
   ]
 }
