@@ -9,6 +9,8 @@ import {
   isPermissionPrompt,
   SPINNER_FRAMES,
   SPINNER_STALE_MS,
+  scrapeTokenInfo,
+  TOKEN_INFO_MAX_CHARS,
 } from "../../utils/status-format.ts";
 import { parseStatus } from "../../utils/pane-parse.ts";
 
@@ -354,5 +356,32 @@ describe("resolvePhase — the latch outranks the classifier", () => {
     // The latch is what makes the signal reachable in production; it is not
     // the only thing that can produce it.
     expect(resolvePhase("Do you want to proceed?\n❯ 1. Yes", false)).toBe("waiting");
+  });
+});
+
+describe("scrapeTokenInfo", () => {
+  test("pulls the count out of a status line", () => {
+    expect(scrapeTokenInfo("✻ Thinking… (2m 26s · ↓ 12.4k tokens · esc to interrupt)")).toBe("12.4k tokens");
+  });
+
+  test("no count, no value", () => {
+    expect(scrapeTokenInfo("✻ Thinking… (2m 26s · esc to interrupt)")).toBeNull();
+    expect(scrapeTokenInfo("")).toBeNull();
+  });
+
+  test("a redraw artefact is cut down to size", () => {
+    // `[\d.]+` matches a thousand digits as happily as three. What it captures
+    // is kept in a map that outlives the turn and is later added to the status
+    // header — outside the work budget, where nothing below can compensate for
+    // it, and an over-long message is rejected rather than trimmed.
+    const scraped = scrapeTokenInfo(`↓ ${"9".repeat(4097)} tokens`);
+    expect(scraped).not.toBeNull();
+    expect(scraped!.length).toBe(TOKEN_INFO_MAX_CHARS);
+  });
+
+  test("an ordinary count is not clipped", () => {
+    // The other side of the bound: a real value must survive it whole.
+    expect(scrapeTokenInfo("↓ 1.2M tokens")).toBe("1.2M tokens");
+    expect(TOKEN_INFO_MAX_CHARS).toBeGreaterThan("1.2M tokens".length);
   });
 });

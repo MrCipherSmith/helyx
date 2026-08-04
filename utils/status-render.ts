@@ -72,13 +72,46 @@ export interface StatusParts {
 
 /** A question longer than this is a paragraph, not a heading. */
 const QUESTION_PREVIEW = 120;
+/** And this is what it may cost once escaped — 120 ampersands are 600 characters. */
+export const QUESTION_BUDGET_CHARS = 200;
 
 /**
- * Keep the last lines that fit in `budget`.
+ * Cut escaped text to length without splitting an entity.
+ *
+ * The cut has to happen after escaping — see `escaped()` — and a slice through
+ * `&amp;` leaves `&am`, which Telegram either renders as literal text or, worse,
+ * reads as the start of an entity that swallows what follows.
+ */
+export function clampEscaped(html: string, max: number): string {
+  if (max <= 0) return "";
+  if (html.length <= max) return html;
+  const cut = html.slice(0, Math.max(0, max - 1)).replace(/&[#a-zA-Z0-9]*$/, "");
+  return `${cut}…`;
+}
+
+/**
+ * Escape, and only then measure.
+ *
+ * Everything here is budgeted against its *escaped* length rather than its raw
+ * one. `&` becomes `&amp;` and `<` becomes `&lt;`, so a line of ampersands is
+ * five times longer once it reaches Telegram than it looks here — 3,400 of them
+ * rendered as 17,010 characters against a 4,096 limit, and the message was
+ * simply rejected. Terminal output is exactly where a run of ampersands comes
+ * from.
+ */
+function escaped(text: string): string {
+  return escapeHtml(text);
+}
+
+/**
+ * Keep the last escaped lines that fit in `budget`.
  *
  * The *last*, deliberately. When there is more than fits, the useful end is the
  * recent one: the operator is watching what the session is doing now, and the
  * oldest line is the one they have already read.
+ *
+ * Lines must already be escaped: the budget is the length that will reach
+ * Telegram, not the length before escaping inflates it.
  */
 export function tailWithinBudget(lines: readonly string[], budget: number): string[] {
   const kept: string[] = [];
@@ -92,32 +125,31 @@ export function tailWithinBudget(lines: readonly string[], budget: number): stri
   }
   // Never return nothing at all: one truncated line says more than an empty box.
   if (kept.length === 0 && lines.length > 0) {
-    return [lines[lines.length - 1]!.slice(0, Math.max(0, budget))];
+    return [clampEscaped(lines[lines.length - 1]!, Math.max(0, budget))];
   }
   return kept;
-}
-
-/** Cut to length, marking the cut so a trimmed value does not read as a whole one. */
-function clamp(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
 /** The statistics line — the part read at a glance rather than followed. */
 export function renderStats(parts: StatusParts): string {
   const bits: string[] = [];
-  if (parts.tokens) bits.push(clamp(parts.tokens.replace(/^\s*·\s*/, "").trim(), HEADER_BUDGET_CHARS));
+  if (parts.tokens) {
+    bits.push(clampEscaped(escaped(parts.tokens.replace(/^\s*·\s*/, "").trim()), HEADER_BUDGET_CHARS));
+  }
   if ((parts.toolCount ?? 0) > 0) {
+    // Ours, and numbers — nothing to escape.
     bits.push(`🔧 ${parts.toolCount} tools · ${parts.fileCount ?? 0} files`);
   }
 
   const question = parts.question?.trim();
   const lines: string[] = [];
   if (question) {
-    const preview =
-      question.length > QUESTION_PREVIEW ? `${question.slice(0, QUESTION_PREVIEW - 1)}…` : question;
-    // The question is the operator's own words, so it is escaped like any other
-    // text that is not ours.
-    lines.push(`❓ <i>${escapeHtml(preview.replace(/\s+/g, " "))}</i>`);
+    // Twice over: `QUESTION_PREVIEW` is about what is readable at a glance and
+    // is counted in the operator's characters, while `QUESTION_BUDGET_CHARS` is
+    // about what fits in the message and is counted after escaping.
+    const preview = question.slice(0, QUESTION_PREVIEW).replace(/\s+/g, " ");
+    const marker = question.length > QUESTION_PREVIEW ? "…" : "";
+    lines.push(`❓ <i>${clampEscaped(escaped(preview) + marker, QUESTION_BUDGET_CHARS)}</i>`);
   }
   if (bits.length > 0) lines.push(bits.join(" · "));
 
@@ -136,7 +168,7 @@ export function renderStatus(parts: StatusParts): string {
   const phase = parts.phaseEmoji ? ` ${parts.phaseEmoji}` : "";
   // Bounded and escaped: this is caller text, it carries the scraped token
   // count, and it sits outside the work budget.
-  const elapsed = escapeHtml(clamp(parts.elapsed, HEADER_BUDGET_CHARS));
+  const elapsed = clampEscaped(escaped(parts.elapsed), HEADER_BUDGET_CHARS);
   const header = `${icon} <i>${elapsed}</i>${phase}`.trim();
 
   const stats = renderStats(parts);
@@ -150,8 +182,8 @@ export function renderStatus(parts: StatusParts): string {
   let remaining = WORK_BUDGET_CHARS;
   let paneBlock = "";
   if (paneLines.length > 0) {
-    const kept = tailWithinBudget(paneLines, Math.floor(WORK_BUDGET_CHARS / 2));
-    const text = escapeHtml(kept.join("\n"));
+    const kept = tailWithinBudget(paneLines.map(escaped), Math.floor(WORK_BUDGET_CHARS / 2));
+    const text = kept.join("\n");
     paneBlock = `\n<pre>${text}</pre>`;
     remaining -= text.length;
   }
@@ -162,16 +194,16 @@ export function renderStatus(parts: StatusParts): string {
     // whatever the caller passes, and from the tmux spinner text, which is
     // whatever the terminal drew — neither is bounded, and a message over the
     // limit is rejected rather than trimmed.
-    const single = tailWithinBudget([activity], Math.max(0, remaining))[0] ?? "";
-    const body = single.trim() ? `\n${escapeHtml(single)}` : "";
+    const single = tailWithinBudget([escaped(activity)], Math.max(0, remaining))[0] ?? "";
+    const body = single.trim() ? `\n${single}` : "";
     return `${header}${body}${paneBlock}${statsBlock}`;
   }
 
   const lines = activity.split("\n").slice(-ACTIVITY_LINES);
-  const kept = tailWithinBudget(lines, Math.max(0, remaining));
+  const kept = tailWithinBudget(lines.map(escaped), Math.max(0, remaining));
   // Expandable: the whole thing is in the message and the message stays short
   // until the operator asks for it.
-  const work = `\n<blockquote expandable>${escapeHtml(kept.join("\n"))}</blockquote>`;
+  const work = `\n<blockquote expandable>${kept.join("\n")}</blockquote>`;
 
   return `${header}${work}${paneBlock}${statsBlock}`;
 }
