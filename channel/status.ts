@@ -542,9 +542,13 @@ export class StatusManager {
 
   /** Record the request this chat's status is about. */
   setQuestion(chatId: string, question: string | null | undefined): void {
+    // The same key everything else in this class uses. In forum mode the state
+    // is keyed by chat *and* topic, so storing this under the bare chat id
+    // would file it where nothing looks for it.
+    const key = this.stateKey(chatId);
     const trimmed = question?.trim();
-    if (trimmed) this.currentQuestion.set(chatId, trimmed);
-    else this.currentQuestion.delete(chatId);
+    if (trimmed) this.currentQuestion.set(key, trimmed);
+    else this.currentQuestion.delete(key);
   }
 
   async sendStatusMessage(chatId: string, stage: string, replyToMsgId?: number): Promise<string | null> {
@@ -584,7 +588,12 @@ export class StatusManager {
 
     try {
       const t0 = Date.now();
-      const initialText = formatStatusText(`${prefix}${stage}`, "0s", "", null, SPINNER_FRAMES[0]);
+      // The question belongs on the first render too. The poller records it
+      // before the status is created, so leaving it out here means the message
+      // spends its first seconds unable to say what it is working on.
+      const initialText = formatStatusText(`${prefix}${stage}`, "0s", "", null, SPINNER_FRAMES[0], {
+        question: this.currentQuestion.get(key),
+      });
       const extra: Record<string, unknown> = {
         parse_mode: "HTML",
         ...(forum?.extra ?? {}),
@@ -798,6 +807,7 @@ export class StatusManager {
       phaseEmoji: phase ? PHASE_LABEL[phase] : undefined,
       toolCount: state.turnToolCount,
       fileCount: state.turnFileCount,
+      question: this.currentQuestion.get(key),
     };
 
     // SU-1: compute signature from CONTENT ONLY, excluding the spinner icon.
@@ -848,6 +858,9 @@ export class StatusManager {
   async deleteStatusMessage(chatId: string): Promise<void> {
     this.disarmResponseGuard(chatId); // reply received — cancel fallback
     const key = this.stateKey(chatId);
+    // The turn is over, so the question it was about is too. Left behind, it
+    // would head the next turn's status with the previous turn's request.
+    this.currentQuestion.delete(key);
 
     // Bump generation so any in-flight sendStatusMessage that resolves late will
     // see a mismatch and self-delete its orphan message instead of registering it.

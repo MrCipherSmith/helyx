@@ -143,6 +143,26 @@ describe("the message always fits", () => {
     expect(out).toContain("step 199");
   });
 
+  test("a single enormous line is budgeted too", () => {
+    // update_status takes whatever the caller passes and the tmux spinner text
+    // is whatever the terminal drew. Neither is bounded, and Telegram rejects
+    // an over-long message rather than trimming it.
+    const out = renderStatus({ ...base, stage: "x".repeat(4097) });
+    expect(out.length).toBeLessThan(TELEGRAM_MAX_CHARS);
+  });
+
+  test("a single enormous line plus a pane and stats still fits", () => {
+    const out = renderStatus({
+      ...base,
+      stage: "x".repeat(9000),
+      pane: Array.from({ length: 50 }, () => "y".repeat(300)).join("\n"),
+      question: "z".repeat(500),
+      toolCount: 42,
+      fileCount: 7,
+    });
+    expect(out.length).toBeLessThan(TELEGRAM_MAX_CHARS);
+  });
+
   test("the budget leaves room for everything else", () => {
     expect(WORK_BUDGET_CHARS).toBeLessThan(TELEGRAM_MAX_CHARS);
     expect(TELEGRAM_MAX_CHARS - WORK_BUDGET_CHARS).toBeGreaterThan(500);

@@ -138,7 +138,12 @@ export function renderStatus(parts: StatusParts): string {
 
   const activity = parts.stage.replace(/^⏳\s*/, "");
   if (!activity.includes("\n")) {
-    const body = activity.trim() ? `\n${escapeHtml(activity)}` : "";
+    // Budgeted too. A one-line stage comes from `update_status`, which takes
+    // whatever the caller passes, and from the tmux spinner text, which is
+    // whatever the terminal drew — neither is bounded, and a message over the
+    // limit is rejected rather than trimmed.
+    const single = tailWithinBudget([activity], Math.max(0, remaining))[0] ?? "";
+    const body = single.trim() ? `\n${escapeHtml(single)}` : "";
     return `${header}${body}${paneBlock}${statsBlock}`;
   }
 
