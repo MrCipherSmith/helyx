@@ -125,9 +125,19 @@ export async function registerQuestions(
     // Recorded as each one lands, not once at the end. A message already on the
     // operator's screen has a live keyboard, and if the next send fails, the
     // cleanup has to be able to find it and take that keyboard down.
-    await deps.sql`
+    //
+    // A write that fails is delivery failing. The message exists and nothing
+    // stored can find it again — so the whole call is withdrawn, using the ids
+    // this function still holds.
+    const written = await deps.sql`
       UPDATE question_requests SET message_ids = ${deps.sql.json(messageIds as never)} WHERE id = ${requestId}
-    `.catch(() => {});
+      RETURNING id
+    `.catch(() => null);
+    if (written === null || written.length === 0) {
+      console.error(`[ask-question] could not record message ids for ${requestId}; withdrawing`);
+      await expireRequest(deps, requestId, messageIds);
+      return null;
+    }
   }
 
   // Every question must have reached the operator, not merely one of them.
@@ -140,7 +150,7 @@ export async function registerQuestions(
   // sitting there with live buttons and no row behind them, which is the exact
   // complaint this flow exists to fix, moved one step earlier.
   if (messageIds.some((id) => id === null)) {
-    await expireRequest(deps, requestId);
+    await expireRequest(deps, requestId, messageIds);
     return null;
   }
 
@@ -381,7 +391,19 @@ export async function runQuestionExchange(
  * the question, and if the tool call was abandoned in the terminal meanwhile,
  * nothing informs it. So the message says so when the wait ends.
  */
-export async function expireRequest(deps: AskDeps, requestId: string): Promise<void> {
+export async function expireRequest(
+  deps: AskDeps,
+  requestId: string,
+  /**
+   * Message ids the caller knows about but the row may not.
+   *
+   * Persisting an id can fail. When it does, the message is on the operator's
+   * screen and nothing stored can find it again — so the one caller that still
+   * holds it hands it over rather than letting the keyboard outlive the row's
+   * knowledge of it.
+   */
+  alsoRetire: readonly (number | null)[] = [],
+): Promise<void> {
   const claimed = await deps.sql`
     UPDATE question_requests SET expired_at = NOW()
      WHERE id = ${requestId} AND answered_at IS NULL AND expired_at IS NULL
@@ -394,7 +416,10 @@ export async function expireRequest(deps: AskDeps, requestId: string): Promise<v
   if (!row) return;
 
   const questions = (Array.isArray(row.questions) ? row.questions : []) as Question[];
-  const messageIds = (Array.isArray(row.message_ids) ? row.message_ids : []) as (number | null)[];
+  const stored = (Array.isArray(row.message_ids) ? row.message_ids : []) as (number | null)[];
+  // Index-wise union: whichever source knows the id for this question.
+  const width = Math.max(stored.length, alsoRetire.length);
+  const messageIds = Array.from({ length: width }, (_, i) => stored[i] ?? alsoRetire[i] ?? null);
 
   for (const [index, messageId] of messageIds.entries()) {
     if (typeof messageId !== "number") continue;

@@ -73,3 +73,20 @@ request cannot be rewritten as expired, because both writes require the other
 column to be null.
 
 Tests 983 → 987.
+
+### And the id write itself could fail
+
+Recording each message id was written with `.catch(() => {})`. If a send landed
+and its id write failed, the message sat on the operator's screen with a live
+keyboard that *nothing stored could find again* — every later cleanup would look
+at the row, see no id, and leave it there for good.
+
+Two changes. The write returns the row it updated, so a failure is visible
+rather than assumed; and when it fails, the call is withdrawn using the ids this
+function still holds in memory, handed to `expireRequest` directly. Tested by
+failing the write and asserting the keyboard came down anyway.
+
+The test that "counts persistence attempts" was fair criticism: counting two
+writes proves nothing about what happens when one of them does not land.
+
+Tests 987 → 991.

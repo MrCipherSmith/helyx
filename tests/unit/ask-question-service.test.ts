@@ -72,6 +72,10 @@ function withChat(world: World, row: Record<string, unknown> = {}) {
   world.db.program(SELECT_TARGET, {
     rows: [{ session_id: 42, chat_id: "-100123", forum_topic_id: null, forum_chat_id: null, ...row }],
   });
+  // Recording each message id is part of the ordinary case: the write returns
+  // the row it updated, and a write that matches nothing means the request is
+  // gone, which registration treats as delivery failing.
+  world.db.program("SET message_ids", { rows: [{ id: "ok" }] });
 }
 
 describe("resolveTarget", () => {
@@ -221,6 +225,31 @@ describe("registerQuestions", () => {
     await registerQuestions(world.deps, hookInput());
 
     expect(world.db.count("SET message_ids")).toBe(2);
+  });
+
+  test("an id that cannot be persisted withdraws the call, retiring what did land", async () => {
+    // The message exists and nothing stored can find it again. Leaving it would
+    // put a live keyboard beyond the reach of every later cleanup — so the ids
+    // this function still holds are handed to the expiry directly.
+    const world = makeWorld();
+    withChat(world);
+    world.db.program("SET message_ids", { error: new Error("connection reset") });
+    world.db.program("SET expired_at = NOW()", {
+      rows: [{ chat_id: "-100123", questions: QUESTIONS, message_ids: [] }],
+    });
+
+    const realError = console.error;
+    console.error = () => {};
+    try {
+      expect(await registerQuestions(world.deps, hookInput())).toBeNull();
+    } finally {
+      console.error = realError;
+    }
+
+    // The row knew nothing, and the keyboard still came down.
+    expect(world.edits).toHaveLength(1);
+    expect(world.edits[0]!.messageId).toBe(700);
+    expect(world.edits[0]!.extra?.reply_markup).toEqual({ inline_keyboard: [] });
   });
 });
 
