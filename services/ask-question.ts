@@ -28,7 +28,16 @@ export interface SendResult {
 export interface AskDeps {
   sql: postgres.Sql;
   sendMessage: (chatId: string, text: string, extra: Record<string, unknown>) => Promise<SendResult>;
-  editMessage: (chatId: string, messageId: number, text: string) => Promise<void>;
+  /**
+   * `extra` carries `reply_markup` — an empty keyboard removes the buttons.
+   * Optional so existing callers are unaffected.
+   */
+  editMessage: (
+    chatId: string,
+    messageId: number,
+    text: string,
+    extra?: Record<string, unknown>,
+  ) => Promise<{ ok: boolean } | void>;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
   random?: () => number;
@@ -113,22 +122,37 @@ export async function registerQuestions(
       ...target.extra,
     });
     messageIds.push(sent.ok ? sent.messageId : null);
+    // Recorded as each one lands, not once at the end. A message already on the
+    // operator's screen has a live keyboard, and if the next send fails, the
+    // cleanup has to be able to find it and take that keyboard down.
+    //
+    // A write that fails is delivery failing. The message exists and nothing
+    // stored can find it again — so the whole call is withdrawn, using the ids
+    // this function still holds.
+    const written = await deps.sql`
+      UPDATE question_requests SET message_ids = ${deps.sql.json(messageIds as never)} WHERE id = ${requestId}
+      RETURNING id
+    `.catch(() => null);
+    if (written === null || written.length === 0) {
+      console.error(`[ask-question] could not record message ids for ${requestId}; withdrawing`);
+      await expireRequest(deps, requestId, messageIds);
+      return null;
+    }
   }
 
   // Every question must have reached the operator, not merely one of them.
   //
   // A partial delivery is the worst outcome available: the questions that did
-  // arrive can be answered, the one that did not never can, the call therefore
-  // never completes — and meanwhile the terminal selector is suppressed for the
-  // full ten minutes. Withdrawing puts it straight back.
+  // arrive can be answered, the one that did not never can, and the call
+  // therefore never completes — while the terminal selector stays suppressed.
+  //
+  // Expired rather than deleted. Deleting leaves the messages that *did* arrive
+  // sitting there with live buttons and no row behind them, which is the exact
+  // complaint this flow exists to fix, moved one step earlier.
   if (messageIds.some((id) => id === null)) {
-    await deps.sql`DELETE FROM question_requests WHERE id = ${requestId}`.catch(() => {});
+    await expireRequest(deps, requestId, messageIds);
     return null;
   }
-
-  await deps.sql`
-    UPDATE question_requests SET message_ids = ${deps.sql.json(messageIds as never)} WHERE id = ${requestId}
-  `.catch(() => {});
 
   return { requestId, chatId: target.chatId, questions: input.questions };
 }
@@ -161,7 +185,7 @@ export async function waitForAnswers(
 
   while (now() < deadline) {
     if (clientGone()) {
-      await cancelRequest(deps.sql, requestId);
+      await expireRequest(deps, requestId);
       return null;
     }
 
@@ -203,12 +227,9 @@ export async function waitForAnswers(
     await sleep(pollMs);
   }
 
-  // Stopped waiting. Marked rather than left open, so the buttons still on the
-  // operator's screen say so when tapped instead of pretending to send.
-  await deps.sql`
-    UPDATE question_requests SET expired_at = NOW()
-     WHERE id = ${requestId} AND answered_at IS NULL AND expired_at IS NULL
-  `.catch(() => {});
+  // Stopped waiting. The messages say so and lose their buttons, rather than
+  // sitting there looking live until someone taps one and is told otherwise.
+  await expireRequest(deps, requestId);
   return null;
 }
 
@@ -346,7 +367,7 @@ export async function runQuestionExchange(
   // Gone while the questions were being sent. Starting a ten-minute wait for a
   // reader that has already left is the exact shape of the original bug.
   if (limits.clientGone()) {
-    await cancelRequest(deps.sql, registered.requestId);
+    await expireRequest(deps, registered.requestId);
     return null;
   }
 
@@ -361,6 +382,90 @@ export async function runQuestionExchange(
 }
 
 /**
+ * What an expired question's message says instead of offering a choice.
+ *
+ * The buttons are removed, not just annotated. Left in place they look live —
+ * and that is the whole complaint: an operator taps a question ten minutes old,
+ * gets told it is no longer waiting, and has no way to have known that before
+ * tapping. The hook cannot tell them, because it cannot tell either: it posts
+ * the question, and if the tool call was abandoned in the terminal meanwhile,
+ * nothing informs it. So the message says so when the wait ends.
+ */
+export async function expireRequest(
+  deps: AskDeps,
+  requestId: string,
+  /**
+   * Message ids the caller knows about but the row may not.
+   *
+   * Persisting an id can fail. When it does, the message is on the operator's
+   * screen and nothing stored can find it again — so the one caller that still
+   * holds it hands it over rather than letting the keyboard outlive the row's
+   * knowledge of it.
+   */
+  alsoRetire: readonly (number | null)[] = [],
+): Promise<void> {
+  const claimed = await deps.sql`
+    UPDATE question_requests SET expired_at = NOW()
+     WHERE id = ${requestId} AND answered_at IS NULL AND expired_at IS NULL
+    RETURNING chat_id, questions, message_ids
+  `.catch(() => [] as Record<string, unknown>[]);
+
+  // Nothing claimed: already answered, already expired, or gone. Either way
+  // there is no live keyboard of ours left to take down.
+  const row = claimed[0];
+  if (!row) return;
+
+  const questions = (Array.isArray(row.questions) ? row.questions : []) as Question[];
+  const stored = (Array.isArray(row.message_ids) ? row.message_ids : []) as (number | null)[];
+  // Index-wise union: whichever source knows the id for this question.
+  const width = Math.max(stored.length, alsoRetire.length);
+  const messageIds = Array.from({ length: width }, (_, i) => stored[i] ?? alsoRetire[i] ?? null);
+
+  for (const [index, messageId] of messageIds.entries()) {
+    if (typeof messageId !== "number") continue;
+    const question = questions[index];
+    if (!question) continue;
+    const { text } = questionMessage(requestId, index, question);
+    const body = `${text}\n\n⌛ <b>Вопрос больше не ждёт ответа</b>`;
+
+    // Retried once, then reported. The row is already claimed, so this is the
+    // only chance to take the keyboard down — a swallowed failure leaves it
+    // live for good, which is precisely the state being fixed. Logging is not
+    // a repair, but a keyboard that stays live *and* says nothing anywhere is
+    // strictly worse than one that stays live and is recorded.
+    const edited = await attemptEdit(deps, String(row.chat_id), messageId, body);
+    if (!edited) {
+      const retried = await attemptEdit(deps, String(row.chat_id), messageId, body);
+      if (!retried) {
+        console.error(
+          `[ask-question] could not retire the keyboard on message ${messageId} of ${requestId}; it stays live`,
+        );
+      }
+    }
+  }
+}
+
+/** One edit attempt. False when Telegram refused it or the call threw. */
+async function attemptEdit(
+  deps: AskDeps,
+  chatId: string,
+  messageId: number,
+  text: string,
+): Promise<boolean> {
+  try {
+    const result = await deps.editMessage(chatId, messageId, text, {
+      reply_markup: { inline_keyboard: [] },
+    });
+    // A void return is the older contract and means "no news is good news";
+    // an explicit `{ ok: false }` is Telegram declining, which the helper
+    // returns rather than throwing.
+    return result === undefined || result.ok !== false;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Stop waiting on behalf of a client that hung up.
  *
  * The hook's curl gives up before the hook's own budget does, and when it does
@@ -368,11 +473,8 @@ export async function runQuestionExchange(
  * request ends the poll and turns the buttons still on screen into an honest
  * "no longer waiting".
  */
-export async function cancelRequest(sql: postgres.Sql, requestId: string): Promise<void> {
-  await sql`
-    UPDATE question_requests SET expired_at = NOW()
-     WHERE id = ${requestId} AND answered_at IS NULL AND expired_at IS NULL
-  `.catch(() => {});
+export async function cancelRequest(deps: AskDeps, requestId: string): Promise<void> {
+  await expireRequest(deps, requestId);
 }
 
 /**

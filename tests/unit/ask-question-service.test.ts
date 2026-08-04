@@ -14,6 +14,7 @@ import {
   resolveTarget,
   hasOpenQuestion,
   cancelRequest,
+  expireRequest,
   runQuestionExchange,
   type AskDeps,
 } from "../../services/ask-question.ts";
@@ -38,11 +39,12 @@ function hookInput(questions: Question[] = QUESTIONS): HookInput {
 interface World {
   db: FakeSql;
   sent: { chatId: string; text: string; extra: Record<string, unknown> }[];
-  edits: { chatId: string; messageId: number; text: string }[];
+  edits: { chatId: string; messageId: number; text: string; extra?: Record<string, unknown> }[];
   deps: AskDeps;
 }
 
-function makeWorld(options: { sendOk?: boolean } = {}): World {
+function makeWorld(options: { sendOk?: boolean; editOk?: boolean } = {}): World {
+  const editResult = () => (options.editOk === false ? { ok: false } : { ok: true });
   const db = new FakeSql();
   const sent: World["sent"] = [];
   const edits: World["edits"] = [];
@@ -56,8 +58,9 @@ function makeWorld(options: { sendOk?: boolean } = {}): World {
         ? { ok: false, messageId: null }
         : { ok: true, messageId: nextMessageId++ };
     },
-    editMessage: async (chatId, messageId, text) => {
-      edits.push({ chatId, messageId, text });
+    editMessage: async (chatId, messageId, text, extra) => {
+      edits.push({ chatId, messageId, text, extra });
+      return editResult();
     },
     random: () => 0.5,
   };
@@ -69,6 +72,10 @@ function withChat(world: World, row: Record<string, unknown> = {}) {
   world.db.program(SELECT_TARGET, {
     rows: [{ session_id: 42, chat_id: "-100123", forum_topic_id: null, forum_chat_id: null, ...row }],
   });
+  // Recording each message id is part of the ordinary case: the write returns
+  // the row it updated, and a write that matches nothing means the request is
+  // gone, which registration treats as delivery failing.
+  world.db.program("SET message_ids", { rows: [{ id: "ok" }] });
 }
 
 describe("resolveTarget", () => {
@@ -181,9 +188,68 @@ describe("registerQuestions", () => {
     // original bug wearing a different hat.
     const world = makeWorld({ sendOk: false });
     withChat(world);
+    world.db.program("SET expired_at = NOW()", { rows: [{ chat_id: "-1", questions: QUESTIONS, message_ids: [null, null] }] });
 
     expect(await registerQuestions(world.deps, hookInput())).toBeNull();
-    expect(world.db.count("DELETE FROM question_requests")).toBe(1);
+    expect(world.db.count("SET expired_at = NOW()")).toBe(1);
+  });
+
+  test("a message that did land has its keyboard taken down when a later one fails", async () => {
+    // Deleting the row would leave the first question sitting on the operator's
+    // screen with live buttons and nothing behind them — the same complaint,
+    // moved one step earlier.
+    const world = makeWorld();
+    withChat(world);
+    let call = 0;
+    const deps: AskDeps = {
+      ...world.deps,
+      sendMessage: async () => (++call === 1 ? { ok: true, messageId: 700 } : { ok: false, messageId: null }),
+    };
+    world.db.program("SET expired_at = NOW()", {
+      rows: [{ chat_id: "-100123", questions: QUESTIONS, message_ids: [700, null] }],
+    });
+
+    expect(await registerQuestions(deps, hookInput())).toBeNull();
+
+    expect(world.edits).toHaveLength(1);
+    expect(world.edits[0]!.messageId).toBe(700);
+    expect(world.edits[0]!.extra?.reply_markup).toEqual({ inline_keyboard: [] });
+  });
+
+  test("message ids are recorded as each one lands, not once at the end", async () => {
+    // The cleanup has to be able to find a message that is already on screen
+    // when the next send fails.
+    const world = makeWorld();
+    withChat(world);
+
+    await registerQuestions(world.deps, hookInput());
+
+    expect(world.db.count("SET message_ids")).toBe(2);
+  });
+
+  test("an id that cannot be persisted withdraws the call, retiring what did land", async () => {
+    // The message exists and nothing stored can find it again. Leaving it would
+    // put a live keyboard beyond the reach of every later cleanup — so the ids
+    // this function still holds are handed to the expiry directly.
+    const world = makeWorld();
+    withChat(world);
+    world.db.program("SET message_ids", { error: new Error("connection reset") });
+    world.db.program("SET expired_at = NOW()", {
+      rows: [{ chat_id: "-100123", questions: QUESTIONS, message_ids: [] }],
+    });
+
+    const realError = console.error;
+    console.error = () => {};
+    try {
+      expect(await registerQuestions(world.deps, hookInput())).toBeNull();
+    } finally {
+      console.error = realError;
+    }
+
+    // The row knew nothing, and the keyboard still came down.
+    expect(world.edits).toHaveLength(1);
+    expect(world.edits[0]!.messageId).toBe(700);
+    expect(world.edits[0]!.extra?.reply_markup).toEqual({ inline_keyboard: [] });
   });
 });
 
@@ -394,6 +460,7 @@ describe("partial delivery is not delivery", () => {
     // terminal selector stays suppressed for the full ten minutes.
     const world = makeWorld();
     withChat(world);
+    world.db.program("SET expired_at = NOW()", { rows: [{ chat_id: "-1", questions: QUESTIONS, message_ids: [700, null] }] });
     let call = 0;
     const deps: AskDeps = {
       ...world.deps,
@@ -401,7 +468,9 @@ describe("partial delivery is not delivery", () => {
     };
 
     expect(await registerQuestions(deps, hookInput())).toBeNull();
-    expect(world.db.count("DELETE FROM question_requests")).toBe(1);
+    // Expired rather than deleted: the message that did land keeps a live
+    // keyboard until something takes it down.
+    expect(world.db.count("SET expired_at = NOW()")).toBe(1);
   });
 
   test("a send that succeeds without a message id counts as failed", async () => {
@@ -482,10 +551,38 @@ describe("expiry", () => {
 
   test("cancelRequest only touches a request still waiting", async () => {
     const world = makeWorld();
-    await cancelRequest(world.deps.sql, "abcd1234");
+    await cancelRequest(world.deps, "abcd1234");
     const update = world.db.matching("SET expired_at = NOW()")[0]!;
     expect(update.text).toContain("answered_at IS NULL");
     expect(update.text).toContain("expired_at IS NULL");
+  });
+
+  test("expiring takes the buttons down and says why", async () => {
+    // The complaint this fixes: an operator taps a question ten minutes old,
+    // is told it is no longer waiting, and had no way to know that before
+    // tapping. The hook cannot warn them — it cannot tell either — so the
+    // message says so when the wait ends.
+    const world = makeWorld();
+    world.db.program("SET expired_at = NOW()", {
+      rows: [{ chat_id: "-100123", questions: QUESTIONS, message_ids: [700, 701] }],
+    });
+
+    await expireRequest(world.deps, "abcd1234");
+
+    expect(world.edits).toHaveLength(2);
+    expect(world.edits[0]!.text).toContain("больше не ждёт ответа");
+    expect(world.edits[0]!.extra?.reply_markup).toEqual({ inline_keyboard: [] });
+  });
+
+  test("a request already settled is left alone", async () => {
+    // The update claims nothing, so there is no live keyboard of ours to take
+    // down — and editing an answered question back to "expired" would be a lie.
+    const world = makeWorld();
+    world.db.program("SET expired_at = NOW()", { rows: [] });
+
+    await expireRequest(world.deps, "abcd1234");
+
+    expect(world.edits).toHaveLength(0);
   });
 });
 
@@ -671,5 +768,53 @@ describe("what Claude receives is what the row committed", () => {
     expect(
       await waitForAnswers({ ...world.deps, now: () => 0, sleep: async () => {} }, "abcd1234", 1, 600_000),
     ).toBeNull();
+  });
+});
+
+
+describe("a failed edit is reported, not swallowed", () => {
+  test("Telegram declining the edit is retried and then logged", async () => {
+    // The row is already claimed, so this is the only chance to take the
+    // keyboard down. Swallowing the failure leaves it live for good — which is
+    // exactly the state being fixed — and says so nowhere.
+    const world = makeWorld({ editOk: false });
+    world.db.program("SET expired_at = NOW()", {
+      rows: [{ chat_id: "-100123", questions: [QUESTIONS[0]], message_ids: [700] }],
+    });
+
+    const errors: unknown[][] = [];
+    const realError = console.error;
+    console.error = (...args: unknown[]) => { errors.push(args); };
+    try {
+      await expireRequest(world.deps, "abcd1234");
+    } finally {
+      console.error = realError;
+    }
+
+    // Attempted twice before giving up.
+    expect(world.edits).toHaveLength(2);
+    expect(String(errors.at(-1)?.[0] ?? "")).toContain("stays live");
+  });
+
+  test("an edit that throws counts as a failure too", async () => {
+    const world = makeWorld();
+    world.db.program("SET expired_at = NOW()", {
+      rows: [{ chat_id: "-1", questions: [QUESTIONS[0]], message_ids: [700] }],
+    });
+    let attempts = 0;
+    const deps: AskDeps = {
+      ...world.deps,
+      editMessage: async () => { attempts++; throw new Error("network"); },
+    };
+
+    const realError = console.error;
+    console.error = () => {};
+    try {
+      await expireRequest(deps, "abcd1234");
+    } finally {
+      console.error = realError;
+    }
+
+    expect(attempts).toBe(2);
   });
 });

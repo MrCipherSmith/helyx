@@ -1,0 +1,251 @@
+{
+  "schemaVersion": 2,
+  "id": "017",
+  "slug": "an-expired-question-stops-looking-like-a",
+  "title": "an expired question stops looking like a live one",
+  "status": "in-progress",
+  "createdAt": "2026-08-04T07:29:40.155Z",
+  "updatedAt": "2026-08-04T07:44:48.811Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:e133c7882b707b2be531acaf89809cad73fe786220068cef36d763e7917a5863",
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-04T07:44:48.631Z",
+      "note": "claims with RETURNING; edits every message, keyboard removed, retried once, persistent failure logged"
+    },
+    "AC2": {
+      "at": "2026-08-04T07:30:10.785Z",
+      "note": "an empty claim edits nothing — rewriting an answered question to expired would be a visible lie"
+    },
+    "AC3": {
+      "at": "2026-08-04T07:44:48.721Z",
+      "note": "timeout, mid-wait, registration-time, partial delivery, and a failed id write all route through expireRequest"
+    },
+    "AC4": {
+      "at": "2026-08-04T07:30:11.227Z",
+      "note": "reply_markup asserted to be an empty inline_keyboard"
+    },
+    "AC5": {
+      "at": "2026-08-04T07:44:48.811Z",
+      "note": "typecheck clean, lint 0 errors, 988 tests, dupes 2 documented"
+    }
+  },
+  "pr": {
+    "url": null
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T5",
+      "title": "expireRequest with the keyboard removed",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T6",
+      "title": "wire every wait-ending path to it",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T7",
+      "title": "tests",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-04T07:29:40.155Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-04T07:29:40.371Z",
+      "event": "task-added",
+      "detail": "T5: expireRequest with the keyboard removed"
+    },
+    {
+      "at": "2026-08-04T07:29:40.596Z",
+      "event": "task-added",
+      "detail": "T6: wire every wait-ending path to it"
+    },
+    {
+      "at": "2026-08-04T07:29:40.845Z",
+      "event": "task-added",
+      "detail": "T7: tests"
+    },
+    {
+      "at": "2026-08-04T07:29:41.075Z",
+      "event": "frozen",
+      "detail": "5 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-04T07:29:41.295Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-04T07:30:09.126Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-04T07:30:09.337Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-04T07:30:09.549Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-04T07:30:09.765Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-04T07:30:09.966Z",
+      "event": "task-done",
+      "detail": "T5: expireRequest with the keyboard removed"
+    },
+    {
+      "at": "2026-08-04T07:30:10.175Z",
+      "event": "task-done",
+      "detail": "T6: wire every wait-ending path to it"
+    },
+    {
+      "at": "2026-08-04T07:30:10.382Z",
+      "event": "task-done",
+      "detail": "T7: tests"
+    },
+    {
+      "at": "2026-08-04T07:30:10.589Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: claims with RETURNING, edits every placed message, empty keyboard plus a line"
+    },
+    {
+      "at": "2026-08-04T07:30:10.785Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: an empty claim edits nothing — rewriting an answered question to expired would be a visible lie"
+    },
+    {
+      "at": "2026-08-04T07:30:11.004Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: timeout, mid-wait clientGone, and registration-time clientGone all route through expireRequest"
+    },
+    {
+      "at": "2026-08-04T07:30:11.228Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: reply_markup asserted to be an empty inline_keyboard"
+    },
+    {
+      "at": "2026-08-04T07:30:11.442Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: typecheck clean, lint 0 errors, 983 tests, dupes 2 documented"
+    },
+    {
+      "at": "2026-08-04T07:44:48.631Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: claims with RETURNING; edits every message, keyboard removed, retried once, persistent failure logged"
+    },
+    {
+      "at": "2026-08-04T07:44:48.721Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: timeout, mid-wait, registration-time, partial delivery, and a failed id write all route through expireRequest"
+    },
+    {
+      "at": "2026-08-04T07:44:48.811Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: typecheck clean, lint 0 errors, 988 tests, dupes 2 documented"
+    }
+  ]
+}

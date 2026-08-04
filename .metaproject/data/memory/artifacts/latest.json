@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "query": "supervisor broadcast compose project containers notification tmux",
-  "generatedAt": "2026-08-03T22:11:56.253Z",
+  "query": "flow-017 expire questions persistence message ids rollback",
+  "generatedAt": "2026-08-04T07:41:23.045Z",
   "results": [
     {
       "entry": {
@@ -34,15 +34,15 @@
         "supersedes": null,
         "supersededBy": null
       },
-      "score": 1.926,
+      "score": 1.622,
       "components": {
-        "relevance": 0.429,
-        "recency": 0.995,
+        "relevance": 0.125,
+        "recency": 0.993,
         "confidence": 1,
         "status": 1,
         "scope": 0
       },
-      "reason": "matched 3/7 terms; status accepted; confidence high"
+      "reason": "matched 1/8 terms; status accepted; confidence high"
     },
     {
       "entry": {
@@ -75,15 +75,15 @@
         "supersedes": null,
         "supersededBy": null
       },
-      "score": 1.638,
+      "score": 1.619,
       "components": {
-        "relevance": 0.143,
-        "recency": 0.99,
+        "relevance": 0.125,
+        "recency": 0.988,
         "confidence": 1,
         "status": 1,
         "scope": 0
       },
-      "reason": "matched 1/7 terms; status accepted; confidence high"
+      "reason": "matched 1/8 terms; status accepted; confidence high"
     },
     {
       "entry": {
@@ -116,15 +116,15 @@
         "supersedes": null,
         "supersededBy": null
       },
-      "score": 1.638,
+      "score": 1.619,
       "components": {
-        "relevance": 0.143,
-        "recency": 0.99,
+        "relevance": 0.125,
+        "recency": 0.988,
         "confidence": 1,
         "status": 1,
         "scope": 0
       },
-      "reason": "matched 1/7 terms; status accepted; confidence high"
+      "reason": "matched 1/8 terms; status accepted; confidence high"
     }
   ]
 }
