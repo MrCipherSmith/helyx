@@ -3,9 +3,9 @@
   "id": "025",
   "slug": "read-the-session-s-own-transcript-instea",
   "title": "read the session's own transcript instead of scraping its terminal",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-04T22:16:41.006Z",
-  "updatedAt": "2026-08-04T22:32:45.216Z",
+  "updatedAt": "2026-08-04T22:43:47.263Z",
   "source": {
     "type": "description",
     "ref": null
@@ -50,7 +50,7 @@
     }
   },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/61"
   },
   "tasks": [
     {
@@ -102,7 +102,7 @@
       "id": "T4",
       "title": "Self-review and prepare draft PR",
       "kind": "review",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -110,7 +110,8 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T5",
@@ -391,6 +392,39 @@
       "at": "2026-08-04T22:32:45.216Z",
       "event": "ac-confirmed",
       "detail": "AC9: bun run typecheck clean; bun run lint 206 problems 0 errors, the same count as before this flow; bun test tests/unit/ 1288 pass 0 fail across 63 files, up from 1217 across 61 at the start of the flow"
+    },
+    {
+      "at": "2026-08-04T22:42:09.851Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-04T22:42:11.860Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/61"
+    },
+    {
+      "at": "2026-08-04T22:42:12.014Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-04T22:42:13.774Z",
+      "event": "completion-failed",
+      "detail": "pull-request: PR checks not green"
+    },
+    {
+      "at": "2026-08-04T22:43:45.470Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/61"
+    },
+    {
+      "at": "2026-08-04T22:43:45.560Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-04T22:43:47.263Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
   ]
 }

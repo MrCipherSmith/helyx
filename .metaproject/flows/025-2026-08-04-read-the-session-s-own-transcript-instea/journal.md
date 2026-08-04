@@ -75,3 +75,10 @@ session. Removing it is a separate decision.
 - 2026-08-04T22:32:32.385Z - ac-confirmed: AC8: renderEntry prefixes sidechain lines with SIDECHAIN_PREFIX; 'the buffer is bounded' pushes 50 sidechain entries into a 5-line buffer and asserts 5 lines, the newest present, and the marker visible
 - 2026-08-04T22:32:32.474Z - ac-confirmed: AC9: bun run typecheck clean; bun run lint 206 problems 0 errors (unchanged from the pre-flow baseline); bun test tests/unit/ 1288 pass 0 fail across 63 files, up from 1284/61 before the new suites
 - 2026-08-04T22:32:45.216Z - ac-confirmed: AC9: bun run typecheck clean; bun run lint 206 problems 0 errors, the same count as before this flow; bun test tests/unit/ 1288 pass 0 fail across 63 files, up from 1217 across 61 at the start of the flow
+- 2026-08-04T22:42:09.851Z - task-done: T4: Self-review and prepare draft PR
+- 2026-08-04T22:42:11.860Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/61
+- 2026-08-04T22:42:12.014Z - completing
+- 2026-08-04T22:42:13.774Z - completion-failed: pull-request: PR checks not green
+- 2026-08-04T22:43:45.470Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/61
+- 2026-08-04T22:43:45.560Z - completing
+- 2026-08-04T22:43:47.263Z - done: all gates passed
