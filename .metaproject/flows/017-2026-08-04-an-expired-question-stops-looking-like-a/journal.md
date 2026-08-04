@@ -90,3 +90,6 @@ The test that "counts persistence attempts" was fair criticism: counting two
 writes proves nothing about what happens when one of them does not land.
 
 Tests 987 → 991.
+- 2026-08-04T07:44:48.631Z - ac-confirmed: AC1: claims with RETURNING; edits every message, keyboard removed, retried once, persistent failure logged
+- 2026-08-04T07:44:48.721Z - ac-confirmed: AC3: timeout, mid-wait, registration-time, partial delivery, and a failed id write all route through expireRequest
+- 2026-08-04T07:44:48.811Z - ac-confirmed: AC5: typecheck clean, lint 0 errors, 988 tests, dupes 2 documented
