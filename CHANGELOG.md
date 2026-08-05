@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+### test: what the MCP door says when it says yes
+
+Flow 036 made the router in `mcp/server.ts` reachable and pinned its refusals,
+then stopped and said why: everything past a refusal writes to Postgres or
+starts background work. So the door was proved to say no correctly and nothing
+at all was proved about it saying yes — and the maintainer's answer to that was
+that there should be no dead ends left.
+
+`McpDeps` and `setMcpDeps` are the seam, the fifth of its shape in this
+repository after `MediaDeps`, `RunShell`, `TurnSummaryDeps` and
+`scheduledReviewDeps`. It carries `sql`, `summarizeOnDisconnect`,
+`sessionManager.register`, `pushExpect`, `extractFactsFromTranscript`,
+`deliverTurnSummary`, `runQuestionExchange`, and the hook token — which is read
+once at module load from a file on the host and had no other way in.
+
+Sixteen tests, over the yeses and over the error exits, because a dead end
+would be in the exits: `/health` connected and 503, the probe the host-ingress
+daemon arms on; `/api/summarize` accepted and handed on, refused without a
+session, and answering rather than throwing on a body that is not JSON;
+`/api/sessions/register` registered under the name given and under the
+directory's basename when none was, refused without a path, and reporting a
+failing session manager as 500 instead of hanging; `/api/sessions/expect`
+accepting a numeric id, refusing a string one — channel.ts sends it from a
+shell, where everything is a string — and recording a relative project path as
+none; `/api/hooks/stop` answering before its background work and handing both
+jobs the same paths; `/api/hooks/ask-question` returning the operator's answer
+as the hook's decision and 204 when there is none, which is the contract the
+terminal depends on.
+
+Line coverage 23.98% → 46.76%.
+
 ### feat: a reply carries what it was replying to
 
 Every handler read `message.text` and nothing else, so `reply_to_message` and

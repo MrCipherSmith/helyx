@@ -362,6 +362,54 @@ export async function deliverTurnSummary(
 }
 
 /**
+ * What the routes reach through, past their guards.
+ *
+ * Flow 036 made the router reachable and pinned its refusals; everything past
+ * a refusal writes to Postgres or starts background work, so nothing was
+ * proved about the door saying yes. This is the seam that lets a test ask.
+ *
+ * A seam rather than module replacement, for the reason `bot/media.ts` carries
+ * the same one: replacing `memory/db.ts` in the module registry re-evaluates
+ * the graph behind this file — which is most of the bot — and left
+ * `services/provider-service.ts` half-initialised for five tests in other
+ * files. What a test does to the module registry outlives the test.
+ *
+ * `hookToken` is in here because it is read once at module load from a file on
+ * the host, and a test has no other way to hold the right one.
+ */
+export interface McpDeps {
+  sql: typeof sql;
+  summarizeOnDisconnect: typeof summarizeOnDisconnect;
+  registerSession: typeof sessionManager.register;
+  pushExpect: typeof pushExpect;
+  extractFactsFromTranscript: typeof extractFactsFromTranscript;
+  deliverTurnSummary: typeof deliverTurnSummary;
+  runQuestionExchange: typeof runQuestionExchange;
+  /** Null when no token file could be read — `tokenMatches` refuses everything then. */
+  hookToken: string | null;
+}
+
+const PRODUCTION_MCP_DEPS: McpDeps = {
+  sql,
+  summarizeOnDisconnect,
+  registerSession: (...args) => sessionManager.register(...args),
+  pushExpect,
+  extractFactsFromTranscript,
+  deliverTurnSummary,
+  runQuestionExchange,
+  hookToken: HOOK_TOKEN,
+};
+
+let mcpDeps: McpDeps = PRODUCTION_MCP_DEPS;
+
+/** Stand something else in for a test; the returned function puts it back. */
+export function setMcpDeps(next: Partial<McpDeps>): () => void {
+  const previous = mcpDeps;
+  mcpDeps = { ...mcpDeps, ...next };
+  return () => { mcpDeps = previous; };
+}
+
+/**
  * The router every MCP tool call, every Claude Code hook and — in webhook mode
  * — every Telegram update passes through.
  *
@@ -385,7 +433,7 @@ export async function handleMcpRequest(
 
   if (url.pathname === "/health") {
     try {
-      await sql`SELECT 1`;
+      await mcpDeps.sql`SELECT 1`;
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({
         status: "ok",
@@ -422,7 +470,7 @@ export async function handleMcpRequest(
         return;
       }
       // Run summarization in background
-      summarizeOnDisconnect(session_id, project_path).catch((err) =>
+      mcpDeps.summarizeOnDisconnect(session_id, project_path).catch((err) =>
         console.error("[api] summarize failed:", err)
       );
       res.writeHead(200, { "Content-Type": "application/json" });
@@ -465,7 +513,7 @@ export async function handleMcpRequest(
       // Sanitize optional model from cliConfig
       const cliConfig: Record<string, unknown> = {};
       if (typeof rawConfig.model === "string") cliConfig.model = rawConfig.model;
-      const session = await sessionManager.register(clientId, sessionName, projectPath, cliConfig);
+      const session = await mcpDeps.registerSession(clientId, sessionName, projectPath, cliConfig);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, sessionId: session.id, name: session.name }));
     } catch (err: any) {
@@ -497,7 +545,7 @@ export async function handleMcpRequest(
         return;
       }
       const expectPath = typeof project_path === "string" && project_path.startsWith("/") ? project_path : null;
-      await pushExpect(session_id, expectPath);
+      await mcpDeps.pushExpect(session_id, expectPath);
       console.log(`[mcp] pending expect registered: session #${session_id}${expectPath ? ` (${expectPath})` : ""} (queue: ${pendingExpects.size})`);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
@@ -541,7 +589,7 @@ export async function handleMcpRequest(
     // minutes, while isLocalRequest trusts every container on the Docker
     // network. The shared secret narrows that to whoever can read
     // ~/.claude/helyx-hook-token.
-    if (!isLocalRequest(req) || !tokenMatches(HOOK_TOKEN, req.headers["x-helyx-hook-token"])) {
+    if (!isLocalRequest(req) || !tokenMatches(mcpDeps.hookToken, req.headers["x-helyx-hook-token"])) {
       res.writeHead(403, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "Forbidden" }));
       return;
@@ -610,7 +658,7 @@ export async function handleMcpRequest(
 
       let answers: Answer[] | null = null;
       try {
-        answers = await runQuestionExchange(deps, input, {
+        answers = await mcpDeps.runQuestionExchange(deps, input, {
           timeoutMs: ANSWER_TIMEOUT_MS,
           clientGone: () => clientGone,
         });
@@ -671,9 +719,9 @@ export async function handleMcpRequest(
       // Non-blocking — respond immediately, extract in background
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
-      extractFactsFromTranscript(transcript_path as string, project_path as string)
+      mcpDeps.extractFactsFromTranscript(transcript_path as string, project_path as string)
         .catch((err) => console.error("[hooks/stop] extractFactsFromTranscript error:", err?.message));
-      deliverTurnSummary(transcript_path as string, project_path as string)
+      mcpDeps.deliverTurnSummary(transcript_path as string, project_path as string)
         .catch((err) => console.error("[hooks/stop] deliverTurnSummary error:", err?.message));
     } catch (err: any) {
       if (!res.headersSent) {
