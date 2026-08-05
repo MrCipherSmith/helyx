@@ -15,6 +15,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync, utimesSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { lastOutcomeByReviewer } from "../../services/review-artifacts.ts";
+import { failureHidesFromProbe } from "../../services/reviewer-service.ts";
 import {
   checkReviewerHealth,
   resetReviewerHealthState,
@@ -73,6 +74,27 @@ describe("what the last run says", () => {
     writeFileSync(join(dir, "run.json"), "{ not json");
 
     expect(await lastOutcomeByReviewer(root)).toEqual(new Map());
+  });
+});
+
+describe("which recorded failures may override a live probe", () => {
+  test("the ones a probe reports as healthy", () => {
+    // The six-day case: logged in, and refused on every run.
+    expect(failureHidesFromProbe("limit until aug 11th, 2026 5:49 pm")).toBe(true);
+    expect(failureHidesFromProbe("auth")).toBe(true);
+    expect(failureHidesFromProbe("model-unsupported: this account cannot use the configured model")).toBe(true);
+    expect(failureHidesFromProbe("cli-usage: the codex invocation is wrong for this CLI version")).toBe(true);
+  });
+
+  test("and not the ones it cannot", () => {
+    // Raised in review: overriding on any failure means one flaky timeout
+    // marks a reviewer down until somebody happens to run a successful review.
+    // The distinction is kind, not recency — a spent quota is still true a week
+    // later.
+    expect(failureHidesFromProbe("failed (exit 1)")).toBe(false);
+    expect(failureHidesFromProbe("empty output")).toBe(false);
+    expect(failureHidesFromProbe("fetch failed")).toBe(false);
+    expect(failureHidesFromProbe(null)).toBe(false);
   });
 });
 

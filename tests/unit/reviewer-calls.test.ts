@@ -103,6 +103,18 @@ describe("classifyCodexFailure", () => {
     expect(classifyCodexFailure(1, "", real)).toBe("limit until aug 11th, 2026 5:49 pm");
   });
 
+  test("the word usage limit inside ordinary output is not a limit", () => {
+    // The two defences the classifier already had, asserted for the pattern
+    // this change added: only the CLI's own error lines are read, and the
+    // prompt is subtracted first. A diff that discusses usage limits — this
+    // very change does — must not be diagnosed as one.
+    const prompt = "review this diff about the usage limit classifier";
+    const noise = "  const msg = \"You've hit your usage limit\";\n+ if (/usage limit/.test(all))";
+
+    expect(classifyCodexFailure(0, "a real review", noise, prompt)).toBeNull();
+    expect(classifyCodexFailure(1, "", noise, prompt)).toBe("failed (exit 1)");
+  });
+
   test("a limit without a reset time is still a limit", () => {
     expect(classifyCodexFailure(1, "", "ERROR: you have hit your usage limit")).toBe("limit");
   });

@@ -687,6 +687,24 @@ export function reviewConsoleLines(result: ReviewRunResult): string[] {
   return lines;
 }
 
+/**
+ * Whether a recorded failure is one a live probe cannot see.
+ *
+ * Raised in review: overriding the probe on *any* failed last run means one
+ * flaky network timeout marks a reviewer unavailable until somebody happens to
+ * run a successful review, which may be hours away.
+ *
+ * The distinction that fixes it is not recency — a spent quota lasts six days
+ * and a stale record of it is still true — but *kind*. A limit, a rejected
+ * login or an unusable model are exactly the states a login probe reports as
+ * healthy; a timeout or a bare non-zero exit is not evidence about anything the
+ * probe cannot check for itself.
+ */
+export function failureHidesFromProbe(error: string | null): boolean {
+  if (!error) return false;
+  return /\blimit\b|\bquota\b|\bauth\b|unauthorized|not logged|model-unsupported|cli-usage/i.test(error);
+}
+
 /** Availability for `/reviewers` — Codex login state, provider balances. */
 export async function getReviewerStatuses(): Promise<ReviewerStatus[]> {
   const reviewers = await getReviewers();
@@ -714,9 +732,15 @@ export async function getReviewerStatuses(): Promise<ReviewerStatus[]> {
       }
       const last = lastRun.get(r.id);
       if (last && !last.ok) {
-        // Logged in and unable to review is the case this exists for.
-        available = false;
-        detail = last.error ?? "last run failed";
+        if (failureHidesFromProbe(last.error)) {
+          // Logged in and unable to review is the case this exists for.
+          available = false;
+          detail = last.error ?? "last run failed";
+        } else {
+          // A transient failure is worth showing and not worth overriding: the
+          // probe can still answer for itself.
+          detail = `${detail} · последний прогон: ${last.error ?? "не удался"}`;
+        }
       }
       out.push({ id: r.id, label: "Codex", model: r.model, available, probed: true, detail });
       continue;
@@ -753,8 +777,12 @@ export async function getReviewerStatuses(): Promise<ReviewerStatus[]> {
     if (last) {
       probed = true;
       if (!last.ok) {
-        available = false;
-        detail = last.error ?? "last run failed";
+        if (failureHidesFromProbe(last.error)) {
+          available = false;
+          detail = last.error ?? "last run failed";
+        } else {
+          detail = `${detail} · последний прогон: ${last.error ?? "не удался"}`;
+        }
       }
     }
     if (!probed) detail = "не проверялся";
