@@ -19,13 +19,33 @@ export function createBot(): Bot {
   registerHandlers(bot);
 
 
-  // Set WebApp menu button (requires HTTPS URL for production)
+  // Set WebApp menu button (requires HTTPS URL for production).
+  //
+  // And requires the Mini App to exist. It used to be set on the webhook URL
+  // alone, knowing nothing about whether anything had been built — so a bot
+  // built with WITH_DASHBOARD=false offered a button that opened `Not Found`.
+  // A button that cannot keep its promise is worse than no button: the operator
+  // presses it more than once.
   const webAppUrl = CONFIG.TELEGRAM_WEBHOOK_URL
     ? new URL(CONFIG.TELEGRAM_WEBHOOK_URL).origin + "/webapp/"
     : "";
   if (CONFIG.TELEGRAM_WEBHOOK_URL) {
-    bot.api.setChatMenuButton({ menu_button: { type: "web_app", text: "Dev Hub", web_app: { url: webAppUrl } } })
-      .catch((err) => logger.error({ err }, "failed to set menu button"));
+    void (async () => {
+      // The whole body, not just the API call: the dynamic imports and the
+      // directory reads are awaits too, and an unhandled rejection out here
+      // would take the process down over a menu button. Raised in review.
+      try {
+        const { dashboardFacts } = await import("../mcp/dashboard-api.ts");
+        const { shouldOfferMiniApp } = await import("../utils/dashboard-readiness.ts");
+        if (!shouldOfferMiniApp(await dashboardFacts())) {
+          logger.warn("mini app not built — menu button not set");
+          return;
+        }
+        await bot.api.setChatMenuButton({ menu_button: { type: "web_app", text: "Dev Hub", web_app: { url: webAppUrl } } });
+      } catch (err) {
+        logger.error({ err }, "failed to set menu button");
+      }
+    })();
   }
 
   // Error handler
