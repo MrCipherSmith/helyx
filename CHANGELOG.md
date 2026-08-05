@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+### feat: `/now` — what the session is doing, answered without asking it
+
+Reported by the operator: "я не хочу постоянно писать какой статус и в
+некоторых случаях не получать ответа".
+
+Asking was the problem. A question goes through `message_queue`, and the poller
+holds a message back while the chat is busy — deliberately, so each message gets
+its own turn — so the answer arrives when the turn ends, which is when it stops
+being interesting. A wedged session never answers at all. The question the
+operator asks most often was the one the system answered worst.
+
+It was never necessary. The transcript already says what the session is doing,
+and since the subagent work it says what its subagents are doing too. `/now`
+reads that record and answers at once: what was last done and how long ago, how
+many tools and files this turn, which subagents are live and what each is doing,
+and what it is waiting on — a permission prompt, an open question, working, or
+silence. Those four are kept apart on purpose: they mean different things to
+someone deciding whether to keep waiting.
+
+Under the facts, two lines from the same local model the supervisor uses for its
+health digests — the one thing not in the record is "what is left". It is
+allowed to fail: a model that is down costs the two lines and nothing else,
+which is why they are last and behind a rule.
+
+The button under the card asks the session itself, and queues through
+`message_queue` exactly as a message does. There is deliberately no second
+delivery path: the existing one is the only one that respects a turn, and a
+question that jumped it would arrive mid-thought and be answered about the wrong
+thing.
+
+Pressing `/now` again edits the same message rather than sending another — the
+operator presses it when they are impatient, which is exactly when they press it
+repeatedly.
+
+`/btw` through `tmux send-keys` was considered and rejected: it races the
+operator for the terminal's input, and its answer would have to be told from a
+real answer by guesswork.
+
 ### feat: a subagent's work reaches the status
 
 The other half of the operator's report. Flow 044 keeps the status alive past a

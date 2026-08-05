@@ -84,6 +84,10 @@ export const defaultCallbackHandlers: CallbackHandlers = {
     const { handleTmuxLogCallback } = await import("./commands/tmux-log.ts");
     return handleTmuxLogCallback(ctx);
   },
+  now: async (ctx) => {
+    const { handleNowCallback } = await import("./commands/now.ts");
+    return handleNowCallback(ctx);
+  },
 };
 
 export async function handleCallbackQuery(

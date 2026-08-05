@@ -171,6 +171,9 @@ export function registerHandlers(b: Bot): void {
   b.command("switch", handleSwitch);
   b.command("standalone", (ctx) => handleSwitchTo(ctx, 0));
   b.command("session", handleSessionInfo);
+  // Reads the session's own record and answers at once — see bot/commands/now.ts
+  // for why this does not go through the message queue like a question would.
+  b.command("now", (ctx) => import("./commands/now.ts").then((m) => m.handleNow(ctx)));
   b.command("rename", handleRename);
   b.command("start", handleStart);
   b.command("help", handleHelp);

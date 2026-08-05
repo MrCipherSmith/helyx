@@ -31,7 +31,8 @@ export type CallbackRoute =
   | "system"
   | "menu"
   | "supervisor"
-  | "tmux-log";
+  | "tmux-log"
+  | "now";
 
 /**
  * The table, in order. First match wins.
@@ -68,6 +69,7 @@ export const CALLBACK_ROUTES: readonly (readonly [prefix: string, route: Callbac
   ["menu:", "menu"],
   ["sup:", "supervisor"],
   ["tmuxlog:", "tmux-log"],
+  ["now:", "now"],
 ];
 
 /**

@@ -40,6 +40,7 @@ const EXAMPLES: readonly (readonly [data: string, route: CallbackRoute])[] = [
   ["menu:main", "menu"],
   ["sup:ack:4", "supervisor"],
   ["tmuxlog:helyx", "tmux-log"],
+  ["now:ask", "now"],
 ];
 
 describe("routing a callback", () => {
