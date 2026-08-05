@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+### test: what happens to a file after it has been downloaded
+
+`bot/media.ts` was 5.59% covered — 405 uncovered lines — and it is how every
+picture, voice note, document and video reaches a session. Its fork in the road
+is `deliverMedia`: a file goes either into a CLI session's queue, as a message
+carrying an attachment, or into a standalone chat, where an image is inlined
+into the prompt and anything else is acknowledged.
+
+That branch has been wrong in a way that mattered. A document arriving as
+`image/png` was inlined for one path and not for the other, and one of the two
+had no size limit at all, so a forty-megabyte picture went into a request whole.
+The decision about *what* may be inlined was extracted to
+`utils/media-attachment.ts` and tested there; the code that acts on the answer
+was not tested anywhere.
+
+Covered: a picture queued for a session with its base64 and its message id; an
+over-large picture queued as a path instead, which is the guard the forty
+megabytes walked past; a video queued as a file without its bytes ever being
+read; an image inlined into a standalone prompt as an image block of the right
+media type; a document acknowledged rather than inlined; an image too large to
+inline degrading to the acknowledgement instead of vanishing; and a non-
+Anthropic provider getting the acknowledgement rather than a request it cannot
+answer. Line coverage 5.59% → 26.76%.
+
+`deliverMedia` now reaches its collaborators through a `MediaDeps` seam
+(`setMediaDeps`, which returns the function that puts them back). That is a
+production change and it was not the first choice: replacing `memory/db.ts`
+through the module registry re-evaluates the graph behind `bot/media.ts` —
+which is most of the bot — and left `services/provider-service.ts`
+half-initialised for four tests in `reviewer-service.test.ts` and one migration
+test that had nothing to do with media. Nine replaced modules and then five
+both did it. What a test does to the module registry outlives the test, so the
+seam is the honest way in.
+
 ### test: the operator's console, against a database that answers and one that does not
 
 `bot/commands/admin.ts` was 3.65% covered. Its handlers are the ones a person
