@@ -3,9 +3,9 @@
   "id": "026",
   "slug": "the-reviewers-that-never-ran-and-the-dia",
   "title": "the reviewers that never ran, and the diagnosis that said otherwise",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-04T23:08:08.621Z",
-  "updatedAt": "2026-08-05T00:25:33.964Z",
+  "updatedAt": "2026-08-05T00:27:52.873Z",
   "source": {
     "type": "description",
     "ref": null
@@ -50,7 +50,7 @@
     }
   },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/61"
   },
   "tasks": [
     {
@@ -586,6 +586,20 @@
       "at": "2026-08-05T00:25:33.964Z",
       "event": "ac-confirmed",
       "detail": "AC9: Six real runs against PR 61. Run 1: codex cli-usage (honest), deepseek asked for the diff. Run 3: both ok=true, mode external. Runs 5 and 6 produced substantive reviews from both; every valid finding was fixed and the one architectural item (binding the transcript to a session id) is reported to the operator as an open decision"
+    },
+    {
+      "at": "2026-08-05T00:27:50.959Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/61"
+    },
+    {
+      "at": "2026-08-05T00:27:51.115Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-05T00:27:52.873Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
   ]
 }
