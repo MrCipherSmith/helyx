@@ -22,6 +22,15 @@ subprocesses on the host, so it reaches production only after a session bounce.
 Evidence for each defect is recorded in [prd.md](prd.md) §2 with the file and
 line it was read from; no claim here rests on inference.
 
+**Merged, not deployed** (2026-08-05). Every flow in this package is squash-merged
+into `main`; none of it is running. The bot container and the channel
+subprocesses still carry the pre-programme code, and the status here stays
+`spec ready` until a rebuild and a session bounce make it true — the vocabulary
+in [`../roadmap.md`](../roadmap.md) reserves `implemented` for deployed code,
+and this programme spent a flow (034) on exactly that distinction.
+
+Flows: 027 (D4), 028 (D1), 029 (D3), 030 (D2) — PRs #62, #64, #65, #66.
+
 ## Document Index
 
 | File | Contents |

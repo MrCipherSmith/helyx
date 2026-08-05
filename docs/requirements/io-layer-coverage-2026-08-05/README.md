@@ -34,6 +34,29 @@ The gate was reading a four-day-old import and ignoring a changed-scope test
 report; `bun run health` now sequences the three steps so it cannot. PRD §2.3
 has the diagnosis.
 
+**Merged, not deployed** (2026-08-05). Every flow in this package is squash-merged
+into `main`; none of it is running. The bot container and the channel
+subprocesses still carry the pre-programme code, and the status here stays
+`spec ready` until a rebuild and a session bounce make it true — the vocabulary
+in [`../roadmap.md`](../roadmap.md) reserves `implemented` for deployed code,
+and this programme spent a flow (034) on exactly that distinction.
+
+Measured again on 2026-08-05 after the flows below: **42.61%** by the same lcov
+record (36.25% → 42.61%), suite 1443 → 1644 tests. Still under the 60% floor;
+the gate reads WARN and says so honestly, which is what flow 034 was for.
+
+Flows: 034 (the gate itself), 035 `scripts/supervisor.ts`, 037
+`memory/summarizer.ts`, 038 `utils/tts.ts`, 039 `bot/media.ts`, 040
+`mcp/dashboard-api.ts`, 041 `scripts/tmux-watchdog.ts`, 042
+`bot/commands/admin.ts` — PRs #70, #71, #72, #73, #77, #74, #75, #76.
+
+**036 `mcp/server.ts` is blocked** and is the one flow of the sixteen that did
+not land. Its request handler lives inside the `createServer` arrow, so nothing
+can reach it without either extracting it — a production change to the file
+every MCP tool call enters through — or binding port 3847, which is already
+held on this host. The choice belongs to the maintainer; the flow records it
+rather than guessing.
+
 ## Document Index
 
 | File | Contents |
