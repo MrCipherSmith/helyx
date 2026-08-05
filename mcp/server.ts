@@ -6,7 +6,7 @@ import { resolve as resolvePath } from "path";
 import { z } from "zod";
 import { executeTool } from "./tools.ts";
 import { registerMcpSession, unregisterMcpSession } from "./bridge.ts";
-import { handleDashboardRequest } from "./dashboard-api.ts";
+import { handleDashboardRequest, getDashboardReadiness } from "./dashboard-api.ts";
 import { sessionManager, setTerminationCallback } from "../sessions/manager.ts";
 import { getForumChatId } from "../bot/forum-cache.ts";
 import { escapeHtml } from "../bot/format.ts";
@@ -911,6 +911,11 @@ export function startMcpHttpServer(bot: Bot | null): ReturnType<typeof createSer
 
   httpServer.listen(CONFIG.PORT, () => {
     console.log(`[mcp] HTTP server listening on port ${CONFIG.PORT}`);
+    // Said once, at error level, because the symptom is otherwise a Mini App
+    // that reads `Not Found` and a log that says nothing at all.
+    void getDashboardReadiness().then((state) => {
+      if (!state.ok) console.error(`[dashboard] ${state.message}`);
+    });
   });
 
   return httpServer;
