@@ -1,6 +1,6 @@
 # Coverage to Sixty — PRD
 
-Version: 1.0.0
+Version: 1.1.0
 
 ## 1. Problem
 
@@ -128,39 +128,46 @@ that come out of it are worth more than the number they move.
 
 ## 4. Proposed order
 
-| # | Flow | Files | Method | Uncovered |
-|---|---|---|---|---|
-| 1 | The fixture itself | `tests/fixtures/test-db.ts` | — | Make it the standard way to open a handler test: one helper that gives a test a database, a session row and a chat, and cleans up after itself. Nothing else in this list starts before it. |
-| 2 | Dashboard routes | `mcp/dashboard-api.ts` | B | 766 |
-| 3 | MCP tools | `mcp/tools.ts` | B | 407 |
-| 4 | MCP server, the success paths | `mcp/server.ts` | A + B | 504 |
-| 5 | Session and project commands | `bot/commands/session.ts`, `bot/commands/projects.ts` | B | 450 |
-| 6 | Provider and codex commands | `bot/commands/providers.ts`, `bot/commands/codex.ts` | B | 502 |
-| 7 | Callbacks and supervisor actions | `bot/callbacks.ts`, `bot/commands/supervisor-actions.ts` | B | 550 |
-| 8 | Text handler and forum commands | `bot/text-handler.ts`, `bot/commands/forum.ts` | B | 471 |
-| 9 | Memory and curator | `memory/long-term.ts`, `utils/curator.ts` | B | 453 |
-| 10 | Sessions manager | `sessions/manager.ts` | A + B | 257 |
-| 11 | The watchdog's alert paths | `scripts/tmux-watchdog.ts` | A | 395 |
-| 12 | Whatever the number says is left | — | — | measured, not guessed |
+Ordered by what fails badly, per §5. Line counts are what each flow is worth,
+not why it is where it is.
 
-Flow 1 is not optional and not a chore. Every flow after it either uses one
-shared way of opening a database or invents its own, and the last programme is
-the evidence for what "invents its own" costs.
+| # | Flow | Files | Method | Uncovered | Why here |
+|---|---|---|---|---|---|
+| 1 | The fixture itself | `tests/fixtures/test-db.ts` | — | — | One helper that gives a test a database, a session row and a chat, and cleans up after itself. Nothing else starts before it, because the alternative is every flow inventing its own — which is what the last programme cost. |
+| 2 | Sessions manager | `sessions/manager.ts` | A + B | 257 | A session is the unit of work in this system. When registration or disconnection is wrong, a session exists in the database and not in tmux, or the reverse, and the operator finds out by a topic going quiet. |
+| 3 | Callbacks | `bot/callbacks.ts` | B | 281 | Every button in every menu lands here. A wrong branch is a press that does nothing, and Telegram shows nothing either way. |
+| 4 | Text handler and forum commands | `bot/text-handler.ts`, `bot/commands/forum.ts` | B | 471 | The path every message takes, and the routing that decides which session hears it. Its failures misdeliver rather than error. |
+| 5 | Session and project commands | `bot/commands/session.ts`, `bot/commands/projects.ts` | B | 450 | Start, stop, switch. These act on the running system. |
+| 6 | Supervisor actions and admin | `bot/commands/supervisor-actions.ts`, `bot/commands/admin.ts` | B | 591 | What an operator reaches for when something is already wrong — the worst moment for a handler to throw. |
+| 7 | Memory and curator | `memory/long-term.ts`, `utils/curator.ts` | B | 453 | Silent by nature: the summarizer produced nothing for weeks and nothing noticed (flow 037). |
+| 8 | The watchdog's alert paths | `scripts/tmux-watchdog.ts` | A | 395 | It is what notices a stuck session. Flow 041 covered its detectors; the notifying half is still dark. |
+| 9 | Provider and codex commands | `bot/commands/providers.ts`, `bot/commands/codex.ts` | B | 502 | Configuration rather than operation — wrong here is visible immediately. |
+| 10 | MCP tools | `mcp/tools.ts` | B | 407 | Large, and every tool call goes through it, but its dispatcher is now covered at both ends (flows 036, 043). |
+| 11 | Dashboard routes | `mcp/dashboard-api.ts` | B | 766 | The biggest single number in the table, and last on purpose: its two guards are already tested, and what is left is route bodies behind them. |
+| 12 | Whatever the number says is left | — | — | measured | Re-measured, not guessed. |
 
-## 5. The question worth asking first
+By flow 8 the floor is crossed on the arithmetic; by flow 11 it is crossed with
+room. Either way the ordering above is the point, and the number is the
+by-product.
 
-Is 60% the goal, or is it inherited?
+## 5. The question, answered
 
-The floor is soft and the gate reports WARN, not FAIL. If the goal is instead
-"the paths that can fail badly are covered", this list reorders: `sessions/manager.ts`
-and `bot/callbacks.ts` climb, and `mcp/dashboard-api.ts` — the biggest file,
-whose guards are already tested — drops. The two orderings are not the same
-work, and picking the number by default is how a programme ends up optimising
-for the number.
+*Is 60% the goal, or is it inherited?*
 
-This PRD assumes the floor, because the floor is what the gate reads. If that
-assumption is wrong, §4 is the wrong table and should be rewritten before the
-first flow starts.
+**Answered by the maintainer on 2026-08-05: it is a minimum, not a target.**
+
+That settles the ordering. Work is ordered by what fails badly, not by what
+yields the most lines; the number is a floor that gets crossed on the way
+rather than a score to optimise. §4 is ordered accordingly and no longer leads
+with `mcp/dashboard-api.ts`, which is the largest file but whose guards — the
+JWT check and the origin check, the two things a browser can reach — are
+already covered by flow 040.
+
+The practical difference: a programme aimed at the number opens the biggest
+file first and closes the gap in eight flows. A programme aimed at the risk
+opens `sessions/manager.ts` and `bot/callbacks.ts` first, crosses 60% a flow or
+two later, and covers the code whose failure loses a session or drops a button
+press before it covers a route that already answers 401 correctly.
 
 ## 6. Out of scope
 
