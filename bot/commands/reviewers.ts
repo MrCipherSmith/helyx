@@ -32,7 +32,12 @@ export async function handleReviewers(ctx: Context): Promise<void> {
 
 export async function handleReviewersStatus(ctx: Context): Promise<void> {
   const statuses = await getReviewerStatuses();
-  const lines = statuses.map((s) => `${s.available ? "🟢" : "🔴"} ${s.label} (${s.model}) — ${s.detail}`);
+  // Three states, not two. A reviewer nothing has tested is not green: that
+  // tick used to mean "no probe exists for this backend" and read as "fine".
+  const lines = statuses.map((s) => {
+    const mark = !s.probed ? "⚪" : s.available ? "🟢" : "🔴";
+    return `${mark} ${s.label} (${s.model}) — ${s.detail}`;
+  });
   await ctx.reply("Reviewer availability:\n" + (lines.join("\n") || "(none)"));
 }
 

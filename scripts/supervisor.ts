@@ -30,6 +30,7 @@ import { existsSync } from "node:fs";
 import { forceSummarize } from "../memory/summarizer.ts";
 import { clearCache } from "../memory/short-term.ts";
 import { ErrorWindow } from "../utils/error-stream.ts";
+import { getReviewerStatuses, type ReviewerStatus } from "../services/reviewer-service.ts";
 import { TranscriptTail } from "../utils/transcript-locate.ts";
 import { isRequeued, markRequeued } from "../utils/requeue.ts";
 import { paneLines, hasActiveSpinner, escapeHtml } from "../utils/terminal.ts";
@@ -1391,6 +1392,96 @@ export async function checkErrorStream(
   }
 }
 
+// --- Loop 10: are the reviewers able to review? ---
+
+/**
+ * The reviewers, watched the way everything else here is watched.
+ *
+ * Availability was answered only when a person opened `/reviewers`, so a dead
+ * reviewer announced itself inside the review you had just asked for. On
+ * 2026-08-05 Codex refused every run for six days while its login probe kept
+ * saying it was logged in, and the operator found out by reading a failed
+ * review.
+ *
+ * Alerts fire on **transitions**, never on state: a reviewer down for six days
+ * is one alert, not two hundred and eighty-eight.
+ */
+export const REVIEWER_BALANCE_FLOOR_USD = 2;
+/** Re-arm only above floor + margin, so a balance at the line does not alternate. */
+export const REVIEWER_BALANCE_MARGIN_USD = 1;
+
+export interface ReviewerHealthDeps {
+  statuses: () => Promise<ReviewerStatus[]>;
+  alert: (text: string, key: string) => Promise<void>;
+  clear: (text: string, key: string) => Promise<void>;
+}
+
+/** Last known availability per reviewer id. In memory: a restart re-announces at most once. */
+const reviewerWasAvailable = new Map<string, boolean>();
+
+/** Exported for the tests, which drive transitions rather than a real CLI. */
+export function resetReviewerHealthState(): void {
+  reviewerWasAvailable.clear();
+}
+
+/** A balance below the floor is unavailable even when the endpoint answers. */
+export function balanceBelowFloor(detail: string, floor = REVIEWER_BALANCE_FLOOR_USD): boolean {
+  const amount = detail.match(/balance \$([0-9]+(?:\.[0-9]+)?)/)?.[1];
+  return amount !== undefined && parseFloat(amount) < floor;
+}
+
+function balanceRearmed(detail: string): boolean {
+  const amount = detail.match(/balance \$([0-9]+(?:\.[0-9]+)?)/)?.[1];
+  return amount === undefined || parseFloat(amount) >= REVIEWER_BALANCE_FLOOR_USD + REVIEWER_BALANCE_MARGIN_USD;
+}
+
+export async function checkReviewerHealth(deps: ReviewerHealthDeps): Promise<void> {
+  let statuses: ReviewerStatus[];
+  try {
+    statuses = await deps.statuses();
+  } catch {
+    return;
+  }
+
+  for (const status of statuses) {
+    // An unprobed reviewer is not evidence of anything, in either direction.
+    if (!status.probed) continue;
+
+    const healthy = status.available && !balanceBelowFloor(status.detail);
+    const wasHealthy = reviewerWasAvailable.get(status.id);
+
+    if (wasHealthy === undefined) {
+      reviewerWasAvailable.set(status.id, healthy);
+      // First sighting of a reviewer that is already down is worth saying once;
+      // one that is up is not news.
+      if (!healthy) {
+        await deps.alert(
+          `🔴 <b>Ревьюер недоступен</b>\n${escapeHtml(status.label)} (${escapeHtml(status.model)}) — ${escapeHtml(status.detail)}`,
+          `reviewer_down:${status.id}`,
+        );
+      }
+      continue;
+    }
+
+    if (wasHealthy && !healthy) {
+      reviewerWasAvailable.set(status.id, false);
+      await deps.alert(
+        `🔴 <b>Ревьюер недоступен</b>\n${escapeHtml(status.label)} (${escapeHtml(status.model)}) — ${escapeHtml(status.detail)}`,
+        `reviewer_down:${status.id}`,
+      );
+      continue;
+    }
+
+    if (!wasHealthy && healthy && balanceRearmed(status.detail)) {
+      reviewerWasAvailable.set(status.id, true);
+      await deps.clear(
+        `✅ Ревьюер снова доступен: ${escapeHtml(status.label)} (${escapeHtml(status.model)}) — ${escapeHtml(status.detail)}`,
+        `reviewer_down:${status.id}`,
+      );
+    }
+  }
+}
+
 async function checkRecovery(sql: postgres.Sql): Promise<void> {
   for (const [dedupKey, alert] of activeAlerts) {
     const project = projectFromSessionProblemKey(dedupKey);
@@ -1546,6 +1637,26 @@ export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
     }, 90_000);
     errorStreamTimer.unref?.();
   }, 25_000);
+
+  // Loop 10: can the reviewers review — every 30 min, offset 50s. A probe, not
+  // a review: it costs one HTTP call and one `codex login status`, where
+  // reviewing costs ten minutes.
+  setTimeout(() => {
+    let reviewerHealthRunning = false;
+    const reviewerHealthTimer = setInterval(() => {
+      if (reviewerHealthRunning) return;
+      reviewerHealthRunning = true;
+      checkReviewerHealth({
+        statuses: getReviewerStatuses,
+        alert: async (text, key) => {
+          if (!shouldAlert(key)) return;
+          await sendAlertWithButtons(text, [[{ text: "🔕 Тишина на 1 ч", callback_data: `sup:ack:${key}:0` }]]);
+        },
+        clear: async (text) => { await sendAlert(text); },
+      }).catch(() => {}).finally(() => { reviewerHealthRunning = false; });
+    }, 30 * 60_000);
+    reviewerHealthTimer.unref?.();
+  }, 50_000);
 
   // Loop: Recovery check — every 60s (offset 30s from session loop)
   setTimeout(() => {

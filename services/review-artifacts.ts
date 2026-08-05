@@ -160,6 +160,65 @@ export async function persistReviewRun(
   }
 }
 
+export interface ReviewerOutcome {
+  ok: boolean;
+  error: string | null;
+  /** When the run that produced this outcome started. */
+  at: string;
+}
+
+/**
+ * What each reviewer actually did, last time anyone ran one.
+ *
+ * The honest answer to "is this reviewer available", and the reason this
+ * function exists at all: asking a CLI about its own login answered
+ * `Logged in using ChatGPT` for six days while every `codex exec` was refused
+ * for a spent quota. A record of the last real run cannot disagree with reality
+ * that way — it *is* reality, from the most recent time it was tested.
+ *
+ * Reads only the newest artifact. An older one describes a state that has since
+ * been superseded, and merging several would invent a history nobody recorded.
+ */
+export async function lastOutcomeByReviewer(
+  root: string = DEFAULT_ARTIFACT_ROOT,
+): Promise<Map<string, ReviewerOutcome>> {
+  const out = new Map<string, ReviewerOutcome>();
+
+  let entries: string[];
+  try {
+    entries = await readdir(root);
+  } catch {
+    return out;
+  }
+
+  const runs: Array<{ path: string; mtimeMs: number }> = [];
+  for (const name of entries) {
+    const path = join(root, name, "run.json");
+    const info = await stat(path).catch(() => null);
+    if (info?.isFile()) runs.push({ path, mtimeMs: info.mtimeMs });
+  }
+  if (runs.length === 0) return out;
+
+  runs.sort((a, b) => b.mtimeMs - a.mtimeMs);
+
+  let parsed: { startedAt?: string; reports?: Array<{ reviewerId?: string; ok?: boolean; error?: string | null }> };
+  try {
+    parsed = JSON.parse(await Bun.file(runs[0]!.path).text());
+  } catch {
+    return out;
+  }
+
+  for (const report of parsed.reports ?? []) {
+    if (!report.reviewerId) continue;
+    out.set(report.reviewerId, {
+      ok: report.ok === true,
+      error: report.error ?? null,
+      at: parsed.startedAt ?? "",
+    });
+  }
+  return out;
+}
+
 export interface PruneOptions {
   maxAgeDays?: number;
   maxRuns?: number;

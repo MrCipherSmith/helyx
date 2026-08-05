@@ -92,6 +92,21 @@ describe("classifyCodexFailure", () => {
     expect(classifyCodexFailure(1, "", "ERROR: you are not logged in")).toBe("auth");
   });
 
+  test("Codex's own words for a spent quota are recognised, with the reset time", () => {
+    // Verbatim from the CLI on 2026-08-05, while it was refusing every review
+    // this repository asked for. It matched none of the limit patterns, so
+    // eleven rounds that day recorded "failed (exit 1)" — true, and useless.
+    const real =
+      "ERROR: You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage " +
+      "to purchase more credits or try again at Aug 11th, 2026 5:49 PM.";
+
+    expect(classifyCodexFailure(1, "", real)).toBe("limit until aug 11th, 2026 5:49 pm");
+  });
+
+  test("a limit without a reset time is still a limit", () => {
+    expect(classifyCodexFailure(1, "", "ERROR: you have hit your usage limit")).toBe("limit");
+  });
+
   test("a reason the CLI did not mark as an error degrades to the exit code, not to a guess", () => {
     // The cost of reading only the CLI's own error lines, stated rather than
     // discovered later: a message that arrives unprefixed loses its name. It
