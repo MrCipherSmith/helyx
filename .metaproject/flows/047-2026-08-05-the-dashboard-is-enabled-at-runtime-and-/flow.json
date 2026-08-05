@@ -3,15 +3,52 @@
   "id": "047",
   "slug": "the-dashboard-is-enabled-at-runtime-and-",
   "title": "The dashboard is enabled at runtime and absent from the image",
-  "status": "implemented",
+  "status": "done",
   "createdAt": "2026-08-05T21:59:16.409Z",
-  "updatedAt": "2026-08-05T22:02:57.819Z",
+  "updatedAt": "2026-08-05T22:05:38.177Z",
   "source": {
     "type": "description",
     "ref": null
   },
   "acChecksum": "sha256:92e97dc7f10cf2e260ca852ac259366283a4b65677ea09ac4001182e5cabff12",
-  "acConfirmed": {},
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-05T22:05:24.183Z"
+    },
+    "AC2": {
+      "at": "2026-08-05T22:05:24.270Z"
+    },
+    "AC3": {
+      "at": "2026-08-05T22:05:24.364Z"
+    },
+    "AC4": {
+      "at": "2026-08-05T22:05:24.449Z"
+    },
+    "AC5": {
+      "at": "2026-08-05T22:05:24.536Z"
+    },
+    "AC6": {
+      "at": "2026-08-05T22:05:24.623Z"
+    },
+    "AC7": {
+      "at": "2026-08-05T22:05:24.709Z"
+    },
+    "AC8": {
+      "at": "2026-08-05T22:05:24.798Z"
+    },
+    "AC9": {
+      "at": "2026-08-05T22:05:24.884Z"
+    },
+    "AC10": {
+      "at": "2026-08-05T22:05:24.970Z"
+    },
+    "AC11": {
+      "at": "2026-08-05T22:05:25.057Z"
+    },
+    "AC12": {
+      "at": "2026-08-05T22:05:25.143Z"
+    }
+  },
   "pr": {
     "url": "https://github.com/MrCipherSmith/helyx/pull/88"
   },
@@ -91,6 +128,80 @@
       "at": "2026-08-05T22:02:57.819Z",
       "event": "implemented",
       "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/88"
+    },
+    {
+      "at": "2026-08-05T22:05:24.183Z",
+      "event": "ac-confirmed",
+      "detail": "AC1"
+    },
+    {
+      "at": "2026-08-05T22:05:24.270Z",
+      "event": "ac-confirmed",
+      "detail": "AC2"
+    },
+    {
+      "at": "2026-08-05T22:05:24.364Z",
+      "event": "ac-confirmed",
+      "detail": "AC3"
+    },
+    {
+      "at": "2026-08-05T22:05:24.449Z",
+      "event": "ac-confirmed",
+      "detail": "AC4"
+    },
+    {
+      "at": "2026-08-05T22:05:24.536Z",
+      "event": "ac-confirmed",
+      "detail": "AC5"
+    },
+    {
+      "at": "2026-08-05T22:05:24.623Z",
+      "event": "ac-confirmed",
+      "detail": "AC6"
+    },
+    {
+      "at": "2026-08-05T22:05:24.709Z",
+      "event": "ac-confirmed",
+      "detail": "AC7"
+    },
+    {
+      "at": "2026-08-05T22:05:24.798Z",
+      "event": "ac-confirmed",
+      "detail": "AC8"
+    },
+    {
+      "at": "2026-08-05T22:05:24.884Z",
+      "event": "ac-confirmed",
+      "detail": "AC9"
+    },
+    {
+      "at": "2026-08-05T22:05:24.970Z",
+      "event": "ac-confirmed",
+      "detail": "AC10"
+    },
+    {
+      "at": "2026-08-05T22:05:25.057Z",
+      "event": "ac-confirmed",
+      "detail": "AC11"
+    },
+    {
+      "at": "2026-08-05T22:05:25.143Z",
+      "event": "ac-confirmed",
+      "detail": "AC12"
+    },
+    {
+      "at": "2026-08-05T22:05:38.171Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-05T22:05:38.177Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
-  ]
+  ],
+  "merged": {
+    "commit": "665b600",
+    "ref": "origin/main",
+    "at": "2026-08-05T22:05:38.177Z"
+  }
 }
