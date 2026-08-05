@@ -1,6 +1,6 @@
 # I/O Layer Coverage — Specification
 
-Version: 1.0.0
+Version: 1.1.0
 
 ## 1. Identity
 
@@ -32,17 +32,20 @@ and is itself asserted.
 Ranked by estimated uncovered lines weighted by operational risk. Each row is
 one flow.
 
-| # | Target | Now | Target | Why here |
-|---|---|---|---|---|
-| C1 | `scripts/supervisor.ts` | 44.61% | ≥ 75% | Top hotspot (churn × complexity 355 776); broke twice in one week; about to gain two loops from the self-observability package |
-| C2 | `mcp/server.ts` | 7.89% | ≥ 60% | Every MCP tool call and the Stop hook enter here; ~760 uncovered lines |
-| C3 | `memory/summarizer.ts` | 7.58% | ≥ 60% | Holds the D1 defect from self-observability; untested when it silently produced nothing for weeks |
-| C4 | `bot/media.ts` + `utils/tts.ts` | 5.59% / 5.54% | ≥ 55% | The voice path the operator uses on every message; currently fails its first provider on every synthesis with nobody testing the fallback chain |
-| C5 | `bot/commands/admin.ts` | 3.65% | ≥ 55% | Admin actions restart, stop and rebuild things; the least reversible code in the repository |
-| C6 | `mcp/dashboard-api.ts` | 3.66% | ≥ 50% | Most uncovered lines of any file (~1139) and the lowest operational risk — deliberately last |
-| C7 | `scripts/tmux-watchdog.ts` | 6.00% | ≥ 50% | Session survival; ~650 uncovered lines |
+Exact uncovered counts from lcov, not estimates.
 
-`channel/status.ts` (62.94%) and `mcp/tools.ts` (39.88%) are not in the plan:
+| # | Target | Now | Uncovered | Target | Why here |
+|---|---|---|---|---|---|
+| C1 | `scripts/supervisor.ts` | 52.03% | 580 | ≥ 75% | Top hotspot (churn × complexity 355 776); broke twice in one week; has since gained three loops from the self-observability and reviewer packages |
+| C2 | `mcp/server.ts` | 8.49% | 701 | ≥ 60% | Every MCP tool call and the Stop hook enter here |
+| C3 | `memory/summarizer.ts` | 17.44% | 322 | ≥ 60% | Held the D1 defect from self-observability; untested while it silently produced nothing for weeks |
+| C4 | `bot/media.ts` + `utils/tts.ts` | 5.59% / 5.54% | 405 + 529 | ≥ 55% | The voice path the operator uses on every message; still fails its first provider on every synthesis with nobody testing the fallback chain |
+| C5 | `bot/commands/admin.ts` | 3.65% | 449 | ≥ 55% | Admin actions restart, stop and rebuild things; the least reversible code in the repository |
+| C6 | `mcp/dashboard-api.ts` | 3.66% | 947 | ≥ 50% | Most uncovered lines of any file, and the lowest operational risk — deliberately last |
+| C7 | `scripts/tmux-watchdog.ts` | 6.00% | 470 | ≥ 50% | Session survival |
+
+`channel/status.ts` (62.94%, 282 uncovered) and `mcp/tools.ts` (39.88%, 407)
+are not in the plan:
 both are above the point where the next test costs more than it returns, and
 neither is a hotspot the way the supervisor is.
 
@@ -61,7 +64,7 @@ For every row in §3:
 
 | Item | Contract |
 |---|---|
-| Command | `keryx health run` |
+| Command | `bun run health` — coverage, then a project-scope test run, then the gate. The order is the defect it fixes |
 | Required source | `tests` must report `available`; the 2026-08-04 run recorded `missing` and that is fixed before the gate is trusted |
 | Coverage source | `scripts/coverage-summary.ts` bridges Bun's output into the Istanbul summary health reads |
 | Baseline | Re-recorded once after C1 lands, so regression detection compares against a run in which all sources were live |
@@ -75,8 +78,7 @@ keryx memory supersede .metaproject/memory/task-notes/coverage-programme-state.m
 ```
 
 The superseding note states: the `test-postgres` fixture named as the blocker
-exists and is in use; the measured position on 2026-08-05 (47.90% lines, 43.65%
-functions, 1443 tests); the C1–C7 order; and that extraction remains spent.
+exists and is in use; the measured position on 2026-08-05 (36.25% of lines, 7369 of 20329, 1540 tests); the C1–C7 order; and that extraction remains spent.
 
 Never hand-edit the note — the memory module owns its own index.
 

@@ -1,6 +1,6 @@
 # I/O Layer Coverage — PRD
 
-Version: 1.0.0
+Version: 1.1.0
 
 ## 1. Problem
 
@@ -9,7 +9,7 @@ soft floor. The eight-flow programme that raised it from 15.71% to 19.22% ended
 with an honest conclusion — extraction is spent, what is left is I/O, and I/O
 cannot be covered without fixtures.
 
-The fixtures were then built. Coverage is now 47.90%. Nobody wrote down that
+The fixtures were then built. Coverage is now 36.25%. Nobody wrote down that
 the blocker was gone, so the recorded state of the programme still says it is
 blocked, and the next reader — human or agent — starts from a false position.
 
@@ -19,47 +19,67 @@ stop the record from lying about it.
 ## 2. Measurements
 
 All figures below are from `bun test --coverage tests/unit/` on the working
-tree, 2026-08-05, with 1443 tests passing.
+tree, 2026-08-05, with 1540 tests passing.
 
 ### 2.1 Position
 
 | Metric | Value |
 |---|---|
-| Lines | 47.90% |
-| Functions | 43.65% |
+| Lines | 36.25% (7369 of 20329) |
 | Soft floor | 60% |
+| Tests | 1540, all passing |
+
+Exact, from `coverage/lcov.info` via `scripts/coverage-summary.ts` — the same
+file the health gate imports.
+
+**This corrects an earlier figure in this document.** The first version quoted
+47.90%, which is Bun's own text-reporter aggregate over the files it loaded; the
+lcov record counts every instrumented line and answers 36.25%. The gap to the
+floor is therefore larger than this package first claimed, not smaller, and the
+plan below is ordered by the exact numbers.
 
 ### 2.2 Where the uncovered lines are
 
-Uncovered lines estimated as file length × (1 − line coverage) — an estimate,
-because Bun reports percentages and not counts, and stated as one:
+Exact counts, not estimates. The first version of this table derived them from
+file length × uncovered fraction and overstated most of them — `dashboard-api`
+by 200 lines, `supervisor` by 280.
 
-| File | Line cov | Est. uncovered | Health hotspot rank |
+| File | Line cov | Uncovered | Health hotspot rank |
 |---|---|---|---|
-| `mcp/dashboard-api.ts` | 3.66% | ~1139 | — |
-| `scripts/supervisor.ts` | 44.61% | ~861 | 1st (355 776) |
-| `mcp/server.ts` | 7.89% | ~760 | 8th (39 192) |
-| `utils/tts.ts` | 5.54% | ~665 | — |
-| `scripts/tmux-watchdog.ts` | 6.00% | ~650 | — |
-| `bot/commands/admin.ts` | 3.65% | ~477 | — |
-| `channel/status.ts` | 62.94% | ~461 | 3rd (192 432) |
-| `memory/summarizer.ts` | 7.58% | ~446 | — |
-| `bot/media.ts` | 5.59% | ~425 | — |
-| `mcp/tools.ts` | 39.88% | ~415 | — |
+| `mcp/dashboard-api.ts` | 3.66% | 947 | — |
+| `mcp/server.ts` | 8.49% | 701 | 8th (39 192) |
+| `scripts/supervisor.ts` | 52.03% | 580 | 1st (355 776) |
+| `utils/tts.ts` | 5.54% | 529 | — |
+| `scripts/tmux-watchdog.ts` | 6.00% | 470 | — |
+| `bot/commands/admin.ts` | 3.65% | 449 | — |
+| `mcp/tools.ts` | 39.88% | 407 | — |
+| `bot/media.ts` | 5.59% | 405 | — |
+| `memory/summarizer.ts` | 17.44% | 322 | — |
+| `bot/commands/providers.ts` | 7.95% | 301 | — |
+| `channel/status.ts` | 62.94% | 282 | 3rd (192 432) |
+| `bot/callbacks.ts` | 14.59% | 281 | — |
+
+By directory, the same figures: `bot` 11.2% (598 of 5328), `mcp` 15.2% (391 of
+2577), `memory` 34.3%, `scripts` 43.6%, `services` 52.3%, `utils` 52.7%,
+`channel` 69.3%.
 
 Two things changed since the 2026-08-03 note. `memory/db.ts`, then the second
 worst file at 578 uncovered lines, has left the list entirely — that is the
-fixture layer working. `scripts/supervisor.ts` went from 1075 uncovered to
-~861 and from 0% to 44.61%, and is still the top hotspot in the repository by
-churn × complexity.
+fixture layer working. `scripts/supervisor.ts` went from 1075 uncovered to 580 and from 0% to 52.03%,
+and is still the top hotspot in the repository by churn × complexity.
 
-### 2.3 The gate is reading a stale number
+### 2.3 Why the gate was reading a stale number
 
-`.metaproject/data/health/artifacts/latest.md` was generated 2026-08-04 at
-commit `76f6b94` and records 30.13% with `tests: missing` among its sources —
-the run did not read the project's test results at all, and took coverage from
-an imported summary. The gate is therefore reporting a number 17 points below
-the measured one, from a run that could not see the tests.
+Two sequencing defects, both diagnosed on 2026-08-05 and both fixed by
+`bun run health`:
+
+- **Coverage is imported, and nothing regenerated it.**
+  `coverage/coverage-summary.json` was four days old, so every gate run judged
+  the project on it. Regenerating moved the reading 30.13% → 36.25%.
+- **`tests` reported `missing` while 1540 tests passed.** Health wants a
+  project-scope test report, and the newest artifact is normally written by the
+  post-commit hook, which runs a *changed*-scope selection. `keryx test run`
+  first makes the same source report `available`.
 
 ## 3. Goal
 
@@ -116,9 +136,9 @@ remaining plan.
 
 | # | Criterion | How it is verified |
 |---|---|---|
-| S1 | Line coverage ≥ 60% | `bun test --coverage tests/unit/` |
+| S1 | Line coverage ≥ 60% | `bun run health` — the lcov figure the gate imports, not the text reporter's |
 | S2 | Health gate PASS on coverage | `keryx health run` |
-| S3 | `tests: available` in the health sources table | same run |
+| S3 | `tests: available` in the health sources table | same run — `bun run health` sequences a project-scope test run before the gate |
 | S4 | `scripts/supervisor.ts` ≥ 75% lines | per-file coverage |
 | S5 | No new fixture duplicates existing ones | `bun run dupes` report does not grow |
 | S6 | The memory note reflects reality | `keryx memory search` returns the superseding note |

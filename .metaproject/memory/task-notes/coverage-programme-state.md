@@ -2,8 +2,10 @@
 
 Version: 1.0.0
 Type: task-note
-Status: accepted
+Status: superseded
 Confidence: high
+Valid-To: 2026-08-05
+Superseded-By: task-notes/coverage-programme-state-2026-08-05.md
 
 ## Summary
 
@@ -94,4 +96,6 @@ coverage, programme-state, roadmap, fixtures, duplication
 
 ## Changelog
 
+
+- Superseded by task-notes/coverage-programme-state-2026-08-05.md on 2026-08-05.
 - 1.0.0 - Recorded after flow 008 merged, so the state survives a context reset.

@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+### fix: the quality gate stopped judging by a stale number
+
+Three untruths, measured on 2026-08-05.
+
+The gate imported `coverage/coverage-summary.json` and nothing regenerated it,
+so every run since 2026-08-04 judged the project on that file. Regenerating it
+moved the reading from 30.13% to 36.25%: four days of work invisible to the
+thing that exists to see it.
+
+`tests` reported `missing` while 1540 tests passed. Not a broken configuration —
+health wants a project-scope report, and the newest artifact is normally written
+by the post-commit hook, which runs a *changed*-scope selection. It was reading
+the wrong run, not no run.
+
+And the figures this programme had published were estimates. Uncovered counts
+were derived from file length × uncovered fraction; lcov has exact ones and they
+differ by hundreds of lines per file. The earlier headline of 47.90% was Bun's
+text-reporter aggregate over loaded files, where the lcov record — the one the
+gate imports — answers 36.25%. The gap to the floor is larger than was
+published, not smaller.
+
+- `bun run health` runs coverage, then a project-scope test report, then the
+  gate. The order was the defect, so the fix is a sequence with a name.
+- `scripts/coverage-summary.ts` is the bridge the whole reading rests on and had
+  no test. It now has one, including the arithmetic that matters: totals are
+  summed across files, never per-file percentages averaged, which would let a
+  covered three-line file cancel a thousand uncovered ones.
+- `docs/requirements/io-layer-coverage-2026-08-05` carries the exact figures and
+  states the correction rather than quietly replacing the numbers.
+- The 2026-08-03 programme note, which still called the coverage work blocked on
+  a fixture that has existed for days, is superseded through
+  `keryx memory supersede`.
+
 ### feat: a review that starts itself
 
 Nothing started one. `scripts/review.ts` ran when a person typed it, and

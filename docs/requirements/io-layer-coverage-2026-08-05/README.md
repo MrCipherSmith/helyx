@@ -1,6 +1,6 @@
 # I/O Layer Coverage
 
-Version: 1.0.0
+Version: 1.1.0
 
 ## Purpose
 
@@ -19,18 +19,20 @@ exists, provisions a real database per run and drops it afterwards, and is used
 by `tests/preload.ts` and five test files. The blocker named in the note is
 closed; the note is stale and should be superseded rather than trusted.
 
-Measured on 2026-08-05 against the working tree:
+Measured on 2026-08-05 against the working tree. The first version of this
+package quoted 47.90%, which is Bun's text-reporter aggregate over the files it
+loaded; the lcov record counts every instrumented line and answers 36.25%. The
+gap to the floor is larger than first published, not smaller.
 
 | Metric | Value | Source |
 |---|---|---|
-| Line coverage | 47.90% | `bun test --coverage tests/unit/` |
-| Function coverage | 43.65% | same run |
+| Line coverage | 36.25% (7369 of 20329) | `bun run health` — lcov, the file the gate imports |
 | Soft floor | 60% | health gate |
 | Last recorded health reading | 30.13%, gate WARN | `.metaproject/data/health/artifacts/latest.md`, 2026-08-04, `76f6b94` |
 
-The health artifact is a day and several merges behind the working tree; §2 of
-the PRD says what to do about that, since a gate reading a stale number is its
-own defect.
+The gate was reading a four-day-old import and ignoring a changed-scope test
+report; `bun run health` now sequences the three steps so it cannot. PRD §2.3
+has the diagnosis.
 
 ## Document Index
 
