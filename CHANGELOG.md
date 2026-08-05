@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+### test: the two guards in front of the dashboard API
+
+`mcp/dashboard-api.ts` is the largest untested file in the repository — 947
+uncovered lines — and the only surface in the system reachable from a browser.
+Its dispatcher carries the two decisions that matter before any data is
+touched: a JWT check on everything under `/api/`, and an Origin check on
+anything that changes state. Neither was tested, so a change that let one
+through would have been invisible until somebody noticed data leaving.
+
+Unlike `mcp/server.ts`, none of this needed a port or a refactor:
+`handleDashboardRequest` is already a named function taking a request, a
+response and a URL.
+
+Covered: a request matching nothing is handed back to the caller, while a
+dashboard asset is this dispatcher's own — the first version of that test
+assumed the opposite and failing it is how the real contract came to light; no
+credentials is 401; a genuine token, signed by the module that verifies it, is
+let through in either form, cookie or `Authorization: Bearer`; a malformed
+token and one signed with the wrong key are both no token; a state-changing
+request from a foreign origin is refused even with a valid token, the same
+request from its own host is not, and a GET is not subject to the check at all.
+
+The guards are probed through a route no handler claims, so the tests ask only
+what the guards did. The first attempt replaced the database module instead, so
+a real handler could run against a fake `sql` — that mock is process-wide and
+leaked into five tests in other files.
+
+Coverage of the file: 3.66% → 18.25%. The remainder is the data routes, each of
+which needs its own rows programmed; the guards were the part a regression
+would have let through silently.
+
 ### test: the voice fallback that production has been relying on all day
 
 Every reply over 300 characters is spoken, so `utils/tts.ts` runs on nearly
