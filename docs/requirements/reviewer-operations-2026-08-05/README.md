@@ -21,6 +21,15 @@ down. Reviewers are configured through `/reviewers` in Telegram and stored in
 Codex login state and the DeepSeek balance — but only when a person opens
 `/reviewers`.
 
+**Merged, not deployed** (2026-08-05). Every flow in this package is squash-merged
+into `main`; none of it is running. The bot container and the channel
+subprocesses still carry the pre-programme code, and the status here stays
+`spec ready` until a rebuild and a session bounce make it true — the vocabulary
+in [`../roadmap.md`](../roadmap.md) reserves `implemented` for deployed code,
+and this programme spent a flow (034) on exactly that distinction.
+
+Flows: 031 (G2), 032 (G1), 033 (G3) — PRs #67, #68, #69.
+
 ## Document Index
 
 | File | Contents |
