@@ -167,6 +167,11 @@ export class ErrorWindow {
       times.push(entry.time);
       const cutoff = now - this.windowMs;
       const kept = times.filter((t) => t >= cutoff);
+      // A line whose own timestamp is already outside the window — a batch read
+      // after a long stall, or a clock that disagrees — still happened. Letting
+      // it age itself out on arrival would report `count: 0`, which is not a
+      // thing that can be true of an entry we are holding.
+      if (kept.length === 0) kept.push(entry.time);
       this.occurrences.set(entry.msg, kept);
 
       if (isNovel) {

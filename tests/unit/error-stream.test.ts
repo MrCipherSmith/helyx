@@ -182,6 +182,24 @@ describe("novelty", () => {
   });
 });
 
+describe("a line that arrives already stale", () => {
+  test("still counts as one, never as none", () => {
+    // A batch read after a long stall, or a clock that disagrees. Found by
+    // reading the arithmetic rather than by a failure: the entry aged itself
+    // out on arrival and the alert would have said `count: 0`, which cannot be
+    // true of an entry being held in the hand.
+    const window = new ErrorWindow({ errorThreshold: 10, windowMs: 60_000 });
+    const now = 1_000_000;
+
+    const alerts = window.observe([at(LEVEL_ERROR, now - 500_000, "db: query failed")], now);
+
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]!.reason).toBe("novel");
+    expect(alerts[0]!.count).toBe(1);
+    expect(alerts[0]!.firstAt).toBe(now - 500_000);
+  });
+});
+
 describe("what the alert carries", () => {
   test("the message, the count, the window and when it started", () => {
     // Asserted on the object rather than on rendered text: the rendering is the
