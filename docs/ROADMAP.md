@@ -537,6 +537,19 @@ None currently.
 
 These items have PRDs written and are ready to implement.
 
+Package-level tracking lives in
+[`docs/requirements/roadmap.md`](requirements/roadmap.md) — order, blockers and
+status per package. This section keeps the release-facing summary.
+
+### Observability, Review Operations & Coverage — Three Packages
+
+Opened 2026-08-05 from a survey of monitoring and review gaps; nine findings in
+four blocks.
+
+- **[Self-observability](requirements/self-observability-2026-08-05/README.md)** — the system does not notice its own failures. Fact extraction has never run inside the container (4136 warnings); nothing watches the bot's error stream; the health analyst's container list omits exited containers; a send into a deleted forum topic is accepted and misdelivered in silence (fix written, undeployed). `spec ready`, first in order.
+- **[Reviewer operations](requirements/reviewer-operations-2026-08-05/README.md)** — reviewer availability is checked only when a person opens `/reviewers`, reports are printed and discarded although `keryx memory ingest --from-review` exists to receive them, and no review runs without being asked. `spec ready`.
+- **[I/O layer coverage](requirements/io-layer-coverage-2026-08-05/README.md)** — gate WARN at 47.90% against a 60% floor. Corrects the record: the `test-postgres` fixture that the 2026-08-03 programme note calls a blocker exists and is in use. `spec ready`, after self-observability, since both touch `scripts/supervisor.ts`.
+
 ### GitHub Actions E2E CI — Restore the Workflow
 - The e2e suite exists (`tests/e2e/`, Playwright, JWT minted in `global-setup.ts` without a browser) but nothing runs it in CI. `.github/workflows/e2e.yml` was **deleted** in `5bab380` — a self-hosted bot has no public URL for a GitHub runner to reach, so the workflow could only ever have tested a deployment that happens to be exposed.
 - **Blocked on:** deciding what CI should point at — a throwaway stack stood up inside the job (bot + postgres via compose, `TEST_BASE_URL=http://localhost:3847`), or the live deployment, which then needs its URL and a bot token as repository secrets.
