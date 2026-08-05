@@ -3,9 +3,9 @@
   "id": "045",
   "slug": "a-subagent-s-work-never-reaches-the-stat",
   "title": "A subagent's work never reaches the status",
-  "status": "ready",
+  "status": "in-progress",
   "createdAt": "2026-08-05T21:07:39.751Z",
-  "updatedAt": "2026-08-05T21:08:49.832Z",
+  "updatedAt": "2026-08-05T21:23:26.300Z",
   "source": {
     "type": "description",
     "ref": null
@@ -82,6 +82,10 @@
       "at": "2026-08-05T21:08:49.832Z",
       "event": "frozen",
       "detail": "12 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-05T21:23:26.300Z",
+      "event": "started"
     }
   ]
 }

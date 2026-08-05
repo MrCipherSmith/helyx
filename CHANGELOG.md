@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+### feat: a subagent's work reaches the status
+
+The other half of the operator's report. Flow 044 keeps the status alive past a
+reply; this gives it something to say while a fan-out runs.
+
+The status reads the session's transcript. A subagent does not write to it: its
+record is one directory down, at
+`<project>/<session-uuid>/subagents/agent-<id>.jsonl`, with
+`agent-<id>.meta.json` beside it carrying `agentType`, `description` and
+`spawnDepth`. `resolveTranscript` lists `projects/<dir>/*.jsonl` — one level,
+files only — so while a fan-out ran the parent transcript received nothing at
+all and the status stood still. Not wrong; motionless, which reads as hung.
+
+`utils/subagent-transcripts.ts` finds them beside the transcript the monitor has
+already resolved rather than resolving a second time, ignores any file older
+than the turn — a fan-out from yesterday still opens and still reports an end,
+the same trap `TRANSCRIPT_STALE_MS` was added for — and follows the three
+newest, because thirty agents would be thirty tails and nothing an operator can
+read.
+
+Every line carries whose it is: `agentType` when the meta file has one, the
+description's opening words cut at a word boundary when it does not, the agent
+id when there is neither. Unmarked, a fan-out reads as the main agent editing
+two files at once. The marker goes after the bullet rather than over it, because
+the bullet is what the renderer and the tool counters key on.
+
+The layout is Claude Code's, not this repository's. It is stated in the tests as
+assertions, so a change to it fails by name instead of going quietly silent.
+
 ### feat: the status survives the reply that did not finish the work
 
 Reported by the operator: an agent replies "запускаю сабагентов" and the topic
