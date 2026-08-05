@@ -174,7 +174,11 @@ describe("a file delivered to a CLI session", () => {
   test("a video is queued as a file, and its bytes are never read", async () => {
     // The order the question is asked in: pulling a 40 MB video into memory to
     // decide it is not an image is what asking it the wrong way round costs. A
-    // path that does not exist is how the test proves nothing opened it.
+    // path that does not exist is how the test proves nothing opened it — the
+    // delivery reads bytes only inside `if (isImage(facts))`, and if that guard
+    // were ever removed, or a `stat` added ahead of it, this line would throw
+    // ENOENT instead of quietly passing. Raised in review as a test that could
+    // not pass; it passes, and the reason it passes is the guard.
     await deliverMedia(
       context(), route("cli"), join(dir, "never-opened.mp4"), "/host/clip.mp4",
       "Video", "have a look", "file-3", "clip.mp4", "video/mp4", 4244, null,
