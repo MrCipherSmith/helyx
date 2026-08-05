@@ -11,19 +11,27 @@
  */
 
 import { describe, test, expect } from "bun:test";
-import { scheduledReviewDecision, type ScheduledReviewState } from "../../services/review-artifacts.ts";
+import {
+  scheduledReviewDecision,
+  REVIEW_STALE_AFTER_MS,
+  type ScheduledReviewState,
+} from "../../services/review-artifacts.ts";
 import { maybeRunScheduledReview, diffHash, type ScheduledReviewDeps } from "../../scripts/supervisor.ts";
+
+const NOW = 1_700_000_000_000;
 
 const decide = (over: {
   branch?: string;
   diffHash?: string;
   state?: ScheduledReviewState;
+  now?: number;
 } = {}) =>
   scheduledReviewDecision({
     branch: over.branch ?? "feat/x",
     defaultBranch: "main",
     diffHash: over.diffHash ?? "abc",
     state: over.state ?? { lastSeenHash: "abc" },
+    now: over.now ?? NOW,
   });
 
 describe("when a review starts itself", () => {
@@ -54,7 +62,24 @@ describe("when a review starts itself", () => {
 
   test("not while another review is in flight — refused, not queued", () => {
     // By the time the running one finishes, this one's diff is probably stale.
-    expect(decide({ state: { lastSeenHash: "abc", running: true } }).reason).toBe("review-in-flight");
+    expect(
+      decide({ state: { lastSeenHash: "abc", running: true, runningSince: NOW - 60_000 } }).reason,
+    ).toBe("review-in-flight");
+  });
+
+  test("a flag left behind by a dead process does not disable the loop for ever", () => {
+    // Raised in review: a process killed between setting the flag and clearing
+    // it left `running: true` in the database, and the loop then refused to run
+    // again — a feature disabled permanently by one crash.
+    expect(
+      decide({
+        state: { lastSeenHash: "abc", running: true, runningSince: NOW - REVIEW_STALE_AFTER_MS - 1 },
+      }),
+    ).toEqual({ run: true, reason: "settled" });
+
+    // A flag with no timestamp at all is from before this was recorded, and is
+    // likewise not allowed to be permanent.
+    expect(decide({ state: { lastSeenHash: "abc", running: true } }).run).toBe(true);
   });
 
   test("a changed diff after a reviewed one is reviewed once it settles", () => {
@@ -160,6 +185,29 @@ describe("the loop around the decision", () => {
     expect(h.saved.at(-1)!.lastReviewedHash).toBeUndefined();
     expect(h.notes[0]).toContain("reviewer exploded");
     expect(h.posts).toEqual([]);
+  });
+
+  test("a failed post does not throw away a review that happened", async () => {
+    // Raised in review: rolling the state back when the announcement failed
+    // discarded a review that had actually run, and the same diff was then
+    // reviewed again on the next pass.
+    const hash = diffHash("diff --git a b");
+    const saved: ScheduledReviewState[] = [];
+    const notes: string[] = [];
+    let state: ScheduledReviewState = { lastSeenHash: hash };
+
+    await maybeRunScheduledReview({
+      branch: async () => "feat/x",
+      diff: async () => "diff --git a b",
+      loadState: async () => state,
+      saveState: async (next) => { state = next; saved.push(next); },
+      runReview: async () => ({ artifactDir: "logs/reviews/x", summary: "ok" }),
+      note: (m) => { notes.push(m); },
+      post: async () => { throw new Error("telegram is down"); },
+    });
+
+    expect(saved.at(-1)).toMatchObject({ lastReviewedHash: hash, running: false });
+    expect(notes[0]).toContain("telegram is down");
   });
 
   test("a branch that cannot be read is a note, not a crash", async () => {

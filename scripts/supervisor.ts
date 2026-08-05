@@ -1592,11 +1592,13 @@ export async function maybeRunScheduledReview(deps: ScheduledReviewDeps): Promis
     return;
   }
 
+  const now = Date.now();
   const decision = scheduledReviewDecision({
     branch,
     defaultBranch: "main",
     diffHash: hash,
     state,
+    now,
   });
 
   if (!decision.run) {
@@ -1606,20 +1608,36 @@ export async function maybeRunScheduledReview(deps: ScheduledReviewDeps): Promis
     return;
   }
 
-  await deps.saveState({ ...state, lastSeenHash: hash, running: true });
+  await deps.saveState({ ...state, lastSeenHash: hash, running: true, runningSince: now });
+
+  let result: { artifactDir: string | null; summary: string };
   try {
-    const result = await deps.runReview(
+    result = await deps.runReview(
       `Scheduled review of branch ${branch}. Report only real defects in the change itself.`,
     );
-    await deps.saveState({ lastSeenHash: hash, lastReviewedHash: hash, running: false });
+  } catch (err: any) {
+    // The flag must not survive a failure, or the loop never runs again. The
+    // hash is not recorded as reviewed, because it was not.
+    await deps.saveState({ ...state, lastSeenHash: hash, running: false }).catch(() => {});
+    deps.note(`scheduled review failed: ${err?.message ?? String(err)}`);
+    return;
+  }
+
+  // Recorded before the message is sent, and never rolled back by a failure to
+  // send it. Raised in review: rolling the state back on a failed post threw
+  // away a review that had actually happened, and the same diff was then
+  // reviewed again on the next pass.
+  await deps.saveState({ lastSeenHash: hash, lastReviewedHash: hash, running: false });
+
+  try {
     await deps.post(
       `🔍 <b>Ревью ветки</b> <code>${escapeHtml(branch)}</code>\n${escapeHtml(result.summary)}` +
         (result.artifactDir ? `\n<code>${escapeHtml(result.artifactDir)}</code>` : ""),
     );
   } catch (err: any) {
-    // The flag must not survive a failure, or the loop never runs again.
-    await deps.saveState({ ...state, lastSeenHash: hash, running: false }).catch(() => {});
-    deps.note(`scheduled review failed: ${err?.message ?? String(err)}`);
+    // The review happened and its artifact is on disk; only the announcement
+    // failed, and announcing it twice would be worse than not at all.
+    deps.note(`scheduled review: could not post the result: ${err?.message ?? String(err)}`);
   }
 }
 
