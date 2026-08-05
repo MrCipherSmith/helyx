@@ -20,8 +20,6 @@
 
 import { resolveTranscript, TranscriptTail, parseEntry, claudeConfigRoot } from "./transcript-locate.ts";
 import { renderEntry, outputTokens, renderTokenLine } from "./transcript-events.ts";
-import { findSubagents, markLines, MAX_TRACKED_AGENTS, type FileAccess, type SubagentFile } from "./subagent-transcripts.ts";
-import { readdir, stat, readFile } from "fs/promises";
 
 /** A file tail, not a subprocess — cheap enough to ask often. */
 export const POLL_INTERVAL_MS = 2_000;
@@ -99,21 +97,6 @@ export interface TranscriptSessionOptions {
    * fixture is written before the session attaches and the point is to read it.
    */
   fromStart?: boolean;
-  /**
-   * How the subagent directory is read. Injected so a test can state the
-   * layout as a fake tree rather than depend on the operator's `~/.claude`.
-   */
-  files?: FileAccess;
-  /** How many subagents may be followed at once. */
-  maxAgents?: number;
-  /**
-   * Ignore subagent files older than this.
-   *
-   * Defaults to when this session was constructed: a fan-out from a previous
-   * session still opens and still reports an end, and reading one would
-   * attribute yesterday's work to this turn.
-   */
-  subagentsSince?: number;
 }
 
 /**
@@ -125,74 +108,12 @@ export class TranscriptSession {
   private tokenTotal = 0;
   private emptyPolls = 0;
   private lastEmitted: string | null = null;
-  /**
-   * One tail per subagent being followed.
-   *
-   * A subagent writes to its own file and the parent's transcript receives
-   * nothing until the tool returns, so without these the status is motionless
-   * for exactly as long as the fan-out runs — which reads as hung.
-   */
-  private readonly agents = new Map<string, { file: SubagentFile; tail: TranscriptTail }>();
-  private readonly startedAt: number;
 
   constructor(
     private readonly projectPath: string,
     private readonly options: TranscriptSessionOptions = {},
   ) {
     this.buffer = new LineBuffer(options.bufferLines ?? BUFFER_LINES);
-    this.startedAt = options.subagentsSince ?? Date.now();
-  }
-
-  /** Real file access unless a test supplied its own tree. */
-  private get files(): FileAccess {
-    return this.options.files ?? {
-      readdir: (dir) => readdir(dir),
-      stat: async (path) => ({ mtimeMs: (await stat(path)).mtimeMs }),
-      readFile: (path) => readFile(path, "utf-8"),
-    };
-  }
-
-  /**
-   * Read whatever the subagents have written since the last poll.
-   *
-   * Newest agents win the cap, and one that stops being listed — its file gone
-   * or aged out — is dropped rather than tailed for ever.
-   */
-  private async pollAgents(): Promise<string[]> {
-    const parent = this.tail?.path;
-    if (!parent) return [];
-
-    const found = await findSubagents(parent, {
-      since: this.startedAt,
-      files: this.files,
-      max: this.options.maxAgents ?? MAX_TRACKED_AGENTS,
-    }).catch(() => [] as SubagentFile[]);
-
-    const live = new Set(found.map((f) => f.agentId));
-    for (const id of [...this.agents.keys()]) {
-      if (!live.has(id)) this.agents.delete(id);
-    }
-
-    const out: string[] = [];
-    for (const file of found) {
-      let tracked = this.agents.get(file.agentId);
-      if (!tracked) {
-        // From the beginning: a fan-out that started between two polls has
-        // already written the lines the operator is waiting for.
-        tracked = { file, tail: TranscriptTail.at(file.path, 0) };
-        this.agents.set(file.agentId, tracked);
-      }
-      const lines = await tracked.tail.read().catch(() => [] as string[]);
-      const rendered: string[] = [];
-      for (const line of lines) {
-        const entry = parseEntry(line);
-        const tokens = outputTokens(entry);
-        if (tokens !== null) this.tokenTotal += tokens;
-        rendered.push(...renderEntry(entry));
-      }
-      out.push(...markLines(tracked.file.label, rendered));
-    }
-    return out;
   }
 
   /** The transcript currently being read, or null before the first resolve. */
@@ -224,11 +145,8 @@ export class TranscriptSession {
     if (!this.tail && !(await this.attach())) return null;
 
     const lines = await this.tail!.read();
-    // Asked every poll, including the ones where the parent said nothing —
-    // which is precisely what a fan-out looks like from here.
-    const fromAgents = await this.pollAgents();
 
-    if (lines.length === 0 && fromAgents.length === 0) {
+    if (lines.length === 0) {
       this.emptyPolls++;
       if (this.emptyPolls >= RERESOLVE_AFTER_EMPTY_POLLS) {
         this.emptyPolls = 0;
@@ -246,7 +164,6 @@ export class TranscriptSession {
       rendered.push(...renderEntry(entry));
     }
     this.buffer.push(rendered);
-    this.buffer.push(fromAgents);
 
     if (this.buffer.size === 0) return null;
 
@@ -286,8 +203,6 @@ export class TranscriptSession {
     });
     if (!path || path === this.tail?.path) return;
     this.tail = TranscriptTail.at(path, 0);
-    // The old session's subagents belong to the old session.
-    this.agents.clear();
     this.buffer.clear();
     this.tokenTotal = 0;
     this.lastEmitted = null;
