@@ -99,15 +99,16 @@ export function localTranscriptPath(
   const at = path.indexOf(marker);
   if (at === -1) return null;
 
-  const carried = path.slice(at + marker.length);
+  // A doubled separator in the reported path leaves the carried segment with a
+  // leading slash. `join` treats such a segment as relative and keeps the
+  // candidate under the root — measured, not assumed: `join("/root", "/etc/x")`
+  // is `/root/etc/x` where `resolve` would be `/etc/x`. Two review rounds read
+  // that line as an escape anyway, and an invariant that needs the reader to
+  // know which of two similar functions was called is not one worth keeping.
+  // Normalising the segment first makes containment independent of `join`.
+  const carried = path.slice(at + marker.length).replace(/^\/+/, "");
   if (!carried || carried.split("/").includes("..")) return null;
 
-  // `join`, never `resolve`: a carried segment that begins with a slash — which
-  // a doubled separator in the reported path would produce — is a relative
-  // segment to `join` and an absolute path to `resolve`. The first keeps the
-  // candidate under the root; the second would hand back `/etc/passwd`. Raised
-  // in review as a possible escape, and the difference between the two calls is
-  // the only thing standing between it and being one.
   const candidate = join(root, carried);
   return exists(candidate) ? candidate : null;
 }

@@ -62,10 +62,10 @@ describe("localTranscriptPath", () => {
   });
 
   test("a carried segment that looks absolute still lands under the root", () => {
-    // Raised in review: a doubled separator makes the carried segment start
-    // with a slash, and `resolve` would then return `/etc/passwd` outright.
-    // `join` treats it as relative. This pins that difference, because the
-    // escape is one careless substitution away.
+    // Raised in two review rounds as an escape to /etc/passwd. It never was —
+    // `join` treats a leading-slash segment as relative — but the segment is
+    // now stripped before joining, so containment no longer depends on knowing
+    // that `join` and `resolve` differ. This asserts the result either way.
     const captured: string[] = [];
     localTranscriptPath("/home/altsay/.claude//etc/passwd", "/host-claude-config", (p) => {
       captured.push(p);
