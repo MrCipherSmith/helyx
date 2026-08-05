@@ -33,7 +33,11 @@ running listed seven loops while eleven were registered — a log that
 under-reports the system is the same quiet untruth this supervisor exists to
 catch.
 
-Coverage of the file: 52.03% → 76.07% on this branch.
+Coverage of the file: 52.03% → **75.60%**, measured on this branch alone in a
+git worktree. The same run against the working tree reads 73.66%, because the
+tree carries another session's uncommitted loop, which has no tests and is not
+part of this change — worth stating rather than quoting whichever number
+flatters the result.
 
 ### fix: the quality gate stopped judging by a stale number
 
