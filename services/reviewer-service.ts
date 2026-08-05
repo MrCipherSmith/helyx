@@ -656,10 +656,14 @@ export function reviewConsoleLines(result: ReviewRunResult): string[] {
   if (result.mode === "self") return ["SELF"];
   const lines: string[] = [];
   for (const report of result.reports) {
+    // Both fallbacks exist because the alternative is printing the literal
+    // word "undefined" into a contract other agents parse. Raised in review;
+    // neither shape is reachable from `runOne` today, and neither is worth
+    // depending on that.
     lines.push(
       report.ok
-        ? `\n===== ${report.label} (${report.model}) =====\n\n${report.content}`
-        : `\n[${report.label} (${report.model})] unavailable: ${report.error}`,
+        ? `\n===== ${report.label} (${report.model}) =====\n\n${report.content ?? "(reported nothing)"}`
+        : `\n[${report.label} (${report.model})] unavailable: ${report.error ?? "no reason given"}`,
     );
   }
   return lines;

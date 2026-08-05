@@ -215,6 +215,25 @@ describe("the console contract CLAUDE.md depends on", () => {
     expect(reviewConsoleLines({ mode: "self", reports: [] })).toEqual(["SELF"]);
   });
 
+  test("a report missing its content or its reason never prints the word undefined", () => {
+    // Raised in review. Neither shape is reachable from runOne today; the
+    // contract is parsed by other agents, and "undefined" in it is worse than
+    // an unreachable branch.
+    const malformed: ReviewRunResult = {
+      mode: "external",
+      reports: [
+        { reviewerId: "a", label: "A", model: "m", ok: true },
+        { reviewerId: "b", label: "B", model: "m", ok: false },
+      ],
+    };
+
+    const lines = reviewConsoleLines(malformed);
+
+    expect(lines.join("\n")).not.toContain("undefined");
+    expect(lines[0]).toContain("(reported nothing)");
+    expect(lines[1]).toContain("no reason given");
+  });
+
   test("a reported review prints each report, available or not", () => {
     const lines = reviewConsoleLines(twoReviewers);
 
