@@ -10,6 +10,7 @@
 import { describe, test, expect } from "bun:test";
 import {
   renderStatus,
+  renderFinal,
   renderStats,
   tailWithinBudget,
   TELEGRAM_MAX_CHARS,
@@ -276,5 +277,68 @@ describe("the message always fits", () => {
     const quoted = out.slice(out.indexOf("expandable>"), out.indexOf("</blockquote>"));
     expect(quoted.split("\n").length).toBeLessThanOrEqual(ACTIVITY_LINES);
     expect(quoted).toContain("s59");
+  });
+});
+
+/**
+ * The message a finished turn leaves behind.
+ *
+ * The closing edit replaced the whole status with its summary line, so the
+ * work block was not collapsed when the turn ended — it was overwritten, and
+ * an operator returning to the message had nothing to expand.
+ */
+describe("the finished turn keeps its work", () => {
+  const SUMMARY = "✅ ⏱ 2m · 📝 3 files <code>+10/-4</code> · ↓ 18.1k tokens";
+
+  test("the block is still there, collapsed", () => {
+    const out = renderFinal(SUMMARY, "● Read: status.ts\n● $ git status");
+    expect(out).toContain(SUMMARY);
+    expect(out).toContain("<blockquote expandable>");
+    expect(out).toContain("● Read: status.ts");
+    expect(out).toContain("● $ git status");
+  });
+
+  test("the summary keeps its own markup", () => {
+    // It is composed by the caller and carries <code> around the diff counts.
+    // Escaping it here would show the tags instead of applying them.
+    expect(renderFinal(SUMMARY, "● Read: x.ts")).toContain("<code>+10/-4</code>");
+  });
+
+  test("but the block is escaped", () => {
+    const out = renderFinal(SUMMARY, "● Edit: src/<b>.ts");
+    expect(out).toContain("&lt;b&gt;");
+    expect(out).not.toContain("<b>");
+  });
+
+  test("no work means no empty quote", () => {
+    expect(renderFinal(SUMMARY, "")).toBe(SUMMARY);
+    expect(renderFinal(SUMMARY, "   \n  ")).toBe(SUMMARY);
+    expect(renderFinal(SUMMARY, null)).toBe(SUMMARY);
+    expect(renderFinal(SUMMARY, undefined)).toBe(SUMMARY);
+  });
+
+  test("and it still fits in a message", () => {
+    const out = renderFinal(SUMMARY, Array.from({ length: 400 }, (_, i) => `line ${i} ${"x".repeat(200)}`).join("\n"));
+    expect(out.length).toBeLessThan(TELEGRAM_MAX_CHARS);
+    expect(out).toContain(SUMMARY);
+  });
+
+  test("a single line too long for the budget is cut, not dropped", () => {
+    // The other side of the bound: the block exists to say what happened, and
+    // an empty quote says less than a truncated one.
+    const out = renderFinal(SUMMARY, `● Edit: ${"p".repeat(5000)}.ts`);
+    expect(out.length).toBeLessThan(TELEGRAM_MAX_CHARS);
+    expect(out).toContain("● Edit: ppp");
+  });
+
+  test("a summary that already fills the budget drops the block rather than the notice", () => {
+    const huge = `✅ ${"s".repeat(WORK_BUDGET_CHARS)}`;
+    expect(renderFinal(huge, "● Read: x.ts")).toBe(huge);
+  });
+
+  test("the newest lines are the ones kept", () => {
+    const out = renderFinal(SUMMARY, Array.from({ length: 200 }, (_, i) => `s${i}`).join("\n"));
+    expect(out).toContain("s199");
+    expect(out).not.toContain("s0\n");
   });
 });

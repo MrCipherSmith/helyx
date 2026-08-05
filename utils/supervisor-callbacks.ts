@@ -67,11 +67,21 @@ export function startByPidCallbackData(projectId: number): string {
   return `sup:start_by_pid:${projectId}`;
 }
 
+/**
+ * "🔧 Восстановить" — bring up whatever half of the stack is down.
+ *
+ * Carries no id: it is not about one project. It enqueues `stack_up`, which is
+ * idempotent, so a second press while the first is running costs nothing.
+ */
+export function stackUpCallbackData(): string {
+  return "sup:stack_up";
+}
+
 export type SupervisorCallback =
   | { action: "restart_session" | "pane" | "start_by_pid"; projectId: number }
   | { action: "force_deliver"; sessionId: number }
   | { action: "ack"; key: string }
-  | { action: "ignore" | "bounce" | "noop" }
+  | { action: "ignore" | "bounce" | "noop" | "stack_up" }
   | { action: "unknown"; raw: string };
 
 const ACK_PREFIX = "sup:ack:";
@@ -102,6 +112,7 @@ export function parseSupervisorCallback(data: string): SupervisorCallback {
     case "ignore":
     case "bounce":
     case "noop":
+    case "stack_up":
       return { action };
     default:
       return { action: "unknown", raw: data };

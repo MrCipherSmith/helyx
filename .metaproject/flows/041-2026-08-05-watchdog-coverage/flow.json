@@ -3,24 +3,61 @@
   "id": "041",
   "slug": "watchdog-coverage",
   "title": "The watchdog that keeps sessions alive is itself unwatched",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-05T19:24:32.187Z",
-  "updatedAt": "2026-08-05T19:25:29.090Z",
+  "updatedAt": "2026-08-05T19:32:16.727Z",
   "source": {
     "type": "description",
     "ref": null
   },
   "acChecksum": "sha256:657db9432992e0d6dd9eb3f9979b8df672660f49ac8a01a7844628b458e7c84b",
-  "acConfirmed": {},
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-05T19:31:45.067Z",
+      "note": "tests/unit/watchdog-detectors.test.ts — 17 cases, half of them near-misses that must not fire; cooldown per kind; fetchActiveSessions including the failing query"
+    },
+    "AC2": {
+      "at": "2026-08-05T19:31:45.155Z",
+      "note": "tests/unit/watchdog-detectors.test.ts — 17 cases, half of them near-misses that must not fire; cooldown per kind; fetchActiveSessions including the failing query"
+    },
+    "AC3": {
+      "at": "2026-08-05T19:31:45.240Z",
+      "note": "tests/unit/watchdog-detectors.test.ts — 17 cases, half of them near-misses that must not fire; cooldown per kind; fetchActiveSessions including the failing query"
+    },
+    "AC4": {
+      "at": "2026-08-05T19:31:45.328Z",
+      "note": "tests/unit/watchdog-detectors.test.ts — 17 cases, half of them near-misses that must not fire; cooldown per kind; fetchActiveSessions including the failing query"
+    },
+    "AC5": {
+      "at": "2026-08-05T19:31:45.419Z",
+      "note": "eight export markers, each with the comment saying why; no other production change"
+    },
+    "AC6": {
+      "at": "2026-08-05T19:31:45.508Z",
+      "note": "scripts/tmux-watchdog.ts 6.00% -> 18.89% (395 uncovered); the remainder is the tmux-shelling poll loop, out of scope by the description"
+    },
+    "AC7": {
+      "at": "2026-08-05T19:31:45.594Z",
+      "note": "bun test tests/unit/: 1631 pass 0 fail; tsc clean"
+    },
+    "AC8": {
+      "at": "2026-08-05T19:31:45.681Z",
+      "note": "CHANGELOG.md Unreleased — test: what the watchdog concludes from a terminal"
+    },
+    "AC9": {
+      "at": "2026-08-05T19:31:45.768Z",
+      "note": "reviewer rounds: 1. DeepSeek: no defects — fixtures resemble real panes, negatives fail for the right reason, cooldown semantics correct"
+    }
+  },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/75"
   },
   "tasks": [
     {
       "id": "T1",
       "title": "Collect remaining context",
       "kind": "context",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -28,13 +65,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T2",
       "title": "Implement per plan",
       "kind": "implement",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -42,13 +80,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T3",
       "title": "Add/adjust tests and make them pass",
       "kind": "test",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -56,13 +95,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T4",
       "title": "Self-review and prepare draft PR",
       "kind": "review",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -70,7 +110,8 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     }
   ],
   "history": [
@@ -86,6 +127,90 @@
     {
       "at": "2026-08-05T19:25:29.090Z",
       "event": "started"
+    },
+    {
+      "at": "2026-08-05T19:29:38.944Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/75"
+    },
+    {
+      "at": "2026-08-05T19:31:45.067Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: tests/unit/watchdog-detectors.test.ts — 17 cases, half of them near-misses that must not fire; cooldown per kind; fetchActiveSessions including the failing query"
+    },
+    {
+      "at": "2026-08-05T19:31:45.155Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: tests/unit/watchdog-detectors.test.ts — 17 cases, half of them near-misses that must not fire; cooldown per kind; fetchActiveSessions including the failing query"
+    },
+    {
+      "at": "2026-08-05T19:31:45.240Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: tests/unit/watchdog-detectors.test.ts — 17 cases, half of them near-misses that must not fire; cooldown per kind; fetchActiveSessions including the failing query"
+    },
+    {
+      "at": "2026-08-05T19:31:45.328Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: tests/unit/watchdog-detectors.test.ts — 17 cases, half of them near-misses that must not fire; cooldown per kind; fetchActiveSessions including the failing query"
+    },
+    {
+      "at": "2026-08-05T19:31:45.419Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: eight export markers, each with the comment saying why; no other production change"
+    },
+    {
+      "at": "2026-08-05T19:31:45.508Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: scripts/tmux-watchdog.ts 6.00% -> 18.89% (395 uncovered); the remainder is the tmux-shelling poll loop, out of scope by the description"
+    },
+    {
+      "at": "2026-08-05T19:31:45.594Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: bun test tests/unit/: 1631 pass 0 fail; tsc clean"
+    },
+    {
+      "at": "2026-08-05T19:31:45.681Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: CHANGELOG.md Unreleased — test: what the watchdog concludes from a terminal"
+    },
+    {
+      "at": "2026-08-05T19:31:45.768Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: reviewer rounds: 1. DeepSeek: no defects — fixtures resemble real panes, negatives fail for the right reason, cooldown semantics correct"
+    },
+    {
+      "at": "2026-08-05T19:31:45.855Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-05T19:31:45.941Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-05T19:31:46.025Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-05T19:31:46.113Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-05T19:32:16.721Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-05T19:32:16.727Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
-  ]
+  ],
+  "merged": {
+    "commit": "282cb61",
+    "ref": "origin/main",
+    "at": "2026-08-05T19:32:16.726Z"
+  }
 }

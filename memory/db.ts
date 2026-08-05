@@ -876,6 +876,19 @@ const migrations: Migration[] = [
       await tx`ALTER TABLE question_requests ADD COLUMN IF NOT EXISTS awaiting_question INT`;
     },
   },
+  {
+    version: 49,
+    name: "message_queue.reply_context — the message the operator was pointing at",
+    up: async (tx) => {
+      // A column of its own rather than a key inside `attachments`: that column
+      // is already two different shapes — an array of files from the media
+      // handlers, an object from the voice flag — and a third meaning wedged in
+      // beside them would have to be read differently depending on which one
+      // arrived. A reply is orthogonal to what the message carries; a photo can
+      // be a reply and so can a voice note.
+      await tx`ALTER TABLE message_queue ADD COLUMN IF NOT EXISTS reply_context JSONB`;
+    },
+  },
 ];
 
 // --- Public API ---

@@ -3,24 +3,69 @@
   "id": "040",
   "slug": "dashboard-api-coverage",
   "title": "The dashboard API is the largest untested surface in the repository",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-05T19:12:55.716Z",
-  "updatedAt": "2026-08-05T19:15:35.110Z",
+  "updatedAt": "2026-08-05T19:23:57.432Z",
   "source": {
     "type": "description",
     "ref": null
   },
   "acChecksum": "sha256:d685b064c66137a7c414e3dbb8226d55623679662a1c40308cd7e30216f96123",
-  "acConfirmed": {},
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-05T19:23:29.075Z",
+      "note": "tests/unit/dashboard-auth.test.ts — 10 cases over the real handleDashboardRequest with request and response doubles; the JWT is signed by the module that verifies it"
+    },
+    "AC2": {
+      "at": "2026-08-05T19:23:29.162Z",
+      "note": "tests/unit/dashboard-auth.test.ts — 10 cases over the real handleDashboardRequest with request and response doubles; the JWT is signed by the module that verifies it"
+    },
+    "AC3": {
+      "at": "2026-08-05T19:23:29.246Z",
+      "note": "tests/unit/dashboard-auth.test.ts — 10 cases over the real handleDashboardRequest with request and response doubles; the JWT is signed by the module that verifies it"
+    },
+    "AC4": {
+      "at": "2026-08-05T19:23:29.330Z",
+      "note": "tests/unit/dashboard-auth.test.ts — 10 cases over the real handleDashboardRequest with request and response doubles; the JWT is signed by the module that verifies it"
+    },
+    "AC5": {
+      "at": "2026-08-05T19:23:29.415Z",
+      "note": "tests/unit/dashboard-auth.test.ts — 10 cases over the real handleDashboardRequest with request and response doubles; the JWT is signed by the module that verifies it"
+    },
+    "AC6": {
+      "at": "2026-08-05T19:23:29.500Z",
+      "note": "tests/unit/dashboard-auth.test.ts — 10 cases over the real handleDashboardRequest with request and response doubles; the JWT is signed by the module that verifies it"
+    },
+    "AC7": {
+      "at": "2026-08-05T19:23:29.590Z",
+      "note": "tests/unit/dashboard-auth.test.ts — 10 cases over the real handleDashboardRequest with request and response doubles; the JWT is signed by the module that verifies it"
+    },
+    "AC8": {
+      "at": "2026-08-05T19:23:29.681Z",
+      "note": "mcp/dashboard-api.ts 3.66% -> 18.25% (766 uncovered); the remainder is data routes needing programmed rows, out of scope by the flow description"
+    },
+    "AC9": {
+      "at": "2026-08-05T19:23:29.764Z",
+      "note": "bun test tests/unit/: 1614 pass 0 fail; tsc clean"
+    },
+    "AC10": {
+      "at": "2026-08-05T19:23:29.850Z",
+      "note": "CHANGELOG.md Unreleased — test: the two guards in front of the dashboard API"
+    },
+    "AC11": {
+      "at": "2026-08-05T19:23:29.934Z",
+      "note": "reviewer rounds: 1. DeepSeek: no defects — doubles match what the handler reads, both guards genuinely exercised, the JWT is production-verified rather than bypassed"
+    }
+  },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/74"
   },
   "tasks": [
     {
       "id": "T1",
       "title": "Collect remaining context",
       "kind": "context",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -28,13 +73,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T2",
       "title": "Implement per plan",
       "kind": "implement",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -42,13 +88,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T3",
       "title": "Add/adjust tests and make them pass",
       "kind": "test",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -56,13 +103,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T4",
       "title": "Self-review and prepare draft PR",
       "kind": "review",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -70,7 +118,8 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     }
   ],
   "history": [
@@ -91,6 +140,100 @@
       "at": "2026-08-05T19:15:35.110Z",
       "event": "ac-updated",
       "detail": "AC1 assumed the dispatcher hands unknown paths back to a static file server outside it. Read the code after the test failed: it serves the dashboard's static files itself and returns false only when nothing matched at all. The criterion now states the real contract and requires both halves to be proved."
+    },
+    {
+      "at": "2026-08-05T19:19:38.032Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/74"
+    },
+    {
+      "at": "2026-08-05T19:23:29.075Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: tests/unit/dashboard-auth.test.ts — 10 cases over the real handleDashboardRequest with request and response doubles; the JWT is signed by the module that verifies it"
+    },
+    {
+      "at": "2026-08-05T19:23:29.162Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: tests/unit/dashboard-auth.test.ts — 10 cases over the real handleDashboardRequest with request and response doubles; the JWT is signed by the module that verifies it"
+    },
+    {
+      "at": "2026-08-05T19:23:29.246Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: tests/unit/dashboard-auth.test.ts — 10 cases over the real handleDashboardRequest with request and response doubles; the JWT is signed by the module that verifies it"
+    },
+    {
+      "at": "2026-08-05T19:23:29.330Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: tests/unit/dashboard-auth.test.ts — 10 cases over the real handleDashboardRequest with request and response doubles; the JWT is signed by the module that verifies it"
+    },
+    {
+      "at": "2026-08-05T19:23:29.415Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: tests/unit/dashboard-auth.test.ts — 10 cases over the real handleDashboardRequest with request and response doubles; the JWT is signed by the module that verifies it"
+    },
+    {
+      "at": "2026-08-05T19:23:29.500Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: tests/unit/dashboard-auth.test.ts — 10 cases over the real handleDashboardRequest with request and response doubles; the JWT is signed by the module that verifies it"
+    },
+    {
+      "at": "2026-08-05T19:23:29.590Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: tests/unit/dashboard-auth.test.ts — 10 cases over the real handleDashboardRequest with request and response doubles; the JWT is signed by the module that verifies it"
+    },
+    {
+      "at": "2026-08-05T19:23:29.681Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: mcp/dashboard-api.ts 3.66% -> 18.25% (766 uncovered); the remainder is data routes needing programmed rows, out of scope by the flow description"
+    },
+    {
+      "at": "2026-08-05T19:23:29.764Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: bun test tests/unit/: 1614 pass 0 fail; tsc clean"
+    },
+    {
+      "at": "2026-08-05T19:23:29.850Z",
+      "event": "ac-confirmed",
+      "detail": "AC10: CHANGELOG.md Unreleased — test: the two guards in front of the dashboard API"
+    },
+    {
+      "at": "2026-08-05T19:23:29.934Z",
+      "event": "ac-confirmed",
+      "detail": "AC11: reviewer rounds: 1. DeepSeek: no defects — doubles match what the handler reads, both guards genuinely exercised, the JWT is production-verified rather than bypassed"
+    },
+    {
+      "at": "2026-08-05T19:23:30.019Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-05T19:23:30.105Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-05T19:23:30.186Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-05T19:23:30.271Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-05T19:23:57.426Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-05T19:23:57.432Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
-  ]
+  ],
+  "merged": {
+    "commit": "af85ec7",
+    "ref": "origin/main",
+    "at": "2026-08-05T19:23:57.432Z"
+  }
 }

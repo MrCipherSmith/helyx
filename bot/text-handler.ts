@@ -17,6 +17,7 @@ import { CONFIG } from "../config.ts";
 import { getForumChatId } from "./forum-cache.ts";
 import { enqueueForTopic, topicQueueKey } from "./topic-queue.ts";
 import { maybeAttachVoice } from "../utils/tts.ts";
+import { extractReplyContext, renderReplyContext, type MessageWithReply } from "../utils/reply-context.ts";
 export { replyInThread } from "./format.ts";
 
 export async function enqueueToolCommand(
@@ -64,6 +65,11 @@ export async function handleText(ctx: Context): Promise<void> {
     await enqueueToolCommand(chatId, ctx.from?.username ?? ctx.from?.first_name ?? "user", command, ctx);
     return;
   }
+
+  // What the operator was pointing at, when they were pointing at something.
+  // Read once here and carried on every path below: a reply is a reply whether
+  // the session is connected, restarting, or standalone.
+  const replyContext = extractReplyContext(ctx.message as MessageWithReply | undefined);
 
   // Forum routing
   const forumTopicId = ctx.message?.message_thread_id;
@@ -148,8 +154,11 @@ export async function handleText(ctx: Context): Promise<void> {
       const fromUser = ctx.from?.username ?? ctx.from?.first_name ?? "user";
       const messageId = String(ctx.message?.message_id ?? "");
       await sql`
-        INSERT INTO message_queue (session_id, chat_id, from_user, content, message_id)
-        VALUES (${route.sessionId}, ${chatId}, ${fromUser}, ${text}, ${messageId})
+        INSERT INTO message_queue (session_id, chat_id, from_user, content, message_id, reply_context)
+        VALUES (
+          ${route.sessionId}, ${chatId}, ${fromUser}, ${text}, ${messageId},
+          ${replyContext ? JSON.stringify(replyContext) : null}
+        )
         ON CONFLICT (chat_id, message_id)
           WHERE message_id IS NOT NULL AND message_id != '' AND message_id != 'tool'
         DO NOTHING
@@ -204,13 +213,14 @@ export async function handleText(ctx: Context): Promise<void> {
     // Telegram update; the dedup index on (chat_id, message_id) prevents double-queueing.
     const t2 = Date.now();
     await sql`
-      INSERT INTO message_queue (session_id, chat_id, from_user, content, message_id)
+      INSERT INTO message_queue (session_id, chat_id, from_user, content, message_id, reply_context)
       VALUES (
         ${route.sessionId},
         ${chatId},
         ${fromUser},
         ${text},
-        ${messageId}
+        ${messageId},
+        ${replyContext ? JSON.stringify(replyContext) : null}
       )
       ON CONFLICT (chat_id, message_id)
         WHERE message_id IS NOT NULL AND message_id != '' AND message_id != 'tool'
@@ -259,9 +269,13 @@ export async function handleText(ctx: Context): Promise<void> {
       });
 
       const switchCtx = getSwitchContext(chatId);
-      let effectiveText = text;
+      // Standalone has no poller to compose the delivery, so the reply block is
+      // assembled here — in front of the operator's words, the same order the
+      // session path puts it in.
+      const replyBlock = renderReplyContext(replyContext);
+      let effectiveText = `${replyBlock}${text}`;
       if (switchCtx) {
-        effectiveText = `[Project context from prior session]\n${switchCtx.summary}\n\n[User message]\n${text}`;
+        effectiveText = `[Project context from prior session]\n${switchCtx.summary}\n\n[User message]\n${replyBlock}${text}`;
         clearSwitchContext(chatId);
       }
 

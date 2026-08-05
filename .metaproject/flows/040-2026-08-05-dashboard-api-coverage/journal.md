@@ -4,3 +4,21 @@
 - 2026-08-05T19:14:12.439Z - frozen: 11 criteria; checksum recorded
 - 2026-08-05T19:14:12.526Z - started
 - 2026-08-05T19:15:35.110Z - ac-updated: AC1 assumed the dispatcher hands unknown paths back to a static file server outside it. Read the code after the test failed: it serves the dashboard's static files itself and returns false only when nothing matched at all. The criterion now states the real contract and requires both halves to be proved.
+- 2026-08-05T19:19:38.032Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/74
+- 2026-08-05T19:23:29.075Z - ac-confirmed: AC1: tests/unit/dashboard-auth.test.ts — 10 cases over the real handleDashboardRequest with request and response doubles; the JWT is signed by the module that verifies it
+- 2026-08-05T19:23:29.162Z - ac-confirmed: AC2: tests/unit/dashboard-auth.test.ts — 10 cases over the real handleDashboardRequest with request and response doubles; the JWT is signed by the module that verifies it
+- 2026-08-05T19:23:29.246Z - ac-confirmed: AC3: tests/unit/dashboard-auth.test.ts — 10 cases over the real handleDashboardRequest with request and response doubles; the JWT is signed by the module that verifies it
+- 2026-08-05T19:23:29.330Z - ac-confirmed: AC4: tests/unit/dashboard-auth.test.ts — 10 cases over the real handleDashboardRequest with request and response doubles; the JWT is signed by the module that verifies it
+- 2026-08-05T19:23:29.415Z - ac-confirmed: AC5: tests/unit/dashboard-auth.test.ts — 10 cases over the real handleDashboardRequest with request and response doubles; the JWT is signed by the module that verifies it
+- 2026-08-05T19:23:29.500Z - ac-confirmed: AC6: tests/unit/dashboard-auth.test.ts — 10 cases over the real handleDashboardRequest with request and response doubles; the JWT is signed by the module that verifies it
+- 2026-08-05T19:23:29.590Z - ac-confirmed: AC7: tests/unit/dashboard-auth.test.ts — 10 cases over the real handleDashboardRequest with request and response doubles; the JWT is signed by the module that verifies it
+- 2026-08-05T19:23:29.681Z - ac-confirmed: AC8: mcp/dashboard-api.ts 3.66% -> 18.25% (766 uncovered); the remainder is data routes needing programmed rows, out of scope by the flow description
+- 2026-08-05T19:23:29.764Z - ac-confirmed: AC9: bun test tests/unit/: 1614 pass 0 fail; tsc clean
+- 2026-08-05T19:23:29.850Z - ac-confirmed: AC10: CHANGELOG.md Unreleased — test: the two guards in front of the dashboard API
+- 2026-08-05T19:23:29.934Z - ac-confirmed: AC11: reviewer rounds: 1. DeepSeek: no defects — doubles match what the handler reads, both guards genuinely exercised, the JWT is production-verified rather than bypassed
+- 2026-08-05T19:23:30.019Z - task-done: T1: Collect remaining context
+- 2026-08-05T19:23:30.105Z - task-done: T2: Implement per plan
+- 2026-08-05T19:23:30.186Z - task-done: T3: Add/adjust tests and make them pass
+- 2026-08-05T19:23:30.271Z - task-done: T4: Self-review and prepare draft PR
+- 2026-08-05T19:23:57.426Z - completing
+- 2026-08-05T19:23:57.432Z - done: all gates passed

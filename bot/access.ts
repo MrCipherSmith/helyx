@@ -20,6 +20,15 @@ export async function accessMiddleware(
     return next();
   }
 
+  // Our own id is not an intruder.
+  //
+  // The bot reacts to every message it queues, and Telegram reports that back
+  // as an update whose actor is the bot. It is not in ALLOWED_USERS — nothing
+  // would work if it were — so it fell through to the warning below and put an
+  // "access denied" line in the log after every single message the operator
+  // sent. Dropped the same way, without the alarm.
+  if (ctx.me && userId === ctx.me.id) return;
+
   // Silently drop unauthorized messages
   logger.warn({ userId }, "access denied");
 }

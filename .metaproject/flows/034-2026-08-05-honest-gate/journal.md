@@ -3,3 +3,22 @@
 - 2026-08-05T17:40:10.626Z - flow created
 - 2026-08-05T17:43:19.681Z - frozen: 12 criteria; checksum recorded
 - 2026-08-05T17:43:19.798Z - started
+- 2026-08-05T17:47:47.790Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/70
+- 2026-08-05T17:58:00.964Z - ac-confirmed: AC1: bun run health run end to end: test:coverage regenerated the summary, keryx test run wrote a project-scope report, keryx health run then read both
+- 2026-08-05T17:58:01.053Z - ac-confirmed: AC2: health artifact sources table: tests | available | auto | bun-script (was missing)
+- 2026-08-05T17:58:01.141Z - ac-confirmed: AC3: artifact reports coverage: 36.25%, the figure coverage-summary.ts printed in the same run (was a 30.13% import from 2026-08-04)
+- 2026-08-05T17:58:01.231Z - ac-confirmed: AC4: tests/unit/coverage-summary.test.ts — 4 cases against the real script and real lcov files: summed not averaged, a zero-line file, an unterminated record, a repeated path; the helper now asserts the exit code and drains both pipes
+- 2026-08-05T17:58:01.318Z - ac-confirmed: AC5: tests/unit/coverage-summary.test.ts — 4 cases against the real script and real lcov files: summed not averaged, a zero-line file, an unterminated record, a repeated path; the helper now asserts the exit code and drains both pipes
+- 2026-08-05T17:58:01.407Z - ac-confirmed: AC6: README, prd and specification carry the exact lcov figures with the correction stated; C1-C7 re-derived, supervisor still first on hotspot rather than on line count
+- 2026-08-05T17:58:01.494Z - ac-confirmed: AC7: README, prd and specification carry the exact lcov figures with the correction stated; C1-C7 re-derived, supervisor still first on hotspot rather than on line count
+- 2026-08-05T17:58:01.582Z - ac-confirmed: AC8: keryx memory supersede ran; both notes on disk, the new one records the closed blocker and 36.25% / 1540 tests
+- 2026-08-05T17:58:01.672Z - ac-confirmed: AC9: keryx memory check: All checks passed
+- 2026-08-05T17:58:01.758Z - ac-confirmed: AC10: bun test tests/unit/: 1544 pass 0 fail; bunx tsc --noEmit clean
+- 2026-08-05T17:58:01.847Z - ac-confirmed: AC11: CHANGELOG.md Unreleased — fix: the quality gate stopped judging by a stale number
+- 2026-08-05T17:58:01.934Z - ac-confirmed: AC12: reviewer rounds: 4. R1 — two points, both artifacts of the diff's scope (an unchanged file and .metaproject, which gitReviewDiff excludes by design); verified and declined. R2 — missing exit-code check, fixed. R3 — undrained child pipes, fixed. R4 — no defects
+- 2026-08-05T17:58:02.020Z - task-done: T1: Collect remaining context
+- 2026-08-05T17:58:02.109Z - task-done: T2: Implement per plan
+- 2026-08-05T17:58:02.202Z - task-done: T3: Add/adjust tests and make them pass
+- 2026-08-05T17:58:02.291Z - task-done: T4: Self-review and prepare draft PR
+- 2026-08-05T17:58:37.754Z - completing
+- 2026-08-05T17:58:37.763Z - done: all gates passed

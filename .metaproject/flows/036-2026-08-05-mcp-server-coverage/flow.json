@@ -3,17 +3,51 @@
   "id": "036",
   "slug": "mcp-server-coverage",
   "title": "Every MCP tool call and the Stop hook enter through an untested door",
-  "status": "blocked",
+  "status": "done",
   "createdAt": "2026-08-05T18:34:30.303Z",
-  "updatedAt": "2026-08-05T18:35:47.762Z",
+  "updatedAt": "2026-08-05T20:19:29.116Z",
   "source": {
     "type": "description",
     "ref": null
   },
-  "acChecksum": null,
-  "acConfirmed": {},
+  "acChecksum": "sha256:48a0f5b5b1a8e21158fee9d93cdc4e07f569d161eaaad4c83cfae93f5af25d28",
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-05T20:19:15.672Z"
+    },
+    "AC2": {
+      "at": "2026-08-05T20:19:15.829Z"
+    },
+    "AC3": {
+      "at": "2026-08-05T20:19:15.977Z"
+    },
+    "AC4": {
+      "at": "2026-08-05T20:19:16.128Z"
+    },
+    "AC5": {
+      "at": "2026-08-05T20:19:16.311Z"
+    },
+    "AC6": {
+      "at": "2026-08-05T20:19:16.449Z"
+    },
+    "AC7": {
+      "at": "2026-08-05T20:19:16.573Z"
+    },
+    "AC8": {
+      "at": "2026-08-05T20:19:16.699Z"
+    },
+    "AC9": {
+      "at": "2026-08-05T20:19:16.853Z"
+    },
+    "AC10": {
+      "at": "2026-08-05T20:19:17.008Z"
+    },
+    "AC11": {
+      "at": "2026-08-05T20:19:17.163Z"
+    }
+  },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/79"
   },
   "tasks": [
     {
@@ -82,7 +116,94 @@
       "at": "2026-08-05T18:35:47.762Z",
       "event": "blocked",
       "detail": "Reaching 60% of mcp/server.ts requires testing its routes, and the routes live inside an arrow function passed to createServer, which binds a fixed port that is already taken on this host by the container. Testing them means first extracting the handler into a named exported function — a refactor of the busiest entry point in the system, undertaken purely to make it testable. That is a decision for the maintainer, not a coverage chore, so this flow waits for it."
+    },
+    {
+      "at": "2026-08-05T20:14:56.598Z",
+      "event": "unblocked",
+      "detail": "resumed as initializing"
+    },
+    {
+      "at": "2026-08-05T20:15:00.002Z",
+      "event": "frozen",
+      "detail": "11 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-05T20:15:00.090Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-05T20:18:16.377Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/79"
+    },
+    {
+      "at": "2026-08-05T20:19:15.672Z",
+      "event": "ac-confirmed",
+      "detail": "AC1"
+    },
+    {
+      "at": "2026-08-05T20:19:15.829Z",
+      "event": "ac-confirmed",
+      "detail": "AC2"
+    },
+    {
+      "at": "2026-08-05T20:19:15.977Z",
+      "event": "ac-confirmed",
+      "detail": "AC3"
+    },
+    {
+      "at": "2026-08-05T20:19:16.128Z",
+      "event": "ac-confirmed",
+      "detail": "AC4"
+    },
+    {
+      "at": "2026-08-05T20:19:16.311Z",
+      "event": "ac-confirmed",
+      "detail": "AC5"
+    },
+    {
+      "at": "2026-08-05T20:19:16.449Z",
+      "event": "ac-confirmed",
+      "detail": "AC6"
+    },
+    {
+      "at": "2026-08-05T20:19:16.573Z",
+      "event": "ac-confirmed",
+      "detail": "AC7"
+    },
+    {
+      "at": "2026-08-05T20:19:16.699Z",
+      "event": "ac-confirmed",
+      "detail": "AC8"
+    },
+    {
+      "at": "2026-08-05T20:19:16.853Z",
+      "event": "ac-confirmed",
+      "detail": "AC9"
+    },
+    {
+      "at": "2026-08-05T20:19:17.008Z",
+      "event": "ac-confirmed",
+      "detail": "AC10"
+    },
+    {
+      "at": "2026-08-05T20:19:17.163Z",
+      "event": "ac-confirmed",
+      "detail": "AC11"
+    },
+    {
+      "at": "2026-08-05T20:19:29.108Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-05T20:19:29.116Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
   ],
-  "previousStatus": "initializing"
+  "merged": {
+    "commit": "46d57d0",
+    "ref": "origin/main",
+    "at": "2026-08-05T20:19:29.116Z"
+  }
 }

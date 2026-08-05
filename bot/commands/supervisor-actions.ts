@@ -51,6 +51,18 @@ export async function handleSupervisorCallback(ctx: Context): Promise<void> {
     return;
   }
 
+  if (action === "stack_up") {
+    await sql`
+      INSERT INTO admin_commands (command, payload)
+      VALUES ('stack_up', ${sql.json({})})
+    `.catch(() => {});
+    await ctx.answerCallbackQuery({ text: "🔧 Поднимаю стек" });
+    await ctx.editMessageReplyMarkup({
+      reply_markup: new InlineKeyboard().text("🔧 Восстанавливаю...", "sup:noop"),
+    }).catch(() => {});
+    return;
+  }
+
   if (action === "bounce") {
     await sql`
       INSERT INTO admin_commands (command, payload)

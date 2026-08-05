@@ -3,24 +3,65 @@
   "id": "037",
   "slug": "summarizer-coverage",
   "title": "The summarizer produced nothing for weeks and nothing tested it",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-05T18:35:48.277Z",
-  "updatedAt": "2026-08-05T18:37:21.041Z",
+  "updatedAt": "2026-08-05T18:46:11.418Z",
   "source": {
     "type": "description",
     "ref": null
   },
   "acChecksum": "sha256:1182f4dc47327e243ce3d84d245ac377afdcb9c1092e67d62e2e8aaacdb40d6d",
-  "acConfirmed": {},
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-05T18:45:18.046Z",
+      "note": "tests/unit/summarizer.test.ts (16) and tests/fixtures/fake-memory-deps.ts — values snapshotted before the mock, restored in afterEach; every decision path driven"
+    },
+    "AC2": {
+      "at": "2026-08-05T18:45:18.131Z",
+      "note": "tests/unit/summarizer.test.ts (16) and tests/fixtures/fake-memory-deps.ts — values snapshotted before the mock, restored in afterEach; every decision path driven"
+    },
+    "AC3": {
+      "at": "2026-08-05T18:45:18.214Z",
+      "note": "tests/unit/summarizer.test.ts (16) and tests/fixtures/fake-memory-deps.ts — values snapshotted before the mock, restored in afterEach; every decision path driven"
+    },
+    "AC4": {
+      "at": "2026-08-05T18:45:18.299Z",
+      "note": "tests/unit/summarizer.test.ts (16) and tests/fixtures/fake-memory-deps.ts — values snapshotted before the mock, restored in afterEach; every decision path driven"
+    },
+    "AC5": {
+      "at": "2026-08-05T18:45:18.382Z",
+      "note": "tests/unit/summarizer.test.ts (16) and tests/fixtures/fake-memory-deps.ts — values snapshotted before the mock, restored in afterEach; every decision path driven"
+    },
+    "AC6": {
+      "at": "2026-08-05T18:45:18.469Z",
+      "note": "one production change: an empty model answer now takes the existing fallback rather than being saved as the session's whole project_context. Named as a defect in the CHANGELOG and in the PR"
+    },
+    "AC7": {
+      "at": "2026-08-05T18:45:18.554Z",
+      "note": "memory/summarizer.ts 17.44% -> 77.67% (67 uncovered), both figures recorded"
+    },
+    "AC8": {
+      "at": "2026-08-05T18:45:18.640Z",
+      "note": "bun test tests/unit/: 1582 pass 0 fail; tsc clean; the doubles are restored so no later file sees them"
+    },
+    "AC9": {
+      "at": "2026-08-05T18:45:18.726Z",
+      "note": "CHANGELOG.md Unreleased — fix: a model that answers with nothing no longer becomes the session's record"
+    },
+    "AC10": {
+      "at": "2026-08-05T18:45:18.812Z",
+      "note": "reviewer rounds: 1. DeepSeek: no defects — guard correct and behaviour-preserving for non-empty answers, fixture restores properly, assertions test real decisions rather than the doubles"
+    }
+  },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/72"
   },
   "tasks": [
     {
       "id": "T1",
       "title": "Collect remaining context",
       "kind": "context",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -28,13 +69,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T2",
       "title": "Implement per plan",
       "kind": "implement",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -42,13 +84,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T3",
       "title": "Add/adjust tests and make them pass",
       "kind": "test",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -56,13 +99,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T4",
       "title": "Self-review and prepare draft PR",
       "kind": "review",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -70,7 +114,8 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     }
   ],
   "history": [
@@ -86,6 +131,95 @@
     {
       "at": "2026-08-05T18:37:21.041Z",
       "event": "started"
+    },
+    {
+      "at": "2026-08-05T18:43:13.413Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/72"
+    },
+    {
+      "at": "2026-08-05T18:45:18.046Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: tests/unit/summarizer.test.ts (16) and tests/fixtures/fake-memory-deps.ts — values snapshotted before the mock, restored in afterEach; every decision path driven"
+    },
+    {
+      "at": "2026-08-05T18:45:18.131Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: tests/unit/summarizer.test.ts (16) and tests/fixtures/fake-memory-deps.ts — values snapshotted before the mock, restored in afterEach; every decision path driven"
+    },
+    {
+      "at": "2026-08-05T18:45:18.214Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: tests/unit/summarizer.test.ts (16) and tests/fixtures/fake-memory-deps.ts — values snapshotted before the mock, restored in afterEach; every decision path driven"
+    },
+    {
+      "at": "2026-08-05T18:45:18.299Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: tests/unit/summarizer.test.ts (16) and tests/fixtures/fake-memory-deps.ts — values snapshotted before the mock, restored in afterEach; every decision path driven"
+    },
+    {
+      "at": "2026-08-05T18:45:18.382Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: tests/unit/summarizer.test.ts (16) and tests/fixtures/fake-memory-deps.ts — values snapshotted before the mock, restored in afterEach; every decision path driven"
+    },
+    {
+      "at": "2026-08-05T18:45:18.469Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: one production change: an empty model answer now takes the existing fallback rather than being saved as the session's whole project_context. Named as a defect in the CHANGELOG and in the PR"
+    },
+    {
+      "at": "2026-08-05T18:45:18.554Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: memory/summarizer.ts 17.44% -> 77.67% (67 uncovered), both figures recorded"
+    },
+    {
+      "at": "2026-08-05T18:45:18.640Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: bun test tests/unit/: 1582 pass 0 fail; tsc clean; the doubles are restored so no later file sees them"
+    },
+    {
+      "at": "2026-08-05T18:45:18.726Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: CHANGELOG.md Unreleased — fix: a model that answers with nothing no longer becomes the session's record"
+    },
+    {
+      "at": "2026-08-05T18:45:18.812Z",
+      "event": "ac-confirmed",
+      "detail": "AC10: reviewer rounds: 1. DeepSeek: no defects — guard correct and behaviour-preserving for non-empty answers, fixture restores properly, assertions test real decisions rather than the doubles"
+    },
+    {
+      "at": "2026-08-05T18:45:18.896Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-05T18:45:18.983Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-05T18:45:19.067Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-05T18:45:19.151Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-05T18:46:11.408Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-05T18:46:11.418Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
-  ]
+  ],
+  "merged": {
+    "commit": "7ac0f0a",
+    "ref": "origin/main",
+    "at": "2026-08-05T18:46:11.418Z"
+  }
 }

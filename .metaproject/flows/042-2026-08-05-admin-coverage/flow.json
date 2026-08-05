@@ -3,17 +3,48 @@
   "id": "042",
   "slug": "admin-coverage",
   "title": "Admin commands restart, stop and rebuild things, and none of them is tested",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-05T19:32:36.361Z",
-  "updatedAt": "2026-08-05T19:33:09.006Z",
+  "updatedAt": "2026-08-05T19:43:44.636Z",
   "source": {
     "type": "description",
     "ref": null
   },
   "acChecksum": "sha256:1419a956f6104349556f71bbf1272391ff53553a1efef384f865e18a482ab564",
-  "acConfirmed": {},
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-05T19:43:06.274Z"
+    },
+    "AC2": {
+      "at": "2026-08-05T19:43:06.362Z"
+    },
+    "AC3": {
+      "at": "2026-08-05T19:43:06.446Z"
+    },
+    "AC4": {
+      "at": "2026-08-05T19:43:06.531Z"
+    },
+    "AC5": {
+      "at": "2026-08-05T19:43:06.618Z"
+    },
+    "AC6": {
+      "at": "2026-08-05T19:43:06.703Z"
+    },
+    "AC7": {
+      "at": "2026-08-05T19:43:06.791Z"
+    },
+    "AC8": {
+      "at": "2026-08-05T19:43:06.875Z"
+    },
+    "AC9": {
+      "at": "2026-08-05T19:43:06.959Z"
+    },
+    "AC10": {
+      "at": "2026-08-05T19:43:07.045Z"
+    }
+  },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/76"
   },
   "tasks": [
     {
@@ -86,6 +117,75 @@
     {
       "at": "2026-08-05T19:33:09.006Z",
       "event": "started"
+    },
+    {
+      "at": "2026-08-05T19:35:43.675Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/76"
+    },
+    {
+      "at": "2026-08-05T19:43:06.274Z",
+      "event": "ac-confirmed",
+      "detail": "AC1"
+    },
+    {
+      "at": "2026-08-05T19:43:06.362Z",
+      "event": "ac-confirmed",
+      "detail": "AC2"
+    },
+    {
+      "at": "2026-08-05T19:43:06.446Z",
+      "event": "ac-confirmed",
+      "detail": "AC3"
+    },
+    {
+      "at": "2026-08-05T19:43:06.531Z",
+      "event": "ac-confirmed",
+      "detail": "AC4"
+    },
+    {
+      "at": "2026-08-05T19:43:06.618Z",
+      "event": "ac-confirmed",
+      "detail": "AC5"
+    },
+    {
+      "at": "2026-08-05T19:43:06.704Z",
+      "event": "ac-confirmed",
+      "detail": "AC6"
+    },
+    {
+      "at": "2026-08-05T19:43:06.791Z",
+      "event": "ac-confirmed",
+      "detail": "AC7"
+    },
+    {
+      "at": "2026-08-05T19:43:06.875Z",
+      "event": "ac-confirmed",
+      "detail": "AC8"
+    },
+    {
+      "at": "2026-08-05T19:43:06.959Z",
+      "event": "ac-confirmed",
+      "detail": "AC9"
+    },
+    {
+      "at": "2026-08-05T19:43:07.045Z",
+      "event": "ac-confirmed",
+      "detail": "AC10"
+    },
+    {
+      "at": "2026-08-05T19:43:44.629Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-05T19:43:44.636Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
-  ]
+  ],
+  "merged": {
+    "commit": "4812726",
+    "ref": "origin/main",
+    "at": "2026-08-05T19:43:44.636Z"
+  }
 }

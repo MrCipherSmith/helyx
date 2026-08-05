@@ -172,6 +172,35 @@ export function renderStats(parts: StatusParts): string {
 }
 
 /**
+ * What a finished turn leaves in the chat.
+ *
+ * The closing edit used to replace the whole message with its summary line, so
+ * the work block was not collapsed when the turn ended — it was overwritten.
+ * There was nothing left to expand, which is exactly what an operator coming
+ * back to the message an hour later wants to do.
+ *
+ * `summary` is already HTML — it is composed by the caller and carries `<code>`
+ * around the diff counts — so it is passed through untouched. `stage` is the
+ * last activity block, which came from a transcript or a terminal, and is
+ * escaped here like every other line that reaches this module from outside.
+ */
+export function renderFinal(summary: string, stage?: string | null): string {
+  const activity = (stage ?? "").replace(/^⏳\s*/, "").trim();
+  if (!activity) return summary;
+
+  // The summary is charged first: it is the line that must survive, and the
+  // block below it is what gets shortened when there is no room.
+  const budget = WORK_BUDGET_CHARS - summary.length;
+  if (budget <= 0) return summary;
+
+  const lines = activity.split("\n").slice(-ACTIVITY_LINES);
+  const kept = tailWithinBudget(lines.map(escaped), budget).filter((line) => line.length > 0);
+  if (kept.length === 0) return summary;
+
+  return `${summary}\n<blockquote expandable>${kept.join("\n")}</blockquote>`;
+}
+
+/**
  * The whole status message.
  *
  * Assembled newest-first under a budget rather than truncated at a fixed line

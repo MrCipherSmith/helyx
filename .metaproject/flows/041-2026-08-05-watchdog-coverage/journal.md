@@ -3,3 +3,19 @@
 - 2026-08-05T19:24:32.187Z - flow created
 - 2026-08-05T19:25:29.002Z - frozen: 9 criteria; checksum recorded
 - 2026-08-05T19:25:29.090Z - started
+- 2026-08-05T19:29:38.944Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/75
+- 2026-08-05T19:31:45.067Z - ac-confirmed: AC1: tests/unit/watchdog-detectors.test.ts — 17 cases, half of them near-misses that must not fire; cooldown per kind; fetchActiveSessions including the failing query
+- 2026-08-05T19:31:45.155Z - ac-confirmed: AC2: tests/unit/watchdog-detectors.test.ts — 17 cases, half of them near-misses that must not fire; cooldown per kind; fetchActiveSessions including the failing query
+- 2026-08-05T19:31:45.240Z - ac-confirmed: AC3: tests/unit/watchdog-detectors.test.ts — 17 cases, half of them near-misses that must not fire; cooldown per kind; fetchActiveSessions including the failing query
+- 2026-08-05T19:31:45.328Z - ac-confirmed: AC4: tests/unit/watchdog-detectors.test.ts — 17 cases, half of them near-misses that must not fire; cooldown per kind; fetchActiveSessions including the failing query
+- 2026-08-05T19:31:45.419Z - ac-confirmed: AC5: eight export markers, each with the comment saying why; no other production change
+- 2026-08-05T19:31:45.508Z - ac-confirmed: AC6: scripts/tmux-watchdog.ts 6.00% -> 18.89% (395 uncovered); the remainder is the tmux-shelling poll loop, out of scope by the description
+- 2026-08-05T19:31:45.594Z - ac-confirmed: AC7: bun test tests/unit/: 1631 pass 0 fail; tsc clean
+- 2026-08-05T19:31:45.681Z - ac-confirmed: AC8: CHANGELOG.md Unreleased — test: what the watchdog concludes from a terminal
+- 2026-08-05T19:31:45.768Z - ac-confirmed: AC9: reviewer rounds: 1. DeepSeek: no defects — fixtures resemble real panes, negatives fail for the right reason, cooldown semantics correct
+- 2026-08-05T19:31:45.855Z - task-done: T1: Collect remaining context
+- 2026-08-05T19:31:45.941Z - task-done: T2: Implement per plan
+- 2026-08-05T19:31:46.025Z - task-done: T3: Add/adjust tests and make them pass
+- 2026-08-05T19:31:46.113Z - task-done: T4: Self-review and prepare draft PR
+- 2026-08-05T19:32:16.721Z - completing
+- 2026-08-05T19:32:16.727Z - done: all gates passed

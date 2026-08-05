@@ -4,3 +4,23 @@
 - 2026-08-05T16:15:00.566Z - frozen: 13 criteria; checksum recorded
 - 2026-08-05T16:15:00.707Z - started
 - 2026-08-05T16:18:40.334Z - ac-updated: AC10 assumed that 'the receiver accepts the file' was the useful question. Ran it: the command exits 0 and turns every heading line of the report into a separate lesson — eleven of them from an eight-line header, which had to be deleted from project memory afterwards. Marking the criterion met on the exit code would have recorded a success that is not one, so the criterion now demands the measurement and the honest note instead.
+- 2026-08-05T16:20:21.180Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/67
+- 2026-08-05T16:27:50.287Z - ac-confirmed: AC1: tests/unit/review-artifacts.test.ts — the record parses back and truncation is an explicit flag
+- 2026-08-05T16:27:50.382Z - ac-confirmed: AC2: tests/unit/review-artifacts.test.ts — the record parses back and truncation is an explicit flag
+- 2026-08-05T16:27:50.475Z - ac-confirmed: AC3: same file: renderers, writer against a real temp dir, unwritable root returns null, self-mode recorded, pruning by age and count with newest-per-branch protection
+- 2026-08-05T16:27:50.570Z - ac-confirmed: AC4: same file: renderers, writer against a real temp dir, unwritable root returns null, self-mode recorded, pruning by age and count with newest-per-branch protection
+- 2026-08-05T16:27:50.660Z - ac-confirmed: AC5: same file: renderers, writer against a real temp dir, unwritable root returns null, self-mode recorded, pruning by age and count with newest-per-branch protection
+- 2026-08-05T16:27:50.753Z - ac-confirmed: AC6: same file: renderers, writer against a real temp dir, unwritable root returns null, self-mode recorded, pruning by age and count with newest-per-branch protection
+- 2026-08-05T16:27:50.851Z - ac-confirmed: AC7: same file: renderers, writer against a real temp dir, unwritable root returns null, self-mode recorded, pruning by age and count with newest-per-branch protection
+- 2026-08-05T16:27:50.942Z - ac-confirmed: AC8: reviewConsoleLines holds the shape; test asserts ['SELF'] exactly, and the artifact path goes to stderr so stdout is untouched
+- 2026-08-05T16:27:51.032Z - ac-confirmed: AC9: persistReviewRun returns null on failure and is called after printing; scripts/review.ts warns on stderr and does not change the exit path
+- 2026-08-05T16:27:51.121Z - ac-confirmed: AC10: measured: keryx memory ingest --from-review exits 0 and creates one lesson per heading line (11 from an 8-line header, deleted afterwards; keryx memory check clean). Recorded in the package PRD and the CHANGELOG rather than counted as a success
+- 2026-08-05T16:27:51.209Z - ac-confirmed: AC11: bun test tests/unit/: 1502 pass 0 fail; tsc clean
+- 2026-08-05T16:27:51.300Z - ac-confirmed: AC12: CHANGELOG.md Unreleased — feat: a review leaves something behind
+- 2026-08-05T16:27:51.390Z - ac-confirmed: AC13: reviewer rounds: 2. R1 — reviewConsoleLines could print 'undefined'; fixed in 81e9061 with a test. R2 — no defects. Codex unavailable (quota until 2026-08-11)
+- 2026-08-05T16:28:00.756Z - task-done: T1: Collect remaining context
+- 2026-08-05T16:28:00.844Z - task-done: T2: Implement per plan
+- 2026-08-05T16:28:00.935Z - task-done: T3: Add/adjust tests and make them pass
+- 2026-08-05T16:28:01.024Z - task-done: T4: Self-review and prepare draft PR
+- 2026-08-05T16:28:20.095Z - completing
+- 2026-08-05T16:28:20.102Z - done: all gates passed

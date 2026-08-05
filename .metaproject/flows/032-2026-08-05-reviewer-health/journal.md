@@ -3,3 +3,23 @@
 - 2026-08-05T16:28:49.496Z - flow created
 - 2026-08-05T16:29:55.447Z - frozen: 13 criteria; checksum recorded
 - 2026-08-05T16:29:55.536Z - started
+- 2026-08-05T16:34:44.043Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/68
+- 2026-08-05T16:50:37.579Z - ac-confirmed: AC1: tests/unit/reviewer-calls.test.ts — the verbatim CLI message classifies as 'limit until aug 11th, 2026 5:49 pm'; a limit without a reset time is still a limit; the 51 pre-existing classifier tests are unmodified and pass
+- 2026-08-05T16:50:37.666Z - ac-confirmed: AC2: tests/unit/reviewer-calls.test.ts — the verbatim CLI message classifies as 'limit until aug 11th, 2026 5:49 pm'; a limit without a reset time is still a limit; the 51 pre-existing classifier tests are unmodified and pass
+- 2026-08-05T16:50:37.753Z - ac-confirmed: AC3: tests/unit/reviewer-calls.test.ts — the verbatim CLI message classifies as 'limit until aug 11th, 2026 5:49 pm'; a limit without a reset time is still a limit; the 51 pre-existing classifier tests are unmodified and pass
+- 2026-08-05T16:50:37.841Z - ac-confirmed: AC4: tests/unit/reviewer-health.test.ts — newest-first per reviewer against real files; a reviewer the newest run omits keeps its evidence; empty and unreadable roots are empty answers
+- 2026-08-05T16:50:37.931Z - ac-confirmed: AC5: same file: only a failure the probe cannot see overrides it (failureHidesFromProbe); unprobed is a third state and not counted available
+- 2026-08-05T16:50:38.022Z - ac-confirmed: AC6: same file: only a failure the probe cannot see overrides it (failureHidesFromProbe); unprobed is a third state and not counted available
+- 2026-08-05T16:50:38.107Z - ac-confirmed: AC7: same file: down alerts once, recovery clears once, already-down on first pass says it once, balance floor with margin, and a failed balance check never clears a balance alert
+- 2026-08-05T16:50:38.196Z - ac-confirmed: AC8: same file: down alerts once, recovery clears once, already-down on first pass says it once, balance floor with margin, and a failed balance check never clears a balance alert
+- 2026-08-05T16:50:38.282Z - ac-confirmed: AC9: same file: down alerts once, recovery clears once, already-down on first pass says it once, balance floor with margin, and a failed balance check never clears a balance alert
+- 2026-08-05T16:50:38.371Z - ac-confirmed: AC10: registered in startSupervisor at 30 min with a 50s offset and unref'd like its neighbours
+- 2026-08-05T16:50:38.459Z - ac-confirmed: AC11: bun test tests/unit/: 1524 pass 0 fail; bunx tsc --noEmit clean
+- 2026-08-05T16:50:38.543Z - ac-confirmed: AC12: CHANGELOG.md Unreleased — fix: a reviewer that cannot review no longer reads as available
+- 2026-08-05T16:50:38.631Z - ac-confirmed: AC13: reviewer rounds: 4. R1 — pattern breadth (declined, two existing defences, now asserted by test) and transient-failure lockout (fixed, 1e2b878). R2 — one finding, disproved by running it: the classifier lowercases before matching. R3 — two real findings, both fixed in a9e51ff. R4 — no defects
+- 2026-08-05T16:50:38.718Z - task-done: T1: Collect remaining context
+- 2026-08-05T16:50:38.805Z - task-done: T2: Implement per plan
+- 2026-08-05T16:50:38.895Z - task-done: T3: Add/adjust tests and make them pass
+- 2026-08-05T16:50:38.980Z - task-done: T4: Self-review and prepare draft PR
+- 2026-08-05T16:52:13.223Z - completing
+- 2026-08-05T16:52:13.235Z - done: all gates passed

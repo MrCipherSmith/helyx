@@ -3,24 +3,69 @@
   "id": "029",
   "slug": "container-list",
   "title": "Two answers to which containers exist, and the analyst gets the one that hides the dead",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-05T14:47:30.144Z",
-  "updatedAt": "2026-08-05T14:52:32.719Z",
+  "updatedAt": "2026-08-05T18:05:28.157Z",
   "source": {
     "type": "description",
     "ref": null
   },
   "acChecksum": "sha256:77498287e55d33d6bc935aa2abb1b1fc523f3ef8b49e3fceaf99aa20e8caa844",
-  "acConfirmed": {},
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-05T18:05:26.859Z",
+      "note": "grep 'docker ps' scripts/supervisor.ts: prose only, zero commands; DOCKER_LIST_COMMAND lives in utils/supervisor-status.ts"
+    },
+    "AC2": {
+      "at": "2026-08-05T18:05:26.943Z",
+      "note": "tests/unit/container-listing.test.ts — 9 cases with a fake runShell and a fake sql; re-confirmed after the record was reverted by a working-tree cleanup"
+    },
+    "AC3": {
+      "at": "2026-08-05T18:05:27.028Z",
+      "note": "tests/unit/container-listing.test.ts — 9 cases with a fake runShell and a fake sql; re-confirmed after the record was reverted by a working-tree cleanup"
+    },
+    "AC4": {
+      "at": "2026-08-05T18:05:27.112Z",
+      "note": "tests/unit/container-listing.test.ts — 9 cases with a fake runShell and a fake sql; re-confirmed after the record was reverted by a working-tree cleanup"
+    },
+    "AC5": {
+      "at": "2026-08-05T18:05:27.199Z",
+      "note": "tests/unit/container-listing.test.ts — 9 cases with a fake runShell and a fake sql; re-confirmed after the record was reverted by a working-tree cleanup"
+    },
+    "AC6": {
+      "at": "2026-08-05T18:05:27.283Z",
+      "note": "tests/unit/container-listing.test.ts — 9 cases with a fake runShell and a fake sql; re-confirmed after the record was reverted by a working-tree cleanup"
+    },
+    "AC7": {
+      "at": "2026-08-05T18:05:27.368Z",
+      "note": "rendering moved verbatim; the pre-existing supervisor-broadcast tests are unmodified and pass"
+    },
+    "AC8": {
+      "at": "2026-08-05T18:05:27.453Z",
+      "note": "RunShell declared once, in utils/supervisor-status.ts, and imported by scripts/supervisor.ts"
+    },
+    "AC9": {
+      "at": "2026-08-05T18:05:27.538Z",
+      "note": "suite green and tsc clean at the time of merge; still green now at 1544 tests"
+    },
+    "AC10": {
+      "at": "2026-08-05T18:05:27.621Z",
+      "note": "CHANGELOG.md Unreleased — fix: one answer to which containers exist"
+    },
+    "AC11": {
+      "at": "2026-08-05T18:05:27.707Z",
+      "note": "one reviewer round, no defects"
+    }
+  },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/65"
   },
   "tasks": [
     {
       "id": "T1",
       "title": "Collect remaining context",
       "kind": "context",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -28,13 +73,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T2",
       "title": "Implement per plan",
       "kind": "implement",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -42,13 +88,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T3",
       "title": "Add/adjust tests and make them pass",
       "kind": "test",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -56,13 +103,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T4",
       "title": "Self-review and prepare draft PR",
       "kind": "review",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -70,7 +118,8 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     }
   ],
   "history": [
@@ -91,6 +140,100 @@
       "at": "2026-08-05T14:52:32.719Z",
       "event": "ac-updated",
       "detail": "AC1 named a grep count that the chosen design makes false in a harmless way: moving the command out leaves two prose mentions of 'docker ps' in supervisor.ts and zero commands. Reworded to the invariant that was meant — no command issued from that file — so the criterion can be confirmed by what it actually tests."
+    },
+    {
+      "at": "2026-08-05T18:05:26.771Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/65 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-08-05T18:05:26.859Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: grep 'docker ps' scripts/supervisor.ts: prose only, zero commands; DOCKER_LIST_COMMAND lives in utils/supervisor-status.ts"
+    },
+    {
+      "at": "2026-08-05T18:05:26.943Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: tests/unit/container-listing.test.ts — 9 cases with a fake runShell and a fake sql; re-confirmed after the record was reverted by a working-tree cleanup"
+    },
+    {
+      "at": "2026-08-05T18:05:27.028Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: tests/unit/container-listing.test.ts — 9 cases with a fake runShell and a fake sql; re-confirmed after the record was reverted by a working-tree cleanup"
+    },
+    {
+      "at": "2026-08-05T18:05:27.112Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: tests/unit/container-listing.test.ts — 9 cases with a fake runShell and a fake sql; re-confirmed after the record was reverted by a working-tree cleanup"
+    },
+    {
+      "at": "2026-08-05T18:05:27.199Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: tests/unit/container-listing.test.ts — 9 cases with a fake runShell and a fake sql; re-confirmed after the record was reverted by a working-tree cleanup"
+    },
+    {
+      "at": "2026-08-05T18:05:27.283Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: tests/unit/container-listing.test.ts — 9 cases with a fake runShell and a fake sql; re-confirmed after the record was reverted by a working-tree cleanup"
+    },
+    {
+      "at": "2026-08-05T18:05:27.368Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: rendering moved verbatim; the pre-existing supervisor-broadcast tests are unmodified and pass"
+    },
+    {
+      "at": "2026-08-05T18:05:27.453Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: RunShell declared once, in utils/supervisor-status.ts, and imported by scripts/supervisor.ts"
+    },
+    {
+      "at": "2026-08-05T18:05:27.538Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: suite green and tsc clean at the time of merge; still green now at 1544 tests"
+    },
+    {
+      "at": "2026-08-05T18:05:27.621Z",
+      "event": "ac-confirmed",
+      "detail": "AC10: CHANGELOG.md Unreleased — fix: one answer to which containers exist"
+    },
+    {
+      "at": "2026-08-05T18:05:27.707Z",
+      "event": "ac-confirmed",
+      "detail": "AC11: one reviewer round, no defects"
+    },
+    {
+      "at": "2026-08-05T18:05:27.792Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-05T18:05:27.886Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-05T18:05:27.977Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-05T18:05:28.063Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-05T18:05:28.150Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-05T18:05:28.157Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
-  ]
+  ],
+  "merged": {
+    "commit": "bfad745",
+    "ref": "origin/main",
+    "at": "2026-08-05T18:05:28.157Z"
+  }
 }

@@ -19,7 +19,7 @@ Rules:
 - AC7: The alert names the message, the count and the window, and carries the first occurrence time; asserted on the alert object, not on rendered text.
 - AC8: `checkErrorStream` reports its own inability to read the log rather than failing silently, and a second consecutive failure raises one alert; proved by test with a failing reader.
 - AC9: The loop reads incrementally: a second pass over an unchanged file produces no alerts, and lines appended between passes are seen exactly once; proved by test.
-- AC10: Loop 9 is registered in `startSupervisor` and its timer is cleared on shutdown alongside the others.
+- AC10: Loop 9 is registered in `startSupervisor` and its timer is `unref`'d like every other loop there — the module has no `clearInterval` anywhere, and unreffing is what keeps a timer from holding the daemon open; verified by reading the registration beside its neighbours.
 - AC11: Whole unit suite green and `tsc --noEmit` clean.
 - AC12: The change is recorded in `CHANGELOG.md` under Unreleased.
 - AC13: Every reviewer round on the draft PR ends with no unresolved finding in the files this flow changes.

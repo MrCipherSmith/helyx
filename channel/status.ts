@@ -25,7 +25,7 @@ import {
   PHASE_LABEL,
 } from "../utils/status-format.ts";
 import { HoldCounter } from "../utils/hold-counter.ts";
-import { renderStatus, clampEscaped } from "../utils/status-render.ts";
+import { renderStatus, renderFinal, clampEscaped } from "../utils/status-render.ts";
 import { escapeHtml } from "../utils/html.ts";
 import { isRequeued, markRequeued } from "../utils/requeue.ts";
 import { hasOpenQuestion } from "../services/ask-question.ts";
@@ -74,6 +74,15 @@ interface StatusState {
   lastCountedToolLine: string | null;
   pendingImmediateEdit: boolean;
   nextEditDelay: number | null;
+  /**
+   * When the last edit request was issued — the floor below is measured from
+   * here. Zero, not the creation time, so the first update after the message
+   * is sent goes out immediately: that one is the operator's confirmation that
+   * the turn started.
+   */
+  lastEditAt: number;
+  /** The queued catch-up edit, if the floor deferred one. */
+  deferredEditTimer: ReturnType<typeof setTimeout> | null;
 }
 
 interface SessionStats {
@@ -83,7 +92,7 @@ interface SessionStats {
 }
 
 
-const SPINNER_INTERVAL_ACTIVE_MS = 3_000;   // when monitor has been active recently
+const SPINNER_INTERVAL_ACTIVE_MS = 5_000;   // when monitor has been active recently
 const SPINNER_INTERVAL_IDLE_MS   = 15_000;  // when no monitor activity for >IDLE_THRESHOLD_MS
 const IDLE_THRESHOLD_MS          = 12_000;  // switch to idle after 12s of silence
 
@@ -157,8 +166,19 @@ export class StatusManager {
   private pendingSendGenerations = new Map<string, number>();
   private readonly TYPING_TIMEOUT_MS = 30_000;
   private readonly RESPONSE_GUARD_MS = 5 * 60_000; // 5 min
+  /**
+   * The edit floor in force for this manager.
+   *
+   * Overridable for the same reason `runResponseGuard` takes a `now`: what it
+   * decides is entirely a question about elapsed time, and a test that cannot
+   * shorten the interval can only assert the first edit — the one case where
+   * no time has passed and the floor does nothing.
+   */
+  private readonly minEditIntervalMs: number;
 
-  constructor(private ctx: StatusContext) {}
+  constructor(private ctx: StatusContext, options: { minEditIntervalMs?: number } = {}) {
+    this.minEditIntervalMs = options.minEditIntervalMs ?? StatusManager.MIN_EDIT_INTERVAL_MS;
+  }
 
   /**
    * Telegram chat_ids that currently have an open status message — i.e. Claude
@@ -541,29 +561,70 @@ export class StatusManager {
    * showed up a tick late. For the stage that is a stale line; for the latch
    * it is the wrong emoji on a session that is or is not blocked.
    */
-  private static readonly MAX_DRAIN_PASSES = 4;
+  /**
+   * The smallest gap allowed between two edits of the same status message.
+   *
+   * The transcript monitor polls every two seconds and emits whenever the
+   * session did anything, so a busy turn asked for an edit every two seconds —
+   * thirty a minute into a group, where Telegram allows around twenty. It
+   * answered with 429s carrying thirteen- and thirty-seven-second waits, and
+   * the status froze for exactly as long. Five seconds is under the limit with
+   * room for the timer's own ticks, and it is far below the rate at which an
+   * operator reads a status.
+   *
+   * Nothing is lost to the floor: `editStatusMessage` renders the state as it
+   * is when it runs, so a deferred edit shows everything that arrived while it
+   * was waiting rather than a queue of stale ones.
+   */
+  private static readonly MIN_EDIT_INTERVAL_MS = 5_000;
+
+  /**
+   * Queue the edit the floor just refused, once.
+   *
+   * One timer per state: the whole point is that many updates collapse into a
+   * single edit, and a timer per update would defeat it exactly when updates
+   * are most frequent.
+   */
+  private deferEdit(state: StatusState, wait: number): void {
+    state.pendingImmediateEdit = true;
+    if (state.deferredEditTimer) return;
+    state.deferredEditTimer = setTimeout(() => {
+      state.deferredEditTimer = null;
+      if (!state.pendingImmediateEdit) return;
+      void this.editWithDrain(state);
+    }, Math.max(0, wait));
+  }
 
   private async editWithDrain(state: StatusState): Promise<void> {
     if (state.editInFlight) {
       state.pendingImmediateEdit = true;
       return;
     }
+    const wait = this.minEditIntervalMs - (Date.now() - state.lastEditAt);
+    if (wait > 0) {
+      this.deferEdit(state, wait);
+      return;
+    }
+
     state.editInFlight = true;
     try {
-      // Bounded, and it yields to the rate-limit backoff. An unbounded loop
-      // would keep editing for as long as updates keep arriving, which is
-      // exactly when Telegram is most likely to be pushing back — and
-      // nextEditDelay, which the timer honours, would never be reached.
-      // Whatever is still pending after the cap belongs to the timer, one
-      // tick later.
-      for (let pass = 0; pass < StatusManager.MAX_DRAIN_PASSES; pass++) {
-        state.pendingImmediateEdit = false;
-        await this.editStatusMessage(state);
-        if (!state.pendingImmediateEdit) break;
-        if (state.nextEditDelay) break; // rate-limited — let the timer wait it out
-      }
+      state.pendingImmediateEdit = false;
+      // Stamped from the start of the request rather than its end: a Telegram
+      // call that spends thirteen seconds in the client's own retry loop has
+      // already waited out the floor several times over, and charging that
+      // wait again would compound the stall this exists to prevent.
+      const requestedAt = Date.now();
+      if (await this.editStatusMessage(state)) state.lastEditAt = requestedAt;
     } finally {
       state.editInFlight = false;
+    }
+
+    // Anything that arrived while the edit was in flight waits out the floor
+    // instead of following immediately. The rate-limit backoff outranks it:
+    // `nextEditDelay` is honoured by the timer, which is already the longer
+    // wait of the two.
+    if (state.pendingImmediateEdit && !state.nextEditDelay) {
+      this.deferEdit(state, this.minEditIntervalMs);
     }
   }
 
@@ -694,6 +755,8 @@ export class StatusManager {
         lastCountedToolLine: null,
         pendingImmediateEdit: false,
         nextEditDelay: null,
+        lastEditAt: 0,
+        deferredEditTimer: null,
       };
       const scheduleTick = (key: string): void => {
         const state = this.activeStatus.get(key);
@@ -862,9 +925,17 @@ export class StatusManager {
       : SPINNER_INTERVAL_IDLE_MS;
   }
 
-  private async editStatusMessage(state: StatusState): Promise<void> {
+  /**
+   * True when a request actually went to Telegram.
+   *
+   * The floor in `editWithDrain` is measured from real requests, not from
+   * attempts: an edit skipped by the signature dedup costs nothing and must
+   * not make the next genuine change wait five seconds for a call that never
+   * happened.
+   */
+  private async editStatusMessage(state: StatusState): Promise<boolean> {
     const token = this.ctx.token();
-    if (!token) return;
+    if (!token) return false;
 
     const elapsed = formatElapsed(Date.now() - state.startedAt);
     const key = state.threadId ? `${state.chatId}:${state.threadId}` : state.chatId;
@@ -887,7 +958,7 @@ export class StatusManager {
     const sig = computeSignature(contentForSig);
     if (sig === state.lastSentSignature) {
       channelLogger.debug({ messageId: state.messageId }, "editStatusMessage: skipping redundant edit");
-      return;
+      return false;
     }
 
     // Content changed — advance spinner and compose final text with the live icon
@@ -908,6 +979,7 @@ export class StatusManager {
     if (!res.ok && (res.errorBody?.includes("429") || res.errorBody?.includes("deadline exceeded"))) {
       state.nextEditDelay = 30_000;
     }
+    return true;
   }
 
   private async refreshPaneSnapshot(state: StatusState): Promise<void> {
@@ -949,6 +1021,13 @@ export class StatusManager {
     channelLogger.info({ phase: "status", step: "deleting", chatId, statusLifeMs, messageId: state.messageId }, "perf");
     if (state.timer) clearTimeout(state.timer);
     if (state.dbHeartbeatTimer) clearInterval(state.dbHeartbeatTimer);
+    // A catch-up edit queued by the floor would otherwise fire after the
+    // closing summary and paint the finished turn as still running.
+    if (state.deferredEditTimer) {
+      clearTimeout(state.deferredEditTimer);
+      state.deferredEditTimer = null;
+    }
+    state.pendingImmediateEdit = false;
     this.activeStatus.delete(key);
     this.ctx.sql`DELETE FROM active_status_messages WHERE key = ${key}`.catch(() => {});
     this.stopTypingForChat(chatId);
@@ -999,8 +1078,21 @@ export class StatusManager {
     if (tokens) parts.push(`↓ ${tokens}`);
 
     const summaryText = `✅ ${parts.join(" · ")}`;
+    // The work the turn did stays in the message, collapsed. Overwriting it
+    // with the summary alone destroyed the only record the operator had of
+    // what happened — the block was visible for as long as the turn ran and
+    // then gone the moment it mattered least to lose it and most to keep it.
+    const finalText = renderFinal(summaryText, state.stage);
     unpinTelegramMessage(token, state.chatId, state.messageId);
-    const editRes = await editTelegramMessage(token, state.chatId, state.messageId, summaryText, { parse_mode: "HTML" });
+    let editRes = await editTelegramMessage(token, state.chatId, state.messageId, finalText, { parse_mode: "HTML" });
+    // The block is the part that can fail: it is the longest, and it is the
+    // only text here this class did not compose itself. Falling back to the
+    // summary keeps the notice the operator relies on rather than deleting the
+    // message because its optional half was rejected.
+    if (!editRes.ok && finalText !== summaryText) {
+      channelLogger.warn({ error: editRes.errorBody, messageId: state.messageId }, "final status: work block rejected, sending summary alone");
+      editRes = await editTelegramMessage(token, state.chatId, state.messageId, summaryText, { parse_mode: "HTML" });
+    }
     if (!editRes.ok) {
       deleteTelegramMessage(token, state.chatId, state.messageId);
     }

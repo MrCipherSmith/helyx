@@ -3,24 +3,77 @@
   "id": "032",
   "slug": "reviewer-health",
   "title": "Reviewer availability is asked only when someone opens a menu, and answered by the wrong question",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-05T16:28:49.496Z",
-  "updatedAt": "2026-08-05T16:29:55.536Z",
+  "updatedAt": "2026-08-05T16:52:13.235Z",
   "source": {
     "type": "description",
     "ref": null
   },
   "acChecksum": "sha256:334990a15e32f42e608efcab55a217e8746e9669886ea97cbe93dae90adf88ac",
-  "acConfirmed": {},
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-05T16:50:37.579Z",
+      "note": "tests/unit/reviewer-calls.test.ts — the verbatim CLI message classifies as 'limit until aug 11th, 2026 5:49 pm'; a limit without a reset time is still a limit; the 51 pre-existing classifier tests are unmodified and pass"
+    },
+    "AC2": {
+      "at": "2026-08-05T16:50:37.666Z",
+      "note": "tests/unit/reviewer-calls.test.ts — the verbatim CLI message classifies as 'limit until aug 11th, 2026 5:49 pm'; a limit without a reset time is still a limit; the 51 pre-existing classifier tests are unmodified and pass"
+    },
+    "AC3": {
+      "at": "2026-08-05T16:50:37.753Z",
+      "note": "tests/unit/reviewer-calls.test.ts — the verbatim CLI message classifies as 'limit until aug 11th, 2026 5:49 pm'; a limit without a reset time is still a limit; the 51 pre-existing classifier tests are unmodified and pass"
+    },
+    "AC4": {
+      "at": "2026-08-05T16:50:37.840Z",
+      "note": "tests/unit/reviewer-health.test.ts — newest-first per reviewer against real files; a reviewer the newest run omits keeps its evidence; empty and unreadable roots are empty answers"
+    },
+    "AC5": {
+      "at": "2026-08-05T16:50:37.931Z",
+      "note": "same file: only a failure the probe cannot see overrides it (failureHidesFromProbe); unprobed is a third state and not counted available"
+    },
+    "AC6": {
+      "at": "2026-08-05T16:50:38.022Z",
+      "note": "same file: only a failure the probe cannot see overrides it (failureHidesFromProbe); unprobed is a third state and not counted available"
+    },
+    "AC7": {
+      "at": "2026-08-05T16:50:38.107Z",
+      "note": "same file: down alerts once, recovery clears once, already-down on first pass says it once, balance floor with margin, and a failed balance check never clears a balance alert"
+    },
+    "AC8": {
+      "at": "2026-08-05T16:50:38.196Z",
+      "note": "same file: down alerts once, recovery clears once, already-down on first pass says it once, balance floor with margin, and a failed balance check never clears a balance alert"
+    },
+    "AC9": {
+      "at": "2026-08-05T16:50:38.282Z",
+      "note": "same file: down alerts once, recovery clears once, already-down on first pass says it once, balance floor with margin, and a failed balance check never clears a balance alert"
+    },
+    "AC10": {
+      "at": "2026-08-05T16:50:38.371Z",
+      "note": "registered in startSupervisor at 30 min with a 50s offset and unref'd like its neighbours"
+    },
+    "AC11": {
+      "at": "2026-08-05T16:50:38.458Z",
+      "note": "bun test tests/unit/: 1524 pass 0 fail; bunx tsc --noEmit clean"
+    },
+    "AC12": {
+      "at": "2026-08-05T16:50:38.543Z",
+      "note": "CHANGELOG.md Unreleased — fix: a reviewer that cannot review no longer reads as available"
+    },
+    "AC13": {
+      "at": "2026-08-05T16:50:38.631Z",
+      "note": "reviewer rounds: 4. R1 — pattern breadth (declined, two existing defences, now asserted by test) and transient-failure lockout (fixed, 1e2b878). R2 — one finding, disproved by running it: the classifier lowercases before matching. R3 — two real findings, both fixed in a9e51ff. R4 — no defects"
+    }
+  },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/68"
   },
   "tasks": [
     {
       "id": "T1",
       "title": "Collect remaining context",
       "kind": "context",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -28,13 +81,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T2",
       "title": "Implement per plan",
       "kind": "implement",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -42,13 +96,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T3",
       "title": "Add/adjust tests and make them pass",
       "kind": "test",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -56,13 +111,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T4",
       "title": "Self-review and prepare draft PR",
       "kind": "review",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -70,7 +126,8 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     }
   ],
   "history": [
@@ -86,6 +143,110 @@
     {
       "at": "2026-08-05T16:29:55.536Z",
       "event": "started"
+    },
+    {
+      "at": "2026-08-05T16:34:44.043Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/68"
+    },
+    {
+      "at": "2026-08-05T16:50:37.579Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: tests/unit/reviewer-calls.test.ts — the verbatim CLI message classifies as 'limit until aug 11th, 2026 5:49 pm'; a limit without a reset time is still a limit; the 51 pre-existing classifier tests are unmodified and pass"
+    },
+    {
+      "at": "2026-08-05T16:50:37.666Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: tests/unit/reviewer-calls.test.ts — the verbatim CLI message classifies as 'limit until aug 11th, 2026 5:49 pm'; a limit without a reset time is still a limit; the 51 pre-existing classifier tests are unmodified and pass"
+    },
+    {
+      "at": "2026-08-05T16:50:37.753Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: tests/unit/reviewer-calls.test.ts — the verbatim CLI message classifies as 'limit until aug 11th, 2026 5:49 pm'; a limit without a reset time is still a limit; the 51 pre-existing classifier tests are unmodified and pass"
+    },
+    {
+      "at": "2026-08-05T16:50:37.841Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: tests/unit/reviewer-health.test.ts — newest-first per reviewer against real files; a reviewer the newest run omits keeps its evidence; empty and unreadable roots are empty answers"
+    },
+    {
+      "at": "2026-08-05T16:50:37.931Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: same file: only a failure the probe cannot see overrides it (failureHidesFromProbe); unprobed is a third state and not counted available"
+    },
+    {
+      "at": "2026-08-05T16:50:38.022Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: same file: only a failure the probe cannot see overrides it (failureHidesFromProbe); unprobed is a third state and not counted available"
+    },
+    {
+      "at": "2026-08-05T16:50:38.107Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: same file: down alerts once, recovery clears once, already-down on first pass says it once, balance floor with margin, and a failed balance check never clears a balance alert"
+    },
+    {
+      "at": "2026-08-05T16:50:38.196Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: same file: down alerts once, recovery clears once, already-down on first pass says it once, balance floor with margin, and a failed balance check never clears a balance alert"
+    },
+    {
+      "at": "2026-08-05T16:50:38.282Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: same file: down alerts once, recovery clears once, already-down on first pass says it once, balance floor with margin, and a failed balance check never clears a balance alert"
+    },
+    {
+      "at": "2026-08-05T16:50:38.371Z",
+      "event": "ac-confirmed",
+      "detail": "AC10: registered in startSupervisor at 30 min with a 50s offset and unref'd like its neighbours"
+    },
+    {
+      "at": "2026-08-05T16:50:38.459Z",
+      "event": "ac-confirmed",
+      "detail": "AC11: bun test tests/unit/: 1524 pass 0 fail; bunx tsc --noEmit clean"
+    },
+    {
+      "at": "2026-08-05T16:50:38.543Z",
+      "event": "ac-confirmed",
+      "detail": "AC12: CHANGELOG.md Unreleased — fix: a reviewer that cannot review no longer reads as available"
+    },
+    {
+      "at": "2026-08-05T16:50:38.631Z",
+      "event": "ac-confirmed",
+      "detail": "AC13: reviewer rounds: 4. R1 — pattern breadth (declined, two existing defences, now asserted by test) and transient-failure lockout (fixed, 1e2b878). R2 — one finding, disproved by running it: the classifier lowercases before matching. R3 — two real findings, both fixed in a9e51ff. R4 — no defects"
+    },
+    {
+      "at": "2026-08-05T16:50:38.718Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-05T16:50:38.805Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-05T16:50:38.895Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-05T16:50:38.980Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-05T16:52:13.223Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-05T16:52:13.235Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
-  ]
+  ],
+  "merged": {
+    "commit": "2048519",
+    "ref": "origin/main",
+    "at": "2026-08-05T16:52:13.235Z"
+  }
 }

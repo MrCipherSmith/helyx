@@ -36,6 +36,7 @@ export interface DeletedMessage {
 }
 
 export type SendResult = { ok: boolean; messageId: number | null; errorBody?: string };
+export type EditResult = { ok: boolean; errorBody?: string };
 
 export class FakeTelegram {
   readonly sent: SentMessage[] = [];
@@ -53,6 +54,14 @@ export class FakeTelegram {
     ok: true,
     messageId: this.nextMessageId++,
   });
+
+  /**
+   * What the next edit returns. Replaceable for the same reason `sendResult`
+   * is: "Telegram refused the edit" is a branch — the closing notice falls back
+   * from the work block to the summary alone — and the only way to reach it is
+   * to say no.
+   */
+  editResult: EditResult | ((text: string) => EditResult) = () => ({ ok: true });
 
   private nextMessageId = 1000;
 
@@ -105,7 +114,8 @@ export async function installFakeTelegram(): Promise<{ telegram: FakeTelegram; r
     },
     editTelegramMessage: async (_token: string, chatId: string, messageId: number, text: string) => {
       telegram.edits.push({ chatId, messageId, text });
-      return { ok: true };
+      const result = telegram.editResult;
+      return typeof result === "function" ? result(text) : result;
     },
     deleteTelegramMessage: (_token: string, chatId: string, messageId: number) => {
       telegram.deletes.push({ chatId, messageId });

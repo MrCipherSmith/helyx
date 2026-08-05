@@ -3,3 +3,22 @@
 - 2026-08-05T16:53:39.600Z - flow created
 - 2026-08-05T16:54:14.672Z - frozen: 12 criteria; checksum recorded
 - 2026-08-05T16:54:14.780Z - started
+- 2026-08-05T16:57:03.241Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/69
+- 2026-08-05T17:07:24.500Z - ac-confirmed: AC1: tests/unit/scheduled-review.test.ts — the decision as a table; pure, taking branch, hash, state and now as arguments
+- 2026-08-05T17:07:24.588Z - ac-confirmed: AC2: tests/unit/scheduled-review.test.ts — the decision as a table; pure, taking branch, hash, state and now as arguments
+- 2026-08-05T17:07:24.676Z - ac-confirmed: AC3: tests/unit/scheduled-review.test.ts — the decision as a table; pure, taking branch, hash, state and now as arguments
+- 2026-08-05T17:07:24.766Z - ac-confirmed: AC4: state round-trips through bot_config via scheduledReviewDeps; the loop's own memory is tested with an injected loadState/saveState pair
+- 2026-08-05T17:07:24.857Z - ac-confirmed: AC5: review-in-flight is refused with a reason, never queued; and a flag older than REVIEW_STALE_AFTER_MS is presumed dead so one crash cannot disable the loop for ever
+- 2026-08-05T17:07:24.949Z - ac-confirmed: AC6: scheduledReviewDeps passes trigger: 'scheduled' to persistReviewRun; scripts/review.ts still passes 'manual'
+- 2026-08-05T17:07:25.037Z - ac-confirmed: AC7: one post naming the branch and the artifact path, asserted; a failed post is a note and does not roll back the recorded review
+- 2026-08-05T17:07:25.120Z - ac-confirmed: AC8: no hook is installed and no caller awaits the loop: it is a setInterval in the host daemon that writes a file and posts a message
+- 2026-08-05T17:07:25.213Z - ac-confirmed: AC9: registered in startSupervisor at 15 min with a 70s offset and unref'd like its neighbours
+- 2026-08-05T17:07:25.300Z - ac-confirmed: AC10: bun test tests/unit/: 1540 pass 0 fail; bunx tsc --noEmit clean
+- 2026-08-05T17:07:25.386Z - ac-confirmed: AC11: CHANGELOG.md Unreleased — feat: a review that starts itself
+- 2026-08-05T17:07:25.474Z - ac-confirmed: AC12: reviewer rounds: 3. R1 — stuck in-flight flag and a failed post discarding lastReviewedHash, both fixed in 1a02af4. R2 — the hash and the reviewed diff were separate snapshots, fixed in 502c636. R3 — no defects; the hardcoded default branch 'main' was raised and called a configuration choice rather than a bug, and this repository's default is main
+- 2026-08-05T17:07:25.562Z - task-done: T1: Collect remaining context
+- 2026-08-05T17:07:25.650Z - task-done: T2: Implement per plan
+- 2026-08-05T17:07:25.736Z - task-done: T3: Add/adjust tests and make them pass
+- 2026-08-05T17:07:25.824Z - task-done: T4: Self-review and prepare draft PR
+- 2026-08-05T17:08:02.099Z - completing
+- 2026-08-05T17:08:02.111Z - done: all gates passed

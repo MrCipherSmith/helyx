@@ -3,3 +3,38 @@
 - 2026-08-05T15:19:51.266Z - flow created
 - 2026-08-05T15:20:43.641Z - frozen: 13 criteria; checksum recorded
 - 2026-08-05T15:20:43.726Z - started
+- 2026-08-05T15:27:32.611Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/66
+- 2026-08-05T15:29:34.734Z - ac-updated: AC10 required the timer to be 'cleared on shutdown alongside the others'. Verified against the module: there is no clearInterval in scripts/supervisor.ts at all, and every loop is unref'd instead. The criterion described a convention that does not exist, so it demanded either a false confirmation or a change that would make Loop 9 the odd one out. Reworded to the convention actually in use.
+- 2026-08-05T15:43:50.988Z - ac-confirmed: AC1: tests/unit/error-stream.test.ts — 15 cases, log lines copied verbatim from logs/bot.log
+- 2026-08-05T15:43:51.075Z - ac-confirmed: AC2: tests/unit/error-stream.test.ts — 15 cases, log lines copied verbatim from logs/bot.log
+- 2026-08-05T15:43:51.160Z - ac-confirmed: AC3: tests/unit/error-stream.test.ts — 15 cases, log lines copied verbatim from logs/bot.log
+- 2026-08-05T15:43:51.250Z - ac-confirmed: AC4: tests/unit/error-stream.test.ts — 15 cases, log lines copied verbatim from logs/bot.log
+- 2026-08-05T15:43:51.336Z - ac-confirmed: AC5: tests/unit/error-stream.test.ts — 15 cases, log lines copied verbatim from logs/bot.log
+- 2026-08-05T15:43:51.426Z - ac-confirmed: AC6: tests/unit/error-stream.test.ts — 15 cases, log lines copied verbatim from logs/bot.log
+- 2026-08-05T15:43:51.512Z - ac-confirmed: AC7: tests/unit/error-stream.test.ts — 15 cases, log lines copied verbatim from logs/bot.log
+- 2026-08-05T15:43:51.597Z - ac-confirmed: AC8: tests/unit/error-stream-loop.test.ts: a failing reader is noted every pass and alerts once, keyed error_stream:unreadable; the failure counter lives on the reader, not in a module variable
+- 2026-08-05T15:43:51.685Z - ac-confirmed: AC9: same file: an unchanged file yields no alerts; a real temp log proves the tail opens at the end and only new lines arrive
+- 2026-08-05T15:43:51.777Z - ac-confirmed: AC10: registered in startSupervisor at 90s with a 25s offset and unref'd, exactly like its nine neighbours; verified there is no clearInterval in the module
+- 2026-08-05T15:43:51.865Z - ac-confirmed: AC11: bun test tests/unit/: 1485 pass 0 fail; bunx tsc --noEmit clean; branch also verified in an isolated worktree
+- 2026-08-05T15:43:51.953Z - ac-confirmed: AC12: CHANGELOG.md Unreleased — feat: something reads what the bot says about itself
+- 2026-08-05T15:43:52.039Z - ac-confirmed: AC13: reviewer rounds: 3. R1 map eviction (measured: 7 distinct msgs in the whole log, impact overstated; evicted anyway for a better reason). R2 missing-file tail — real, and the mechanism was replay rather than blindness; plus map-iteration hardening; four other points declined with reasons. R3 no defects. Codex unavailable throughout (quota until 2026-08-11)
+- 2026-08-05T15:43:59.655Z - task-done: T1: Collect remaining context
+- 2026-08-05T15:43:59.741Z - task-done: T2: Implement per plan
+- 2026-08-05T15:43:59.827Z - task-done: T3: Add/adjust tests and make them pass
+- 2026-08-05T15:43:59.914Z - task-done: T4: Self-review and prepare draft PR
+- 2026-08-05T15:45:35.244Z - ac-updated: Re-applying the AC10 rewording after the file was reverted by a working-tree cleanup during the merge. Same reason as before: the module has no clearInterval, every loop is unref'd, and the original wording demanded a convention that does not exist.
+- 2026-08-05T15:45:45.206Z - ac-confirmed: AC1: tests/unit/error-stream.test.ts — 15 cases, log lines copied verbatim from logs/bot.log
+- 2026-08-05T15:45:45.293Z - ac-confirmed: AC2: tests/unit/error-stream.test.ts — 15 cases, log lines copied verbatim from logs/bot.log
+- 2026-08-05T15:45:45.385Z - ac-confirmed: AC3: tests/unit/error-stream.test.ts — 15 cases, log lines copied verbatim from logs/bot.log
+- 2026-08-05T15:45:45.470Z - ac-confirmed: AC4: tests/unit/error-stream.test.ts — 15 cases, log lines copied verbatim from logs/bot.log
+- 2026-08-05T15:45:45.560Z - ac-confirmed: AC5: tests/unit/error-stream.test.ts — 15 cases, log lines copied verbatim from logs/bot.log
+- 2026-08-05T15:45:45.644Z - ac-confirmed: AC6: tests/unit/error-stream.test.ts — 15 cases, log lines copied verbatim from logs/bot.log
+- 2026-08-05T15:45:45.730Z - ac-confirmed: AC7: tests/unit/error-stream.test.ts — 15 cases, log lines copied verbatim from logs/bot.log
+- 2026-08-05T15:45:45.818Z - ac-confirmed: AC8: tests/unit/error-stream-loop.test.ts: a failing reader is noted every pass and alerts once, keyed error_stream:unreadable; the failure counter lives on the reader
+- 2026-08-05T15:45:45.910Z - ac-confirmed: AC9: same file: an unchanged file yields no alerts; a real temp log proves the tail opens at the end and only new lines arrive
+- 2026-08-05T15:45:45.998Z - ac-confirmed: AC10: registered at 90s with a 25s offset and unref'd like its nine neighbours; no clearInterval exists in the module
+- 2026-08-05T15:45:46.085Z - ac-confirmed: AC11: bun test tests/unit/: 1485 pass 0 fail; tsc clean; branch verified in an isolated worktree too
+- 2026-08-05T15:45:46.171Z - ac-confirmed: AC12: CHANGELOG.md Unreleased — feat: something reads what the bot says about itself
+- 2026-08-05T15:45:46.258Z - ac-confirmed: AC13: reviewer rounds: 3. R1 map eviction (measured: 7 distinct msgs in the whole log). R2 missing-file tail — real, mechanism was replay not blindness; plus map-iteration hardening; four points declined with reasons. R3 no defects
+- 2026-08-05T15:45:46.345Z - completing
+- 2026-08-05T15:45:46.351Z - done: all gates passed

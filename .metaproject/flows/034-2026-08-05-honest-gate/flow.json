@@ -3,24 +3,73 @@
   "id": "034",
   "slug": "honest-gate",
   "title": "The quality gate judges by a stale number, and the record says the programme is blocked when it is not",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-05T17:40:10.626Z",
-  "updatedAt": "2026-08-05T17:43:19.798Z",
+  "updatedAt": "2026-08-05T17:58:37.763Z",
   "source": {
     "type": "description",
     "ref": null
   },
   "acChecksum": "sha256:7760ca93e0d16e6f72d789d6c50504f23847b2d5e748d7106be7b3b2341dfe03",
-  "acConfirmed": {},
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-05T17:58:00.964Z",
+      "note": "bun run health run end to end: test:coverage regenerated the summary, keryx test run wrote a project-scope report, keryx health run then read both"
+    },
+    "AC2": {
+      "at": "2026-08-05T17:58:01.053Z",
+      "note": "health artifact sources table: tests | available | auto | bun-script (was missing)"
+    },
+    "AC3": {
+      "at": "2026-08-05T17:58:01.141Z",
+      "note": "artifact reports coverage: 36.25%, the figure coverage-summary.ts printed in the same run (was a 30.13% import from 2026-08-04)"
+    },
+    "AC4": {
+      "at": "2026-08-05T17:58:01.231Z",
+      "note": "tests/unit/coverage-summary.test.ts — 4 cases against the real script and real lcov files: summed not averaged, a zero-line file, an unterminated record, a repeated path; the helper now asserts the exit code and drains both pipes"
+    },
+    "AC5": {
+      "at": "2026-08-05T17:58:01.318Z",
+      "note": "tests/unit/coverage-summary.test.ts — 4 cases against the real script and real lcov files: summed not averaged, a zero-line file, an unterminated record, a repeated path; the helper now asserts the exit code and drains both pipes"
+    },
+    "AC6": {
+      "at": "2026-08-05T17:58:01.407Z",
+      "note": "README, prd and specification carry the exact lcov figures with the correction stated; C1-C7 re-derived, supervisor still first on hotspot rather than on line count"
+    },
+    "AC7": {
+      "at": "2026-08-05T17:58:01.494Z",
+      "note": "README, prd and specification carry the exact lcov figures with the correction stated; C1-C7 re-derived, supervisor still first on hotspot rather than on line count"
+    },
+    "AC8": {
+      "at": "2026-08-05T17:58:01.582Z",
+      "note": "keryx memory supersede ran; both notes on disk, the new one records the closed blocker and 36.25% / 1540 tests"
+    },
+    "AC9": {
+      "at": "2026-08-05T17:58:01.672Z",
+      "note": "keryx memory check: All checks passed"
+    },
+    "AC10": {
+      "at": "2026-08-05T17:58:01.758Z",
+      "note": "bun test tests/unit/: 1544 pass 0 fail; bunx tsc --noEmit clean"
+    },
+    "AC11": {
+      "at": "2026-08-05T17:58:01.847Z",
+      "note": "CHANGELOG.md Unreleased — fix: the quality gate stopped judging by a stale number"
+    },
+    "AC12": {
+      "at": "2026-08-05T17:58:01.934Z",
+      "note": "reviewer rounds: 4. R1 — two points, both artifacts of the diff's scope (an unchanged file and .metaproject, which gitReviewDiff excludes by design); verified and declined. R2 — missing exit-code check, fixed. R3 — undrained child pipes, fixed. R4 — no defects"
+    }
+  },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/70"
   },
   "tasks": [
     {
       "id": "T1",
       "title": "Collect remaining context",
       "kind": "context",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -28,13 +77,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T2",
       "title": "Implement per plan",
       "kind": "implement",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -42,13 +92,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T3",
       "title": "Add/adjust tests and make them pass",
       "kind": "test",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -56,13 +107,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T4",
       "title": "Self-review and prepare draft PR",
       "kind": "review",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -70,7 +122,8 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     }
   ],
   "history": [
@@ -86,6 +139,105 @@
     {
       "at": "2026-08-05T17:43:19.798Z",
       "event": "started"
+    },
+    {
+      "at": "2026-08-05T17:47:47.790Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/70"
+    },
+    {
+      "at": "2026-08-05T17:58:00.964Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: bun run health run end to end: test:coverage regenerated the summary, keryx test run wrote a project-scope report, keryx health run then read both"
+    },
+    {
+      "at": "2026-08-05T17:58:01.053Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: health artifact sources table: tests | available | auto | bun-script (was missing)"
+    },
+    {
+      "at": "2026-08-05T17:58:01.141Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: artifact reports coverage: 36.25%, the figure coverage-summary.ts printed in the same run (was a 30.13% import from 2026-08-04)"
+    },
+    {
+      "at": "2026-08-05T17:58:01.231Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: tests/unit/coverage-summary.test.ts — 4 cases against the real script and real lcov files: summed not averaged, a zero-line file, an unterminated record, a repeated path; the helper now asserts the exit code and drains both pipes"
+    },
+    {
+      "at": "2026-08-05T17:58:01.318Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: tests/unit/coverage-summary.test.ts — 4 cases against the real script and real lcov files: summed not averaged, a zero-line file, an unterminated record, a repeated path; the helper now asserts the exit code and drains both pipes"
+    },
+    {
+      "at": "2026-08-05T17:58:01.407Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: README, prd and specification carry the exact lcov figures with the correction stated; C1-C7 re-derived, supervisor still first on hotspot rather than on line count"
+    },
+    {
+      "at": "2026-08-05T17:58:01.494Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: README, prd and specification carry the exact lcov figures with the correction stated; C1-C7 re-derived, supervisor still first on hotspot rather than on line count"
+    },
+    {
+      "at": "2026-08-05T17:58:01.582Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: keryx memory supersede ran; both notes on disk, the new one records the closed blocker and 36.25% / 1540 tests"
+    },
+    {
+      "at": "2026-08-05T17:58:01.672Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: keryx memory check: All checks passed"
+    },
+    {
+      "at": "2026-08-05T17:58:01.758Z",
+      "event": "ac-confirmed",
+      "detail": "AC10: bun test tests/unit/: 1544 pass 0 fail; bunx tsc --noEmit clean"
+    },
+    {
+      "at": "2026-08-05T17:58:01.847Z",
+      "event": "ac-confirmed",
+      "detail": "AC11: CHANGELOG.md Unreleased — fix: the quality gate stopped judging by a stale number"
+    },
+    {
+      "at": "2026-08-05T17:58:01.934Z",
+      "event": "ac-confirmed",
+      "detail": "AC12: reviewer rounds: 4. R1 — two points, both artifacts of the diff's scope (an unchanged file and .metaproject, which gitReviewDiff excludes by design); verified and declined. R2 — missing exit-code check, fixed. R3 — undrained child pipes, fixed. R4 — no defects"
+    },
+    {
+      "at": "2026-08-05T17:58:02.020Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-05T17:58:02.109Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-05T17:58:02.202Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-05T17:58:02.291Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-05T17:58:37.754Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-05T17:58:37.763Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
-  ]
+  ],
+  "merged": {
+    "commit": "5ead324",
+    "ref": "origin/main",
+    "at": "2026-08-05T17:58:37.763Z"
+  }
 }

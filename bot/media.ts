@@ -16,6 +16,7 @@ import { getForumChatId } from "./forum-cache.ts";
 import { replyInThread } from "./format.ts";
 import { enqueueForTopic, topicQueueKey, getQueueDepth } from "./topic-queue.ts";
 import { attachmentFor, isImage, fitsInline, anthropicImageMime } from "../utils/media-attachment.ts";
+import { extractReplyContext, renderReplyContext, type MessageWithReply, type ReplyContext } from "../utils/reply-context.ts";
 
 
 
@@ -75,6 +76,10 @@ export async function deliverMedia(
   mimeType?: string,
   messageId?: number,
   forumTopicId?: number | null,
+  // Passed in rather than read from `ctx`: when the file arrived without a
+  // caption the delivery happens from the follow-up text message, and it is the
+  // picture that was a reply to something, not the sentence about it.
+  replyContext?: ReplyContext | null,
 ): Promise<void> {
   const bot = deps.getBotRef();
   const chatId = String(ctx.chat!.id);
@@ -104,10 +109,11 @@ export async function deliverMedia(
       metadata: { fileId, filePath, messageId },
     });
     await deps.sql`
-      INSERT INTO message_queue (session_id, chat_id, from_user, content, message_id, attachments)
+      INSERT INTO message_queue (session_id, chat_id, from_user, content, message_id, attachments, reply_context)
       VALUES (
         ${route.sessionId}, ${chatId}, ${fromUser}, ${text},
-        ${String(messageId ?? "")}, ${JSON.stringify([attachment])}
+        ${String(messageId ?? "")}, ${JSON.stringify([attachment])},
+        ${replyContext ? JSON.stringify(replyContext) : null}
       )
       ON CONFLICT (chat_id, message_id)
         WHERE message_id IS NOT NULL AND message_id != '' AND message_id != 'tool'
@@ -143,11 +149,12 @@ export async function deliverMedia(
       if (!fitsInline(fileData.byteLength)) throw new Error("image too large to inline");
       const base64 = Buffer.from(fileData).toString("base64");
       const imageMime = anthropicImageMime(mimeType);
-      const { system, messages } = await deps.composePrompt(sessionId, chatId, caption);
+      const captionWithReply = `${renderReplyContext(replyContext)}${caption}`;
+      const { system, messages } = await deps.composePrompt(sessionId, chatId, captionWithReply);
       const lastMsg = messages[messages.length - 1];
       const imageBlocks: ContentBlock[] = [
         { type: "image", source: { type: "base64", media_type: imageMime, data: base64 } },
-        { type: "text", text: caption },
+        { type: "text", text: captionWithReply },
       ];
       messages[messages.length - 1] = { role: lastMsg.role, content: imageBlocks };
       deps.appendLog(sessionId, chatId, "llm", "analyzing image...");
@@ -184,6 +191,7 @@ async function handleMedia(
   }
 
   const route = await routeMessage(chatId, isForumMessage ? forumTopicId : undefined);
+  const replyContext = extractReplyContext(ctx.message as MessageWithReply | undefined);
 
   await ctx.replyWithChatAction("typing");
 
@@ -211,12 +219,13 @@ async function handleMedia(
         userCaption, fileId, filename, mimeType,
         replyCtx.message?.message_id ?? origMessageId,
         isForumMessage ? forumTopicId : null,
+        replyContext,
       );
     }, 5 * 60_000); // 5 min TTL — user may take time to decide
     return;
   }
 
-  await deliverMedia(ctx, route, filePath, hostPath, description, caption, fileId, filename, mimeType, ctx.message?.message_id, isForumMessage ? forumTopicId : null);
+  await deliverMedia(ctx, route, filePath, hostPath, description, caption, fileId, filename, mimeType, ctx.message?.message_id, isForumMessage ? forumTopicId : null, replyContext);
 }
 
 export async function handlePhoto(ctx: Context): Promise<void> {
@@ -311,6 +320,10 @@ export async function handleVoice(ctx: Context): Promise<void> {
     }
   };
 
+  // Read before the queue task runs: the task is deferred, and by the time it
+  // executes the only thing still holding the reply is this closure.
+  const replyContext = extractReplyContext(ctx.message as MessageWithReply | undefined);
+
   enqueueForTopic(queueKey, async () => {
     try {
       await ctx.replyWithChatAction("typing");
@@ -385,12 +398,13 @@ export async function handleVoice(ctx: Context): Promise<void> {
             metadata: { voiceFile: filePath, messageId: ctx.message?.message_id },
           });
           await sql`
-            INSERT INTO message_queue (session_id, chat_id, from_user, content, message_id, attachments)
+            INSERT INTO message_queue (session_id, chat_id, from_user, content, message_id, attachments, reply_context)
             VALUES (
               ${route.sessionId}, ${chatId},
               ${ctx.from?.username ?? ctx.from?.first_name ?? "user"},
               ${content}, ${tgMsgId},
-              ${JSON.stringify({ isVoice: true })}
+              ${JSON.stringify({ isVoice: true })},
+              ${replyContext ? JSON.stringify(replyContext) : null}
             )
           `;
           if (route.mode === "disconnected") {
@@ -415,7 +429,7 @@ export async function handleVoice(ctx: Context): Promise<void> {
             content,
             metadata: { voiceFile: filePath, messageId: ctx.message?.message_id },
           });
-          const { system, messages } = await composePrompt(route.sessionId, chatId, content);
+          const { system, messages } = await composePrompt(route.sessionId, chatId, `${renderReplyContext(replyContext)}${content}`);
           appendLog(route.sessionId, chatId, "llm", "streaming voice response...");
           const response = await streamToTelegram(bot, ctx.chat!.id, system, messages, { sessionId: route.sessionId, chatId, operation: "chat" }, isForumMessage ? forumTopicId : undefined);
           appendLog(route.sessionId, chatId, "reply", `voice reply sent ${response.length} chars`);

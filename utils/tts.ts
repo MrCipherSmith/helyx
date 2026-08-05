@@ -3,6 +3,7 @@ import { InputFile } from "grammy";
 import { join } from "path";
 import { CONFIG } from "../config.ts";
 import { channelLogger } from "../logger.ts";
+import { cyrillize } from "./cyrillize.ts";
 
 const PIPER_DIR = process.env.PIPER_DIR ?? join(import.meta.dir, "../piper");
 const PIPER_BIN = join(PIPER_DIR, "piper/piper");
@@ -177,7 +178,7 @@ function stripMarkdown(text: string): string {
 const TTS_NORMALIZE_PROMPT = `Rewrite the text for text-to-speech so it sounds natural when spoken aloud.
 
 Rules:
-- File paths → only the filename (channel/session.ts → session.ts, /home/user/bot/file.ts → file.ts)
+- File paths → only the filename (src/handlers/user.ts → user.ts, /home/user/bot/file.ts → file.ts). Keep the filename that was written — never substitute the one from this example.
 - snake_case identifiers → replace underscores with spaces (lease_expires_at → lease expires at)
 - camelCase identifiers → split into words (forceVoice → force voice, shouldSendVoice → should send voice)
 - Function call parentheses → remove (acquireLease() → acquire lease)
@@ -187,6 +188,9 @@ Rules:
 - key=value pairs → "key equals value" or just the key
 - Pipe | and backslash → remove
 - URLs → omit entirely
+- RUSSIAN INPUT ONLY — transliterate every Latin-script word into Cyrillic, spelling how a Russian speaker says it out loud: Docker → Докер, compose → компоуз, commit → коммит, transcript → транскрипт, Telegram → Телеграм, Postgres → Постгрес, timeout → таймаут. This is transliteration of SOUND, not translation of MEANING — never replace a term with its Russian equivalent (commit stays коммит, it does not become фиксация).
+- RUSSIAN INPUT ONLY — acronyms → write them as they are read aloud in Russian: API → апи, HTTP → эйч-ти-ти-пи, TTS → тэ-тэ-эс, ID → айди, JSON → джейсон.
+- The Russian voice model cannot pronounce Latin letters at all — it spells them out or mangles them. After rewriting, NO Latin characters may remain in Russian output.
 - CRITICAL: Output MUST be in the EXACT same language as the input. NEVER translate. NEVER mix languages. If input is English, output must be English. If input is Russian, output must be Russian.
 - Output ONLY the rewritten text, nothing else`;
 
@@ -211,13 +215,30 @@ async function normalizeForSpeech(text: string, isRussian: boolean): Promise<str
   ];
 
   try {
-    // Groq llama-3.1-8b-instant — ~250ms, separate rate limits from TTS model
+    // Measured against llama-3.1-8b-instant, qwen3.6-27b, llama-3.3-70b,
+    // gpt-oss-20b and local gemma4:e4b over five sentences of this project's own
+    // traffic. qwen wins on the thing that actually matters here: it is the only
+    // fast one that does not *translate*. llama-3.1-8b — what this used to
+    // call — turned `--build bot` into `--строить бот`, which is a different
+    // command being read out to the operator. Latency is a wash (153ms vs
+    // 162ms median); the 70b is nearly twice as slow and once emitted an Arabic
+    // character mid-word.
+    //
+    // `reasoning_effort: none` is required, not optional: without it qwen spends
+    // its whole token budget narrating the rules back to itself and returns an
+    // empty completion. gpt-oss-20b fails the same way and is not used.
     if (GROQ_API_KEY) {
       const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${GROQ_API_KEY}` },
         signal: controller.signal,
-        body: JSON.stringify({ model: "llama-3.1-8b-instant", messages, temperature: 0.1, max_tokens: 500 }),
+        body: JSON.stringify({
+          model: "qwen/qwen3.6-27b",
+          reasoning_effort: "none",
+          messages,
+          temperature: 0.1,
+          max_tokens: 500,
+        }),
       });
       if (res.ok) {
         const data = await res.json() as { choices?: { message?: { content?: string } }[] };
@@ -431,9 +452,19 @@ export async function synthesize(text: string): Promise<{ buf: Buffer; fmt: "mp3
   const latinNorm    = (normalized.match(/[a-zA-Z]/g) ?? []).length;
   const totalNorm    = cyrillicNorm + latinNorm;
   const isRussianNorm = totalNorm === 0 ? isRussian : cyrillicNorm / totalNorm >= 0.4;
-  const clean = isRussianNorm !== isRussian
+  const guarded = isRussianNorm !== isRussian
     ? (channelLogger.warn({ isRussian, isRussianNorm, normalizedPreview: normalized.slice(0, 150) }, "tts: normalize changed language, using stripped"), stripped)
     : normalized;
+
+  // The Russian voice has no Latin phonemes, so anything the normalizer left in
+  // Latin is a word it cannot say. Measured across five real sentences, every
+  // candidate model left some — between 33 and 124 characters — with the
+  // instruction to remove them stated twice in the prompt. So the prompt asks,
+  // and this guarantees. See utils/cyrillize.ts.
+  const clean = isRussian ? cyrillize(guarded) : guarded;
+  if (isRussian && latinNorm > 0) {
+    channelLogger.debug({ latinLeftByModel: latinNorm }, "tts: cyrillized what the normalizer left in Latin");
+  }
 
   channelLogger.info({
     isRussian,
