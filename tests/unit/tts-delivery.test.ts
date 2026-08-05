@@ -12,6 +12,7 @@
  */
 
 import { describe, test, expect, afterEach } from "bun:test";
+import { writeFileSync } from "node:fs";
 import { shouldSendVoice, splitForVoice, sendOneVoice } from "../../utils/tts.ts";
 import { CONFIG } from "../../config.ts";
 
@@ -29,6 +30,15 @@ afterEach(() => {
 /** Piper is a real binary present in this checkout — left alone it would speak. */
 function silencePiper(): void {
   (Bun as { spawn: unknown }).spawn = (() => ({ exited: Promise.resolve(1) })) as unknown as typeof Bun.spawn;
+}
+
+/** Piper answers, writing its bytes to the output path it was given. */
+function speakPiper(): void {
+  (Bun as { spawn: unknown }).spawn = ((argv: string[]) => {
+    const out = argv[argv.indexOf("--output_file") + 1];
+    if (out) writeFileSync(out, Buffer.from([7, 8, 9]));
+    return { exited: Promise.resolve(0) };
+  }) as unknown as typeof Bun.spawn;
 }
 
 const prose = (n: number) => "Проверил очередь и перезапустил контейнер. ".repeat(n);
@@ -147,10 +157,28 @@ describe("sending one voice message", () => {
   test("a Telegram rejection is swallowed rather than thrown at the caller", async () => {
     // This runs after a reply the operator has already received. Failing it
     // loudly would turn a missing voice note into a failed turn.
-    settings.TTS_PROVIDER = "none";
-    silencePiper();
-    stub({ fail: true });
+    //
+    // Raised in review: the first version of this test set the provider to
+    // "none", so synthesis returned null, sendVoice was never called and the
+    // assertion passed without touching the path it is named after. Audio has
+    // to exist for a rejection to be possible.
+    settings.TTS_PROVIDER = "auto";
+    speakPiper();
+    const sent = stub({ fail: true });
 
-    await expect(sendOneVoice("token", "-100", prose(4))).resolves.toBeUndefined();
+    await expect(sendOneVoice("token", "-100", prose(12))).resolves.toBeUndefined();
+
+    expect(sent.urls.some((u) => u.includes("sendVoice"))).toBe(true);
+    expect(sent.multipart).toBeGreaterThan(0); // the audio really was uploaded
+  });
+
+  test("audio that is accepted is uploaded once", async () => {
+    settings.TTS_PROVIDER = "auto";
+    speakPiper();
+    const sent = stub();
+
+    await sendOneVoice("token", "-100", prose(12));
+
+    expect(sent.urls.filter((u) => u.includes("sendVoice"))).toHaveLength(1);
   });
 });
