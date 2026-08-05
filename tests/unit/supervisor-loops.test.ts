@@ -23,6 +23,10 @@ interface Registered {
 
 const realSetInterval = globalThis.setInterval;
 const realSetTimeout = globalThis.setTimeout;
+const realFetch = globalThis.fetch;
+
+/** Every outbound call, so the test can prove none escaped. */
+let attempted: string[];
 
 let intervals: Registered[];
 let timeouts: number[];
@@ -32,6 +36,17 @@ beforeEach(() => {
   intervals = [];
   timeouts = [];
   runTimeouts = false;
+  attempted = [];
+
+  // `startSupervisor` runs its first checks inside an offset timeout, and one
+  // of them is the status broadcast — which posts to Telegram. Found by
+  // reading what running the timeouts would set in motion: with the real
+  // `fetch` in place this test file was sending live messages into the
+  // supervisor topic. Nothing may leave the process.
+  globalThis.fetch = (async (url: unknown) => {
+    attempted.push(String(url));
+    return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+  }) as unknown as typeof fetch;
 
   // Replaced, not spied on: the real ones would schedule eleven live loops
   // against a fake database for the rest of the process.
@@ -54,6 +69,7 @@ beforeEach(() => {
 afterEach(() => {
   globalThis.setInterval = realSetInterval;
   globalThis.setTimeout = realSetTimeout;
+  globalThis.fetch = realFetch;
 });
 
 function start(): void {
@@ -62,21 +78,49 @@ function start(): void {
 }
 
 describe("what startSupervisor registers", () => {
+  /**
+   * How many loops of each interval must exist.
+   *
+   * Counts, not a lower bound. Raised in review: `toBeGreaterThanOrEqual` and a
+   * subset of intervals let a loop go missing while the test still passed,
+   * which defeats the only thing this file is for.
+   *
+   * Declared rather than derived: the test's job is that nothing declared here
+   * is missing from the process. An *extra* interval does not fail — that is
+   * how a branch adds a loop, and this file is updated in the same commit.
+   */
+  const IMMEDIATE: Array<[ms: number, count: number, what: string]> = [
+    [30_000, 1, "process_health heartbeat"],
+    [60_000, 1, "session heartbeat"],
+    [5 * 60_000, 2, "voice cleanup and the status broadcast"],
+    [10 * 60_000, 1, "Gemma health analyst"],
+    [30 * 60_000, 1, "idle compaction"],
+  ];
+
+  const AFTER_OFFSETS: Array<[ms: number, count: number, what: string]> = [
+    [30_000, 1, "process_health heartbeat"],
+    [60_000, 3, "session heartbeat, stuck queue, recovery check"],
+    [90_000, 1, "error stream"],
+    [2 * 60_000, 1, "unanswered messages"],
+    [5 * 60_000, 2, "voice cleanup and the status broadcast"],
+    [10 * 60_000, 1, "Gemma health analyst"],
+    [15 * 60_000, 1, "scheduled review"],
+    [30 * 60_000, 2, "idle compaction and reviewer health"],
+  ];
+
+  const countsByInterval = (): Map<number, number> => {
+    const counts = new Map<number, number>();
+    for (const { ms } of intervals) counts.set(ms, (counts.get(ms) ?? 0) + 1);
+    return counts;
+  };
+
   test("every loop that is written is also started", () => {
     start();
 
-    // Registered immediately: session heartbeat, voice cleanup, status
-    // broadcast, process-health heartbeat, idle compaction, Gemma analyst, and
-    // the bot-alive probe. The rest register inside an offset timeout, which
-    // this test deliberately does not run.
-    expect(intervals.length).toBeGreaterThanOrEqual(6);
-
-    const ms = intervals.map((i) => i.ms).sort((a, b) => a - b);
-    expect(ms).toContain(60_000); // session heartbeat
-    expect(ms).toContain(30_000); // process_health heartbeat
-    expect(ms).toContain(5 * 60_000); // voice cleanup and the status broadcast
-    expect(ms).toContain(30 * 60_000); // idle compaction
-    expect(ms).toContain(10 * 60_000); // Gemma health analyst
+    const counts = countsByInterval();
+    for (const [ms, count, what] of IMMEDIATE) {
+      expect({ what, registered: counts.get(ms) ?? 0 }).toEqual({ what, registered: count });
+    }
   });
 
   test("the offset loops are scheduled, not forgotten", () => {
@@ -100,13 +144,10 @@ describe("what startSupervisor registers", () => {
 
     start();
 
-    const ms = intervals.map((i) => i.ms);
-    expect(ms).toContain(90_000); // error stream
-    expect(ms).toContain(2 * 60_000); // unanswered messages
-    expect(ms).toContain(15 * 60_000); // scheduled review
-    expect(ms).toContain(30 * 60_000); // reviewer health, alongside idle compaction
-    // Eleven loops and the recovery check, all registered.
-    expect(intervals.length).toBeGreaterThanOrEqual(11);
+    const counts = countsByInterval();
+    for (const [ms, count, what] of AFTER_OFFSETS) {
+      expect({ what, registered: counts.get(ms) ?? 0 }).toEqual({ what, registered: count });
+    }
     for (const entry of intervals) expect(entry.unrefd).toBe(true);
   });
 
@@ -120,15 +161,31 @@ describe("what startSupervisor registers", () => {
     for (const entry of intervals) expect(entry.unrefd).toBe(true);
   });
 
+  test("the first status broadcast is captured by the stub, not sent", async () => {
+    // The guard on the test itself, and the reason the stub exists. Running the
+    // offset timeouts also runs the supervisor's first checks, and one of them
+    // posts a status broadcast: before the stub was installed, this file was
+    // sending live messages into the operator's supervisor topic every time the
+    // suite ran. Three of them per run, measured.
+    //
+    // The assertion is that they arrive here rather than at Telegram: if the
+    // stub is ever removed, this stops seeing them and fails.
+    runTimeouts = true;
+
+    start();
+    await Bun.sleep(50); // let the fire-and-forget calls reach the stub
+
+    expect(globalThis.fetch).not.toBe(realFetch);
+    expect(attempted.some((u) => u.includes("api.telegram.org"))).toBe(true);
+  });
+
   test("no two immediate loops share an interval by accident", () => {
     // Not a rule — voice cleanup and the status broadcast are both five
     // minutes on purpose. This pins how many such pairs exist, so a new loop
     // landing on an existing tick is a decision rather than a coincidence.
     start();
 
-    const counts = new Map<number, number>();
-    for (const { ms } of intervals) counts.set(ms, (counts.get(ms) ?? 0) + 1);
-    const shared = [...counts.entries()].filter(([, n]) => n > 1);
+    const shared = [...countsByInterval().entries()].filter(([, n]) => n > 1);
 
     expect(shared).toEqual([[5 * 60_000, 2]]);
   });
