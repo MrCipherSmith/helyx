@@ -130,6 +130,7 @@ describe("the chain", () => {
     const result = await synthesize(RUSSIAN);
 
     expect(result?.fmt).toBe("mp3");
+    expect([...(result?.buf ?? [])]).toEqual([1, 2, 3]); // Yandex's bytes, not another provider's
     expect(doors.piperRuns).toBe(0);
   });
 
@@ -144,6 +145,10 @@ describe("the chain", () => {
     expect(result?.fmt).toBe("wav");
     expect(doors.piperRuns).toBe(1);
     expect(doors.spoken.yandex).toBeDefined(); // it was tried first
+    // The bytes the stub wrote to the output path, read back through the real
+    // code. Raised in review: without this the test proves a binary was called
+    // and an exit code was zero, not that audio came back.
+    expect([...(result?.buf ?? [])]).toEqual([7, 8, 9]);
   });
 
   test("both fail and the chain still reaches the third provider", async () => {
@@ -153,6 +158,7 @@ describe("the chain", () => {
     const result = await synthesize(RUSSIAN);
 
     expect(result?.fmt).toBe("wav");
+    expect([...(result?.buf ?? [])]).toEqual([4, 5, 6]); // the third provider's bytes
     expect(doors.spoken.groq).toBeTruthy();
   });
 
