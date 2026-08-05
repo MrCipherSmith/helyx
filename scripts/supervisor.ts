@@ -197,7 +197,8 @@ async function editTelegramMsg(chatId: string, messageId: number, text: string, 
 // ever carried one. Kept rather than deleted because the spec still wants it —
 // wiring it into sendAlertWithButtons is the open work.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function getLlmExplanation(
+/** Exported for the tests, which drive it against a stubbed endpoint. */
+export async function getLlmExplanation(
   incidentType: string,
   project: string,
   elapsedSec: number,
@@ -1173,7 +1174,8 @@ export function formatSnapshotForGemma(snap: SystemSnapshot): string {
   return lines.join("\n");
 }
 
-async function callGemmaForHealth(snapshot: string): Promise<{ ok: boolean; digest: string }> {
+/** Exported for the tests, which drive it against a stubbed endpoint rather than Ollama. */
+export async function callGemmaForHealth(snapshot: string): Promise<{ ok: boolean; digest: string }> {
   const model = process.env.SUMMARIZE_MODEL || process.env.OLLAMA_CHAT_MODEL || "gemma4:e4b";
   const system = "Ты — аналитик здоровья системы Helyx. Прочитай снапшот состояния. Если всё в норме — ответь только словом OK. Если есть проблемы — кратко опиши их в 2–5 пунктах на русском. Не рассуждай, не задавай вопросы, только факты об обнаруженных проблемах.";
 
@@ -1203,7 +1205,8 @@ async function callGemmaForHealth(snapshot: string): Promise<{ ok: boolean; dige
   }
 }
 
-async function checkGemmaHealth(sql: postgres.Sql, runShell: RunShell): Promise<void> {
+/** Exported for the tests, which drive it with fakes rather than Ollama and Telegram. */
+export async function checkGemmaHealth(sql: postgres.Sql, runShell: RunShell): Promise<void> {
   const t0 = Date.now();
   let snapshot: SystemSnapshot;
   try {
@@ -1504,8 +1507,8 @@ export async function checkReviewerHealth(deps: ReviewerHealthDeps): Promise<voi
   }
 }
 
-/** The real world, for Loop 11. Separated so the loop itself is testable. */
-function scheduledReviewDeps(sql: postgres.Sql, runShell: RunShell): ScheduledReviewDeps {
+/** The real world, for Loop 11. Separated so the loop itself is testable, and exported so this one is too. */
+export function scheduledReviewDeps(sql: postgres.Sql, runShell: RunShell): ScheduledReviewDeps {
   return {
     branch: async () => (await runShell("git rev-parse --abbrev-ref HEAD")).output.trim(),
     diff: async () => gitReviewDiff(),
@@ -1859,5 +1862,14 @@ export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
     setTimeout(() => checkGemmaHealth(sql, runShell).catch(() => {}), 2 * 60_000);
   }, 10_000);
 
-  console.error(`[supervisor] watchdog running (session:60s, queue:60s, voice:5min, status:5min, idle-compact:30min/${IDLE_COMPACT_MIN}min-threshold, gemma-health:10min, unanswered:2min)`);
+  // The inventory, said out loud. It listed seven loops while eleven were
+  // running — found by the test that counts the registrations, and a log line
+  // that under-reports what is running is the same class of quiet untruth this
+  // supervisor exists to catch.
+  console.error(
+    "[supervisor] watchdog running (session:60s, queue:60s, process-health:30s, voice:5min, " +
+      `status:5min, idle-compact:30min/${IDLE_COMPACT_MIN}min-threshold, gemma-health:10min, ` +
+      "unanswered:2min, error-stream:90s, reviewer-health:30min, scheduled-review:15min, " +
+      "recovery:60s)",
+  );
 }

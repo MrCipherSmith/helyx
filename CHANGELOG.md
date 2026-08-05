@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+### test: the supervisor's loop inventory is now asserted
+
+`scripts/supervisor.ts` is the highest-risk file in the repository by the
+project's own measure — churn × complexity 355 776, first by a wide margin — and
+it gained three loops in one day while half of it was untested.
+
+The largest single gap was `startSupervisor` itself: 179 uncovered lines whose
+whole content is the inventory — which loops exist, how often each runs, and
+whether each holds the daemon open. A loop written and never registered is a
+monitor that exists in the source and not in the process, which is exactly the
+outage Loop 8 was added to catch, and nothing would have caught it happening
+again.
+
+- The inventory is read back by replacing `setInterval` and `setTimeout` for the
+  duration of the test: eleven loops, their intervals, their offsets, and that
+  every timer is unref'd — the whole of the shutdown story in this module, since
+  it has no `clearInterval` anywhere.
+- `formatSnapshotForGemma` is tested against the shape the analyst receives,
+  including that no section vanishes when its list is empty. A section that
+  disappears is a problem the model is structurally unable to see.
+- `callGemmaForHealth` and `getLlmExplanation` are tested for what they do when
+  the network says no: both degrade rather than throw, because an analyst that
+  crashes the loop it runs in is worse than one that says nothing.
+- `checkGemmaHealth` and the scheduled review's wiring are driven with a fake
+  database and a stubbed transport.
+
+One defect found and fixed on the way: the startup line announcing what is
+running listed seven loops while eleven were registered — a log that
+under-reports the system is the same quiet untruth this supervisor exists to
+catch.
+
+Coverage of the file: 52.03% → **75.60%**, measured on this branch alone in a
+git worktree. The same run against the working tree reads 73.66%, because the
+tree carries another session's uncommitted loop, which has no tests and is not
+part of this change — worth stating rather than quoting whichever number
+flatters the result.
+
 ### fix: the quality gate stopped judging by a stale number
 
 Three untruths, measured on 2026-08-05.
