@@ -234,6 +234,78 @@ export async function lastOutcomeByReviewer(
   return out;
 }
 
+/** What the supervisor remembers between passes, stored in `bot_config`. */
+export interface ScheduledReviewState {
+  /** Diff hash of the last review this loop started. */
+  lastReviewedHash?: string;
+  /** Diff hash seen on the previous pass, whether or not it was reviewed. */
+  lastSeenHash?: string;
+  /** Set while a review is in flight, so a second one is refused rather than queued. */
+  running?: boolean;
+  /**
+   * When that flag was set.
+   *
+   * Raised in review: a process killed between setting the flag and clearing it
+   * leaves it true for ever, and the loop then refuses to run again — a feature
+   * disabled permanently by one crash. A flag with no timestamp cannot be told
+   * apart from a stuck one.
+   */
+  runningSince?: number;
+}
+
+/**
+ * How long a review may hold the in-flight flag before it is presumed dead.
+ *
+ * `REVIEW_TIMEOUT_MS` is ten minutes per reviewer; thirty is generous enough
+ * that a slow but living review is never displaced, and short enough that a
+ * crash costs one interval rather than for ever.
+ */
+export const REVIEW_STALE_AFTER_MS = 30 * 60 * 1000;
+
+export interface ScheduledReviewDecision {
+  run: boolean;
+  /** Why — carried so a log line or a test can say it rather than infer it. */
+  reason:
+    | "default-branch"
+    | "empty-diff"
+    | "already-reviewed"
+    | "still-changing"
+    | "review-in-flight"
+    | "settled";
+}
+
+/**
+ * Whether to start a review nobody asked for.
+ *
+ * Pure on purpose: the rules are the whole of this feature, and they are worth
+ * being able to test without a git repository, a database or a reviewer.
+ *
+ * "Settled" is a hash seen twice in a row. At the loop's interval that is a
+ * quarter of an hour of quiet, which is the difference between reviewing a
+ * branch and chasing one mid-edit.
+ */
+export function scheduledReviewDecision(input: {
+  branch: string;
+  defaultBranch: string;
+  diffHash: string;
+  state: ScheduledReviewState;
+  /** Passed rather than read, so the rules stay pure and testable. */
+  now: number;
+}): ScheduledReviewDecision {
+  const { branch, defaultBranch, diffHash, state, now } = input;
+
+  // A merge has already happened; a review of the default branch is
+  // archaeology, and the interesting moment was before it.
+  if (!branch || branch === defaultBranch) return { run: false, reason: "default-branch" };
+  if (!diffHash) return { run: false, reason: "empty-diff" };
+  // A flag older than the stale bound belonged to a process that is gone.
+  const heldFor = state.runningSince === undefined ? Infinity : now - state.runningSince;
+  if (state.running && heldFor < REVIEW_STALE_AFTER_MS) return { run: false, reason: "review-in-flight" };
+  if (state.lastReviewedHash === diffHash) return { run: false, reason: "already-reviewed" };
+  if (state.lastSeenHash !== diffHash) return { run: false, reason: "still-changing" };
+  return { run: true, reason: "settled" };
+}
+
 export interface PruneOptions {
   maxAgeDays?: number;
   maxRuns?: number;
