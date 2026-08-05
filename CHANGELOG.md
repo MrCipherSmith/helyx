@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+### fix: a deleted forum topic stopped being an invisible failure
+
+The keryx topic was deleted from the client, and nothing in the system noticed.
+Telegram does not reject a send into a deleted topic — it accepts the message,
+drops the thread and files it in General — so the project's `forum_topic_id`
+stayed live in the database while every answer went to the hub, without one
+error line to say so.
+
+- `validateTopicExists` probed with `sendChatAction`, which Telegram answers
+  `ok` for a thread id that never existed — confirmed against `999999`. Every
+  topic validated, so `/forum_clean` reported "all valid" and could never clean
+  the one case it exists for. It now sends a real probe and reads the answer
+  Telegram gives honestly: a live topic echoes `message_thread_id` back, a
+  deleted one does not. The probe is deleted either way, including when it
+  lands in General.
+- Every channel send goes through `telegramRequest`, so that is where the miss
+  is caught: a reply that asked for a thread and came back without it (or with
+  a different one) now logs at error level naming the topic and where the
+  message actually landed. The send still reports success — Telegram delivered
+  it, and failing it would make the channel resend a message that exists.
+
 ## v1.54.0
 
 ### fix: the installer was shipping a three-month-old checkout

@@ -17,6 +17,26 @@ const MAX_TOTAL_MS = 60_000;     // 60 s total budget per call (covers 429 retri
  * 429 retries wait retry_after but respect the total budget.
  * Network/5xx errors retry up to MAX_ERROR_RETRIES times.
  */
+/**
+ * A deleted forum topic does not make Telegram reject a send. It accepts the
+ * request, drops the thread and files the message in General — the failure mode
+ * that silently emptied a project's topic into the hub. Every send goes through
+ * here, so this is the one place that can notice the answer landed somewhere
+ * other than where it was addressed.
+ */
+function reportThreadMiss(method: string, body: Record<string, unknown>, result: unknown): void {
+  const requested = body.message_thread_id;
+  if (typeof requested !== "number") return;
+  if (typeof result !== "object" || result === null) return;
+  const sent = result as { message_id?: number; message_thread_id?: number };
+  if (typeof sent.message_id !== "number") return; // not a message-producing method
+  if (sent.message_thread_id === requested) return;
+  channelLogger.error(
+    { method, requestedThread: requested, landedIn: sent.message_thread_id ?? "General", messageId: sent.message_id },
+    "telegram: message landed outside the requested topic — the topic was probably deleted; run /forum_clean",
+  );
+}
+
 async function telegramRequest(
   token: string,
   method: string,
@@ -47,6 +67,7 @@ async function telegramRequest(
 
     if (res.ok) {
       const data = (await res.json()) as { ok: boolean; result?: unknown };
+      reportThreadMiss(method, body, data.result);
       return { ok: true, result: data.result };
     }
 
