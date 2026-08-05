@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 2,
+  "id": "044",
+  "slug": "the-status-vanishes-at-the-reply-and-the",
+  "title": "The status vanishes at the reply, and the work goes on without it",
+  "status": "in-progress",
+  "createdAt": "2026-08-05T21:07:39.254Z",
+  "updatedAt": "2026-08-05T21:10:43.725Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:6f07366068bc4a6fc7b650d40ee89f250acf30245138337e875f865189595fbf",
+  "acConfirmed": {},
+  "pr": {
+    "url": null
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-05T21:07:39.254Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-05T21:08:17.961Z",
+      "event": "frozen",
+      "detail": "12 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-05T21:08:18.053Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-05T21:10:43.640Z",
+      "event": "ac-updated",
+      "detail": "The literal wording would have kept the status open until the idle window expired, adding a 45-second lag before the closing summary on every ordinary turn — a regression the operator did not ask for. Re-opening on the first post-reply activity gives the same visibility with no lag."
+    },
+    {
+      "at": "2026-08-05T21:10:43.725Z",
+      "event": "ac-updated",
+      "detail": "Narrowed to continuations: an in-turn status is governed by the response guard, and adding a second closing rule for it would race that guard."
+    }
+  ]
+}

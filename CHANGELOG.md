@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+### feat: the status survives the reply that did not finish the work
+
+Reported by the operator: an agent replies "запускаю сабагентов" and the topic
+goes silent for minutes while it works.
+
+The status message was deleted the moment a reply was sent. `channel/tools.ts`
+carried a comment saying this was handled — that `schedulePostReplyCheck` would
+notice post-reply activity and open a continuation — and **nothing ever called
+that method**. Its only trace in the repository was the comment promising it
+would run. Meanwhile the monitor kept running, kept calling `updateStatus`, and
+`updateStatus` returned early whenever no status was open, so every line of
+post-reply work arrived and was dropped on the floor.
+
+Now: a reply closes the step with the summary it always wrote, and the first
+thing the session does afterwards opens the status again. Silence closes it —
+`CONTINUATION_IDLE_MS`, re-armed by every line — because a status opened after
+a reply cannot wait for another reply to end it.
+
+Three details that are not obvious and each cost something:
+
+- A continuation does not make the chat busy. `getBusyChats()` is what holds
+  the operator's next message back until a turn ends; a continuation is the
+  tail of a turn that has already answered, and reporting it busy would have
+  traded one silence for another.
+- A status is not re-opened while the operator has a message waiting. The
+  poller is about to open one for the next turn, and two would fight.
+- The status moves to the bottom when something lands after it. Pinned means
+  findable, not visible; three replies later it is off the screen. Bound to the
+  landing, never to the edit — a move is a delete plus a send, and the edits run
+  every few seconds.
+
+The decisions — re-open, close, move — are three pure functions in
+`utils/status-continuation.ts`, because each is a question about elapsed time
+and forty-five seconds is not a test. `schedulePostReplyCheck` and the comment
+that promised it are deleted.
+
+Not yet visible during a subagent fan-out: a subagent writes to its own
+transcript, which nothing reads. That is the next flow.
+
 ### test: what the MCP door says when it says yes
 
 Flow 036 made the router in `mcp/server.ts` reachable and pinned its refusals,

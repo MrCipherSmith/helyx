@@ -64,7 +64,9 @@ async function sendReplyText(
   chatId: string,
   md: string,
   extra: Record<string, unknown>,
-): Promise<{ ok: boolean; errorBody?: string }> {
+  // The message id is carried out rather than dropped: the status message has
+  // to know what landed after it, so it can move below it.
+): Promise<{ ok: boolean; messageId?: number | null; errorBody?: string }> {
   let res = await sendRichTelegramMessage(token, chatId, md, extra);
   if (res.ok) return res;
   channelLogger.info({ error: res.errorBody }, "reply: rich failed, falling back to HTML");
@@ -322,9 +324,14 @@ async function handleTelegramTool(
       case "reply": {
         const chatId = String(args!.chat_id);
         channelLogger.info({ phase: "tools", step: "reply-called", chatId, t: Date.now() }, "perf");
-        // Do NOT stop the progress monitor here — Claude may send an early acknowledgment
-        // reply ("Запускаю...") and then continue working. schedulePostReplyCheck will
-        // stop the monitor after 20s if Claude turns out to be truly idle.
+        // Do NOT stop the progress monitor here — Claude may send an early
+        // acknowledgment reply ("Запускаю...") and then continue working. The
+        // status closes below, and `noteReplySent` is what lets it come back:
+        // the first thing the session does after this re-opens it.
+        //
+        // What used to be written here was that `schedulePostReplyCheck` would
+        // sort it out after twenty seconds. Nothing ever called that method,
+        // and the silence the operator saw was the whole of its effect.
 
         const token = ctx.token();
         if (!token) {
@@ -455,6 +462,11 @@ async function handleTelegramTool(
         }
         // Delete status non-blocking — don't await, avoids holding up reply return when
         // Telegram rate-limits editMessageText (can block for 60+ seconds otherwise).
+        // The step is over: the status closes with its summary, as it always
+        // has. The turn may not be over, and `noteReplySent` is what says so —
+        // the next line of work re-opens a continuation instead of vanishing
+        // into a chat that has stopped saying anything.
+        status.noteReplySent(chatId, res.messageId ?? undefined);
         status.deleteStatusMessage(chatId).catch((err) => channelLogger.warn({ err }, "deleteStatusMessage failed"));
         // Fire-and-forget recap: a short spoken summary closes the reply, sent as
         // a collapsed blockquote and then as voice. Only replies carrying enough
