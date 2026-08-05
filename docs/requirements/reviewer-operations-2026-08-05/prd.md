@@ -53,6 +53,15 @@ wrapper renders it to the terminal and drops it.
 memory module's CLI surface. Nothing in this repository ever produces a file
 for it.
 
+**And the receiver is not ready for one.** Measured on 2026-08-05 against the
+first artifact this package produced: the command exits 0 and creates one
+"lesson" per heading line — `trigger-manual`, `mode-external`,
+`diff-12345-bytes` — eleven memories out of an eight-line header, all of which
+had to be deleted again. So the sender being missing was only half of it; the
+two formats have never met. R2 below produces the artifact, and aligning it
+with what the ingester expects is a separate piece of work belonging to
+whoever owns the ingester.
+
 ### G3 — no trigger but a person
 
 `.git/hooks/pre-push` exists and runs the keryx security guard in advisory

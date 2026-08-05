@@ -643,6 +643,32 @@ export async function runReviewers(
   return { mode: pickMode(reports), reports };
 }
 
+/**
+ * What the CLI prints, as data.
+ *
+ * The shape is a contract, not a preference: `CLAUDE.md` tells every agent in
+ * this repository to run `scripts/review.ts` and to treat the single line
+ * `SELF` as "every reviewer is down, review it yourself". A stray line in the
+ * wrong place changes how the whole repo reviews code, so the decision lives
+ * here where a test can hold it still.
+ */
+export function reviewConsoleLines(result: ReviewRunResult): string[] {
+  if (result.mode === "self") return ["SELF"];
+  const lines: string[] = [];
+  for (const report of result.reports) {
+    // Both fallbacks exist because the alternative is printing the literal
+    // word "undefined" into a contract other agents parse. Raised in review;
+    // neither shape is reachable from `runOne` today, and neither is worth
+    // depending on that.
+    lines.push(
+      report.ok
+        ? `\n===== ${report.label} (${report.model}) =====\n\n${report.content ?? "(reported nothing)"}`
+        : `\n[${report.label} (${report.model})] unavailable: ${report.error ?? "no reason given"}`,
+    );
+  }
+  return lines;
+}
+
 /** Availability for `/reviewers` — Codex login state, provider balances. */
 export async function getReviewerStatuses(): Promise<ReviewerStatus[]> {
   const reviewers = await getReviewers();
