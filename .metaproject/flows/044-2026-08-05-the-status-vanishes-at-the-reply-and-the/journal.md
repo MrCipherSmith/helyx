@@ -6,3 +6,17 @@
 - 2026-08-05T21:10:43.640Z - ac-updated: The literal wording would have kept the status open until the idle window expired, adding a 45-second lag before the closing summary on every ordinary turn — a regression the operator did not ask for. Re-opening on the first post-reply activity gives the same visibility with no lag.
 - 2026-08-05T21:10:43.725Z - ac-updated: Narrowed to continuations: an in-turn status is governed by the response guard, and adding a second closing rule for it would race that guard.
 - 2026-08-05T21:16:11.862Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/85
+- 2026-08-05T21:23:00.080Z - ac-confirmed: AC1
+- 2026-08-05T21:23:00.176Z - ac-confirmed: AC2
+- 2026-08-05T21:23:00.267Z - ac-confirmed: AC3
+- 2026-08-05T21:23:00.359Z - ac-confirmed: AC4
+- 2026-08-05T21:23:00.456Z - ac-confirmed: AC5
+- 2026-08-05T21:23:00.550Z - ac-confirmed: AC6
+- 2026-08-05T21:23:00.648Z - ac-confirmed: AC7
+- 2026-08-05T21:23:00.745Z - ac-confirmed: AC8
+- 2026-08-05T21:23:00.837Z - ac-confirmed: AC9
+- 2026-08-05T21:23:00.932Z - ac-confirmed: AC10
+- 2026-08-05T21:23:01.027Z - ac-confirmed: AC11
+- 2026-08-05T21:23:01.123Z - ac-confirmed: AC12
+- 2026-08-05T21:23:15.627Z - completing
+- 2026-08-05T21:23:15.633Z - done: all gates passed

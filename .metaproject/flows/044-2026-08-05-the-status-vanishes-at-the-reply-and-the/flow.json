@@ -3,15 +3,52 @@
   "id": "044",
   "slug": "the-status-vanishes-at-the-reply-and-the",
   "title": "The status vanishes at the reply, and the work goes on without it",
-  "status": "implemented",
+  "status": "done",
   "createdAt": "2026-08-05T21:07:39.254Z",
-  "updatedAt": "2026-08-05T21:16:11.862Z",
+  "updatedAt": "2026-08-05T21:23:15.633Z",
   "source": {
     "type": "description",
     "ref": null
   },
   "acChecksum": "sha256:6f07366068bc4a6fc7b650d40ee89f250acf30245138337e875f865189595fbf",
-  "acConfirmed": {},
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-05T21:23:00.080Z"
+    },
+    "AC2": {
+      "at": "2026-08-05T21:23:00.176Z"
+    },
+    "AC3": {
+      "at": "2026-08-05T21:23:00.267Z"
+    },
+    "AC4": {
+      "at": "2026-08-05T21:23:00.359Z"
+    },
+    "AC5": {
+      "at": "2026-08-05T21:23:00.456Z"
+    },
+    "AC6": {
+      "at": "2026-08-05T21:23:00.550Z"
+    },
+    "AC7": {
+      "at": "2026-08-05T21:23:00.648Z"
+    },
+    "AC8": {
+      "at": "2026-08-05T21:23:00.745Z"
+    },
+    "AC9": {
+      "at": "2026-08-05T21:23:00.837Z"
+    },
+    "AC10": {
+      "at": "2026-08-05T21:23:00.932Z"
+    },
+    "AC11": {
+      "at": "2026-08-05T21:23:01.027Z"
+    },
+    "AC12": {
+      "at": "2026-08-05T21:23:01.123Z"
+    }
+  },
   "pr": {
     "url": "https://github.com/MrCipherSmith/helyx/pull/85"
   },
@@ -101,6 +138,80 @@
       "at": "2026-08-05T21:16:11.862Z",
       "event": "implemented",
       "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/85"
+    },
+    {
+      "at": "2026-08-05T21:23:00.080Z",
+      "event": "ac-confirmed",
+      "detail": "AC1"
+    },
+    {
+      "at": "2026-08-05T21:23:00.176Z",
+      "event": "ac-confirmed",
+      "detail": "AC2"
+    },
+    {
+      "at": "2026-08-05T21:23:00.267Z",
+      "event": "ac-confirmed",
+      "detail": "AC3"
+    },
+    {
+      "at": "2026-08-05T21:23:00.359Z",
+      "event": "ac-confirmed",
+      "detail": "AC4"
+    },
+    {
+      "at": "2026-08-05T21:23:00.456Z",
+      "event": "ac-confirmed",
+      "detail": "AC5"
+    },
+    {
+      "at": "2026-08-05T21:23:00.550Z",
+      "event": "ac-confirmed",
+      "detail": "AC6"
+    },
+    {
+      "at": "2026-08-05T21:23:00.648Z",
+      "event": "ac-confirmed",
+      "detail": "AC7"
+    },
+    {
+      "at": "2026-08-05T21:23:00.745Z",
+      "event": "ac-confirmed",
+      "detail": "AC8"
+    },
+    {
+      "at": "2026-08-05T21:23:00.837Z",
+      "event": "ac-confirmed",
+      "detail": "AC9"
+    },
+    {
+      "at": "2026-08-05T21:23:00.932Z",
+      "event": "ac-confirmed",
+      "detail": "AC10"
+    },
+    {
+      "at": "2026-08-05T21:23:01.027Z",
+      "event": "ac-confirmed",
+      "detail": "AC11"
+    },
+    {
+      "at": "2026-08-05T21:23:01.123Z",
+      "event": "ac-confirmed",
+      "detail": "AC12"
+    },
+    {
+      "at": "2026-08-05T21:23:15.627Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-05T21:23:15.633Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
-  ]
+  ],
+  "merged": {
+    "commit": "40fa991",
+    "ref": "origin/main",
+    "at": "2026-08-05T21:23:15.633Z"
+  }
 }
