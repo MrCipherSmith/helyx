@@ -107,19 +107,29 @@ export class ForumService {
 
   /**
    * Check whether a forum topic still exists in Telegram.
-   * Sends a no-op chat action in the thread; if the topic was deleted,
-   * Telegram returns "Bad Request: message thread not found".
+   *
+   * A deleted topic does not reject sends — Telegram accepts the message, drops
+   * the thread and files it in General. `sendChatAction` cannot see that: it
+   * answers `ok` even for a thread id that never existed, which made this check
+   * report every topic as valid and left `/forum_clean` unable to clean anything.
+   * The only answer Telegram gives honestly is on a real message: a live topic
+   * echoes `message_thread_id` back, a deleted one comes back without it. The
+   * probe is deleted immediately either way.
    */
   async validateTopicExists(
     api: Api,
     forumChatId: string | number,
     topicId: number,
   ): Promise<boolean> {
+    const chatId = Number(forumChatId);
+    let probeId: number | null = null;
     try {
-      await api.sendChatAction(Number(forumChatId), "typing", {
+      const sent = await api.sendMessage(chatId, "🔎", {
         message_thread_id: topicId,
-      } as any);
-      return true;
+        disable_notification: true,
+      });
+      probeId = sent.message_id;
+      return sent.message_thread_id === topicId;
     } catch (err: any) {
       const msg: string = err?.message ?? String(err);
       // Deleted / never-existed topic → treat as invalid
@@ -134,6 +144,12 @@ export class ForumService {
       // Any other error (rate limit, network) → assume still valid to avoid data loss
       logger.warn({ err, topicId }, "forum: unexpected error validating topic — assuming valid");
       return true;
+    } finally {
+      // The probe is noise wherever it landed — in the topic or, if the topic is
+      // gone, in General. Removing it is not optional cleanup.
+      if (probeId !== null) {
+        await api.deleteMessage(chatId, probeId).catch(() => {});
+      }
     }
   }
 
