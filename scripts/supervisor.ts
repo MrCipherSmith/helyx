@@ -1867,8 +1867,9 @@ export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
   // that under-reports what is running is the same class of quiet untruth this
   // supervisor exists to catch.
   console.error(
-    "[supervisor] watchdog running (session:60s, queue:60s, voice:5min, status:5min, " +
-      `idle-compact:30min/${IDLE_COMPACT_MIN}min-threshold, gemma-health:10min, unanswered:2min, ` +
-      "bot-alive:20s, error-stream:90s, reviewer-health:30min, scheduled-review:15min, recovery:60s)",
+    "[supervisor] watchdog running (session:60s, queue:60s, process-health:30s, voice:5min, " +
+      `status:5min, idle-compact:30min/${IDLE_COMPACT_MIN}min-threshold, gemma-health:10min, ` +
+      "unanswered:2min, error-stream:90s, reviewer-health:30min, scheduled-review:15min, " +
+      "recovery:60s)",
   );
 }
