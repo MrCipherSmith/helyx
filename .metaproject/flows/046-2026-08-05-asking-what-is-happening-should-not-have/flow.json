@@ -3,15 +3,52 @@
   "id": "046",
   "slug": "asking-what-is-happening-should-not-have",
   "title": "Asking what is happening should not have to wait for the session to answer",
-  "status": "implemented",
+  "status": "done",
   "createdAt": "2026-08-05T21:42:04.356Z",
-  "updatedAt": "2026-08-05T21:50:00.892Z",
+  "updatedAt": "2026-08-05T22:07:32.900Z",
   "source": {
     "type": "description",
     "ref": null
   },
   "acChecksum": "sha256:a991d8548cadc450550b1dfa081bacb397eecb99f626e1b20db87941a5d8c63c",
-  "acConfirmed": {},
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-05T22:07:31.779Z"
+    },
+    "AC2": {
+      "at": "2026-08-05T22:07:31.879Z"
+    },
+    "AC3": {
+      "at": "2026-08-05T22:07:31.975Z"
+    },
+    "AC4": {
+      "at": "2026-08-05T22:07:32.069Z"
+    },
+    "AC5": {
+      "at": "2026-08-05T22:07:32.171Z"
+    },
+    "AC6": {
+      "at": "2026-08-05T22:07:32.268Z"
+    },
+    "AC7": {
+      "at": "2026-08-05T22:07:32.356Z"
+    },
+    "AC8": {
+      "at": "2026-08-05T22:07:32.445Z"
+    },
+    "AC9": {
+      "at": "2026-08-05T22:07:32.536Z"
+    },
+    "AC10": {
+      "at": "2026-08-05T22:07:32.626Z"
+    },
+    "AC11": {
+      "at": "2026-08-05T22:07:32.715Z"
+    },
+    "AC12": {
+      "at": "2026-08-05T22:07:32.804Z"
+    }
+  },
   "pr": {
     "url": "https://github.com/MrCipherSmith/helyx/pull/87"
   },
@@ -91,6 +128,100 @@
       "at": "2026-08-05T21:50:00.892Z",
       "event": "implemented",
       "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/87"
+    },
+    {
+      "at": "2026-08-05T22:07:19.620Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-05T22:07:19.627Z",
+      "event": "completion-failed",
+      "detail": "acceptance-criteria: unconfirmed: AC1, AC2, AC3, AC4, AC5, AC6, AC7, AC8, AC9, AC10, AC11, AC12"
+    },
+    {
+      "at": "2026-08-05T22:07:25.389Z",
+      "event": "completing",
+      "detail": "merged commit: 7b5822c"
+    },
+    {
+      "at": "2026-08-05T22:07:25.395Z",
+      "event": "completion-failed",
+      "detail": "acceptance-criteria: unconfirmed: AC1, AC2, AC3, AC4, AC5, AC6, AC7, AC8, AC9, AC10, AC11, AC12"
+    },
+    {
+      "at": "2026-08-05T22:07:31.779Z",
+      "event": "ac-confirmed",
+      "detail": "AC1"
+    },
+    {
+      "at": "2026-08-05T22:07:31.879Z",
+      "event": "ac-confirmed",
+      "detail": "AC2"
+    },
+    {
+      "at": "2026-08-05T22:07:31.975Z",
+      "event": "ac-confirmed",
+      "detail": "AC3"
+    },
+    {
+      "at": "2026-08-05T22:07:32.069Z",
+      "event": "ac-confirmed",
+      "detail": "AC4"
+    },
+    {
+      "at": "2026-08-05T22:07:32.171Z",
+      "event": "ac-confirmed",
+      "detail": "AC5"
+    },
+    {
+      "at": "2026-08-05T22:07:32.268Z",
+      "event": "ac-confirmed",
+      "detail": "AC6"
+    },
+    {
+      "at": "2026-08-05T22:07:32.356Z",
+      "event": "ac-confirmed",
+      "detail": "AC7"
+    },
+    {
+      "at": "2026-08-05T22:07:32.445Z",
+      "event": "ac-confirmed",
+      "detail": "AC8"
+    },
+    {
+      "at": "2026-08-05T22:07:32.536Z",
+      "event": "ac-confirmed",
+      "detail": "AC9"
+    },
+    {
+      "at": "2026-08-05T22:07:32.626Z",
+      "event": "ac-confirmed",
+      "detail": "AC10"
+    },
+    {
+      "at": "2026-08-05T22:07:32.715Z",
+      "event": "ac-confirmed",
+      "detail": "AC11"
+    },
+    {
+      "at": "2026-08-05T22:07:32.804Z",
+      "event": "ac-confirmed",
+      "detail": "AC12"
+    },
+    {
+      "at": "2026-08-05T22:07:32.893Z",
+      "event": "completing",
+      "detail": "merged commit: 7b5822c"
+    },
+    {
+      "at": "2026-08-05T22:07:32.900Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
-  ]
+  ],
+  "merged": {
+    "commit": "7b5822c",
+    "ref": "origin/main",
+    "at": "2026-08-05T22:07:32.899Z"
+  }
 }
