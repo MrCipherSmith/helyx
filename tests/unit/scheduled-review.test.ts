@@ -111,6 +111,7 @@ describe("the loop around the decision", () => {
     posts: string[];
     notes: string[];
     reviews: string[];
+    reviewedDiffs: string[];
   }
 
   function harness(over: {
@@ -123,6 +124,7 @@ describe("the loop around the decision", () => {
     const posts: string[] = [];
     const notes: string[] = [];
     const reviews: string[] = [];
+    const reviewedDiffs: string[] = [];
     let state = over.state ?? {};
 
     return {
@@ -130,13 +132,15 @@ describe("the loop around the decision", () => {
       posts,
       notes,
       reviews,
+      reviewedDiffs,
       deps: {
         branch: async () => over.branch ?? "feat/x",
         diff: async () => over.diff ?? "diff --git a b",
         loadState: async () => state,
         saveState: async (next) => { state = next; saved.push(next); },
-        runReview: async (prompt) => {
+        runReview: async (prompt, diff) => {
           reviews.push(prompt);
+          reviewedDiffs.push(diff);
           if (over.fail) throw new Error("reviewer exploded");
           return { artifactDir: "logs/reviews/x", summary: "1 из 2 ревьюеров ответили" };
         },
@@ -172,6 +176,19 @@ describe("the loop around the decision", () => {
     // so the next pass says "already-reviewed".
     expect(h.saved[0]!.running).toBe(true);
     expect(h.saved.at(-1)).toMatchObject({ lastReviewedHash: hash, running: false });
+  });
+
+  test("the diff that was hashed is the diff that is reviewed", async () => {
+    // Raised in review: the loop hashed one snapshot and the runner read
+    // another, so the hash recorded as reviewed could describe a diff nobody
+    // had looked at. One read, handed in.
+    const hash = diffHash("diff --git a b");
+    const h = harness({ state: { lastSeenHash: hash } });
+
+    await maybeRunScheduledReview(h.deps);
+
+    expect(h.reviewedDiffs).toEqual(["diff --git a b"]);
+    expect(diffHash(h.reviewedDiffs[0]!)).toBe(h.saved.at(-1)!.lastReviewedHash ?? "");
   });
 
   test("a failed review clears the in-flight flag, or the loop never runs again", async () => {

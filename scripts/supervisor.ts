@@ -1523,9 +1523,8 @@ function scheduledReviewDeps(sql: postgres.Sql, runShell: RunShell): ScheduledRe
         ON CONFLICT (key) DO UPDATE SET value = ${JSON.stringify(state)}, updated_at = now()
       `.catch(() => {});
     },
-    runReview: async (prompt) => {
+    runReview: async (prompt, diff) => {
       const started = Date.now();
-      const diff = await gitReviewDiff();
       const result = await runReviewers(prompt, async () => diff);
       const branch = (await runShell("git rev-parse --abbrev-ref HEAD")).output.trim();
       const head = (await runShell("git rev-parse HEAD")).output.trim();
@@ -1569,7 +1568,12 @@ export interface ScheduledReviewDeps {
   diff: () => Promise<string>;
   loadState: () => Promise<ScheduledReviewState>;
   saveState: (state: ScheduledReviewState) => Promise<void>;
-  runReview: (prompt: string) => Promise<{ artifactDir: string | null; summary: string }>;
+  /**
+   * The diff is handed in rather than read again inside. Raised in review: the
+   * loop hashed one snapshot and the runner fetched another, so the hash
+   * recorded as reviewed could describe a diff nobody had reviewed.
+   */
+  runReview: (prompt: string, diff: string) => Promise<{ artifactDir: string | null; summary: string }>;
   note: (message: string) => void;
   post: (text: string) => Promise<void>;
 }
@@ -1581,11 +1585,15 @@ export function diffHash(diff: string): string {
 
 export async function maybeRunScheduledReview(deps: ScheduledReviewDeps): Promise<void> {
   let branch: string;
+  let diff: string;
   let hash: string;
   let state: ScheduledReviewState;
   try {
     branch = await deps.branch();
-    hash = diffHash(await deps.diff());
+    // One snapshot, hashed and reviewed. Reading it twice was how the recorded
+    // hash could end up describing a diff that was never looked at.
+    diff = await deps.diff();
+    hash = diffHash(diff);
     state = await deps.loadState();
   } catch (err: any) {
     deps.note(`scheduled review: could not read the branch state: ${err?.message ?? String(err)}`);
@@ -1614,6 +1622,7 @@ export async function maybeRunScheduledReview(deps: ScheduledReviewDeps): Promis
   try {
     result = await deps.runReview(
       `Scheduled review of branch ${branch}. Report only real defects in the change itself.`,
+      diff,
     );
   } catch (err: any) {
     // The flag must not survive a failure, or the loop never runs again. The
