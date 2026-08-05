@@ -26,6 +26,7 @@ import {
 } from "../utils/status-format.ts";
 import { HoldCounter } from "../utils/hold-counter.ts";
 import { renderStatus, renderFinal, clampEscaped } from "../utils/status-render.ts";
+import { shouldReopen, shouldClose, shouldMove, CONTINUATION_IDLE_MS } from "../utils/status-continuation.ts";
 import { escapeHtml } from "../utils/html.ts";
 import { isRequeued, markRequeued } from "../utils/requeue.ts";
 import { hasOpenQuestion } from "../services/ask-question.ts";
@@ -74,6 +75,15 @@ interface StatusState {
   lastCountedToolLine: string | null;
   pendingImmediateEdit: boolean;
   nextEditDelay: number | null;
+  /**
+   * Opened after a reply, for work the reply did not finish.
+   *
+   * Not a turn in progress: the poller must not hold the operator's next
+   * message behind it, and it is the only status the idle window closes.
+   */
+  continuation: boolean;
+  /** The other-message id this status has already moved for. */
+  movedFor: number | null;
   /**
    * When the last edit request was issued — the floor below is measured from
    * here. Zero, not the creation time, so the first update after the message
@@ -154,9 +164,27 @@ export class StatusManager {
   private diffMessages = new Map<string, number>(); // key → Telegram message_id
   /** Tracks the single response-guard warning message per key — edited in-place on re-arms instead of sending new messages. */
   private guardMessages = new Map<string, { messageId: number; chatId: string; extra: Record<string, unknown> }>();
-  /** Last timestamp the tmux monitor reported activity — tracked even without an active status
-   *  so schedulePostReplyCheck can detect if Claude is still working after an early reply. */
+  /**
+   * When the monitor last reported anything, per key.
+   *
+   * Kept even with no status open: it is how work that outlived its reply is
+   * noticed, and re-opening the status is what it is for.
+   */
   private lastMonitorActivity = new Map<string, number>();
+  /**
+   * When the session last replied, per key.
+   *
+   * The reply closes the step; anything the session does after it is work the
+   * operator has not been shown, and this is what "after" is measured from.
+   */
+  private readonly lastReplyAt = new Map<string, number>();
+  /**
+   * The newest message in the topic that is not the status itself.
+   *
+   * A pinned status is findable but not visible: three replies later it is off
+   * the screen. This is what tells it to move down.
+   */
+  private readonly lastOtherMessageId = new Map<string, number>();
   /**
    * Generation counter per state-key for in-flight sendStatusMessage calls.
    * Allows a slow Telegram response that resolves after the 4s deadline to detect
@@ -175,9 +203,18 @@ export class StatusManager {
    * no time has passed and the floor does nothing.
    */
   private readonly minEditIntervalMs: number;
+  /**
+   * How long a continuation may be silent before it closes.
+   *
+   * Overridable for the same reason the edit floor is: forty-five seconds is
+   * not a test, and the decision itself is pure — see
+   * `utils/status-continuation.ts`.
+   */
+  private readonly continuationIdleMs: number;
 
-  constructor(private ctx: StatusContext, options: { minEditIntervalMs?: number } = {}) {
+  constructor(private ctx: StatusContext, options: { minEditIntervalMs?: number; continuationIdleMs?: number } = {}) {
     this.minEditIntervalMs = options.minEditIntervalMs ?? StatusManager.MIN_EDIT_INTERVAL_MS;
+    this.continuationIdleMs = options.continuationIdleMs ?? CONTINUATION_IDLE_MS;
   }
 
   /**
@@ -192,8 +229,33 @@ export class StatusManager {
    */
   getBusyChats(): Set<string> {
     const out = new Set<string>();
-    for (const state of this.activeStatus.values()) out.add(state.chatId);
+    for (const state of this.activeStatus.values()) {
+      // A continuation is the tail of a finished step, not a turn in progress.
+      // Reporting it busy would hold the operator's next message behind work
+      // that has already been answered once — trading one silence for another.
+      if (state.continuation) continue;
+      out.add(state.chatId);
+    }
     return out;
+  }
+
+  /**
+   * A reply went out: the step is over, the turn may not be.
+   *
+   * Called instead of tearing everything down, which is what used to happen and
+   * is why an agent that replied "starting the subagents" then went silent.
+   */
+  noteReplySent(chatId: string, messageId?: number): void {
+    const key = this.stateKey(chatId);
+    this.lastReplyAt.set(key, Date.now());
+    if (messageId !== undefined) this.noteOtherMessage(chatId, messageId);
+  }
+
+  /** Something that is not the status landed in the topic. */
+  noteOtherMessage(chatId: string, messageId: number): void {
+    const key = this.stateKey(chatId);
+    const seen = this.lastOtherMessageId.get(key) ?? 0;
+    if (messageId > seen) this.lastOtherMessageId.set(key, messageId);
   }
 
   /**
@@ -447,62 +509,6 @@ export class StatusManager {
   }
 
   /**
-   * Schedule a check N ms after reply() to detect multi-step tasks.
-   *
-   * When Claude sends an early "Запускаю..." reply and then continues working
-   * (runs a subagent, long bash command, etc.), the monitor keeps running but
-   * the status message and guard were already torn down by reply().
-   *
-   * After delayMs, we check lastMonitorActivity: if tmux was active recently
-   * → Claude is still working → create a continuation status + re-arm guard.
-   * If tmux is silent → Claude truly finished, leave everything cleaned up.
-   */
-  schedulePostReplyCheck(chatId: string, delayMs = 20_000): void {
-    const key = this.stateKey(chatId);
-    const repliedAt = Date.now();
-    const t = setTimeout(async () => {
-      this.postReplyCheckTimers.delete(t);
-      // If the user already sent a new message, the poller created a fresh status — skip.
-      if (this.activeStatus.has(key)) return;
-
-      // Don't create a continuation status if the user already has messages waiting —
-      // the poller will deliver them immediately now that the status is gone.
-      const sessionId = this.ctx.sessionId();
-      if (sessionId !== null) {
-        const pending = await this.ctx.sql`
-          SELECT 1 FROM message_queue
-          WHERE session_id = ${sessionId} AND chat_id = ${chatId} AND delivered = false
-          LIMIT 1
-        `.catch(() => []);
-        if (pending.length > 0) {
-          channelLogger.debug({ chatId }, "post-reply: pending user messages found, skipping continuation status");
-          this.stopProgressMonitorForChat(chatId);
-          this.lastMonitorActivity.delete(key);
-          return;
-        }
-      }
-
-      // Only count tmux activity that happened AFTER the reply was sent.
-      // Activity before reply() is stale — it belongs to the completed turn.
-      const lastActivity = this.lastMonitorActivity.get(key) ?? 0;
-      const hasPostReplyActivity = lastActivity > repliedAt;
-
-      if (hasPostReplyActivity) {
-        channelLogger.info({ chatId, lastActivity, repliedAt }, "post-reply: Claude still active, creating continuation status");
-        await this.sendStatusMessage(chatId, "🔄 Working on follow-up...");
-        this.armResponseGuard(chatId);
-        this.startProgressMonitorForChat(chatId).catch(() => {});
-      } else {
-        // No tmux activity after reply — Claude truly finished.
-        this.stopProgressMonitorForChat(chatId);
-        this.lastMonitorActivity.delete(key);
-        channelLogger.debug({ chatId }, "post-reply: no post-reply activity, cleanup done");
-      }
-    }, delayMs);
-    this.postReplyCheckTimers.add(t);
-  }
-
-  /**
    * Resolve the effective Telegram destination for status messages.
    *
    * In forum mode (forumChatId + forumTopicId both set): returns the forum chat
@@ -615,6 +621,10 @@ export class StatusManager {
       // wait again would compound the stall this exists to prevent.
       const requestedAt = Date.now();
       if (await this.editStatusMessage(state)) state.lastEditAt = requestedAt;
+      // Asked here rather than on the tick: the thing that landed after this
+      // status is what makes it worth moving, and activity is when we hear
+      // about it. `shouldMove` is what keeps it to once per landing.
+      await this.maybeMoveToBottom(this.stateKey(state.chatId), state).catch(() => {});
     } finally {
       state.editInFlight = false;
     }
@@ -663,7 +673,22 @@ export class StatusManager {
     else this.currentQuestion.delete(key);
   }
 
-  async sendStatusMessage(chatId: string, stage: string, replyToMsgId?: number): Promise<string | null> {
+  async sendStatusMessage(
+    chatId: string,
+    stage: string,
+    replyToMsgId?: number,
+    /**
+     * Marks the status as the tail of a step rather than a turn.
+     *
+     * A parameter and not instance state, which is what it was first: a field
+     * set around the `await` inside this method is read by every other call
+     * that lands during it, including the poller opening a real turn for a
+     * different chat. That turn would then not hold the operator's next
+     * message and would be closed by the idle window — a real turn quietly
+     * behaving like a continuation. Found in review.
+     */
+    options: { continuation?: boolean } = {},
+  ): Promise<string | null> {
     const token = this.ctx.token();
     if (!token) {
       channelLogger.warn("sendStatusMessage: no TELEGRAM_BOT_TOKEN");
@@ -757,15 +782,32 @@ export class StatusManager {
         nextEditDelay: null,
         lastEditAt: 0,
         deferredEditTimer: null,
+        continuation: options.continuation ?? false,
+        movedFor: null,
       };
       const scheduleTick = (key: string): void => {
         const state = this.activeStatus.get(key);
         if (!state) return;
-        const delay = state.nextEditDelay ?? this.chooseSpinnerInterval(state);
+        // A continuation is also waiting to be closed by silence, and the
+        // spinner interval alone would leave it up to three seconds past the
+        // window. Whichever comes first.
+        const spin = state.nextEditDelay ?? this.chooseSpinnerInterval(state);
+        const delay = state.continuation ? Math.min(spin, this.continuationIdleMs) : spin;
         state.nextEditDelay = null;
         state.timer = setTimeout(async () => {
           if (state.editInFlight) {
             scheduleTick(key);
+            return;
+          }
+          // A continuation exists only while the session is doing something.
+          // Silence is the only thing that ends it: it was opened after a
+          // reply, so waiting for another reply would keep it up for ever.
+          if (state.continuation && shouldClose({
+            lastActivityAt: this.lastMonitorActivity.get(key) ?? null,
+            now: Date.now(),
+          }, this.continuationIdleMs)) {
+            channelLogger.info({ chatId: state.chatId }, "status: continuation went quiet — closing");
+            await this.deleteStatusMessage(state.chatId).catch(() => {});
             return;
           }
           await this.refreshPaneSnapshot(state).catch(() => {});
@@ -842,8 +884,14 @@ export class StatusManager {
     this.lastMonitorActivity.set(key, Date.now());
     const state = this.activeStatus.get(key);
     if (!state) {
-      // No active status — monitor keeps running (post-reply continuation tracking).
-      // Do NOT create a new orphan status message here.
+      // No status open, and the session just did something. Either the turn is
+      // still going after a reply — in which case the operator is owed a status
+      // — or this is stray activity, and `shouldReopen` is the difference.
+      //
+      // What used to be here was a bare return with a comment about orphans.
+      // The orphan it prevented was real; the silence it caused was worse, and
+      // the method written to fix it was never called by anything.
+      await this.maybeReopen(chatId, key, stage);
       return;
     }
     this.accumulateTurnActivity(state, stage);  // SU-4
@@ -855,6 +903,86 @@ export class StatusManager {
     // that another is wanted and that edit repeats, rather than the update
     // waiting for the next timer tick.
     await this.editWithDrain(state);
+  }
+
+  /**
+   * Open a status for work that outlived its reply.
+   *
+   * The pending-message check is a query, and it is the reason this is its own
+   * method rather than three lines in `updateStatus`: the decision itself is
+   * pure and lives in `utils/status-continuation.ts`, and everything here is
+   * the facts it needs.
+   */
+  private async maybeReopen(chatId: string, key: string, stage: string): Promise<void> {
+    const repliedAt = this.lastReplyAt.get(key) ?? null;
+    if (repliedAt === null) return;
+
+    let pendingUserMessages = false;
+    const sessionId = this.ctx.sessionId();
+    if (sessionId !== null) {
+      const pending = await this.ctx.sql`
+        SELECT 1 FROM message_queue
+        WHERE session_id = ${sessionId} AND chat_id = ${chatId} AND delivered = false
+        LIMIT 1
+      `.catch(() => []);
+      pendingUserMessages = pending.length > 0;
+    }
+
+    const open = shouldReopen({
+      statusOpen: this.activeStatus.has(key),
+      repliedAt,
+      lastActivityAt: this.lastMonitorActivity.get(key) ?? null,
+      pendingUserMessages,
+      now: Date.now(),
+    });
+    if (!open) return;
+
+    channelLogger.info({ chatId, repliedAt }, "status: work continued past the reply — opening a continuation");
+    const failed = await this.sendStatusMessage(chatId, stage, undefined, { continuation: true });
+    // Only when there is something to guard. Raised in review: arming after a
+    // failed open leaves a guard with no status behind it, which fires a
+    // "still working?" notice about a message the operator cannot see.
+    if (failed === null && this.activeStatus.has(key)) this.armResponseGuard(chatId);
+  }
+
+  /**
+   * Re-send the status at the bottom when something else has landed after it.
+   *
+   * Pinned already, and silently, so it is always findable — but a status
+   * created before three replies sits above all of them, and the operator
+   * asked to see the work rather than to go looking for it.
+   *
+   * Asked on every tick and acted on once per landing: a move is a delete plus
+   * a send, and doing that every few seconds would be a blizzard in the topic
+   * and a rate limit in the face.
+   */
+  private async maybeMoveToBottom(key: string, state: StatusState): Promise<void> {
+    const lastOther = this.lastOtherMessageId.get(key) ?? null;
+    if (!shouldMove({ statusMessageId: state.messageId, lastOtherMessageId: lastOther, movedFor: state.movedFor })) return;
+
+    const token = this.ctx.token();
+    if (!token) return;
+
+    const extra = state.threadId ? { message_thread_id: state.threadId } : {};
+    const text = this.composeStatusText(state);
+    const res = await sendTelegramMessage(token, state.chatId, text, { parse_mode: "HTML", ...extra });
+    if (!res.ok || !res.messageId) return;
+
+    const old = state.messageId;
+    state.messageId = res.messageId;
+    state.movedFor = lastOther;
+    // Signature cleared with the message it described: the new message has
+    // never been edited, and an unchanged signature would skip the first edit
+    // and leave it showing the text it was created with.
+    state.lastSentSignature = null;
+    // Fire-and-forget, all three: the status has already moved, and a pin that
+    // fails costs a pin, not the message. `void` says so out loud — raised in
+    // review as reading like a dropped promise.
+    void unpinTelegramMessage(token, state.chatId, old);
+    void deleteTelegramMessage(token, state.chatId, old);
+    void pinTelegramMessage(token, state.chatId, res.messageId);
+    this.persistStatusMessage(key, state).catch(() => {});
+    channelLogger.info({ chatId: state.chatId, from: old, to: res.messageId }, "status: moved below what landed after it");
   }
 
   private accumulateTurnActivity(state: StatusState, stage: string): void {
@@ -933,6 +1061,29 @@ export class StatusManager {
    * not make the next genuine change wait five seconds for a call that never
    * happened.
    */
+  /**
+   * The text this status currently says.
+   *
+   * Split out of `editStatusMessage` so the move can re-send exactly what the
+   * message was showing. Composing it a second way is how the moved copy would
+   * come out subtly different from the one it replaced.
+   */
+  private composeStatusText(state: StatusState): string {
+    const elapsed = formatElapsed(Date.now() - state.startedAt);
+    const key = state.threadId ? `${state.chatId}:${state.threadId}` : state.chatId;
+    const tokens = this.lastTokenInfo.get(key);
+    const tokenStr = tokens ? ` · ↓ ${tokens}` : "";
+    const phase = resolvePhase(state.stage, this.awaitingPermission.isHeld(key));
+    const extras: StatusExtras = {
+      phaseEmoji: phase ? PHASE_LABEL[phase] : undefined,
+      toolCount: state.turnToolCount,
+      fileCount: state.turnFileCount,
+      question: this.currentQuestion.get(key),
+    };
+    const spinnerIcon = spinnerIconAt(state.spinnerFrame, state.lastUpdateAt, Date.now());
+    return formatStatusText(state.stage, elapsed, tokenStr, state.paneSnapshot, spinnerIcon, extras);
+  }
+
   private async editStatusMessage(state: StatusState): Promise<boolean> {
     const token = this.ctx.token();
     if (!token) return false;
