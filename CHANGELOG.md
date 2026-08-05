@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### fix: one answer to which containers exist
+
+The supervisor asked Docker twice. `sendStatusBroadcast` ran `docker ps -a`,
+with a comment explaining that without `-a` a crashed container does not appear
+as broken — it vanishes, and a vanished container is indistinguishable from one
+that was never there. `collectSystemSnapshot`, thirty lines away and feeding the
+health analyst every ten minutes, still ran `docker ps`: the analyst was asked
+to judge system health from a list that structurally could not contain a dead
+container, and, having no ownership filter either, from one that could contain
+somebody else's.
+
+The fix is not the missing flag. Two call sites answering one question with two
+commands is what let them drift, so the question moved: `listOwnedContainers` in
+`utils/supervisor-status.ts` runs the command, applies the ownership rule and
+classifies each container, and the two consumers now differ only in how they
+render it — coloured lines in HTML for the operator, plain text for the analyst.
+`RunShell` moved there with it rather than being declared in both files.
+
+One behaviour change beyond the flag: an unreadable listing reaches the analyst
+as `unavailable` instead of as `no containers`. A dead daemon and an empty host
+are not the same state, and the broadcast has distinguished them since the flow
+that made the red state reachable at all.
+
 ### fix: the transcript the hook reports, and the one the bot can open
 
 A Claude Code session runs on the host and its Stop hook posts

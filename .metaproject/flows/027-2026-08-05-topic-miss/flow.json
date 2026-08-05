@@ -1,0 +1,225 @@
+{
+  "schemaVersion": 2,
+  "id": "027",
+  "slug": "topic-miss",
+  "title": "A deleted forum topic silently misdelivers every reply",
+  "status": "done",
+  "createdAt": "2026-08-05T13:44:14.802Z",
+  "updatedAt": "2026-08-05T13:55:01.456Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:6f3eafe00bba61ebbfd7460e222e74b94bff0e07f26ad1a847ebb02e1651aae1",
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-05T13:54:08.506Z",
+      "note": "tests/unit/telegram-thread-miss.test.ts — 5/5 pass; real sendTelegramMessage over a stubbed transport"
+    },
+    "AC2": {
+      "at": "2026-08-05T13:54:08.596Z",
+      "note": "tests/unit/telegram-thread-miss.test.ts — 5/5 pass; real sendTelegramMessage over a stubbed transport"
+    },
+    "AC3": {
+      "at": "2026-08-05T13:54:08.685Z",
+      "note": "tests/unit/telegram-thread-miss.test.ts — 5/5 pass; real sendTelegramMessage over a stubbed transport"
+    },
+    "AC4": {
+      "at": "2026-08-05T13:54:08.772Z",
+      "note": "tests/unit/telegram-thread-miss.test.ts — 5/5 pass; real sendTelegramMessage over a stubbed transport"
+    },
+    "AC5": {
+      "at": "2026-08-05T13:54:08.859Z",
+      "note": "tests/unit/forum-topic-validation.test.ts — 5/5 pass; real validateTopicExists with a recording Api double"
+    },
+    "AC6": {
+      "at": "2026-08-05T13:54:08.947Z",
+      "note": "tests/unit/forum-topic-validation.test.ts — 5/5 pass; real validateTopicExists with a recording Api double"
+    },
+    "AC7": {
+      "at": "2026-08-05T13:54:09.035Z",
+      "note": "tests/unit/forum-topic-validation.test.ts — 5/5 pass; real validateTopicExists with a recording Api double"
+    },
+    "AC8": {
+      "at": "2026-08-05T13:54:09.127Z",
+      "note": "bun test tests/unit/: 1443 pass 0 fail; bunx tsc --noEmit clean"
+    },
+    "AC9": {
+      "at": "2026-08-05T13:54:09.217Z",
+      "note": "CHANGELOG.md Unreleased — fix: a deleted forum topic stopped being an invisible failure"
+    },
+    "AC10": {
+      "at": "2026-08-05T13:54:09.308Z",
+      "note": "reviewer rounds: 2. Round 1 — DeepSeek raised the timing-based test; fixed in 1f51df3. Round 2 — DeepSeek: no defects. Codex unavailable both rounds (usage limit until 2026-08-11)"
+    }
+  },
+  "pr": {
+    "url": "https://github.com/MrCipherSmith/helyx/pull/62"
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-05T13:44:14.802Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-05T13:45:32.486Z",
+      "event": "frozen",
+      "detail": "10 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-05T13:45:32.573Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-05T13:46:36.047Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/62"
+    },
+    {
+      "at": "2026-08-05T13:54:08.506Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: tests/unit/telegram-thread-miss.test.ts — 5/5 pass; real sendTelegramMessage over a stubbed transport"
+    },
+    {
+      "at": "2026-08-05T13:54:08.597Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: tests/unit/telegram-thread-miss.test.ts — 5/5 pass; real sendTelegramMessage over a stubbed transport"
+    },
+    {
+      "at": "2026-08-05T13:54:08.685Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: tests/unit/telegram-thread-miss.test.ts — 5/5 pass; real sendTelegramMessage over a stubbed transport"
+    },
+    {
+      "at": "2026-08-05T13:54:08.772Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: tests/unit/telegram-thread-miss.test.ts — 5/5 pass; real sendTelegramMessage over a stubbed transport"
+    },
+    {
+      "at": "2026-08-05T13:54:08.859Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: tests/unit/forum-topic-validation.test.ts — 5/5 pass; real validateTopicExists with a recording Api double"
+    },
+    {
+      "at": "2026-08-05T13:54:08.947Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: tests/unit/forum-topic-validation.test.ts — 5/5 pass; real validateTopicExists with a recording Api double"
+    },
+    {
+      "at": "2026-08-05T13:54:09.035Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: tests/unit/forum-topic-validation.test.ts — 5/5 pass; real validateTopicExists with a recording Api double"
+    },
+    {
+      "at": "2026-08-05T13:54:09.127Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: bun test tests/unit/: 1443 pass 0 fail; bunx tsc --noEmit clean"
+    },
+    {
+      "at": "2026-08-05T13:54:09.217Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: CHANGELOG.md Unreleased — fix: a deleted forum topic stopped being an invisible failure"
+    },
+    {
+      "at": "2026-08-05T13:54:09.308Z",
+      "event": "ac-confirmed",
+      "detail": "AC10: reviewer rounds: 2. Round 1 — DeepSeek raised the timing-based test; fixed in 1f51df3. Round 2 — DeepSeek: no defects. Codex unavailable both rounds (usage limit until 2026-08-11)"
+    },
+    {
+      "at": "2026-08-05T13:54:13.292Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-05T13:54:13.382Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-05T13:54:13.474Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-05T13:54:13.566Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-05T13:55:01.448Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-05T13:55:01.456Z",
+      "event": "done",
+      "detail": "all gates passed"
+    }
+  ],
+  "merged": {
+    "commit": "4b67bafe2a34033d41e40a1969045c7102cc732e",
+    "ref": "origin/main",
+    "at": "2026-08-05T13:55:01.455Z"
+  }
+}
