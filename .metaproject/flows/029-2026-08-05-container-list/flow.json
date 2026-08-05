@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 2,
+  "id": "029",
+  "slug": "container-list",
+  "title": "Two answers to which containers exist, and the analyst gets the one that hides the dead",
+  "status": "in-progress",
+  "createdAt": "2026-08-05T14:47:30.144Z",
+  "updatedAt": "2026-08-05T14:52:32.719Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:77498287e55d33d6bc935aa2abb1b1fc523f3ef8b49e3fceaf99aa20e8caa844",
+  "acConfirmed": {},
+  "pr": {
+    "url": null
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-05T14:47:30.144Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-05T14:49:02.628Z",
+      "event": "frozen",
+      "detail": "11 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-05T14:49:02.717Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-05T14:52:32.719Z",
+      "event": "ac-updated",
+      "detail": "AC1 named a grep count that the chosen design makes false in a harmless way: moving the command out leaves two prose mentions of 'docker ps' in supervisor.ts and zero commands. Reworded to the invariant that was meant — no command issued from that file — so the criterion can be confirmed by what it actually tests."
+    }
+  ]
+}

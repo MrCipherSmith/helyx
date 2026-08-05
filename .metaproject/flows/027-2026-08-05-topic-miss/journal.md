@@ -1,0 +1,22 @@
+# Flow Journal
+
+- 2026-08-05T13:44:14.802Z - flow created
+- 2026-08-05T13:45:32.486Z - frozen: 10 criteria; checksum recorded
+- 2026-08-05T13:45:32.573Z - started
+- 2026-08-05T13:46:36.047Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/62
+- 2026-08-05T13:54:08.506Z - ac-confirmed: AC1: tests/unit/telegram-thread-miss.test.ts — 5/5 pass; real sendTelegramMessage over a stubbed transport
+- 2026-08-05T13:54:08.597Z - ac-confirmed: AC2: tests/unit/telegram-thread-miss.test.ts — 5/5 pass; real sendTelegramMessage over a stubbed transport
+- 2026-08-05T13:54:08.685Z - ac-confirmed: AC3: tests/unit/telegram-thread-miss.test.ts — 5/5 pass; real sendTelegramMessage over a stubbed transport
+- 2026-08-05T13:54:08.772Z - ac-confirmed: AC4: tests/unit/telegram-thread-miss.test.ts — 5/5 pass; real sendTelegramMessage over a stubbed transport
+- 2026-08-05T13:54:08.859Z - ac-confirmed: AC5: tests/unit/forum-topic-validation.test.ts — 5/5 pass; real validateTopicExists with a recording Api double
+- 2026-08-05T13:54:08.947Z - ac-confirmed: AC6: tests/unit/forum-topic-validation.test.ts — 5/5 pass; real validateTopicExists with a recording Api double
+- 2026-08-05T13:54:09.035Z - ac-confirmed: AC7: tests/unit/forum-topic-validation.test.ts — 5/5 pass; real validateTopicExists with a recording Api double
+- 2026-08-05T13:54:09.127Z - ac-confirmed: AC8: bun test tests/unit/: 1443 pass 0 fail; bunx tsc --noEmit clean
+- 2026-08-05T13:54:09.217Z - ac-confirmed: AC9: CHANGELOG.md Unreleased — fix: a deleted forum topic stopped being an invisible failure
+- 2026-08-05T13:54:09.308Z - ac-confirmed: AC10: reviewer rounds: 2. Round 1 — DeepSeek raised the timing-based test; fixed in 1f51df3. Round 2 — DeepSeek: no defects. Codex unavailable both rounds (usage limit until 2026-08-11)
+- 2026-08-05T13:54:13.292Z - task-done: T1: Collect remaining context
+- 2026-08-05T13:54:13.382Z - task-done: T2: Implement per plan
+- 2026-08-05T13:54:13.474Z - task-done: T3: Add/adjust tests and make them pass
+- 2026-08-05T13:54:13.566Z - task-done: T4: Self-review and prepare draft PR
+- 2026-08-05T13:55:01.448Z - completing
+- 2026-08-05T13:55:01.456Z - done: all gates passed

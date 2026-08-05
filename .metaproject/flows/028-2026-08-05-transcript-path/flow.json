@@ -1,0 +1,234 @@
+{
+  "schemaVersion": 2,
+  "id": "028",
+  "slug": "transcript-path",
+  "title": "Fact extraction resolves a host path inside the container and has never run",
+  "status": "done",
+  "createdAt": "2026-08-05T13:58:19.086Z",
+  "updatedAt": "2026-08-05T14:17:03.920Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:822fd225fa73bb1ac2c967e5a9cc5ce49b9135c78374769081d531616755fb27",
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-05T14:16:23.660Z",
+      "note": "tests/unit/transcript-path-resolution.test.ts — localTranscriptPath branches with an injected exists; 9/9 pass"
+    },
+    "AC2": {
+      "at": "2026-08-05T14:16:23.751Z",
+      "note": "tests/unit/transcript-path-resolution.test.ts — localTranscriptPath branches with an injected exists; 9/9 pass"
+    },
+    "AC3": {
+      "at": "2026-08-05T14:16:23.842Z",
+      "note": "tests/unit/transcript-path-resolution.test.ts — localTranscriptPath branches with an injected exists; 9/9 pass"
+    },
+    "AC4": {
+      "at": "2026-08-05T14:16:23.931Z",
+      "note": "tests/unit/transcript-path-resolution.test.ts — localTranscriptPath branches with an injected exists; 9/9 pass"
+    },
+    "AC5": {
+      "at": "2026-08-05T14:16:24.024Z",
+      "note": "same file: a transcript readable only under a temporary config root is read; no warning, returns 0 via 'too few turns'"
+    },
+    "AC6": {
+      "at": "2026-08-05T14:16:24.114Z",
+      "note": "same file: unrecognisable path falls back to resolveTranscript by declared cwd; unresolvable path warns once and returns 0"
+    },
+    "AC7": {
+      "at": "2026-08-05T14:16:24.204Z",
+      "note": "tests/unit/turn-summary-delivery.test.ts: host path tried first then the mounted one; a path resolving nowhere stays silent"
+    },
+    "AC8": {
+      "at": "2026-08-05T14:16:24.292Z",
+      "note": "the nine pre-existing turn-summary tests are unmodified and pass; TurnSummaryDeps.locate is optional so their deps objects still type-check"
+    },
+    "AC9": {
+      "at": "2026-08-05T14:16:24.381Z",
+      "note": "bun test tests/unit/: 1454 pass 0 fail; bunx tsc --noEmit clean"
+    },
+    "AC10": {
+      "at": "2026-08-05T14:16:24.470Z",
+      "note": "CHANGELOG.md Unreleased — fix: the transcript the hook reports, and the one the bot can open"
+    },
+    "AC11": {
+      "at": "2026-08-05T14:16:24.563Z",
+      "note": "reviewer rounds: 3. R1 no defects + one concern; R2 repeated it as a vulnerability (false: join keeps the candidate under the root, measured) plus two findings on unrelated in-flight files; R3 scoped to the three files: no defects. Hardened anyway in 7b3cfb2"
+    }
+  },
+  "pr": {
+    "url": "https://github.com/MrCipherSmith/helyx/pull/64"
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-05T13:58:19.086Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-05T14:00:18.783Z",
+      "event": "frozen",
+      "detail": "11 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-05T14:00:18.874Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-05T14:04:48.491Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/64"
+    },
+    {
+      "at": "2026-08-05T14:16:23.660Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: tests/unit/transcript-path-resolution.test.ts — localTranscriptPath branches with an injected exists; 9/9 pass"
+    },
+    {
+      "at": "2026-08-05T14:16:23.751Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: tests/unit/transcript-path-resolution.test.ts — localTranscriptPath branches with an injected exists; 9/9 pass"
+    },
+    {
+      "at": "2026-08-05T14:16:23.843Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: tests/unit/transcript-path-resolution.test.ts — localTranscriptPath branches with an injected exists; 9/9 pass"
+    },
+    {
+      "at": "2026-08-05T14:16:23.932Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: tests/unit/transcript-path-resolution.test.ts — localTranscriptPath branches with an injected exists; 9/9 pass"
+    },
+    {
+      "at": "2026-08-05T14:16:24.024Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: same file: a transcript readable only under a temporary config root is read; no warning, returns 0 via 'too few turns'"
+    },
+    {
+      "at": "2026-08-05T14:16:24.114Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: same file: unrecognisable path falls back to resolveTranscript by declared cwd; unresolvable path warns once and returns 0"
+    },
+    {
+      "at": "2026-08-05T14:16:24.204Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: tests/unit/turn-summary-delivery.test.ts: host path tried first then the mounted one; a path resolving nowhere stays silent"
+    },
+    {
+      "at": "2026-08-05T14:16:24.292Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: the nine pre-existing turn-summary tests are unmodified and pass; TurnSummaryDeps.locate is optional so their deps objects still type-check"
+    },
+    {
+      "at": "2026-08-05T14:16:24.381Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: bun test tests/unit/: 1454 pass 0 fail; bunx tsc --noEmit clean"
+    },
+    {
+      "at": "2026-08-05T14:16:24.470Z",
+      "event": "ac-confirmed",
+      "detail": "AC10: CHANGELOG.md Unreleased — fix: the transcript the hook reports, and the one the bot can open"
+    },
+    {
+      "at": "2026-08-05T14:16:24.563Z",
+      "event": "ac-confirmed",
+      "detail": "AC11: reviewer rounds: 3. R1 no defects + one concern; R2 repeated it as a vulnerability (false: join keeps the candidate under the root, measured) plus two findings on unrelated in-flight files; R3 scoped to the three files: no defects. Hardened anyway in 7b3cfb2"
+    },
+    {
+      "at": "2026-08-05T14:16:30.427Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-05T14:16:30.515Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-05T14:16:30.607Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-05T14:16:30.699Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-05T14:17:03.912Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-05T14:17:03.920Z",
+      "event": "done",
+      "detail": "all gates passed"
+    }
+  ],
+  "merged": {
+    "commit": "f4c6756",
+    "ref": "origin/main",
+    "at": "2026-08-05T14:17:03.919Z"
+  }
+}

@@ -1,0 +1,23 @@
+# Flow Journal
+
+- 2026-08-05T13:58:19.086Z - flow created
+- 2026-08-05T14:00:18.783Z - frozen: 11 criteria; checksum recorded
+- 2026-08-05T14:00:18.874Z - started
+- 2026-08-05T14:04:48.491Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/64
+- 2026-08-05T14:16:23.660Z - ac-confirmed: AC1: tests/unit/transcript-path-resolution.test.ts — localTranscriptPath branches with an injected exists; 9/9 pass
+- 2026-08-05T14:16:23.751Z - ac-confirmed: AC2: tests/unit/transcript-path-resolution.test.ts — localTranscriptPath branches with an injected exists; 9/9 pass
+- 2026-08-05T14:16:23.843Z - ac-confirmed: AC3: tests/unit/transcript-path-resolution.test.ts — localTranscriptPath branches with an injected exists; 9/9 pass
+- 2026-08-05T14:16:23.932Z - ac-confirmed: AC4: tests/unit/transcript-path-resolution.test.ts — localTranscriptPath branches with an injected exists; 9/9 pass
+- 2026-08-05T14:16:24.024Z - ac-confirmed: AC5: same file: a transcript readable only under a temporary config root is read; no warning, returns 0 via 'too few turns'
+- 2026-08-05T14:16:24.114Z - ac-confirmed: AC6: same file: unrecognisable path falls back to resolveTranscript by declared cwd; unresolvable path warns once and returns 0
+- 2026-08-05T14:16:24.204Z - ac-confirmed: AC7: tests/unit/turn-summary-delivery.test.ts: host path tried first then the mounted one; a path resolving nowhere stays silent
+- 2026-08-05T14:16:24.292Z - ac-confirmed: AC8: the nine pre-existing turn-summary tests are unmodified and pass; TurnSummaryDeps.locate is optional so their deps objects still type-check
+- 2026-08-05T14:16:24.381Z - ac-confirmed: AC9: bun test tests/unit/: 1454 pass 0 fail; bunx tsc --noEmit clean
+- 2026-08-05T14:16:24.470Z - ac-confirmed: AC10: CHANGELOG.md Unreleased — fix: the transcript the hook reports, and the one the bot can open
+- 2026-08-05T14:16:24.563Z - ac-confirmed: AC11: reviewer rounds: 3. R1 no defects + one concern; R2 repeated it as a vulnerability (false: join keeps the candidate under the root, measured) plus two findings on unrelated in-flight files; R3 scoped to the three files: no defects. Hardened anyway in 7b3cfb2
+- 2026-08-05T14:16:30.427Z - task-done: T1: Collect remaining context
+- 2026-08-05T14:16:30.515Z - task-done: T2: Implement per plan
+- 2026-08-05T14:16:30.607Z - task-done: T3: Add/adjust tests and make them pass
+- 2026-08-05T14:16:30.699Z - task-done: T4: Self-review and prepare draft PR
+- 2026-08-05T14:17:03.912Z - completing
+- 2026-08-05T14:17:03.920Z - done: all gates passed

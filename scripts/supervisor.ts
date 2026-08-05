@@ -32,15 +32,13 @@ import { isRequeued, markRequeued } from "../utils/requeue.ts";
 import { paneLines, hasActiveSpinner, escapeHtml } from "../utils/terminal.ts";
 import { stripReasoning } from "../utils/llm-output.ts";
 import {
-  classifyContainer,
-  dockerListingUsable,
-  isOurContainer,
-  parseContainerLine,
   composeProjectFor,
+  listOwnedContainers,
   classifySession,
   summarizeQueue,
   hasProblems,
   type ContainerHealth,
+  type RunShell,
 } from "../utils/supervisor-status.ts";
 import { hasOpenQuestion } from "../services/ask-question.ts";
 import {
@@ -128,9 +126,6 @@ async function refreshAcks(sql: postgres.Sql): Promise<void> {
 const SUPERVISOR_START = Date.now();
 let incidentCount = 0;
 let lastIncidentAt: number | null = null;
-
-// Shell util signature (injected from admin-daemon)
-type RunShell = (cmd: string) => Promise<{ ok: boolean; output: string }>;
 
 // --- Telegram helpers ---
 
@@ -638,35 +633,17 @@ export async function sendStatusBroadcast(sql: postgres.Sql, runShell: RunShell)
 
     // --- Docker status ---
     //
-    // `-a`, not the default. `docker ps` lists only what is running, so a
-    // container that crashed does not appear as broken — it vanishes, and a
-    // vanished container looks exactly like one that was never there. That is
-    // how the red state stayed unreachable for weeks.
-    //
-    // The price of `-a` is the rest of the host, which is why the scope is
-    // decided rather than assumed: helyx's own stack and the projects running
-    // under it. Someone else's container is not this supervisor's to report,
-    // and reporting it would teach the operator to ignore the alert.
-    // The compose project label comes first: it is the only field that proves
-    // ownership. A name prefix does not — a project called `api` would adopt an
-    // unrelated `api-worker-1`.
-    const dockerResult = await runShell(
-      `docker ps -a --format '{{.Label "com.docker.compose.project"}}\t{{.Names}}\t{{.Status}}' 2>/dev/null || true`,
-    );
-    // An empty listing is not an empty host: `2>/dev/null || true` turns a dead
-    // daemon or a permissions problem into a clean-looking nothing.
-    const dockerUsable = dockerListingUsable(dockerResult.output);
+    // The command, the ownership filter and the classification live in
+    // `listOwnedContainers`, because the health analyst's snapshot asks the same
+    // question and used to ask it differently — `docker ps` without `-a`, which
+    // cannot list a container that crashed.
     const scope = { composeProject: COMPOSE_PROJECT, projects: await knownProjectNames(sql) };
-    const dockerLines: string[] = [];
-    const containers: ContainerHealth[] = [];
-    for (const line of dockerResult.output.split("\n").filter(Boolean)) {
-      const parsed = parseContainerLine(line);
-      if (!parsed) continue;
-      if (!isOurContainer(parsed, scope)) continue;
-      const health = classifyContainer(parsed.status);
-      containers.push(health);
-      dockerLines.push(`${health.healthy ? "🟢" : "🔴"} ${parsed.name} — <i>${escapeHtml(parsed.status)}</i>`);
-    }
+    const listing = await listOwnedContainers(runShell, scope);
+    const dockerUsable = listing.usable;
+    const containers: ContainerHealth[] = listing.containers.map((c) => c.health);
+    const dockerLines = listing.containers.map(
+      (c) => `${c.health.healthy ? "🟢" : "🔴"} ${c.name} — <i>${escapeHtml(c.status)}</i>`,
+    );
 
     // A readable listing with nothing of ours in it is not health. It means the
     // scope no longer matches reality — an installation in a differently-named
@@ -1065,7 +1042,7 @@ export interface SystemSnapshot {
   dockerContainers: string;
 }
 
-export async function collectSystemSnapshot(sql: postgres.Sql): Promise<SystemSnapshot> {
+export async function collectSystemSnapshot(sql: postgres.Sql, runShell: RunShell): Promise<SystemSnapshot> {
   const [sessions, stuckStatus, pendingQueue, processes] = await Promise.all([
     sql`
       SELECT project, last_active,
@@ -1112,15 +1089,23 @@ export async function collectSystemSnapshot(sql: postgres.Sql): Promise<SystemSn
     tmuxSessions = out.trim() || "no sessions";
   } catch { /* tmux not available */ }
 
-  // Docker containers via docker CLI (supervisor runs outside Docker context)
+  // Docker containers — the same listing the broadcast reads, for the same
+  // reason. This call site used to run `docker ps` without `-a`, so the analyst
+  // was asked to judge health from a list that could not contain a crashed
+  // container; and without the ownership filter, from one that could contain
+  // somebody else's. An unreadable listing now says so rather than arriving as
+  // an absence of containers, which is a different thing entirely.
   let dockerContainers = "unavailable";
   try {
-    const proc = Bun.spawn(
-      ["docker", "ps", "--format", "{{.Names}}\t{{.Status}}"],
-      { stdout: "pipe", stderr: "pipe" },
-    );
-    const out = await new Response(proc.stdout).text().catch(() => "");
-    dockerContainers = out.trim() || "no containers";
+    const listing = await listOwnedContainers(runShell, {
+      composeProject: COMPOSE_PROJECT,
+      projects: await knownProjectNames(sql),
+    });
+    if (listing.usable) {
+      dockerContainers = listing.containers.length
+        ? listing.containers.map((c) => `${c.name}\t${c.status}`).join("\n")
+        : "no containers";
+    }
   } catch { /* docker not available */ }
 
   return {
@@ -1212,11 +1197,11 @@ async function callGemmaForHealth(snapshot: string): Promise<{ ok: boolean; dige
   }
 }
 
-async function checkGemmaHealth(sql: postgres.Sql): Promise<void> {
+async function checkGemmaHealth(sql: postgres.Sql, runShell: RunShell): Promise<void> {
   const t0 = Date.now();
   let snapshot: SystemSnapshot;
   try {
-    snapshot = await collectSystemSnapshot(sql);
+    snapshot = await collectSystemSnapshot(sql, runShell);
   } catch (err: any) {
     console.error(`[gemma-health] snapshot collection failed: ${err?.message}`);
     return;
@@ -1417,7 +1402,7 @@ export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
   const gemmaHealthTimer = setInterval(() => {
     if (gemmaHealthRunning) return;
     gemmaHealthRunning = true;
-    checkGemmaHealth(sql).catch(() => {}).finally(() => { gemmaHealthRunning = false; });
+    checkGemmaHealth(sql, runShell).catch(() => {}).finally(() => { gemmaHealthRunning = false; });
   }, 10 * 60_000);
   gemmaHealthTimer.unref?.();
 
@@ -1451,7 +1436,7 @@ export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
     // First status broadcast after 30s settle time
     setTimeout(() => sendStatusBroadcast(sql, runShell).catch(() => {}), 20_000);
     // First Gemma health check after 2 min (give system time to stabilize)
-    setTimeout(() => checkGemmaHealth(sql).catch(() => {}), 2 * 60_000);
+    setTimeout(() => checkGemmaHealth(sql, runShell).catch(() => {}), 2 * 60_000);
   }, 10_000);
 
   console.error(`[supervisor] watchdog running (session:60s, queue:60s, voice:5min, status:5min, idle-compact:30min/${IDLE_COMPACT_MIN}min-threshold, gemma-health:10min, unanswered:2min)`);

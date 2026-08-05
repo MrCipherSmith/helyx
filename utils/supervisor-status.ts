@@ -153,6 +153,58 @@ export function parseContainerLine(line: string): ContainerIdentity | null {
   return { name, composeProject, status };
 }
 
+/** Running a shell command, so the listing below can be tested without Docker. */
+export type RunShell = (cmd: string) => Promise<{ ok: boolean; output: string }>;
+
+/**
+ * `-a`, and the compose project label first — see `isOurContainer` for why the
+ * label rather than the name, and `dockerListingUsable` for why the errors are
+ * swallowed.
+ */
+export const DOCKER_LIST_COMMAND =
+  `docker ps -a --format '{{.Label "com.docker.compose.project"}}\t{{.Names}}\t{{.Status}}' 2>/dev/null || true`;
+
+export interface OwnedContainer extends ContainerIdentity {
+  health: ContainerHealth;
+}
+
+export interface OwnedListing {
+  /** False when the output cannot be trusted — a dead daemon reads as an empty host. */
+  usable: boolean;
+  containers: OwnedContainer[];
+}
+
+/**
+ * Which of this host's containers are ours, and what state each is in.
+ *
+ * The one place that asks Docker. It exists because the question was being
+ * asked twice: the status broadcast ran `docker ps -a` and the health analyst's
+ * snapshot ran `docker ps`, so the analyst was judging system health from a
+ * list that structurally could not contain a dead container — the exact defect
+ * flow 004 had already fixed thirty lines away.
+ *
+ * Two call sites answering the same question with different commands is not a
+ * bug that gets fixed by correcting one of them. Rendering is what the
+ * consumers are entitled to differ about, and rendering is all they still do.
+ */
+export async function listOwnedContainers(
+  runShell: RunShell,
+  scope: { composeProject: string; projects: readonly string[] },
+): Promise<OwnedListing> {
+  const result = await runShell(DOCKER_LIST_COMMAND);
+  const usable = dockerListingUsable(result.output);
+
+  const containers: OwnedContainer[] = [];
+  for (const line of result.output.split("\n").filter(Boolean)) {
+    const parsed = parseContainerLine(line);
+    if (!parsed) continue;
+    if (!isOurContainer(parsed, scope)) continue;
+    containers.push({ ...parsed, health: classifyContainer(parsed.status) });
+  }
+
+  return { usable, containers };
+}
+
 export interface SessionSnapshot {
   /** `active_status_messages.updated_at` in ms, or null when there is none. */
   asmUpdatedMs: number | null;
