@@ -186,16 +186,6 @@ export class StatusManager {
    */
   private readonly lastOtherMessageId = new Map<string, number>();
   /**
-   * Set only while `updateStatus` is opening a status of its own.
-   *
-   * `sendStatusMessage` is shared with the poller, which opens real turns; the
-   * flag is how the state it builds learns which of the two it is. Read and
-   * cleared inside the same call, never across an await the poller could
-   * interleave with — `sendStatusMessage` is not re-entrant for one key, and
-   * the generation counter is what enforces that.
-   */
-  private openingContinuation = false;
-  /**
    * Generation counter per state-key for in-flight sendStatusMessage calls.
    * Allows a slow Telegram response that resolves after the 4s deadline to detect
    * that a newer call (or a deleteStatusMessage) has superseded it, and self-delete
@@ -683,7 +673,22 @@ export class StatusManager {
     else this.currentQuestion.delete(key);
   }
 
-  async sendStatusMessage(chatId: string, stage: string, replyToMsgId?: number): Promise<string | null> {
+  async sendStatusMessage(
+    chatId: string,
+    stage: string,
+    replyToMsgId?: number,
+    /**
+     * Marks the status as the tail of a step rather than a turn.
+     *
+     * A parameter and not instance state, which is what it was first: a field
+     * set around the `await` inside this method is read by every other call
+     * that lands during it, including the poller opening a real turn for a
+     * different chat. That turn would then not hold the operator's next
+     * message and would be closed by the idle window — a real turn quietly
+     * behaving like a continuation. Found in review.
+     */
+    options: { continuation?: boolean } = {},
+  ): Promise<string | null> {
     const token = this.ctx.token();
     if (!token) {
       channelLogger.warn("sendStatusMessage: no TELEGRAM_BOT_TOKEN");
@@ -777,7 +782,7 @@ export class StatusManager {
         nextEditDelay: null,
         lastEditAt: 0,
         deferredEditTimer: null,
-        continuation: this.openingContinuation,
+        continuation: options.continuation ?? false,
         movedFor: null,
       };
       const scheduleTick = (key: string): void => {
@@ -933,12 +938,7 @@ export class StatusManager {
     if (!open) return;
 
     channelLogger.info({ chatId, repliedAt }, "status: work continued past the reply — opening a continuation");
-    this.openingContinuation = true;
-    try {
-      await this.sendStatusMessage(chatId, stage);
-    } finally {
-      this.openingContinuation = false;
-    }
+    await this.sendStatusMessage(chatId, stage, undefined, { continuation: true });
     this.armResponseGuard(chatId);
   }
 

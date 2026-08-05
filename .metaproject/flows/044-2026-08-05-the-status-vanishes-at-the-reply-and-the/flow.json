@@ -3,9 +3,9 @@
   "id": "044",
   "slug": "the-status-vanishes-at-the-reply-and-the",
   "title": "The status vanishes at the reply, and the work goes on without it",
-  "status": "in-progress",
+  "status": "implemented",
   "createdAt": "2026-08-05T21:07:39.254Z",
-  "updatedAt": "2026-08-05T21:10:43.725Z",
+  "updatedAt": "2026-08-05T21:16:11.862Z",
   "source": {
     "type": "description",
     "ref": null
@@ -13,7 +13,7 @@
   "acChecksum": "sha256:6f07366068bc4a6fc7b650d40ee89f250acf30245138337e875f865189595fbf",
   "acConfirmed": {},
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/85"
   },
   "tasks": [
     {
@@ -96,6 +96,11 @@
       "at": "2026-08-05T21:10:43.725Z",
       "event": "ac-updated",
       "detail": "Narrowed to continuations: an in-turn status is governed by the response guard, and adding a second closing rule for it would race that guard."
+    },
+    {
+      "at": "2026-08-05T21:16:11.862Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/85"
     }
   ]
 }

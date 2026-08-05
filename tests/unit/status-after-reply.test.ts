@@ -100,6 +100,24 @@ describe("work that outlives its reply", () => {
     expect(status.getBusyChats().has(CHAT)).toBe(true);
   });
 
+  test("a turn opened while a continuation is being opened elsewhere is still a turn", async () => {
+    // The continuation flag was an instance field first, set around the await
+    // inside `sendStatusMessage`. Any other call landing during that await read
+    // it — including the poller opening a real turn for a different chat, which
+    // then would not hold the operator's next message and would be closed by
+    // the idle window. Raised in review; it is a parameter now.
+    const { status } = await manager();
+    const other = "-1009999";
+    await upToTheReply(status);
+
+    const reopening = status.updateStatus(CHAT, "● Explore: reading");
+    await status.sendStatusMessage(other, "Thinking");
+    await reopening;
+
+    expect(status.getBusyChats().has(other)).toBe(true);
+    expect(status.getBusyChats().has(CHAT)).toBe(false);
+  });
+
   test("nothing is re-opened while the operator has a message waiting", async () => {
     // The poller is about to open a status for the next turn. Two would fight,
     // and the operator's own message would sit behind the older one.

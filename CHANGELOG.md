@@ -33,6 +33,14 @@ Three details that are not obvious and each cost something:
   landing, never to the edit — a move is a delete plus a send, and the edits run
   every few seconds.
 
+Raised in review and fixed: the flag marking a status as a continuation was an
+instance field set around the `await` inside `sendStatusMessage`, so any other
+call landing during that await read it — including the poller opening a real
+turn for a *different* chat. That turn would then not hold the operator's next
+message and would be closed by the idle window: a real turn quietly behaving
+like a continuation. It is a parameter now, and a test opens a turn for another
+chat while a continuation is being opened.
+
 The decisions — re-open, close, move — are three pure functions in
 `utils/status-continuation.ts`, because each is a question about elapsed time
 and forty-five seconds is not a test. `schedulePostReplyCheck` and the comment
