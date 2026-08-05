@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+### feat: a review leaves something behind
+
+`scripts/review.ts` ran every reviewer, printed the reports to a terminal and
+exited. The structure it discarded would have serialized directly, and the
+receiver for it already existed — `keryx memory ingest --from-review <path>` is
+in the memory module's CLI surface and nothing here had ever produced a file
+for it.
+
+What that cost, repeatedly and recently: a second review of a branch cannot
+know what the first said. One flow in this programme went three rounds, and
+nothing but a chat log records what rounds one and two claimed or which of it
+turned out to be wrong.
+
+Every run now writes `logs/reviews/<stamp>-<branch>/run.json` and `report.md`.
+Truncation is recorded as a flag rather than left inside an error string, an
+unavailable reviewer is part of the record rather than omitted, and a run in
+which every reviewer failed is kept too — it is the case where nobody read the
+change. Artifacts are pruned by age and count, except the newest run of each
+branch, which is exactly the review nobody can reconstruct from memory.
+
+The console contract is unchanged and now testable: `reviewConsoleLines` holds
+the shape `CLAUDE.md` depends on, including the bare `SELF` line, and the
+artifact path goes to stderr so nothing reading stdout can be confused by it.
+Persistence happens after printing and cannot fail the review: an unwritable
+directory warns and returns null.
+
+One measurement worth writing down: fed the first artifact to
+`keryx memory ingest --from-review`, it exits 0 and creates a "lesson" per
+heading line — eleven of them out of an eight-line header. The sender existing
+was only half the problem; the two formats have never met, and aligning them
+belongs to whoever owns the ingester.
+
 ### feat: something reads what the bot says about itself
 
 The supervisor runs ten scheduled checks. They read Docker, `message_queue`,
