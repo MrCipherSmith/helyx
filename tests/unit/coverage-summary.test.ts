@@ -33,14 +33,22 @@ async function summarize(lcov: string): Promise<Record<string, { lines: { total:
     stdout: "pipe",
     stderr: "pipe",
   });
-  await proc.exited;
+  // Drained while the process runs, not after it: an unread pipe that fills its
+  // buffer blocks the writer, and a test that hangs for a reason unrelated to
+  // what it is testing is worse than no test. Raised in review; the script
+  // prints one line today, and that is not a property to depend on.
+  const [, stderr] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
 
-  // Raised in review: without this, a script that failed while leaving an
-  // older or partial file behind would be read as a pass. The assertions are
-  // strict enough that it is unlikely, and "unlikely" is not the standard for
-  // the thing the whole quality reading rests on.
+  // Without this, a script that failed while leaving an older or partial file
+  // behind would be read as a pass. The assertions are strict enough that it is
+  // unlikely, and "unlikely" is not the standard for the thing the whole
+  // quality reading rests on.
   if (proc.exitCode !== 0) {
-    throw new Error(`coverage-summary.ts exited ${proc.exitCode}: ${await new Response(proc.stderr).text()}`);
+    throw new Error(`coverage-summary.ts exited ${proc.exitCode}: ${stderr}`);
   }
 
   return JSON.parse(readFileSync(join(dir, "coverage-summary.json"), "utf-8"));
