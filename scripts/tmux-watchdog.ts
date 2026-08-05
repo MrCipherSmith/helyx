@@ -170,13 +170,15 @@ const DEV_CHANNEL_CONFIRM_RE = /Enter to confirm/i;
  * Only checks the visible screen (no scroll-back) — if it scrolled away, it was
  * already confirmed.
  */
-function detectDevChannelPrompt(lines: string[]): boolean {
+/** Exported for the tests, which drive them over pane text rather than a terminal. */
+export function detectDevChannelPrompt(lines: string[]): boolean {
   const hasWarning = lines.some((l) => DEV_CHANNEL_SIGNAL_RE.test(l));
   const hasConfirm = lines.some((l) => DEV_CHANNEL_CONFIRM_RE.test(l));
   return hasWarning && hasConfirm;
 }
 
-function detectPermissionPrompt(
+/** Exported for the tests, which drive them over pane text rather than a terminal. */
+export function detectPermissionPrompt(
   lines: string[],
 ): { toolName: string; description: string } | null {
   // Shared with utils/status-format.ts, which shows 💬 for the same condition.
@@ -207,12 +209,14 @@ function detectPermissionPrompt(
 }
 
 /** True if the pane currently shows an active Claude spinner line */
-function detectSpinner(lines: string[]): boolean {
+/** Exported for the tests, which drive them over pane text rather than a terminal. */
+export function detectSpinner(lines: string[]): boolean {
   // Look at the last 10 lines (spinner is near the bottom)
   return lines.slice(-10).some((l) => SPINNER_RE.test(l.trim()));
 }
 
-function detectEditor(lines: string[]): "vim" | "nano" | null {
+/** Exported for the tests, which drive them over pane text rather than a terminal. */
+export function detectEditor(lines: string[]): "vim" | "nano" | null {
   for (const l of lines.slice(-20)) {
     if (VIM_RE.test(l))  return "vim";
     if (NANO_RE.test(l)) return "nano";
@@ -220,7 +224,8 @@ function detectEditor(lines: string[]): "vim" | "nano" | null {
   return null;
 }
 
-function detectCredential(lines: string[]): string | null {
+/** Exported for the tests, which drive them over pane text rather than a terminal. */
+export function detectCredential(lines: string[]): string | null {
   for (const l of lines.slice(-5)) {
     const m = l.trim().match(CREDENTIAL_RE);
     if (m) return m[0].trim();
@@ -228,7 +233,8 @@ function detectCredential(lines: string[]): string | null {
   return null;
 }
 
-function detectCrash(lines: string[]): number | null {
+/** Exported for the tests, which drive them over pane text rather than a terminal. */
+export function detectCrash(lines: string[]): number | null {
   for (const l of lines.slice(-10)) {
     const m = l.match(CRASH_RE);
     if (m) return parseInt(m[1], 10);
@@ -240,7 +246,8 @@ function detectCrash(lines: string[]): number | null {
 // Alert cooldown
 // ---------------------------------------------------------------------------
 
-function canAlert(state: WindowState, kind: AlertKind, cooldownMs: number): boolean {
+/** Exported for the tests, which drive them over pane text rather than a terminal. */
+export function canAlert(state: WindowState, kind: AlertKind, cooldownMs: number): boolean {
   const last = state.alerts[kind];
   return !last || Date.now() - last > cooldownMs;
 }
@@ -468,7 +475,8 @@ async function pollPermissionResponse(
 // Main poll loop
 // ---------------------------------------------------------------------------
 
-async function fetchActiveSessions(sql: postgres.Sql): Promise<ActiveSession[]> {
+/** Exported for the tests, which drive them over pane text rather than a terminal. */
+export async function fetchActiveSessions(sql: postgres.Sql): Promise<ActiveSession[]> {
   const rows = await sql`
     SELECT
       s.id           AS session_id,
