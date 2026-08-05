@@ -39,8 +39,17 @@ import { readdir, stat, readFile } from "fs/promises";
 /** How far back the card looks. Enough for a turn, short enough to read fast. */
 export const WINDOW_BYTES = 64 * 1024;
 
-/** Where the local model lives, and how long it may take. */
-const OLLAMA_URL = process.env.OLLAMA_URL || "http://localhost:11434";
+/**
+ * Where the local model lives, and how long it may take.
+ *
+ * No default: inside the container a loopback address would point at the
+ * container itself, where nothing is listening — `docker-compose.yml` sets
+ * `OLLAMA_URL` to `host.docker.internal`. An unset variable means no model, and
+ * no model means the card renders without its two lines, which it is built to
+ * do anyway. (The security gate also refuses a loopback literal in this path,
+ * and it is right to: a hardcoded one would be wrong here in both directions.)
+ */
+const OLLAMA_URL = process.env.OLLAMA_URL ?? null;
 const READING_TIMEOUT_MS = 6_000;
 
 /**
@@ -109,6 +118,7 @@ export function setNowDeps(next: Partial<NowDeps>): () => void {
  * the card above it is the answer.
  */
 async function readingFromModel(snapshot: SessionSnapshot, project: string): Promise<string | null> {
+  if (!OLLAMA_URL) return null;
   if (!snapshot.found || !snapshot.lastLine) return null;
   const model = process.env.SUMMARIZE_MODEL || process.env.OLLAMA_CHAT_MODEL || "gemma4:e4b";
   const agents = snapshot.agents.map((a) => `${a.label}: ${a.lastLine ?? "—"}`).join("\n");
