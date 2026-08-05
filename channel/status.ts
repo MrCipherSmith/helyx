@@ -938,8 +938,11 @@ export class StatusManager {
     if (!open) return;
 
     channelLogger.info({ chatId, repliedAt }, "status: work continued past the reply — opening a continuation");
-    await this.sendStatusMessage(chatId, stage, undefined, { continuation: true });
-    this.armResponseGuard(chatId);
+    const failed = await this.sendStatusMessage(chatId, stage, undefined, { continuation: true });
+    // Only when there is something to guard. Raised in review: arming after a
+    // failed open leaves a guard with no status behind it, which fires a
+    // "still working?" notice about a message the operator cannot see.
+    if (failed === null && this.activeStatus.has(key)) this.armResponseGuard(chatId);
   }
 
   /**
@@ -972,9 +975,12 @@ export class StatusManager {
     // never been edited, and an unchanged signature would skip the first edit
     // and leave it showing the text it was created with.
     state.lastSentSignature = null;
-    unpinTelegramMessage(token, state.chatId, old);
+    // Fire-and-forget, all three: the status has already moved, and a pin that
+    // fails costs a pin, not the message. `void` says so out loud — raised in
+    // review as reading like a dropped promise.
+    void unpinTelegramMessage(token, state.chatId, old);
     void deleteTelegramMessage(token, state.chatId, old);
-    pinTelegramMessage(token, state.chatId, res.messageId);
+    void pinTelegramMessage(token, state.chatId, res.messageId);
     this.persistStatusMessage(key, state).catch(() => {});
     channelLogger.info({ chatId: state.chatId, from: old, to: res.messageId }, "status: moved below what landed after it");
   }
