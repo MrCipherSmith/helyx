@@ -3,9 +3,9 @@
   "id": "047",
   "slug": "the-dashboard-is-enabled-at-runtime-and-",
   "title": "The dashboard is enabled at runtime and absent from the image",
-  "status": "in-progress",
+  "status": "implemented",
   "createdAt": "2026-08-05T21:59:16.409Z",
-  "updatedAt": "2026-08-05T21:59:16.589Z",
+  "updatedAt": "2026-08-05T22:02:57.819Z",
   "source": {
     "type": "description",
     "ref": null
@@ -13,7 +13,7 @@
   "acChecksum": "sha256:92e97dc7f10cf2e260ca852ac259366283a4b65677ea09ac4001182e5cabff12",
   "acConfirmed": {},
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/88"
   },
   "tasks": [
     {
@@ -86,6 +86,11 @@
     {
       "at": "2026-08-05T21:59:16.589Z",
       "event": "started"
+    },
+    {
+      "at": "2026-08-05T22:02:57.819Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/88"
     }
   ]
 }

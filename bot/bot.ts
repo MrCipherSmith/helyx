@@ -31,14 +31,20 @@ export function createBot(): Bot {
     : "";
   if (CONFIG.TELEGRAM_WEBHOOK_URL) {
     void (async () => {
-      const { dashboardFacts } = await import("../mcp/dashboard-api.ts");
-      const { shouldOfferMiniApp } = await import("../utils/dashboard-readiness.ts");
-      if (!shouldOfferMiniApp(await dashboardFacts())) {
-        logger.warn("mini app not built — menu button not set");
-        return;
+      // The whole body, not just the API call: the dynamic imports and the
+      // directory reads are awaits too, and an unhandled rejection out here
+      // would take the process down over a menu button. Raised in review.
+      try {
+        const { dashboardFacts } = await import("../mcp/dashboard-api.ts");
+        const { shouldOfferMiniApp } = await import("../utils/dashboard-readiness.ts");
+        if (!shouldOfferMiniApp(await dashboardFacts())) {
+          logger.warn("mini app not built — menu button not set");
+          return;
+        }
+        await bot.api.setChatMenuButton({ menu_button: { type: "web_app", text: "Dev Hub", web_app: { url: webAppUrl } } });
+      } catch (err) {
+        logger.error({ err }, "failed to set menu button");
       }
-      await bot.api.setChatMenuButton({ menu_button: { type: "web_app", text: "Dev Hub", web_app: { url: webAppUrl } } })
-        .catch((err) => logger.error({ err }, "failed to set menu button"));
     })();
   }
 
