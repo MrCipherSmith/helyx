@@ -47,6 +47,14 @@ when it comes back full and holds nothing for the door, which trades the
 stranded chat history for the recovery. A backlog that fits, or one that
 carried a command, still costs the operator nothing.
 
+Round two of the same review caught the fix's own bug: once the command was in
+`seen`, the next re-read found nothing to do and confirmed the window anyway —
+the door would have executed the operator's `/up` and then thrown away the
+messages that arrived with it. A window is now judged by what it *held*, not by
+what was left to do in it. A read that lands after the bot comes back is
+dropped too, since the bot owns the token from that moment and would replay the
+same command.
+
 Also in `channel/status.ts`: `lastEditAt` was stamped after the edit returned,
 while the comment beside it promised the start of the request. A Telegram call
 that spent thirteen seconds in the client's retry loop was charged the throttle

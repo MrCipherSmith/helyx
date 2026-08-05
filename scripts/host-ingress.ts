@@ -71,6 +71,9 @@ export const WINDOW = 100;
 /** How many update ids are remembered. Enough for any single outage. */
 export const SEEN_CAPACITY = 500;
 
+/** For asking `shouldExecute` what a window held, rather than what is left to do. */
+const NOTHING_SEEN: ReadonlySet<number> = new Set<number>();
+
 export interface TelegramUpdate {
   update_id: number;
   message?: {
@@ -210,14 +213,23 @@ export class HostIngress {
       ...(this.confirmedThrough === null ? {} : { offset: this.confirmedThrough + 1 }),
     });
     const updates: TelegramUpdate[] = Array.isArray(result?.result) ? result.result : [];
-    let acted = false;
+
+    // The bot may have come back while this read was in flight. Its own
+    // long-poll owns the token from that moment, and a command executed here
+    // now would be executed again by the bot when it replays the backlog.
+    if (!this.armed) return;
+
+    let carriedCommand = false;
 
     for (const update of updates) {
-      const command = shouldExecute(update, {
-        adminChatId: this.deps.adminChatId,
-        now: this.now(),
-        seen: this.seen,
-      });
+      const ctx = { adminChatId: this.deps.adminChatId, now: this.now() };
+      const command = shouldExecute(update, { ...ctx, seen: this.seen });
+      // Asked a second time without the memory: a command already acted on is
+      // still a command this window carried. Without that distinction the
+      // window would be confirmed on the *next* poll — the door would execute
+      // the operator's `/up` and then throw away the messages that arrived
+      // with it, which is exactly what confirming was supposed to avoid.
+      if (command ?? shouldExecute(update, { ...ctx, seen: NOTHING_SEEN })) carriedCommand = true;
       // Remembered whether or not it was ours: a backlog is re-read on every
       // poll, and re-parsing the same hundred updates every five seconds is
       // work nobody asked for.
@@ -225,7 +237,6 @@ export class HostIngress {
       if (!command) continue;
 
       this.log(`executing /${command} from the host door`);
-      acted = true;
       await this.execute(command, update).catch((err) => this.log(`command failed: ${err}`));
     }
 
@@ -240,7 +251,7 @@ export class HostIngress {
     // and it is taken only when the window came back full and held nothing for
     // us. A backlog that fits, or one that contained a command, still costs
     // the operator nothing.
-    if (!acted && updates.length >= WINDOW) {
+    if (!carriedCommand && updates.length >= WINDOW) {
       const last = updates[updates.length - 1]!;
       this.confirmedThrough = last.update_id;
       this.log(`backlog full and no command in it — confirming through ${last.update_id} to reach newer updates`);

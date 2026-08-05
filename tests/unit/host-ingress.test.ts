@@ -256,18 +256,67 @@ describe("a backlog deeper than one read", () => {
     expect(reads[1]!.body.offset).toBe(WINDOW + 1);
   });
 
-  test("a full window that carried a command is not confirmed", async () => {
-    // The command was reached, so the backlog behind it is still the
+  test("a full window that carried a command is never confirmed, however often it is re-read", async () => {
+    // The command was reached, so the backlog around it is still the
     // operator's and still worth keeping.
+    //
+    // Three polls, not two, and that is the point: the first version of this
+    // test stopped at two and passed against code that confirmed the window on
+    // the third. Once the command is in `seen` the re-read finds nothing to do,
+    // and "nothing to do" is not the same as "nothing was here" — the door
+    // would have executed the operator's `/up` and then thrown away the
+    // messages that arrived with it.
     const withCommand = [...noise(WINDOW - 1), update({ id: WINDOW })];
     const { ingress, calls } = door({ alive: [false], updates: withCommand });
 
     for (let i = 0; i < ARM_AFTER_FAILURES; i++) await ingress.probe();
     await ingress.poll();
     await ingress.poll();
+    await ingress.poll();
 
-    const reads = calls.filter((c) => c.method === "getUpdates");
-    expect(reads[1]!.body).not.toHaveProperty("offset");
+    for (const read of calls.filter((c) => c.method === "getUpdates")) {
+      expect(read.body).not.toHaveProperty("offset");
+    }
+  });
+
+  test("a read that lands after the bot comes back is dropped, not executed", async () => {
+    // The bot's own long-poll owns the token from the moment it answers, and a
+    // command executed here after that would be executed a second time when
+    // the bot replays the backlog nobody confirmed.
+    //
+    // Built by hand rather than through `door`: the read has to still be in
+    // flight when the probe succeeds, and that means holding the answer open.
+    const shell: string[] = [];
+    let release: (value: unknown) => void = () => {};
+    const held = new Promise((resolve) => { release = resolve; });
+    let alive = false;
+
+    const ingress = new HostIngress({
+      run: async (cmd: string) => { shell.push(cmd); return { ok: true, output: "ok" }; },
+      stack: { botDir: "/srv/helyx", bunBin: "/usr/bin/bun", cli: "/srv/helyx/cli.ts" },
+      token: "fake",
+      adminChatId: ADMIN,
+      probeBot: async () => alive,
+      telegram: async (method) => {
+        if (method !== "getUpdates") return { result: { message_id: 1 } };
+        await held;
+        return { result: [update({ id: 5 })] };
+      },
+      now: () => NOW,
+      log: () => {},
+    });
+
+    for (let i = 0; i < ARM_AFTER_FAILURES; i++) await ingress.probe();
+    const reading = ingress.poll();
+
+    alive = true;
+    await ingress.probe();
+    expect(ingress.isArmed).toBe(false);
+
+    release(null);
+    await reading;
+
+    expect(shell).toEqual([]);
   });
 
   test("a window that is not full is never confirmed, however often it is read", async () => {
