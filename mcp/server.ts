@@ -40,6 +40,7 @@ let askQuestionWaiters = 0;
 import { runQuestionExchange, resolveTarget } from "../services/ask-question.ts";
 import { sendTelegramMessage, editTelegramMessage } from "../channel/telegram.ts";
 import { summarizeOnDisconnect, summarizeWork, extractFactsFromTranscript } from "../memory/summarizer.ts";
+import { localTranscriptPath } from "../utils/transcript-locate.ts";
 import { verifyJwt } from "../dashboard/auth.ts";
 import { IncomingMessage, ServerResponse } from "http";
 import { createServer } from "http";
@@ -303,6 +304,12 @@ export interface TurnSummaryDeps {
   token: string | undefined;
   read: (path: string) => string;
   send: typeof sendTelegramMessage;
+  /**
+   * How a host transcript path becomes one this process can open. Optional so
+   * that the tests written before the container case existed still describe a
+   * complete set of dependencies.
+   */
+  locate?: (path: string) => string | null;
 }
 
 export async function deliverTurnSummary(
@@ -317,11 +324,26 @@ export async function deliverTurnSummary(
 ): Promise<void> {
   if (!deps.token) return;
 
+  // The hook's path is the host's and this process may be in a container, where
+  // the read below threw on every turn and this function returned — silently,
+  // as designed, which is why it left no trace of never having worked.
+  //
+  // The translation is attempted only after a real failure rather than in front
+  // of the read: on the host the first read succeeds and nothing else runs, and
+  // the injected `read` a test provides keeps meaning exactly what it meant
+  // before. Translation only, no directory scan — unlike the session-end
+  // extractor, this runs after every turn and a courtesy must stay cheap.
   let transcript: string;
   try {
     transcript = deps.read(transcriptPath);
   } catch {
-    return;
+    const readable = (deps.locate ?? localTranscriptPath)(transcriptPath);
+    if (!readable) return;
+    try {
+      transcript = deps.read(readable);
+    } catch {
+      return;
+    }
   }
 
   const summary = summaryFor(transcript);

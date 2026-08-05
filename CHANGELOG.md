@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### fix: the transcript the hook reports, and the one the bot can open
+
+A Claude Code session runs on the host and its Stop hook posts
+`/home/<user>/.claude/projects/<slug>/<id>.jsonl`. The bot reads that report
+from inside a container, where the same directory is mounted at
+`HOST_CLAUDE_CONFIG` and `/home/<user>` does not exist. Both consumers took the
+path literally, so neither had ever worked in a container deployment.
+
+- `extractFactsFromTranscript` logged `file not found` and returned — 4136
+  times in the current `logs/bot.log`. Not one fact has been extracted from a
+  transcript since the hook was wired up.
+- `deliverTurnSummary` threw on the read and returned. Its failures are silent
+  by design — "a courtesy at the end of work that already succeeded" — so it
+  left no trace of never having run at all.
+
+`localTranscriptPath` in `utils/transcript-locate.ts` re-roots a host path at
+whatever `claudeConfigRoot()` resolves to, carrying only the segment after
+`/.claude/` and rejecting one that contains `..`: the incoming path was
+validated by the caller and the derived one is not validated again. The
+session-end extractor falls back to the existing `resolveTranscript` scan, which
+matches on the `cwd` each transcript declares; the per-turn summary gets the
+cheap translation only, and attempts it just once, after a real read failure —
+on the host the first read succeeds and nothing else runs.
+
 ### fix: a deleted forum topic stopped being an invisible failure
 
 The keryx topic was deleted from the client, and nothing in the system noticed.

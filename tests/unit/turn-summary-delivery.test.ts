@@ -134,6 +134,39 @@ describe("delivering the summary", () => {
     expect(sent).toEqual([]);
   });
 
+  test("a host path the container cannot open is retried where it is mounted", async () => {
+    // The defect this covers: the hook reports the session's path from the
+    // host, the bot reads it from inside a container, and the read threw on
+    // every single turn. Silently — so the feature looked like a feature that
+    // had nothing to say.
+    const CONTAINER = "/host-claude-config/projects/p/t.jsonl";
+    const { deps, sent } = harness({});
+    const attempted: string[] = [];
+    deps.read = (path: string) => {
+      attempted.push(path);
+      if (path !== CONTAINER) throw new Error("ENOENT");
+      return [operator("go"), said("done")].join("\n");
+    };
+    deps.locate = (path: string) => (path === "/home/altsay/.claude/projects/p/t.jsonl" ? CONTAINER : null);
+
+    await deliverTurnSummary("/home/altsay/.claude/projects/p/t.jsonl", PROJECT, deps);
+
+    // The host path is still tried first: on a host process it succeeds and
+    // nothing else runs.
+    expect(attempted).toEqual(["/home/altsay/.claude/projects/p/t.jsonl", CONTAINER]);
+    expect(sent.length).toBe(1);
+    expect(sent[0]!.text).toContain("done");
+  });
+
+  test("a path that resolves nowhere is still silence", async () => {
+    const { deps, sent } = harness({});
+    deps.locate = () => null;
+
+    await deliverTurnSummary("/home/altsay/.claude/projects/p/t.jsonl", PROJECT, deps);
+
+    expect(sent).toEqual([]);
+  });
+
   test("no token, no send, and no database query either", async () => {
     const { deps, sent, db } = harness({
       transcript: [operator("go"), said("done")].join("\n"),
