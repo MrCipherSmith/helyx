@@ -128,6 +128,9 @@ describe("a session that spawned subagents", () => {
     const block = await monitor.poll();
 
     expect(block).toContain("collecting what they found");
+    // And the fan-out is in there too. Without this the test passes with the
+    // whole feature removed, which review pointed out is false confidence.
+    expect(block).toContain("[Explore]");
   });
 
   test("an agent that stops being listed is dropped rather than tailed for ever", async () => {
@@ -159,6 +162,51 @@ describe("a session that spawned subagents", () => {
     await monitor.attach();
 
     expect(await monitor.poll()).toBeNull();
+  });
+
+  test("the turn's tokens include what the subagents spent", async () => {
+    // A header showing only the parent's output would report a fraction of what
+    // the turn cost while three agents ran. Stated as a test because it is a
+    // decision, not an accident.
+    const { agents } = session();
+    const monitor = new TranscriptSession(PROJECT, { root, subagentsSince: 0 });
+    await monitor.attach();
+
+    const agent = spawnAgent(agents, "a1", { agentType: "Explore" });
+    append(agent, {
+      type: "assistant",
+      cwd: PROJECT,
+      message: { content: [{ type: "text", text: "found it" }], usage: { output_tokens: 1234 } },
+    });
+
+    const block = await monitor.poll();
+
+    // Rendered as the header renders any total — 1.2k, not 1234.
+    expect(block).toContain("1.2k tokens");
+  });
+
+  test("an agent whose file goes away and returns is not read twice", async () => {
+    // The tail is dropped when the file stops being listed; re-created at zero
+    // it would replay every line and count every token again. The offset is
+    // remembered — and `TranscriptTail` still refuses one that is not a record
+    // boundary, so a genuinely new file at the same path starts over.
+    const { agents } = session();
+    const monitor = new TranscriptSession(PROJECT, { root, maxAgents: 1, subagentsSince: 0 });
+    await monitor.attach();
+
+    const first = spawnAgent(agents, "a1", { agentType: "Explore" });
+    append(first, toolCall("Read", { file_path: "only-once.ts" }));
+    expect(await monitor.poll()).toContain("only-once.ts");
+
+    // It leaves the listing and comes back with the same content.
+    const saved = require("fs").readFileSync(first);
+    rmSync(first);
+    await monitor.poll();
+    writeFileSync(first, saved);
+
+    const block = await monitor.poll();
+
+    expect(block).toBeNull();
   });
 
   test("a session with no fan-out behaves exactly as it did", async () => {

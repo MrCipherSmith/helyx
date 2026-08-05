@@ -36,6 +36,15 @@ at offset zero, so its lines arrived twice and its tokens were counted twice. An
 agent now keeps its place until its file goes away, and the free slots go to the
 newest of the rest.
 
+Round two of the same review added three more, all taken: the cap is clamped
+rather than bent when more agents are somehow tracked than it allows; an agent
+whose file goes away and comes back resumes from where it was read to, since a
+tail re-created at zero would replay every line and count every token twice; and
+a subagent's output tokens count into the turn's total deliberately — a header
+showing only the parent's would report a fraction of what the turn cost while
+three agents ran. It also caught a test that passed with the feature removed,
+which is now the sharper assertion it should have been.
+
 The layout is Claude Code's, not this repository's. It is stated in the tests as
 assertions, so a change to it fails by name instead of going quietly silent.
 

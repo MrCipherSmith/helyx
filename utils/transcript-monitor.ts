@@ -133,6 +133,16 @@ export class TranscriptSession {
    * for exactly as long as the fan-out runs — which reads as hung.
    */
   private readonly agents = new Map<string, { file: SubagentFile; tail: TranscriptTail }>();
+  /**
+   * Where each agent's file had been read to when its tail was dropped.
+   *
+   * An agent whose file disappears and comes back — a restart, or a race —
+   * would otherwise be re-read from the beginning, so its lines would arrive
+   * twice and its tokens be counted twice. `TranscriptTail` already refuses an
+   * offset that is not a record boundary, so a genuinely new file at the same
+   * path still starts from zero.
+   */
+  private readonly agentOffsets = new Map<string, number>();
   private readonly startedAt: number;
 
   constructor(
@@ -171,8 +181,10 @@ export class TranscriptSession {
     const found = selectAgents(all, new Set(this.agents.keys()), this.options.maxAgents ?? MAX_TRACKED_AGENTS);
 
     const live = new Set(found.map((f) => f.agentId));
-    for (const id of [...this.agents.keys()]) {
-      if (!live.has(id)) this.agents.delete(id);
+    for (const [id, tracked] of [...this.agents.entries()]) {
+      if (live.has(id)) continue;
+      this.agentOffsets.set(id, tracked.tail.position);
+      this.agents.delete(id);
     }
 
     const out: string[] = [];
@@ -181,13 +193,17 @@ export class TranscriptSession {
       if (!tracked) {
         // From the beginning: a fan-out that started between two polls has
         // already written the lines the operator is waiting for.
-        tracked = { file, tail: TranscriptTail.at(file.path, 0) };
+        tracked = { file, tail: TranscriptTail.at(file.path, this.agentOffsets.get(file.agentId) ?? 0) };
         this.agents.set(file.agentId, tracked);
       }
       const lines = await tracked.tail.read().catch(() => [] as string[]);
       const rendered: string[] = [];
       for (const line of lines) {
         const entry = parseEntry(line);
+        // Counted into the same total as the parent's, deliberately: a fan-out's
+        // output is what this turn cost, and a header that showed only the
+        // parent's would report a fraction of it while three agents ran. Raised
+        // in review as a decision worth stating rather than leaving implied.
         const tokens = outputTokens(entry);
         if (tokens !== null) this.tokenTotal += tokens;
         rendered.push(...renderEntry(entry));

@@ -157,7 +157,10 @@ export function selectAgents(
 ): SubagentFile[] {
   const keep = found.filter((f) => tracked.has(f.agentId));
   const rest = found.filter((f) => !tracked.has(f.agentId));
-  return [...keep, ...rest].slice(0, Math.max(max, keep.length));
+  // Clamped to the cap rather than to whichever is larger. The tracked set can
+  // only exceed it if something upstream went wrong, and a cap that bends under
+  // that is not a cap — raised in review as a guarantee worth making mechanical.
+  return [...keep, ...rest].slice(0, max);
 }
 
 /**
