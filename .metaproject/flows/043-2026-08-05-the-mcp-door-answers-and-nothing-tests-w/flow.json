@@ -3,9 +3,9 @@
   "id": "043",
   "slug": "the-mcp-door-answers-and-nothing-tests-w",
   "title": "The MCP door answers, and nothing tests what it answers",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-05T20:40:03.925Z",
-  "updatedAt": "2026-08-05T20:45:34.126Z",
+  "updatedAt": "2026-08-05T20:51:11.948Z",
   "source": {
     "type": "description",
     "ref": null
@@ -197,6 +197,31 @@
       "at": "2026-08-05T20:45:34.126Z",
       "event": "completion-failed",
       "detail": "main-merge: a585365 is not contained in origin/main"
+    },
+    {
+      "at": "2026-08-05T20:50:41.772Z",
+      "event": "completing",
+      "detail": "merged commit: a585365"
+    },
+    {
+      "at": "2026-08-05T20:50:41.782Z",
+      "event": "completion-failed",
+      "detail": "main-merge: a585365 is not contained in origin/main"
+    },
+    {
+      "at": "2026-08-05T20:51:11.941Z",
+      "event": "completing",
+      "detail": "merged commit: e9cdad0"
+    },
+    {
+      "at": "2026-08-05T20:51:11.948Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
-  ]
+  ],
+  "merged": {
+    "commit": "e9cdad0",
+    "ref": "origin/main",
+    "at": "2026-08-05T20:51:11.948Z"
+  }
 }
