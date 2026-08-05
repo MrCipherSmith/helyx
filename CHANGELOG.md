@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+### test: what the watchdog concludes from a terminal
+
+`scripts/tmux-watchdog.ts` reads every session's pane and decides from the text
+on it whether to wake the operator — a permission prompt waiting for an answer,
+a session stuck in an editor, a credential prompt, a crash. 470 of its 500 lines
+were uncovered.
+
+Those decisions are pattern matches over a terminal, the most brittle input in
+the system, and this file has been wrong before: a stripper that made a working
+session look hung, classifiers that fired on any mention of the word
+"permission", a pane parser that failed silently on un-stripped ANSI. A regex
+that stops matching costs an operator a session that waits for ever; one that
+matches too much costs a notification on every message. Both failures are
+silent.
+
+Each detector is now driven over text shaped like the pane it really reads and,
+as importantly, over the near-miss it must not fire on: output that merely
+mentions permission, a spinner too far up the scroll-back to be current, a
+sentence about vim rather than vim itself, a clean exit rather than a crash.
+The alert cooldown is tested per kind, and reading the active sessions is tested
+including the case where the query fails and the watchdog must keep running
+rather than stop watching everything.
+
+One test was written wrong and is kept as written: the development-channel
+dialog needs both the warning and the confirmation line, because the warning
+alone scrolls past on every start.
+
+Coverage of the file: 6.00% → 18.89%. The remainder is the poll loop, which
+shells out to tmux on every iteration.
+
 ### test: the two guards in front of the dashboard API
 
 `mcp/dashboard-api.ts` is the largest untested file in the repository — 947
