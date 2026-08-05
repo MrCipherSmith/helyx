@@ -5,15 +5,52 @@
   "title": "The MCP door answers, and nothing tests what it answers",
   "status": "in-progress",
   "createdAt": "2026-08-05T20:40:03.925Z",
-  "updatedAt": "2026-08-05T20:40:36.194Z",
+  "updatedAt": "2026-08-05T20:45:34.126Z",
   "source": {
     "type": "description",
     "ref": null
   },
   "acChecksum": "sha256:c828df9f3adc54d7a2194f90abf8931a74c9809acde8a081607b2c1f5645920d",
-  "acConfirmed": {},
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-05T20:45:22.622Z"
+    },
+    "AC2": {
+      "at": "2026-08-05T20:45:22.708Z"
+    },
+    "AC3": {
+      "at": "2026-08-05T20:45:22.795Z"
+    },
+    "AC4": {
+      "at": "2026-08-05T20:45:22.885Z"
+    },
+    "AC5": {
+      "at": "2026-08-05T20:45:22.972Z"
+    },
+    "AC6": {
+      "at": "2026-08-05T20:45:23.061Z"
+    },
+    "AC7": {
+      "at": "2026-08-05T20:45:23.147Z"
+    },
+    "AC8": {
+      "at": "2026-08-05T20:45:23.233Z"
+    },
+    "AC9": {
+      "at": "2026-08-05T20:45:23.317Z"
+    },
+    "AC10": {
+      "at": "2026-08-05T20:45:23.405Z"
+    },
+    "AC11": {
+      "at": "2026-08-05T20:45:23.490Z"
+    },
+    "AC12": {
+      "at": "2026-08-05T20:45:23.577Z"
+    }
+  },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/83"
   },
   "tasks": [
     {
@@ -86,6 +123,80 @@
     {
       "at": "2026-08-05T20:40:36.194Z",
       "event": "started"
+    },
+    {
+      "at": "2026-08-05T20:43:47.268Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/83"
+    },
+    {
+      "at": "2026-08-05T20:45:22.622Z",
+      "event": "ac-confirmed",
+      "detail": "AC1"
+    },
+    {
+      "at": "2026-08-05T20:45:22.708Z",
+      "event": "ac-confirmed",
+      "detail": "AC2"
+    },
+    {
+      "at": "2026-08-05T20:45:22.795Z",
+      "event": "ac-confirmed",
+      "detail": "AC3"
+    },
+    {
+      "at": "2026-08-05T20:45:22.885Z",
+      "event": "ac-confirmed",
+      "detail": "AC4"
+    },
+    {
+      "at": "2026-08-05T20:45:22.972Z",
+      "event": "ac-confirmed",
+      "detail": "AC5"
+    },
+    {
+      "at": "2026-08-05T20:45:23.061Z",
+      "event": "ac-confirmed",
+      "detail": "AC6"
+    },
+    {
+      "at": "2026-08-05T20:45:23.147Z",
+      "event": "ac-confirmed",
+      "detail": "AC7"
+    },
+    {
+      "at": "2026-08-05T20:45:23.233Z",
+      "event": "ac-confirmed",
+      "detail": "AC8"
+    },
+    {
+      "at": "2026-08-05T20:45:23.317Z",
+      "event": "ac-confirmed",
+      "detail": "AC9"
+    },
+    {
+      "at": "2026-08-05T20:45:23.405Z",
+      "event": "ac-confirmed",
+      "detail": "AC10"
+    },
+    {
+      "at": "2026-08-05T20:45:23.490Z",
+      "event": "ac-confirmed",
+      "detail": "AC11"
+    },
+    {
+      "at": "2026-08-05T20:45:23.577Z",
+      "event": "ac-confirmed",
+      "detail": "AC12"
+    },
+    {
+      "at": "2026-08-05T20:45:34.117Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-05T20:45:34.126Z",
+      "event": "completion-failed",
+      "detail": "main-merge: a585365 is not contained in origin/main"
     }
   ]
 }
