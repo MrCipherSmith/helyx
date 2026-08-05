@@ -3,15 +3,52 @@
   "id": "045",
   "slug": "a-subagent-s-work-never-reaches-the-stat",
   "title": "A subagent's work never reaches the status",
-  "status": "implemented",
+  "status": "done",
   "createdAt": "2026-08-05T21:07:39.751Z",
-  "updatedAt": "2026-08-05T21:24:21.108Z",
+  "updatedAt": "2026-08-05T21:41:45.114Z",
   "source": {
     "type": "description",
     "ref": null
   },
   "acChecksum": "sha256:c772d5e9eec314d073c8ce44e294533addb75ad9c81a0cd600be3f2c915eab85",
-  "acConfirmed": {},
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-05T21:41:32.605Z"
+    },
+    "AC2": {
+      "at": "2026-08-05T21:41:32.701Z"
+    },
+    "AC3": {
+      "at": "2026-08-05T21:41:32.785Z"
+    },
+    "AC4": {
+      "at": "2026-08-05T21:41:32.871Z"
+    },
+    "AC5": {
+      "at": "2026-08-05T21:41:32.954Z"
+    },
+    "AC6": {
+      "at": "2026-08-05T21:41:33.043Z"
+    },
+    "AC7": {
+      "at": "2026-08-05T21:41:33.133Z"
+    },
+    "AC8": {
+      "at": "2026-08-05T21:41:33.218Z"
+    },
+    "AC9": {
+      "at": "2026-08-05T21:41:33.304Z"
+    },
+    "AC10": {
+      "at": "2026-08-05T21:41:33.389Z"
+    },
+    "AC11": {
+      "at": "2026-08-05T21:41:33.476Z"
+    },
+    "AC12": {
+      "at": "2026-08-05T21:41:33.565Z"
+    }
+  },
   "pr": {
     "url": "https://github.com/MrCipherSmith/helyx/pull/86"
   },
@@ -91,6 +128,80 @@
       "at": "2026-08-05T21:24:21.108Z",
       "event": "implemented",
       "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/86"
+    },
+    {
+      "at": "2026-08-05T21:41:32.605Z",
+      "event": "ac-confirmed",
+      "detail": "AC1"
+    },
+    {
+      "at": "2026-08-05T21:41:32.701Z",
+      "event": "ac-confirmed",
+      "detail": "AC2"
+    },
+    {
+      "at": "2026-08-05T21:41:32.785Z",
+      "event": "ac-confirmed",
+      "detail": "AC3"
+    },
+    {
+      "at": "2026-08-05T21:41:32.871Z",
+      "event": "ac-confirmed",
+      "detail": "AC4"
+    },
+    {
+      "at": "2026-08-05T21:41:32.954Z",
+      "event": "ac-confirmed",
+      "detail": "AC5"
+    },
+    {
+      "at": "2026-08-05T21:41:33.044Z",
+      "event": "ac-confirmed",
+      "detail": "AC6"
+    },
+    {
+      "at": "2026-08-05T21:41:33.133Z",
+      "event": "ac-confirmed",
+      "detail": "AC7"
+    },
+    {
+      "at": "2026-08-05T21:41:33.218Z",
+      "event": "ac-confirmed",
+      "detail": "AC8"
+    },
+    {
+      "at": "2026-08-05T21:41:33.304Z",
+      "event": "ac-confirmed",
+      "detail": "AC9"
+    },
+    {
+      "at": "2026-08-05T21:41:33.389Z",
+      "event": "ac-confirmed",
+      "detail": "AC10"
+    },
+    {
+      "at": "2026-08-05T21:41:33.477Z",
+      "event": "ac-confirmed",
+      "detail": "AC11"
+    },
+    {
+      "at": "2026-08-05T21:41:33.566Z",
+      "event": "ac-confirmed",
+      "detail": "AC12"
+    },
+    {
+      "at": "2026-08-05T21:41:45.103Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-05T21:41:45.114Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
-  ]
+  ],
+  "merged": {
+    "commit": "7c9caf2",
+    "ref": "origin/main",
+    "at": "2026-08-05T21:41:45.114Z"
+  }
 }
