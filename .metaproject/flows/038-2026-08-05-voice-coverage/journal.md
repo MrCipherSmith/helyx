@@ -3,3 +3,22 @@
 - 2026-08-05T18:54:34.333Z - flow created
 - 2026-08-05T18:56:03.844Z - frozen: 12 criteria; checksum recorded
 - 2026-08-05T18:56:03.927Z - started
+- 2026-08-05T19:01:11.516Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/73
+- 2026-08-05T19:08:52.301Z - ac-confirmed: AC1: tests/unit/tts-chain.test.ts — the chain in all four outcomes plus the language order; each provider's distinct bytes asserted so format alone cannot hide which one answered
+- 2026-08-05T19:08:52.389Z - ac-confirmed: AC2: tests/unit/tts-chain.test.ts — the chain in all four outcomes plus the language order; each provider's distinct bytes asserted so format alone cannot hide which one answered
+- 2026-08-05T19:08:52.475Z - ac-confirmed: AC3: tests/unit/tts-chain.test.ts — the chain in all four outcomes plus the language order; each provider's distinct bytes asserted so format alone cannot hide which one answered
+- 2026-08-05T19:08:52.561Z - ac-confirmed: AC4: tests/unit/tts-chain.test.ts — the chain in all four outcomes plus the language order; each provider's distinct bytes asserted so format alone cannot hide which one answered
+- 2026-08-05T19:08:52.651Z - ac-confirmed: AC5: tests/unit/tts-chain.test.ts — the chain in all four outcomes plus the language order; each provider's distinct bytes asserted so format alone cannot hide which one answered
+- 2026-08-05T19:08:52.737Z - ac-confirmed: AC6: same file: a wrong-language normalization is discarded for the stripped original, and Latin left behind is cyrillized before it reaches the voice — both asserted on the text the provider received
+- 2026-08-05T19:08:52.824Z - ac-confirmed: AC7: same file: a wrong-language normalization is discarded for the stripped original, and Latin left behind is cyrillized before it reaches the voice — both asserted on the text the provider received
+- 2026-08-05T19:08:52.915Z - ac-confirmed: AC8: the Piper stub reads --output_file out of the argv and writes there; the tests read those exact bytes back through the real code
+- 2026-08-05T19:08:52.998Z - ac-confirmed: AC9: utils/tts.ts 5.54% -> 57.02% (208 uncovered), both figures recorded in the CHANGELOG and the PR
+- 2026-08-05T19:08:53.085Z - ac-confirmed: AC10: bun test tests/unit/: 1604 pass 0 fail; tsc clean; fetch, Bun.spawn and CONFIG.TTS_PROVIDER restored in afterEach in both files
+- 2026-08-05T19:08:53.169Z - ac-confirmed: AC11: CHANGELOG.md Unreleased — test: the voice fallback that production has been relying on all day
+- 2026-08-05T19:08:53.258Z - ac-confirmed: AC12: reviewer rounds: 3. R1 — the Piper stub proved a call rather than audio (fixed with per-provider bytes); a claim that the groq assertion contradicts the code (verified false, wrap is wav at both call sites); concurrency of global stubs (bun runs a file serially, both files restore). R2 — the rejection test set the provider to none so sendVoice was never reached and it passed trivially (fixed: Piper answers, both halves asserted). R3 — no defects
+- 2026-08-05T19:08:53.344Z - task-done: T1: Collect remaining context
+- 2026-08-05T19:08:53.431Z - task-done: T2: Implement per plan
+- 2026-08-05T19:08:53.518Z - task-done: T3: Add/adjust tests and make them pass
+- 2026-08-05T19:08:53.604Z - task-done: T4: Self-review and prepare draft PR
+- 2026-08-05T19:09:48.174Z - completing
+- 2026-08-05T19:09:48.192Z - done: all gates passed

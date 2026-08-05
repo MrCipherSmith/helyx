@@ -3,3 +3,21 @@
 - 2026-08-05T18:09:53.631Z - flow created
 - 2026-08-05T18:10:54.295Z - frozen: 11 criteria; checksum recorded
 - 2026-08-05T18:10:54.380Z - started
+- 2026-08-05T18:17:36.270Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/71
+- 2026-08-05T18:27:19.539Z - ac-confirmed: AC1: tests/unit/supervisor-loops.test.ts declares each expected interval with its count and asserts them exactly; a missing loop fails. Lower bounds were the first review finding and are gone
+- 2026-08-05T18:27:19.698Z - ac-confirmed: AC2: same file: every registered timer asserted unref'd, both before and after the offset timeouts run
+- 2026-08-05T18:27:19.855Z - ac-confirmed: AC3: tests/unit/supervisor-analyst.test.ts — empty, populated, and no section dropped when its list is empty
+- 2026-08-05T18:27:20.024Z - ac-confirmed: AC4: same file: refused, unreachable and unparseable all degrade rather than throw, with a stubbed fetch
+- 2026-08-05T18:27:20.181Z - ac-confirmed: AC5: same file: refused, unreachable and unparseable all degrade rather than throw, with a stubbed fetch
+- 2026-08-05T18:27:20.347Z - ac-confirmed: AC6: checkGemmaHealth and scheduledReviewDeps driven with FakeSql and a stubbed transport in supervisor-gemma-loop.test.ts; checkRecovery deferred — it iterates a module-private map and would need a seam, recorded rather than forced
+- 2026-08-05T18:27:20.508Z - ac-confirmed: AC7: one production change beyond exports: the startup inventory line, which named seven loops of eleven and then, after the first fix, omitted process_health and named a probe this branch does not have. Named as a defect in the CHANGELOG
+- 2026-08-05T18:27:20.663Z - ac-confirmed: AC8: scripts/supervisor.ts 52.03% -> 75.60% measured on the branch in a git worktree (263 uncovered); 73.66% in the working tree, which carries another session's untested loop. Both figures recorded in the CHANGELOG and the PR
+- 2026-08-05T18:27:20.829Z - ac-confirmed: AC9: bun test tests/unit/: 1566 pass 0 fail; bunx tsc --noEmit clean
+- 2026-08-05T18:27:20.988Z - ac-confirmed: AC10: CHANGELOG.md Unreleased — test: the supervisor's loop inventory is now asserted
+- 2026-08-05T18:27:21.143Z - ac-confirmed: AC11: reviewer rounds: 3. R1 lower-bound assertions, fixed. R2 the log line omitted process_health, fixed together with the mirror defect it named a probe this branch lacks. R3 repeated the bot-alive point, which is another session's uncommitted loop: verified in an isolated worktree of the branch — zero occurrences, and the inventory test passes there
+- 2026-08-05T18:27:21.311Z - task-done: T1: Collect remaining context
+- 2026-08-05T18:27:21.473Z - task-done: T2: Implement per plan
+- 2026-08-05T18:27:21.638Z - task-done: T3: Add/adjust tests and make them pass
+- 2026-08-05T18:27:21.801Z - task-done: T4: Self-review and prepare draft PR
+- 2026-08-05T18:30:08.893Z - completing
+- 2026-08-05T18:30:08.906Z - done: all gates passed

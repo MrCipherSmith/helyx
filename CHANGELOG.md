@@ -2,6 +2,56 @@
 
 ## Unreleased
 
+### feat: a reply carries what it was replying to
+
+Every handler read `message.text` and nothing else, so `reply_to_message` and
+`quote` were dropped at the door. The operator would select a few words out of
+an answer, ask "а тут как?", and the session received four words with no
+subject — the pointing gesture arrived without the thing pointed at.
+
+- `utils/reply-context.ts` extracts both fields and renders them as a block.
+  A hand-picked fragment leads and the message it came from follows it: the
+  fragment is the act of pointing, and re-quoting the whole message first
+  would bury it. Text is capped at 1200 characters and a fragment at 800, so
+  a reply to a long answer does not re-inject the whole of it every time.
+- Stored in a `message_queue.reply_context` column (migration v49) rather than
+  inside `content`. The status line, the short-term memory and the skill hints
+  all read the stored content; a quote pasted into it would have shown up as
+  the question being worked on. The block is composed at delivery instead,
+  beside the other channel notes.
+- Carried on every path: connected session, restarting session, standalone,
+  photos, documents and voice notes. A file that arrives without a caption
+  keeps the reply from the file's own message, not from the sentence typed
+  after it.
+- The `forum_topic_created` service message Telegram attaches to a topic's
+  first post is not treated as a reply — it would have quoted "topic created"
+  at the session on every new topic.
+### fix: the bot's own reactions no longer log as intruders
+
+The bot reacts 👀 to every message it queues, and Telegram reports that back
+as an update whose actor is the bot itself. It is not in `ALLOWED_USERS`, so
+it fell through to the access warning and wrote an `access denied` line after
+every single operator message. Dropped the same way, without the alarm.
+
+
+## v1.54.0
+
+### fix: the host door could not see past the first hundred updates
+
+Found by review before this branch was committed, in `scripts/host-ingress.ts`.
+A read without an offset returns the *oldest* hundred unconfirmed updates and
+never advances on its own, so an outage noisy enough to bury the operator's
+`/up` under a hundred messages would have hidden it for ever — silently, in the
+one situation the door exists for. The window is now confirmed through its end
+when it comes back full and holds nothing for the door, which trades the
+stranded chat history for the recovery. A backlog that fits, or one that
+carried a command, still costs the operator nothing.
+
+Also in `channel/status.ts`: `lastEditAt` was stamped after the edit returned,
+while the comment beside it promised the start of the request. A Telegram call
+that spent thirteen seconds in the client's retry loop was charged the throttle
+floor a second time — the compounding the comment says it exists to prevent.
+
 ### test: the door every MCP call and every hook enters by
 
 `mcp/server.ts` was 8.49% covered — 701 uncovered lines, eighth-largest gap in

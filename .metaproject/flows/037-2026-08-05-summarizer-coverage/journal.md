@@ -3,3 +3,20 @@
 - 2026-08-05T18:35:48.277Z - flow created
 - 2026-08-05T18:37:20.945Z - frozen: 10 criteria; checksum recorded
 - 2026-08-05T18:37:21.041Z - started
+- 2026-08-05T18:43:13.413Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/72
+- 2026-08-05T18:45:18.046Z - ac-confirmed: AC1: tests/unit/summarizer.test.ts (16) and tests/fixtures/fake-memory-deps.ts — values snapshotted before the mock, restored in afterEach; every decision path driven
+- 2026-08-05T18:45:18.131Z - ac-confirmed: AC2: tests/unit/summarizer.test.ts (16) and tests/fixtures/fake-memory-deps.ts — values snapshotted before the mock, restored in afterEach; every decision path driven
+- 2026-08-05T18:45:18.214Z - ac-confirmed: AC3: tests/unit/summarizer.test.ts (16) and tests/fixtures/fake-memory-deps.ts — values snapshotted before the mock, restored in afterEach; every decision path driven
+- 2026-08-05T18:45:18.299Z - ac-confirmed: AC4: tests/unit/summarizer.test.ts (16) and tests/fixtures/fake-memory-deps.ts — values snapshotted before the mock, restored in afterEach; every decision path driven
+- 2026-08-05T18:45:18.382Z - ac-confirmed: AC5: tests/unit/summarizer.test.ts (16) and tests/fixtures/fake-memory-deps.ts — values snapshotted before the mock, restored in afterEach; every decision path driven
+- 2026-08-05T18:45:18.469Z - ac-confirmed: AC6: one production change: an empty model answer now takes the existing fallback rather than being saved as the session's whole project_context. Named as a defect in the CHANGELOG and in the PR
+- 2026-08-05T18:45:18.554Z - ac-confirmed: AC7: memory/summarizer.ts 17.44% -> 77.67% (67 uncovered), both figures recorded
+- 2026-08-05T18:45:18.640Z - ac-confirmed: AC8: bun test tests/unit/: 1582 pass 0 fail; tsc clean; the doubles are restored so no later file sees them
+- 2026-08-05T18:45:18.726Z - ac-confirmed: AC9: CHANGELOG.md Unreleased — fix: a model that answers with nothing no longer becomes the session's record
+- 2026-08-05T18:45:18.812Z - ac-confirmed: AC10: reviewer rounds: 1. DeepSeek: no defects — guard correct and behaviour-preserving for non-empty answers, fixture restores properly, assertions test real decisions rather than the doubles
+- 2026-08-05T18:45:18.896Z - task-done: T1: Collect remaining context
+- 2026-08-05T18:45:18.983Z - task-done: T2: Implement per plan
+- 2026-08-05T18:45:19.067Z - task-done: T3: Add/adjust tests and make them pass
+- 2026-08-05T18:45:19.151Z - task-done: T4: Self-review and prepare draft PR
+- 2026-08-05T18:46:11.408Z - completing
+- 2026-08-05T18:46:11.418Z - done: all gates passed

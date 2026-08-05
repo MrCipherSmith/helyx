@@ -14,6 +14,8 @@ import { resolve } from "path";
 import { startTmuxWatchdog } from "./tmux-watchdog.ts";
 import { startSupervisor } from "./supervisor.ts";
 import { startTmuxSessionLogger } from "./tmux-session-logger.ts";
+import { bringStackUp, type StackUpOptions } from "./stack-up.ts";
+import { startHostIngress } from "./host-ingress.ts";
 import { runCurator, getLastCuratorRun } from "../utils/curator.ts";
 import { sendCuratorSummary } from "../utils/skill-approval.ts";
 
@@ -137,6 +139,73 @@ if (botToken) {
 // Start session health supervisor
 startSupervisor(sql, runShell as any);
 startTmuxSessionLogger(sql, runShell);
+
+/** Where the stack lives, from this daemon's point of view. */
+function stackOptions(): StackUpOptions {
+  return { botDir: BOT_DIR, bunBin: Bun.which("bun") ?? process.execPath, cli: CLI };
+}
+
+// --- The host door ---
+//
+// Everything above reaches this daemon through `admin_commands`, which is a
+// table in a container. When the stack is down that queue is unreachable and
+// the daemon is a listener with nothing to listen to. This opens a direct
+// Telegram poll — only while the bot is confirmed dead, because Telegram
+// allows one reader per token. See scripts/host-ingress.ts.
+// `TELEGRAM_CHAT_ID` is what the bot's own admin check reads, and it is absent
+// from this deployment — the admin chat is configured as `SUPERVISOR_CHAT_ID`.
+// Both are consulted rather than one picked, because the fallback is also the
+// right destination on its own merits: the supervisor topic is where the
+// "бот не отвечает" alert lands, so it is where an operator will already be
+// looking when they need to type `/up`.
+//
+// Found by deploying: the first version keyed on `TELEGRAM_CHAT_ID` alone and
+// the door came up disabled, which the log said and nothing else would have.
+const adminChatId = process.env.TELEGRAM_CHAT_ID || process.env.SUPERVISOR_CHAT_ID || "";
+const BOT_HEALTH_URL = `http://localhost:${process.env.PORT ?? "3847"}/health`;
+if (botToken && adminChatId) {
+  startHostIngress({
+    run: runShell,
+    stack: stackOptions(),
+    token: botToken,
+    adminChatId,
+    // The question this probe asks is NOT "is the bot healthy" — it is "is
+    // there another `getUpdates` reader on this token". Those differ, and the
+    // difference is a trap: `/health` returns 503 when Postgres is down while
+    // the bot process is very much alive and still long-polling Telegram
+    // (mcp/server.ts:382). A probe keyed on `res.ok` would open this door
+    // during a database outage, and the two readers would 409 each other while
+    // the operator's messages fell between them.
+    //
+    // Any HTTP response at all — 200, 503, anything — proves the process is
+    // there. Only a connection failure or a timeout means it is gone.
+    probeBot: async () => {
+      try {
+        await fetch(BOT_HEALTH_URL, { signal: AbortSignal.timeout(5_000) });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    telegram: async (method, body) => {
+      try {
+        const res = await fetch(`https://api.telegram.org/bot${botToken}/${method}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(15_000),
+        });
+        if (!res.ok) return null;
+        return await res.json();
+      } catch {
+        return null;
+      }
+    },
+  });
+  console.log("[admin-daemon] host ingress armed (opens only while the bot is down)");
+} else {
+  console.warn("[admin-daemon] TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set — host ingress disabled");
+}
 
 // --- Process health heartbeat ---
 // Writes admin-daemon PID + Docker container statuses to `process_health` every 30 s.
@@ -296,7 +365,40 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
           result = { ok: false, output: `invalid container name: ${container}` }; break;
         }
         const shellResult = await runShell(`docker restart ${container} 2>&1`);
+        // `compose down` removes containers rather than stopping them, so after
+        // one there is nothing named to restart and this failed with "No such
+        // container" — the one situation where the operator most needs it to
+        // work. `compose up -d` recreates it from the file.
+        if (!shellResult.ok && /no such container/i.test(shellResult.output)) {
+          const recreated = await runShell(`timeout 240 docker compose up -d 2>&1`);
+          result = {
+            ok: recreated.ok,
+            output: `${container} was gone — recreated via compose:\n${recreated.output.trim()}`.slice(0, 2000),
+          };
+          break;
+        }
         result = { ok: shellResult.ok, output: shellResult.output.trim() || (shellResult.ok ? `restarted ${container}` : "docker restart failed") };
+        break;
+      }
+
+      case "stack_up": {
+        // The recovery command: whatever half is down, bring it up. Idempotent
+        // by design — see scripts/stack-up.ts.
+        const stack = await bringStackUp(runShell, stackOptions());
+        result = { ok: stack.ok, output: stack.summary.slice(0, 3000) };
+        break;
+      }
+
+      case "full_restart": {
+        // Rebuild the bot and then bounce the sessions, so new code reaches
+        // both halves. Detached for the same reason `bounce` is: the bounce
+        // tears down the daemon's own tmux window, and a build measured in
+        // minutes would otherwise block this single-threaded command queue.
+        const bunBin = Bun.which("bun") ?? process.execPath;
+        await runShell(
+          `nohup bash -c "(cd \\"${BOT_DIR}\\"; docker compose up -d --build bot; sleep 5; \\"${bunBin}\\" \\"${CLI}\\" bounce) >> /tmp/helyx-full-restart.log 2>&1" &`
+        );
+        result = { ok: true, output: "full restart scheduled: rebuild bot → bounce sessions (log: /tmp/helyx-full-restart.log)" };
         break;
       }
 

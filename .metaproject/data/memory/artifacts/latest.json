@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "query": "docker compose stopped bot postgres",
-  "generatedAt": "2026-08-04T18:53:44.065Z",
+  "query": "мониторинг supervisor алерты пробелы",
+  "generatedAt": "2026-08-05T13:19:30.887Z",
   "results": [
     {
       "entry": {
@@ -34,15 +34,15 @@
         "supersedes": null,
         "supersededBy": null
       },
-      "score": 2.096,
+      "score": 2.494,
       "components": {
-        "relevance": 0.6,
-        "recency": 0.991,
+        "relevance": 1,
+        "recency": 0.987,
         "confidence": 1,
         "status": 1,
         "scope": 0
       },
-      "reason": "matched 3/5 terms; status accepted; confidence high"
+      "reason": "matched 1/1 terms; status accepted; confidence high"
     }
   ]
 }

@@ -4,3 +4,21 @@
 - 2026-08-05T14:49:02.628Z - frozen: 11 criteria; checksum recorded
 - 2026-08-05T14:49:02.717Z - started
 - 2026-08-05T14:52:32.719Z - ac-updated: AC1 named a grep count that the chosen design makes false in a harmless way: moving the command out leaves two prose mentions of 'docker ps' in supervisor.ts and zero commands. Reworded to the invariant that was meant — no command issued from that file — so the criterion can be confirmed by what it actually tests.
+- 2026-08-05T18:05:26.771Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/65 (warning: PR is not a draft)
+- 2026-08-05T18:05:26.859Z - ac-confirmed: AC1: grep 'docker ps' scripts/supervisor.ts: prose only, zero commands; DOCKER_LIST_COMMAND lives in utils/supervisor-status.ts
+- 2026-08-05T18:05:26.943Z - ac-confirmed: AC2: tests/unit/container-listing.test.ts — 9 cases with a fake runShell and a fake sql; re-confirmed after the record was reverted by a working-tree cleanup
+- 2026-08-05T18:05:27.028Z - ac-confirmed: AC3: tests/unit/container-listing.test.ts — 9 cases with a fake runShell and a fake sql; re-confirmed after the record was reverted by a working-tree cleanup
+- 2026-08-05T18:05:27.112Z - ac-confirmed: AC4: tests/unit/container-listing.test.ts — 9 cases with a fake runShell and a fake sql; re-confirmed after the record was reverted by a working-tree cleanup
+- 2026-08-05T18:05:27.199Z - ac-confirmed: AC5: tests/unit/container-listing.test.ts — 9 cases with a fake runShell and a fake sql; re-confirmed after the record was reverted by a working-tree cleanup
+- 2026-08-05T18:05:27.283Z - ac-confirmed: AC6: tests/unit/container-listing.test.ts — 9 cases with a fake runShell and a fake sql; re-confirmed after the record was reverted by a working-tree cleanup
+- 2026-08-05T18:05:27.368Z - ac-confirmed: AC7: rendering moved verbatim; the pre-existing supervisor-broadcast tests are unmodified and pass
+- 2026-08-05T18:05:27.453Z - ac-confirmed: AC8: RunShell declared once, in utils/supervisor-status.ts, and imported by scripts/supervisor.ts
+- 2026-08-05T18:05:27.538Z - ac-confirmed: AC9: suite green and tsc clean at the time of merge; still green now at 1544 tests
+- 2026-08-05T18:05:27.621Z - ac-confirmed: AC10: CHANGELOG.md Unreleased — fix: one answer to which containers exist
+- 2026-08-05T18:05:27.707Z - ac-confirmed: AC11: one reviewer round, no defects
+- 2026-08-05T18:05:27.792Z - task-done: T1: Collect remaining context
+- 2026-08-05T18:05:27.886Z - task-done: T2: Implement per plan
+- 2026-08-05T18:05:27.977Z - task-done: T3: Add/adjust tests and make them pass
+- 2026-08-05T18:05:28.063Z - task-done: T4: Self-review and prepare draft PR
+- 2026-08-05T18:05:28.150Z - completing
+- 2026-08-05T18:05:28.157Z - done: all gates passed

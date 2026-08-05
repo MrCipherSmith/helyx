@@ -3,24 +3,69 @@
   "id": "035",
   "slug": "supervisor-coverage",
   "title": "The supervisor is the top hotspot and half of it is untested",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-05T18:09:53.631Z",
-  "updatedAt": "2026-08-05T18:10:54.380Z",
+  "updatedAt": "2026-08-05T18:30:08.906Z",
   "source": {
     "type": "description",
     "ref": null
   },
   "acChecksum": "sha256:cb5123d7e1285b52f00073e1a42a37146f46719760d53840e7a21950d4a70c47",
-  "acConfirmed": {},
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-05T18:27:19.539Z",
+      "note": "tests/unit/supervisor-loops.test.ts declares each expected interval with its count and asserts them exactly; a missing loop fails. Lower bounds were the first review finding and are gone"
+    },
+    "AC2": {
+      "at": "2026-08-05T18:27:19.698Z",
+      "note": "same file: every registered timer asserted unref'd, both before and after the offset timeouts run"
+    },
+    "AC3": {
+      "at": "2026-08-05T18:27:19.855Z",
+      "note": "tests/unit/supervisor-analyst.test.ts — empty, populated, and no section dropped when its list is empty"
+    },
+    "AC4": {
+      "at": "2026-08-05T18:27:20.024Z",
+      "note": "same file: refused, unreachable and unparseable all degrade rather than throw, with a stubbed fetch"
+    },
+    "AC5": {
+      "at": "2026-08-05T18:27:20.181Z",
+      "note": "same file: refused, unreachable and unparseable all degrade rather than throw, with a stubbed fetch"
+    },
+    "AC6": {
+      "at": "2026-08-05T18:27:20.347Z",
+      "note": "checkGemmaHealth and scheduledReviewDeps driven with FakeSql and a stubbed transport in supervisor-gemma-loop.test.ts; checkRecovery deferred — it iterates a module-private map and would need a seam, recorded rather than forced"
+    },
+    "AC7": {
+      "at": "2026-08-05T18:27:20.508Z",
+      "note": "one production change beyond exports: the startup inventory line, which named seven loops of eleven and then, after the first fix, omitted process_health and named a probe this branch does not have. Named as a defect in the CHANGELOG"
+    },
+    "AC8": {
+      "at": "2026-08-05T18:27:20.663Z",
+      "note": "scripts/supervisor.ts 52.03% -> 75.60% measured on the branch in a git worktree (263 uncovered); 73.66% in the working tree, which carries another session's untested loop. Both figures recorded in the CHANGELOG and the PR"
+    },
+    "AC9": {
+      "at": "2026-08-05T18:27:20.828Z",
+      "note": "bun test tests/unit/: 1566 pass 0 fail; bunx tsc --noEmit clean"
+    },
+    "AC10": {
+      "at": "2026-08-05T18:27:20.988Z",
+      "note": "CHANGELOG.md Unreleased — test: the supervisor's loop inventory is now asserted"
+    },
+    "AC11": {
+      "at": "2026-08-05T18:27:21.143Z",
+      "note": "reviewer rounds: 3. R1 lower-bound assertions, fixed. R2 the log line omitted process_health, fixed together with the mirror defect it named a probe this branch lacks. R3 repeated the bot-alive point, which is another session's uncommitted loop: verified in an isolated worktree of the branch — zero occurrences, and the inventory test passes there"
+    }
+  },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/71"
   },
   "tasks": [
     {
       "id": "T1",
       "title": "Collect remaining context",
       "kind": "context",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -28,13 +73,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T2",
       "title": "Implement per plan",
       "kind": "implement",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -42,13 +88,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T3",
       "title": "Add/adjust tests and make them pass",
       "kind": "test",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -56,13 +103,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T4",
       "title": "Self-review and prepare draft PR",
       "kind": "review",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -70,7 +118,8 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     }
   ],
   "history": [
@@ -86,6 +135,100 @@
     {
       "at": "2026-08-05T18:10:54.380Z",
       "event": "started"
+    },
+    {
+      "at": "2026-08-05T18:17:36.270Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/71"
+    },
+    {
+      "at": "2026-08-05T18:27:19.539Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: tests/unit/supervisor-loops.test.ts declares each expected interval with its count and asserts them exactly; a missing loop fails. Lower bounds were the first review finding and are gone"
+    },
+    {
+      "at": "2026-08-05T18:27:19.698Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: same file: every registered timer asserted unref'd, both before and after the offset timeouts run"
+    },
+    {
+      "at": "2026-08-05T18:27:19.855Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: tests/unit/supervisor-analyst.test.ts — empty, populated, and no section dropped when its list is empty"
+    },
+    {
+      "at": "2026-08-05T18:27:20.024Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: same file: refused, unreachable and unparseable all degrade rather than throw, with a stubbed fetch"
+    },
+    {
+      "at": "2026-08-05T18:27:20.181Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: same file: refused, unreachable and unparseable all degrade rather than throw, with a stubbed fetch"
+    },
+    {
+      "at": "2026-08-05T18:27:20.347Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: checkGemmaHealth and scheduledReviewDeps driven with FakeSql and a stubbed transport in supervisor-gemma-loop.test.ts; checkRecovery deferred — it iterates a module-private map and would need a seam, recorded rather than forced"
+    },
+    {
+      "at": "2026-08-05T18:27:20.508Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: one production change beyond exports: the startup inventory line, which named seven loops of eleven and then, after the first fix, omitted process_health and named a probe this branch does not have. Named as a defect in the CHANGELOG"
+    },
+    {
+      "at": "2026-08-05T18:27:20.663Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: scripts/supervisor.ts 52.03% -> 75.60% measured on the branch in a git worktree (263 uncovered); 73.66% in the working tree, which carries another session's untested loop. Both figures recorded in the CHANGELOG and the PR"
+    },
+    {
+      "at": "2026-08-05T18:27:20.829Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: bun test tests/unit/: 1566 pass 0 fail; bunx tsc --noEmit clean"
+    },
+    {
+      "at": "2026-08-05T18:27:20.988Z",
+      "event": "ac-confirmed",
+      "detail": "AC10: CHANGELOG.md Unreleased — test: the supervisor's loop inventory is now asserted"
+    },
+    {
+      "at": "2026-08-05T18:27:21.143Z",
+      "event": "ac-confirmed",
+      "detail": "AC11: reviewer rounds: 3. R1 lower-bound assertions, fixed. R2 the log line omitted process_health, fixed together with the mirror defect it named a probe this branch lacks. R3 repeated the bot-alive point, which is another session's uncommitted loop: verified in an isolated worktree of the branch — zero occurrences, and the inventory test passes there"
+    },
+    {
+      "at": "2026-08-05T18:27:21.311Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-05T18:27:21.473Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-05T18:27:21.638Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-05T18:27:21.801Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-05T18:30:08.893Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-05T18:30:08.906Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
-  ]
+  ],
+  "merged": {
+    "commit": "66df298",
+    "ref": "origin/main",
+    "at": "2026-08-05T18:30:08.906Z"
+  }
 }

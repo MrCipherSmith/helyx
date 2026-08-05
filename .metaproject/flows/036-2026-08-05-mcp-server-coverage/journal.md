@@ -2,3 +2,20 @@
 
 - 2026-08-05T18:34:30.303Z - flow created
 - 2026-08-05T18:35:47.762Z - blocked: Reaching 60% of mcp/server.ts requires testing its routes, and the routes live inside an arrow function passed to createServer, which binds a fixed port that is already taken on this host by the container. Testing them means first extracting the handler into a named exported function — a refactor of the busiest entry point in the system, undertaken purely to make it testable. That is a decision for the maintainer, not a coverage chore, so this flow waits for it.
+- 2026-08-05T20:14:56.598Z - unblocked: resumed as initializing
+- 2026-08-05T20:15:00.002Z - frozen: 11 criteria; checksum recorded
+- 2026-08-05T20:15:00.090Z - started
+- 2026-08-05T20:18:16.377Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/79
+- 2026-08-05T20:19:15.672Z - ac-confirmed: AC1
+- 2026-08-05T20:19:15.829Z - ac-confirmed: AC2
+- 2026-08-05T20:19:15.977Z - ac-confirmed: AC3
+- 2026-08-05T20:19:16.128Z - ac-confirmed: AC4
+- 2026-08-05T20:19:16.311Z - ac-confirmed: AC5
+- 2026-08-05T20:19:16.449Z - ac-confirmed: AC6
+- 2026-08-05T20:19:16.573Z - ac-confirmed: AC7
+- 2026-08-05T20:19:16.699Z - ac-confirmed: AC8
+- 2026-08-05T20:19:16.853Z - ac-confirmed: AC9
+- 2026-08-05T20:19:17.008Z - ac-confirmed: AC10
+- 2026-08-05T20:19:17.163Z - ac-confirmed: AC11
+- 2026-08-05T20:19:29.108Z - completing
+- 2026-08-05T20:19:29.116Z - done: all gates passed

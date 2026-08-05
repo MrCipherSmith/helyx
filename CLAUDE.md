@@ -156,3 +156,50 @@ After `docker compose build` completes, STOP and say:
 > "Build ready — restart when you're ready, I'll wait for your go-ahead."
 
 Do not proceed automatically, even in orchestrator/parallel-agent flows where the next logical step is restart. Always checkpoint before any action that disrupts the running service.
+
+### What "перезапусти" actually means — read this before running anything
+
+The system has **two halves**, and almost every restart command touches only one
+of them. Twice now an agent asked "перезапускаю?", got "да", and ran a command
+that restarted the half the user was not asking about — leaving the other half
+dead with nothing saying so.
+
+| Half | What it is | What restarts it |
+|------|-----------|------------------|
+| Containers | `helyx-bot-1`, `helyx-postgres-1` — the Telegram bot and the DB | `docker compose up -d [--build] bot` |
+| Sessions | tmux windows running Claude Code, and the `channel.ts` MCP subprocess each one spawns | `bun cli.ts bounce` (kills the tmux session and starts the windows again) |
+
+**Code that ships in the container does not reach a running session.** The
+channel subprocess is started by the CLI on the host and lives as long as its
+Claude Code session. Rebuilding the bot leaves every channel running the code it
+was started with. If a change touches `channel/**`, `utils/status*`,
+`utils/transcript*` or anything else the channel imports, the sessions **must**
+be bounced or the change is not live — and the symptom is silence, not an error.
+
+**Before running any restart command, say which half it restarts and confirm
+that is the one meant.** One sentence: "Это перезапустит только контейнер бота;
+сессии останутся на старом коде — бросать их тоже?" A bare "перезапускай" is not
+enough information to pick a command; it is an instruction to restart *what was
+just built*, which is usually both.
+
+Command map — use these names, do not improvise:
+
+| Intent | Command |
+|--------|---------|
+| Bring up whatever is down, break nothing that works | `stack_up` admin command, or 🚀 Поднять всё in `/system` |
+| Ship new code everywhere | `full_restart` admin command (rebuild bot → bounce sessions), or ♻️ Полный рестарт |
+| Only the bot container | `docker compose up -d --build bot` |
+| Only the sessions | `bun cli.ts bounce`, or 🔄 Bounce |
+| One project's session | `/projects` → stop/start, or the `proj_start` admin command |
+| Only the channel subprocesses | `channel_kill` admin command |
+
+**Never leave the stack half-down.** `docker compose down`, `helyx stop` and
+`tmux_stop` take things down and nothing brings them back on their own. If a
+command in that family is run, the paired bring-up (`stack_up`) is part of the
+same step, not a follow-up to be offered later.
+
+**When the whole stack is down**, Telegram cannot reach the bot and the bot
+cannot reach Postgres, so no button works. The way back in is `/up` sent to the
+supervisor topic: the host daemon (`scripts/host-ingress.ts`) polls Telegram
+directly whenever the bot is confirmed dead, and `/hstatus` reports what is
+running from the host's own point of view.

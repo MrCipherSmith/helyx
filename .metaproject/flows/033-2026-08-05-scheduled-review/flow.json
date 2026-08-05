@@ -3,24 +3,73 @@
   "id": "033",
   "slug": "scheduled-review",
   "title": "A review runs only when someone remembers to ask for one",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-05T16:53:39.600Z",
-  "updatedAt": "2026-08-05T16:54:14.780Z",
+  "updatedAt": "2026-08-05T17:08:02.111Z",
   "source": {
     "type": "description",
     "ref": null
   },
   "acChecksum": "sha256:b50b092cd382fe751ed9f3e382be136757bc40ffadd2b96c03a2dd10f34a1544",
-  "acConfirmed": {},
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-05T17:07:24.500Z",
+      "note": "tests/unit/scheduled-review.test.ts — the decision as a table; pure, taking branch, hash, state and now as arguments"
+    },
+    "AC2": {
+      "at": "2026-08-05T17:07:24.588Z",
+      "note": "tests/unit/scheduled-review.test.ts — the decision as a table; pure, taking branch, hash, state and now as arguments"
+    },
+    "AC3": {
+      "at": "2026-08-05T17:07:24.676Z",
+      "note": "tests/unit/scheduled-review.test.ts — the decision as a table; pure, taking branch, hash, state and now as arguments"
+    },
+    "AC4": {
+      "at": "2026-08-05T17:07:24.766Z",
+      "note": "state round-trips through bot_config via scheduledReviewDeps; the loop's own memory is tested with an injected loadState/saveState pair"
+    },
+    "AC5": {
+      "at": "2026-08-05T17:07:24.857Z",
+      "note": "review-in-flight is refused with a reason, never queued; and a flag older than REVIEW_STALE_AFTER_MS is presumed dead so one crash cannot disable the loop for ever"
+    },
+    "AC6": {
+      "at": "2026-08-05T17:07:24.949Z",
+      "note": "scheduledReviewDeps passes trigger: 'scheduled' to persistReviewRun; scripts/review.ts still passes 'manual'"
+    },
+    "AC7": {
+      "at": "2026-08-05T17:07:25.037Z",
+      "note": "one post naming the branch and the artifact path, asserted; a failed post is a note and does not roll back the recorded review"
+    },
+    "AC8": {
+      "at": "2026-08-05T17:07:25.120Z",
+      "note": "no hook is installed and no caller awaits the loop: it is a setInterval in the host daemon that writes a file and posts a message"
+    },
+    "AC9": {
+      "at": "2026-08-05T17:07:25.213Z",
+      "note": "registered in startSupervisor at 15 min with a 70s offset and unref'd like its neighbours"
+    },
+    "AC10": {
+      "at": "2026-08-05T17:07:25.300Z",
+      "note": "bun test tests/unit/: 1540 pass 0 fail; bunx tsc --noEmit clean"
+    },
+    "AC11": {
+      "at": "2026-08-05T17:07:25.386Z",
+      "note": "CHANGELOG.md Unreleased — feat: a review that starts itself"
+    },
+    "AC12": {
+      "at": "2026-08-05T17:07:25.474Z",
+      "note": "reviewer rounds: 3. R1 — stuck in-flight flag and a failed post discarding lastReviewedHash, both fixed in 1a02af4. R2 — the hash and the reviewed diff were separate snapshots, fixed in 502c636. R3 — no defects; the hardcoded default branch 'main' was raised and called a configuration choice rather than a bug, and this repository's default is main"
+    }
+  },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/69"
   },
   "tasks": [
     {
       "id": "T1",
       "title": "Collect remaining context",
       "kind": "context",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -28,13 +77,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T2",
       "title": "Implement per plan",
       "kind": "implement",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -42,13 +92,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T3",
       "title": "Add/adjust tests and make them pass",
       "kind": "test",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -56,13 +107,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T4",
       "title": "Self-review and prepare draft PR",
       "kind": "review",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -70,7 +122,8 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     }
   ],
   "history": [
@@ -86,6 +139,105 @@
     {
       "at": "2026-08-05T16:54:14.780Z",
       "event": "started"
+    },
+    {
+      "at": "2026-08-05T16:57:03.241Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/69"
+    },
+    {
+      "at": "2026-08-05T17:07:24.500Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: tests/unit/scheduled-review.test.ts — the decision as a table; pure, taking branch, hash, state and now as arguments"
+    },
+    {
+      "at": "2026-08-05T17:07:24.588Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: tests/unit/scheduled-review.test.ts — the decision as a table; pure, taking branch, hash, state and now as arguments"
+    },
+    {
+      "at": "2026-08-05T17:07:24.676Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: tests/unit/scheduled-review.test.ts — the decision as a table; pure, taking branch, hash, state and now as arguments"
+    },
+    {
+      "at": "2026-08-05T17:07:24.766Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: state round-trips through bot_config via scheduledReviewDeps; the loop's own memory is tested with an injected loadState/saveState pair"
+    },
+    {
+      "at": "2026-08-05T17:07:24.857Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: review-in-flight is refused with a reason, never queued; and a flag older than REVIEW_STALE_AFTER_MS is presumed dead so one crash cannot disable the loop for ever"
+    },
+    {
+      "at": "2026-08-05T17:07:24.949Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: scheduledReviewDeps passes trigger: 'scheduled' to persistReviewRun; scripts/review.ts still passes 'manual'"
+    },
+    {
+      "at": "2026-08-05T17:07:25.037Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: one post naming the branch and the artifact path, asserted; a failed post is a note and does not roll back the recorded review"
+    },
+    {
+      "at": "2026-08-05T17:07:25.120Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: no hook is installed and no caller awaits the loop: it is a setInterval in the host daemon that writes a file and posts a message"
+    },
+    {
+      "at": "2026-08-05T17:07:25.213Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: registered in startSupervisor at 15 min with a 70s offset and unref'd like its neighbours"
+    },
+    {
+      "at": "2026-08-05T17:07:25.300Z",
+      "event": "ac-confirmed",
+      "detail": "AC10: bun test tests/unit/: 1540 pass 0 fail; bunx tsc --noEmit clean"
+    },
+    {
+      "at": "2026-08-05T17:07:25.386Z",
+      "event": "ac-confirmed",
+      "detail": "AC11: CHANGELOG.md Unreleased — feat: a review that starts itself"
+    },
+    {
+      "at": "2026-08-05T17:07:25.474Z",
+      "event": "ac-confirmed",
+      "detail": "AC12: reviewer rounds: 3. R1 — stuck in-flight flag and a failed post discarding lastReviewedHash, both fixed in 1a02af4. R2 — the hash and the reviewed diff were separate snapshots, fixed in 502c636. R3 — no defects; the hardcoded default branch 'main' was raised and called a configuration choice rather than a bug, and this repository's default is main"
+    },
+    {
+      "at": "2026-08-05T17:07:25.562Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-05T17:07:25.650Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-05T17:07:25.736Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-05T17:07:25.824Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-05T17:08:02.099Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-05T17:08:02.111Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
-  ]
+  ],
+  "merged": {
+    "commit": "a9e9fda",
+    "ref": "origin/main",
+    "at": "2026-08-05T17:08:02.111Z"
+  }
 }

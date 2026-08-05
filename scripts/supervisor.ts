@@ -54,6 +54,7 @@ import {
   paneCallbackData,
   forceDeliverCallbackData,
   ackCallbackData,
+  stackUpCallbackData,
 } from "../utils/supervisor-callbacks.ts";
 
 // Path to today's tmux session log, for the "see the log" line in alerts.
@@ -1706,6 +1707,77 @@ async function checkRecovery(sql: postgres.Sql): Promise<void> {
   }
 }
 
+// --- Loop 8: is the bot itself alive? ---
+
+/**
+ * The one outage nothing was watching.
+ *
+ * Every other loop here reports a session, a queue or a container into a chat
+ * the *bot* delivers. When the bot is the thing that died, all of them go
+ * quiet together and the silence reads like calm — which is how a stopped stack
+ * went unnoticed until someone tried to use it.
+ *
+ * This loop can report it because the supervisor is not the bot: it runs inside
+ * the host daemon and posts to Telegram over HTTP itself. Its alert therefore
+ * arrives during exactly the outage it describes.
+ *
+ * The button on that alert is a different matter, and the text says so. A
+ * callback is delivered *to the bot*, so while the bot is down pressing it does
+ * nothing — the way back in during a full outage is `/up` to the host door in
+ * `scripts/host-ingress.ts`. The button is for the case this loop also catches:
+ * the bot process wedged while its container still runs.
+ */
+export const BOT_DOWN_KEY = "bot_down";
+/** Consecutive failed probes before it is an outage rather than a restart. */
+export const BOT_DOWN_AFTER_FAILURES = 3;
+
+let botDownFailures = 0;
+let botDownAlerted = false;
+
+/** Exported for the tests, which drive the counter rather than a real bot. */
+export function botDownState(): { failures: number; alerted: boolean } {
+  return { failures: botDownFailures, alerted: botDownAlerted };
+}
+
+export async function checkBotAlive(
+  sql: postgres.Sql,
+  probe: () => Promise<boolean>,
+): Promise<void> {
+  const alive = await probe().catch(() => false);
+
+  if (alive) {
+    if (botDownAlerted) {
+      await sendAlert("✅ Бот снова отвечает — стек живой.");
+      await logIncident(sql, "bot_down", null, null, "none", "recovered", "");
+      alertedAt.delete(BOT_DOWN_KEY);
+    }
+    botDownFailures = 0;
+    botDownAlerted = false;
+    return;
+  }
+
+  botDownFailures++;
+  // A restart is a few seconds of refused connections and is not news. Three
+  // probes is a minute of them.
+  if (botDownFailures < BOT_DOWN_AFTER_FAILURES) return;
+  if (!shouldAlert(BOT_DOWN_KEY)) return;
+
+  botDownAlerted = true;
+  await sendAlertWithButtons(
+    "🔴 <b>Бот не отвечает</b>\n" +
+      `Health-эндпоинт молчит или отдаёт ошибку ${botDownFailures} проверки подряд ` +
+      "(503 — значит бот жив, но не видит базу).\n\n" +
+      "Кнопка ниже поднимет то, что лежит — но её обрабатывает сам бот. " +
+      "Если она не реагирует, значит бот действительно мёртв: пришли сюда <code>/up</code>, " +
+      "команду примет хостовый демон напрямую.",
+    [
+      [{ text: "🔧 Восстановить", callback_data: stackUpCallbackData() }],
+      [{ text: "🔕 Тишина на 1 ч", callback_data: `sup:ack:${BOT_DOWN_KEY}:0` }],
+    ],
+  );
+  await logIncident(sql, "bot_down", null, null, "alert", "pending", "");
+}
+
 // --- Main entry point ---
 
 export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
@@ -1795,6 +1867,31 @@ export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
     unansweredTimer.unref?.();
   }, 45_000);
 
+  // Loop 8: Is the bot alive — every 20s. Faster than the rest because this is
+  // the outage during which nothing else can report anything.
+  const botHealthUrl = `http://localhost:${process.env.PORT ?? "3847"}/health`;
+  // Deliberately `res.ok`, and deliberately not the same question the host
+  // ingress asks. This one is "is the bot serving", so a 503 — which is what
+  // it returns when Postgres is unreachable — counts as down and is worth an
+  // alert. The ingress asks "is anything else reading this Telegram token",
+  // where a 503 means yes and opening a second reader would 409 them both.
+  // Same endpoint, opposite readings, and the two must not be unified.
+  const probeBot = async (): Promise<boolean> => {
+    try {
+      const res = await fetch(botHealthUrl, { signal: AbortSignal.timeout(5_000) });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  };
+  let botAliveRunning = false;
+  const botAliveTimer = setInterval(() => {
+    if (botAliveRunning) return;
+    botAliveRunning = true;
+    checkBotAlive(sql, probeBot).catch(() => {}).finally(() => { botAliveRunning = false; });
+  }, 20_000);
+  botAliveTimer.unref?.();
+
   // Loop 9: the bot's own error stream — every 90s, offset 25s from the rest.
   // Reads only what has been appended since the last pass, so the interval is
   // its own rate limit.
@@ -1869,7 +1966,7 @@ export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
   console.error(
     "[supervisor] watchdog running (session:60s, queue:60s, process-health:30s, voice:5min, " +
       `status:5min, idle-compact:30min/${IDLE_COMPACT_MIN}min-threshold, gemma-health:10min, ` +
-      "unanswered:2min, error-stream:90s, reviewer-health:30min, scheduled-review:15min, " +
-      "recovery:60s)",
+      "unanswered:2min, bot-alive:20s, error-stream:90s, reviewer-health:30min, " +
+      "scheduled-review:15min, recovery:60s)",
   );
 }

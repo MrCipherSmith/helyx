@@ -3,24 +3,73 @@
   "id": "038",
   "slug": "voice-coverage",
   "title": "The voice path fails its first provider on every message and nothing tests the fallback",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-05T18:54:34.333Z",
-  "updatedAt": "2026-08-05T18:56:03.927Z",
+  "updatedAt": "2026-08-05T19:09:48.192Z",
   "source": {
     "type": "description",
     "ref": null
   },
   "acChecksum": "sha256:1466358ef1cc53f7843316849907dfae6d224bcab200887ed1e0974cb71fb35b",
-  "acConfirmed": {},
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-05T19:08:52.301Z",
+      "note": "tests/unit/tts-chain.test.ts — the chain in all four outcomes plus the language order; each provider's distinct bytes asserted so format alone cannot hide which one answered"
+    },
+    "AC2": {
+      "at": "2026-08-05T19:08:52.388Z",
+      "note": "tests/unit/tts-chain.test.ts — the chain in all four outcomes plus the language order; each provider's distinct bytes asserted so format alone cannot hide which one answered"
+    },
+    "AC3": {
+      "at": "2026-08-05T19:08:52.475Z",
+      "note": "tests/unit/tts-chain.test.ts — the chain in all four outcomes plus the language order; each provider's distinct bytes asserted so format alone cannot hide which one answered"
+    },
+    "AC4": {
+      "at": "2026-08-05T19:08:52.561Z",
+      "note": "tests/unit/tts-chain.test.ts — the chain in all four outcomes plus the language order; each provider's distinct bytes asserted so format alone cannot hide which one answered"
+    },
+    "AC5": {
+      "at": "2026-08-05T19:08:52.651Z",
+      "note": "tests/unit/tts-chain.test.ts — the chain in all four outcomes plus the language order; each provider's distinct bytes asserted so format alone cannot hide which one answered"
+    },
+    "AC6": {
+      "at": "2026-08-05T19:08:52.737Z",
+      "note": "same file: a wrong-language normalization is discarded for the stripped original, and Latin left behind is cyrillized before it reaches the voice — both asserted on the text the provider received"
+    },
+    "AC7": {
+      "at": "2026-08-05T19:08:52.824Z",
+      "note": "same file: a wrong-language normalization is discarded for the stripped original, and Latin left behind is cyrillized before it reaches the voice — both asserted on the text the provider received"
+    },
+    "AC8": {
+      "at": "2026-08-05T19:08:52.915Z",
+      "note": "the Piper stub reads --output_file out of the argv and writes there; the tests read those exact bytes back through the real code"
+    },
+    "AC9": {
+      "at": "2026-08-05T19:08:52.998Z",
+      "note": "utils/tts.ts 5.54% -> 57.02% (208 uncovered), both figures recorded in the CHANGELOG and the PR"
+    },
+    "AC10": {
+      "at": "2026-08-05T19:08:53.085Z",
+      "note": "bun test tests/unit/: 1604 pass 0 fail; tsc clean; fetch, Bun.spawn and CONFIG.TTS_PROVIDER restored in afterEach in both files"
+    },
+    "AC11": {
+      "at": "2026-08-05T19:08:53.169Z",
+      "note": "CHANGELOG.md Unreleased — test: the voice fallback that production has been relying on all day"
+    },
+    "AC12": {
+      "at": "2026-08-05T19:08:53.258Z",
+      "note": "reviewer rounds: 3. R1 — the Piper stub proved a call rather than audio (fixed with per-provider bytes); a claim that the groq assertion contradicts the code (verified false, wrap is wav at both call sites); concurrency of global stubs (bun runs a file serially, both files restore). R2 — the rejection test set the provider to none so sendVoice was never reached and it passed trivially (fixed: Piper answers, both halves asserted). R3 — no defects"
+    }
+  },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/73"
   },
   "tasks": [
     {
       "id": "T1",
       "title": "Collect remaining context",
       "kind": "context",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -28,13 +77,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T2",
       "title": "Implement per plan",
       "kind": "implement",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -42,13 +92,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T3",
       "title": "Add/adjust tests and make them pass",
       "kind": "test",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -56,13 +107,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T4",
       "title": "Self-review and prepare draft PR",
       "kind": "review",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -70,7 +122,8 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     }
   ],
   "history": [
@@ -86,6 +139,105 @@
     {
       "at": "2026-08-05T18:56:03.927Z",
       "event": "started"
+    },
+    {
+      "at": "2026-08-05T19:01:11.516Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/73"
+    },
+    {
+      "at": "2026-08-05T19:08:52.301Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: tests/unit/tts-chain.test.ts — the chain in all four outcomes plus the language order; each provider's distinct bytes asserted so format alone cannot hide which one answered"
+    },
+    {
+      "at": "2026-08-05T19:08:52.389Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: tests/unit/tts-chain.test.ts — the chain in all four outcomes plus the language order; each provider's distinct bytes asserted so format alone cannot hide which one answered"
+    },
+    {
+      "at": "2026-08-05T19:08:52.475Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: tests/unit/tts-chain.test.ts — the chain in all four outcomes plus the language order; each provider's distinct bytes asserted so format alone cannot hide which one answered"
+    },
+    {
+      "at": "2026-08-05T19:08:52.561Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: tests/unit/tts-chain.test.ts — the chain in all four outcomes plus the language order; each provider's distinct bytes asserted so format alone cannot hide which one answered"
+    },
+    {
+      "at": "2026-08-05T19:08:52.651Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: tests/unit/tts-chain.test.ts — the chain in all four outcomes plus the language order; each provider's distinct bytes asserted so format alone cannot hide which one answered"
+    },
+    {
+      "at": "2026-08-05T19:08:52.737Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: same file: a wrong-language normalization is discarded for the stripped original, and Latin left behind is cyrillized before it reaches the voice — both asserted on the text the provider received"
+    },
+    {
+      "at": "2026-08-05T19:08:52.824Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: same file: a wrong-language normalization is discarded for the stripped original, and Latin left behind is cyrillized before it reaches the voice — both asserted on the text the provider received"
+    },
+    {
+      "at": "2026-08-05T19:08:52.915Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: the Piper stub reads --output_file out of the argv and writes there; the tests read those exact bytes back through the real code"
+    },
+    {
+      "at": "2026-08-05T19:08:52.998Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: utils/tts.ts 5.54% -> 57.02% (208 uncovered), both figures recorded in the CHANGELOG and the PR"
+    },
+    {
+      "at": "2026-08-05T19:08:53.085Z",
+      "event": "ac-confirmed",
+      "detail": "AC10: bun test tests/unit/: 1604 pass 0 fail; tsc clean; fetch, Bun.spawn and CONFIG.TTS_PROVIDER restored in afterEach in both files"
+    },
+    {
+      "at": "2026-08-05T19:08:53.169Z",
+      "event": "ac-confirmed",
+      "detail": "AC11: CHANGELOG.md Unreleased — test: the voice fallback that production has been relying on all day"
+    },
+    {
+      "at": "2026-08-05T19:08:53.258Z",
+      "event": "ac-confirmed",
+      "detail": "AC12: reviewer rounds: 3. R1 — the Piper stub proved a call rather than audio (fixed with per-provider bytes); a claim that the groq assertion contradicts the code (verified false, wrap is wav at both call sites); concurrency of global stubs (bun runs a file serially, both files restore). R2 — the rejection test set the provider to none so sendVoice was never reached and it passed trivially (fixed: Piper answers, both halves asserted). R3 — no defects"
+    },
+    {
+      "at": "2026-08-05T19:08:53.344Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-05T19:08:53.431Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-05T19:08:53.518Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-05T19:08:53.604Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-05T19:09:48.174Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-05T19:09:48.192Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
-  ]
+  ],
+  "merged": {
+    "commit": "375c4a9",
+    "ref": "origin/main",
+    "at": "2026-08-05T19:09:48.192Z"
+  }
 }

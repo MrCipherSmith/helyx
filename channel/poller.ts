@@ -10,6 +10,7 @@ import { channelLogger } from "../logger.ts";
 import { setTelegramReaction } from "./telegram.ts";
 import { getProjectHistory } from "../memory/short-term.ts";
 import { sessionManager } from "../sessions/manager.ts";
+import { renderReplyContext, type ReplyContext } from "../utils/reply-context.ts";
 
 const DEADLINE_EXCEEDED = Symbol("deadline_exceeded");
 const CONTEXT_INJECT_LIMIT = Number(process.env.CONTEXT_INJECT_LIMIT ?? 15);
@@ -207,7 +208,7 @@ export class MessageQueuePoller {
                 LIMIT 10
                 FOR UPDATE SKIP LOCKED
               )
-              RETURNING id, chat_id, from_user, content, message_id, created_at, attachments
+              RETURNING id, chat_id, from_user, content, message_id, created_at, attachments, reply_context
             `
           : await this.ctx.sql`
               UPDATE message_queue
@@ -220,7 +221,7 @@ export class MessageQueuePoller {
                 LIMIT 10
                 FOR UPDATE SKIP LOCKED
               )
-              RETURNING id, chat_id, from_user, content, message_id, created_at, attachments
+              RETURNING id, chat_id, from_user, content, message_id, created_at, attachments, reply_context
             `;
 
         // For batches of rows from the same chat, the FIRST row's status creation
@@ -276,8 +277,18 @@ export class MessageQueuePoller {
             }
           }
 
-          const enrichedContent = `${contextPrefix}${ttsNote}${hint}${row.content}`;
+          // The message the operator was replying to, composed here rather than
+          // stored inside `content`: the status line, the short-term memory and
+          // the skill hints all read the stored content, and a quote pasted into
+          // it would show up as the question being worked on.
+          //
+          // In front of the operator's words and behind the channel notes — a
+          // reply reads as an answer to something, and the something has to
+          // arrive first.
+          const replyBlock = renderReplyContext(row.reply_context as ReplyContext | null);
+          const enrichedContent = `${contextPrefix}${ttsNote}${hint}${replyBlock}${row.content}`;
           if (hint) channelLogger.debug({ hint: hint.trim() }, "skill hint injected");
+          if (replyBlock) channelLogger.debug({ msgId: row.id }, "reply context injected");
 
           // ⚡ — message taken into work by Claude Code (replaces 👀)
           const token = this.ctx.token?.();
