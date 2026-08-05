@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 2,
+  "id": "046",
+  "slug": "asking-what-is-happening-should-not-have",
+  "title": "Asking what is happening should not have to wait for the session to answer",
+  "status": "implemented",
+  "createdAt": "2026-08-05T21:42:04.356Z",
+  "updatedAt": "2026-08-05T21:50:00.892Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:a991d8548cadc450550b1dfa081bacb397eecb99f626e1b20db87941a5d8c63c",
+  "acConfirmed": {},
+  "pr": {
+    "url": "https://github.com/MrCipherSmith/helyx/pull/87"
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-05T21:42:04.356Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-05T21:42:35.666Z",
+      "event": "frozen",
+      "detail": "12 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-05T21:42:35.752Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-05T21:50:00.892Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/87"
+    }
+  ]
+}

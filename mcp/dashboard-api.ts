@@ -13,6 +13,8 @@ import { addSSEClient, removeSSEClient, getSSEClientCount } from "./notification
 import { sessionService } from "../services/session-service.ts";
 import { projectService } from "../services/project-service.ts";
 import { logger } from "../logger.ts";
+import { readdir } from "fs/promises";
+import { dashboardReadiness, type DashboardFacts, type Readiness } from "../utils/dashboard-readiness.ts";
 import {
   resolveStaticPathReal,
   parseCookieHeader,
@@ -23,6 +25,53 @@ import {
 
 const DIST_DIR = join(import.meta.dirname, "../dashboard/dist");
 const WEBAPP_DIST_DIR = join(import.meta.dirname, "../dashboard/webapp/dist");
+
+/**
+ * Whether what was built matches what was enabled — asked once.
+ *
+ * Once, not per request: it cannot change while the process runs, since the
+ * only way to change it is a rebuild, and a rebuild restarts the process. A
+ * directory read per hit would be a syscall for an answer that is already
+ * known.
+ */
+let readiness: Readiness | null = null;
+
+async function hasFiles(dir: string): Promise<boolean> {
+  return await readdir(dir).then((names) => names.length > 0, () => false);
+}
+
+/** The facts, read from disk. Exported for the startup check and for tests. */
+export async function dashboardFacts(): Promise<DashboardFacts> {
+  return {
+    enabled: CONFIG.ENABLE_DASHBOARD,
+    dashboardBuilt: await hasFiles(DIST_DIR),
+    webappBuilt: await hasFiles(WEBAPP_DIST_DIR),
+  };
+}
+
+/**
+ * What is wrong with this deployment's dashboard, if anything.
+ *
+ * Cached after the first call; `resetDashboardReadiness` exists for tests,
+ * which is the only caller that can see it change.
+ */
+export async function getDashboardReadiness(): Promise<Readiness> {
+  if (readiness === null) readiness = dashboardReadiness(await dashboardFacts());
+  return readiness;
+}
+
+/**
+ * Stand an answer in for a test; the returned function puts the real one back.
+ *
+ * The reported failure cannot be reached otherwise: on a development machine
+ * both dist directories are populated, so the branch that explains an unbuilt
+ * dashboard would never run.
+ */
+export function setDashboardReadiness(next: Readiness | null): () => void {
+  const previous = readiness;
+  readiness = next;
+  return () => { readiness = previous; };
+}
 
 // Map host project_path to container-accessible path
 const HOST_PROJECTS_DIR = process.env.HOST_PROJECTS_DIR ?? (homedir() + "/bots");
@@ -1170,6 +1219,18 @@ export async function handleDashboardRequest(
 
   // WebApp static files
   if (method === "GET" && pathname.startsWith("/webapp")) {
+    // Asked before serving rather than after failing to. Falling through to the
+    // catch-all 404 said "no such route" — and the route is fine; what is
+    // missing is the build. The operator staring at `Not Found` in a Mini App
+    // had no way to learn the difference, so this answers with the sentence
+    // that names the flag instead.
+    const state = await getDashboardReadiness();
+    if (!state.ok) {
+      res.writeHead(503, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end(state.message);
+      return true;
+    }
+
     const subpath = pathname.slice("/webapp".length) || "/";
     if (await serveWebApp(res, subpath)) return true;
   }

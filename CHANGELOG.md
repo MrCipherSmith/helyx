@@ -2,6 +2,87 @@
 
 ## Unreleased
 
+### fix: a dashboard that was enabled and never built
+
+Reported with a screenshot: the Mini App open, `Not Found` in it.
+
+The route was fine. The files were not there. `WITH_DASHBOARD` is a *build*
+argument, false by default — the dashboard build stages are what take the image
+from 256 MB to a gigabyte, and the webapp build is the step that has run a small
+host out of memory — and when it is false the Dockerfile creates the dist
+directories empty so its later `COPY` still resolves. `ENABLE_DASHBOARD` is a
+*runtime* flag, and it was true.
+
+Nothing compared the two. The installer wrote `ENABLE_DASHBOARD` on every fresh
+install and never wrote `WITH_DASHBOARD` at all, so an install that answered
+"yes" to the dashboard question produced a container built without one. Every
+layer then answered correctly on the way to a 404 that meant "no such route",
+when the truth was "this was never built". `docker-compose.yml` warns about the
+pairing in a comment; the comment was all there was.
+
+Three changes, one for each place it went wrong:
+
+- **The installer writes both**, from one answer, through one function, so they
+  cannot drift apart again.
+- **A bot told to serve what it has not got says so** — once at startup, at
+  error level, and in the browser: `/webapp` answers 503 with the sentence that
+  names the flag and the command, instead of falling through to a 404 that
+  means something else. The check runs before serving rather than after failing
+  to, and is worked out once: only a rebuild can change it, and a rebuild
+  restarts the process.
+- **The Mini App button is not offered for a page that is not there.** It used
+  to be set on the webhook URL alone, knowing nothing about what was built. A
+  button that opens `Not Found` is worse than no button: the operator presses it
+  more than once.
+
+The default stays `false`. It is right for a small host, and the answer for a
+host that wants the dashboard is to say so at install time.
+
+### feat: `/now` — what the session is doing, answered without asking it
+
+Reported by the operator: "я не хочу постоянно писать какой статус и в
+некоторых случаях не получать ответа".
+
+Asking was the problem. A question goes through `message_queue`, and the poller
+holds a message back while the chat is busy — deliberately, so each message gets
+its own turn — so the answer arrives when the turn ends, which is when it stops
+being interesting. A wedged session never answers at all. The question the
+operator asks most often was the one the system answered worst.
+
+It was never necessary. The transcript already says what the session is doing,
+and since the subagent work it says what its subagents are doing too. `/now`
+reads that record and answers at once: what was last done and how long ago, how
+many tools and files this turn, which subagents are live and what each is doing,
+and what it is waiting on — a permission prompt, an open question, working, or
+silence. Those four are kept apart on purpose: they mean different things to
+someone deciding whether to keep waiting.
+
+Under the facts, two lines from the same local model the supervisor uses for its
+health digests — the one thing not in the record is "what is left". It is
+allowed to fail: a model that is down costs the two lines and nothing else,
+which is why they are last and behind a rule.
+
+The button under the card asks the session itself, and queues through
+`message_queue` exactly as a message does. There is deliberately no second
+delivery path: the existing one is the only one that respects a turn, and a
+question that jumped it would arrive mid-thought and be answered about the wrong
+thing.
+
+Pressing `/now` again edits the same message rather than sending another — the
+operator presses it when they are impatient, which is exactly when they press it
+repeatedly.
+
+Raised in review and fixed: the synthetic `message_id` the button queues under
+now carries a random suffix and the insert says `ON CONFLICT DO NOTHING`, so two
+presses in the same millisecond cannot collide with the unique index — an
+unhandled rejection there would have left the button looking dead. The remembered
+card ids expire after `CARD_TTL_MS` rather than being kept for the life of the
+process.
+
+`/btw` through `tmux send-keys` was considered and rejected: it races the
+operator for the terminal's input, and its answer would have to be told from a
+real answer by guesswork.
+
 ### feat: a subagent's work reaches the status
 
 The other half of the operator's report. Flow 044 keeps the status alive past a

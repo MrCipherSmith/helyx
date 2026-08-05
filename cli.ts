@@ -22,6 +22,7 @@ import { homedir, tmpdir } from "os";
 import { windowName, parseWindowNames, partitionByWindow } from "./sessions/tmux-windows.ts";
 import { parseFlags, flagValue } from "./utils/cli-flags.ts";
 import { resolveMemoryMb, presetsThatFit } from "./utils/host-memory.ts";
+import { dashboardEnvLines } from "./utils/dashboard-readiness.ts";
 import { classifyCheckout, pruneStaleStopHooks } from "./utils/stop-hook.ts";
 
 // --- ANSI colors ---
@@ -610,7 +611,14 @@ async function setup() {
     // Written explicitly on every fresh install. An .env that predates this
     // flag has no such line, and config.ts treats "absent" as enabled so
     // existing deployments keep their dashboard across an upgrade.
-    `ENABLE_DASHBOARD=${enableDashboard}`,
+    //
+    // Both halves of one answer: ENABLE_DASHBOARD is read at runtime,
+    // WITH_DASHBOARD is a build argument whose default is false, and the
+    // Dockerfile then creates the dist directories empty. An install that wrote
+    // only the first produced a bot serving a dashboard it did not have — a
+    // Mini App reading `Not Found` with nothing in the log to say why. They are
+    // written by one function so they cannot drift apart again.
+    ...dashboardEnvLines(enableDashboard),
     "",
     "# Telegram",
     `TELEGRAM_BOT_TOKEN=${botToken}`,
