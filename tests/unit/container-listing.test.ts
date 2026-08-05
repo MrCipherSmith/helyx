@@ -112,7 +112,12 @@ describe("listOwnedContainers", () => {
 describe("the snapshot the health analyst reads", () => {
   function db(): FakeSql {
     const fake = new FakeSql();
-    fake.program("FROM projects", { rows: [] });
+    // Ownership comes from the registered projects rather than from the compose
+    // project name, which `collectSystemSnapshot` derives from the directory the
+    // checkout happens to live in. Tests that depend on that pass in a folder
+    // called `helyx` and fail in a git worktree — found by running this suite
+    // from one.
+    fake.program("FROM projects", { rows: [{ name: OURS }] });
     return fake;
   }
 
