@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+### test: the voice fallback that production has been relying on all day
+
+Every reply over 300 characters is spoken, so `utils/tts.ts` runs on nearly
+every message the operator receives — and it has been failing its first provider
+on every one of them. `tts: Yandex error` with a 401 appears on each synthesis
+in `logs/bot.log`: the key is rejected, the chain falls through to Piper, and
+the operator hears the second provider without anything saying so. That fallback
+was load-bearing in production and had never been tested. 529 of 560 lines
+uncovered.
+
+`synthesize` reaches the world through exactly two doors — `fetch` for the HTTP
+providers and the normalizer, `Bun.spawn` for Piper — so both are replaced and
+the decisions are driven without a network or a voice model. The Piper stub
+reads the output path out of the argv it is given and writes a file there,
+because a stub that only reported an exit code would prove the binary was
+called rather than that sound came back.
+
+Covered: nothing worth speaking and voice switched off; the chain with Yandex
+answering, with Yandex failing into Piper — the path production takes on every
+message today — with both failing into the third provider, and with all of them
+failing, which is silence rather than a crash; the language order, where English
+never asks the Russian-first provider; the guard that discards a normalizer
+which answered in the wrong language, written because one once turned
+`--build bot` into `--строить бот`; and that whatever Latin the normalizer
+leaves is cyrillized before it reaches a voice with no Latin phonemes.
+
+Then the decisions around it: which replies are spoken at all — a reply that is
+mostly a fenced code block is not, a diff is not, and a markdown bullet list is
+not mistaken for one — where a long reply is cut, and that a rejected upload is
+swallowed rather than thrown at a caller whose text has already been delivered.
+
+Coverage of the file: 5.54% → 57.02%.
+
 ### fix: a model that answers with nothing no longer becomes the session's record
 
 `memory/summarizer.ts` decides what the system remembers, and 322 of its 390
