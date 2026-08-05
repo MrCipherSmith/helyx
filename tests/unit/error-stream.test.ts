@@ -200,6 +200,27 @@ describe("a line that arrives already stale", () => {
   });
 });
 
+describe("what the window stops remembering", () => {
+  test("state for a message unseen past the novelty memory is dropped", () => {
+    // Raised in review as an unbounded leak. The measured key space is seven
+    // distinct messages across the whole log history, because `msg` is a
+    // literal at every call site — but state older than the novelty memory is
+    // unused by definition, so holding it says the window knows something it
+    // does not.
+    const window = new ErrorWindow({ errorThreshold: 2, noveltyMs: 1_000, windowMs: 500 });
+    const now = 1_000_000;
+    window.observe([at(LEVEL_ERROR, now, "db: query failed")], now);
+
+    // Long enough later that the message is forgotten rather than merely aged
+    // out of the counting window: it reports as new again, from a clean count.
+    const later = window.observe([at(LEVEL_ERROR, now + 10_000, "db: query failed")], now + 10_000);
+
+    expect(later).toHaveLength(1);
+    expect(later[0]!.reason).toBe("novel");
+    expect(later[0]!.count).toBe(1);
+  });
+});
+
 describe("what the alert carries", () => {
   test("the message, the count, the window and when it started", () => {
     // Asserted on the object rather than on rendered text: the rendering is the

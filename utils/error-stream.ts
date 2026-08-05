@@ -152,6 +152,7 @@ export class ErrorWindow {
    */
   observe(lines: readonly string[], now: number): StreamAlert[] {
     const alerts: StreamAlert[] = [];
+    this.forget(now);
 
     for (const line of lines) {
       const entry = parseLogEntry(line);
@@ -199,6 +200,32 @@ export class ErrorWindow {
     }
 
     return alerts;
+  }
+
+  /**
+   * Drop state for messages that have not been seen within the novelty memory.
+   *
+   * Raised in review as an unbounded leak. Measured before acting on it: the
+   * whole history of `logs/bot.log` — 5149 warning and error lines — contains
+   * **seven** distinct messages, because `msg` is a literal at every log call
+   * in this repository and the key space is therefore the number of log
+   * statements, not the amount of traffic. The predicted thousands of keys are
+   * not what happens.
+   *
+   * It is still right to evict, for a reason the finding did not give: once a
+   * message is older than `noveltyMs` it is novel again by definition, so
+   * everything remembered about it is already unused. Keeping it is not a leak
+   * so much as a lie about what the window knows. And should someone one day
+   * interpolate a value into a `msg`, this makes the difference between a bug
+   * and a slow one.
+   */
+  private forget(now: number): void {
+    for (const [msg, seen] of this.lastSeen) {
+      if (now - seen <= this.noveltyMs) continue;
+      this.lastSeen.delete(msg);
+      this.occurrences.delete(msg);
+      this.reportedAt.delete(msg);
+    }
   }
 
   private alert(entry: LogEntry, times: readonly number[], reason: "novel" | "volume"): StreamAlert {
