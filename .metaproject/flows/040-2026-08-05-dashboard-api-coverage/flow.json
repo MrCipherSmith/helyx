@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 2,
+  "id": "040",
+  "slug": "dashboard-api-coverage",
+  "title": "The dashboard API is the largest untested surface in the repository",
+  "status": "in-progress",
+  "createdAt": "2026-08-05T19:12:55.716Z",
+  "updatedAt": "2026-08-05T19:15:35.110Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:d685b064c66137a7c414e3dbb8226d55623679662a1c40308cd7e30216f96123",
+  "acConfirmed": {},
+  "pr": {
+    "url": null
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-05T19:12:55.716Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-05T19:14:12.439Z",
+      "event": "frozen",
+      "detail": "11 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-05T19:14:12.526Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-05T19:15:35.110Z",
+      "event": "ac-updated",
+      "detail": "AC1 assumed the dispatcher hands unknown paths back to a static file server outside it. Read the code after the test failed: it serves the dashboard's static files itself and returns false only when nothing matched at all. The criterion now states the real contract and requires both halves to be proved."
+    }
+  ]
+}

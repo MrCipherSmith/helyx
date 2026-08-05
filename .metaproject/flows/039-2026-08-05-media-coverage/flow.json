@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "id": "039",
+  "slug": "media-coverage",
+  "title": "Media arrives from Telegram through an untested path",
+  "status": "initializing",
+  "createdAt": "2026-08-05T19:11:58.323Z",
+  "updatedAt": "2026-08-05T19:11:58.323Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": null,
+  "acConfirmed": {},
+  "pr": {
+    "url": null
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "todo"
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "todo"
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "todo"
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "todo"
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-05T19:11:58.323Z",
+      "event": "created"
+    }
+  ]
+}
