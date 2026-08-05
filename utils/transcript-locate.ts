@@ -102,6 +102,12 @@ export function localTranscriptPath(
   const carried = path.slice(at + marker.length);
   if (!carried || carried.split("/").includes("..")) return null;
 
+  // `join`, never `resolve`: a carried segment that begins with a slash — which
+  // a doubled separator in the reported path would produce — is a relative
+  // segment to `join` and an absolute path to `resolve`. The first keeps the
+  // candidate under the root; the second would hand back `/etc/passwd`. Raised
+  // in review as a possible escape, and the difference between the two calls is
+  // the only thing standing between it and being one.
   const candidate = join(root, carried);
   return exists(candidate) ? candidate : null;
 }

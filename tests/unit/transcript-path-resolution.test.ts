@@ -61,6 +61,20 @@ describe("localTranscriptPath", () => {
     expect(localTranscriptPath(evil, ROOT, () => false)).toBeNull();
   });
 
+  test("a carried segment that looks absolute still lands under the root", () => {
+    // Raised in review: a doubled separator makes the carried segment start
+    // with a slash, and `resolve` would then return `/etc/passwd` outright.
+    // `join` treats it as relative. This pins that difference, because the
+    // escape is one careless substitution away.
+    const captured: string[] = [];
+    localTranscriptPath("/home/altsay/.claude//etc/passwd", "/host-claude-config", (p) => {
+      captured.push(p);
+      return false;
+    });
+
+    expect(captured[1]).toBe("/host-claude-config/etc/passwd");
+  });
+
   test("null when neither candidate exists, and when there is no .claude segment", () => {
     expect(localTranscriptPath(HOST_PATH, ROOT, () => false)).toBeNull();
     expect(localTranscriptPath("/tmp/somewhere/else.jsonl", ROOT, () => false)).toBeNull();
