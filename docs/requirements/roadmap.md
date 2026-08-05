@@ -22,7 +22,7 @@ live in the tree.
 | B | Reviewer operations — availability, persistence, triggers | [reviewer-operations-2026-08-05](reviewer-operations-2026-08-05/README.md) | `spec ready` | nothing | 2nd |
 | C | I/O layer coverage — gate from WARN to PASS | [io-layer-coverage-2026-08-05](io-layer-coverage-2026-08-05/README.md) | `spec ready` | A landing first (both touch `scripts/supervisor.ts`) | 3rd |
 | D | E2E in CI | none — see below | `future` | a maintainer decision | after C |
-| E | Coverage to sixty — close the remaining 3312 lines | [coverage-to-sixty-2026-08-05](coverage-to-sixty-2026-08-05/README.md) | `draft` | the maintainer choosing between the two methods in its §3, and the question in its §5 | after the rebuild |
+| E | Coverage to sixty — close the remaining 3312 lines | [coverage-to-sixty-2026-08-05](coverage-to-sixty-2026-08-05/README.md) | `spec ready` | nothing — §5 answered 2026-08-05: the floor is a minimum, so the order is by risk | after the rebuild |
 
 ### Why this order
 

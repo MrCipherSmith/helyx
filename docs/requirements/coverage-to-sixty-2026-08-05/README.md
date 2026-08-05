@@ -1,6 +1,6 @@
 # Coverage to Sixty
 
-Version: 1.0.0
+Version: 1.1.0
 
 ## Purpose
 
@@ -11,9 +11,13 @@ the list.
 
 ## Status
 
-`draft` — written 2026-08-05 at the maintainer's request after the
-sixteen-flow observability programme landed. Nothing started. The maintainer
-runs it after the pending rebuild and restart.
+`spec ready` — written 2026-08-05 at the maintainer's request after the
+sixteen-flow observability programme landed. Nothing started; it runs after the
+pending rebuild and restart.
+
+The open question in the PRD's §5 is answered: **60% is a minimum, not a
+target.** The order in §4 follows from that — by what fails badly, not by what
+yields the most lines.
 
 | Metric | Value | Source |
 |---|---|---|
