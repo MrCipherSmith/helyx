@@ -35,6 +35,9 @@ export const POLL_INTERVAL_MS = 2_000;
  */
 export const BUFFER_LINES = 60;
 
+/** How many finished agents' read positions are remembered. */
+export const REMEMBERED_OFFSETS = 64;
+
 /** Empty polls before asking whether the session moved to a new transcript. */
 export const RERESOLVE_AFTER_EMPTY_POLLS = 15;
 
@@ -169,6 +172,18 @@ export class TranscriptSession {
    * or aged out — is dropped rather than tailed for ever.
    */
   private async pollAgents(): Promise<string[]> {
+    try {
+      return await this.readAgents();
+    } catch {
+      // The parent's lines have already been read and its offset advanced by
+      // the time this runs, so anything thrown here would lose them. Nothing in
+      // the body is expected to throw — every read is guarded — and this is the
+      // belt for the case that is not thought of. Raised in review.
+      return [];
+    }
+  }
+
+  private async readAgents(): Promise<string[]> {
     const parent = this.tail?.path;
     if (!parent) return [];
 
@@ -184,6 +199,12 @@ export class TranscriptSession {
     for (const [id, tracked] of [...this.agents.entries()]) {
       if (live.has(id)) continue;
       this.agentOffsets.set(id, tracked.tail.position);
+      // Bounded: a session that spawned hundreds of agents would otherwise
+      // remember every one of them for as long as it lived.
+      if (this.agentOffsets.size > REMEMBERED_OFFSETS) {
+        const oldest = this.agentOffsets.keys().next().value;
+        if (oldest !== undefined) this.agentOffsets.delete(oldest);
+      }
       this.agents.delete(id);
     }
 
@@ -263,8 +284,12 @@ export class TranscriptSession {
       if (tokens !== null) this.tokenTotal += tokens;
       rendered.push(...renderEntry(entry));
     }
-    this.buffer.push(rendered);
+    // Subagents first, the parent last: the buffer drops its oldest, and a
+    // chatty fan-out would otherwise push the session's own work off the block
+    // it is supposed to be about. Raised in review, and the reason the order
+    // here is not chronological.
     this.buffer.push(fromAgents);
+    this.buffer.push(rendered);
 
     if (this.buffer.size === 0) return null;
 
@@ -304,8 +329,11 @@ export class TranscriptSession {
     });
     if (!path || path === this.tail?.path) return;
     this.tail = TranscriptTail.at(path, 0);
-    // The old session's subagents belong to the old session.
+    // The old session's subagents belong to the old session — and so do their
+    // offsets: a new session that happened to reuse an agent id would otherwise
+    // resume into a file it has never read. Raised in review.
     this.agents.clear();
+    this.agentOffsets.clear();
     this.buffer.clear();
     this.tokenTotal = 0;
     this.lastEmitted = null;

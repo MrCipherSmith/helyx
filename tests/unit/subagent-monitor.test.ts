@@ -13,7 +13,7 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, rmSync, utimesSync } from "fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, rmSync, utimesSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { TranscriptSession } from "../../utils/transcript-monitor.ts";
@@ -199,7 +199,7 @@ describe("a session that spawned subagents", () => {
     expect(await monitor.poll()).toContain("only-once.ts");
 
     // It leaves the listing and comes back with the same content.
-    const saved = require("fs").readFileSync(first);
+    const saved = readFileSync(first);
     rmSync(first);
     await monitor.poll();
     writeFileSync(first, saved);
@@ -207,6 +207,24 @@ describe("a session that spawned subagents", () => {
     const block = await monitor.poll();
 
     expect(block).toBeNull();
+  });
+
+  test("a fan-out cannot push the session's own work off the block", async () => {
+    // The buffer keeps the newest lines and drops the oldest, so the order the
+    // two sources are pushed in decides who survives a wide fan-out. The parent
+    // goes last. Raised in review: the earlier test only proved it for a buffer
+    // with room to spare.
+    const { path, agents } = session();
+    const monitor = new TranscriptSession(PROJECT, { root, subagentsSince: 0, bufferLines: 5 });
+    await monitor.attach();
+
+    append(path, assistant("what the session itself is doing"));
+    const agent = spawnAgent(agents, "a1", { agentType: "Explore" });
+    for (let i = 0; i < 20; i++) append(agent, toolCall("Read", { file_path: `file${i}.ts` }));
+
+    const block = await monitor.poll();
+
+    expect(block).toContain("what the session itself is doing");
   });
 
   test("a session with no fan-out behaves exactly as it did", async () => {
