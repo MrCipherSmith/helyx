@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+### feat: something reads what the bot says about itself
+
+The supervisor runs ten scheduled checks. They read Docker, `message_queue`,
+`sessions`, `active_status_messages` and `process_health`. None of them read
+`logs/bot.log`, and on 2026-08-05 three separate repeating defects were live in
+one day of it — a voice pipeline failing its first provider on every message, a
+fact extractor logging `file not found` 4136 times, and the bot's own reactions
+logging as an access violation. All three were found by a person reading the
+file while looking for something else.
+
+Loop 9 reads what has been appended since its last pass and applies two rules,
+each of which exists because the other cannot see its case:
+
+- **Volume** — one message crossing a threshold inside a rolling window. This is
+  the 4136 case: nothing new about any of them, and nobody told.
+- **Novelty** — an error-level message not seen before, reported on its first
+  occurrence whatever the count. This is the leak that never gets loud enough
+  for a threshold, and it is what would have caught the Yandex 401 on the day it
+  started rather than weeks later.
+
+Having been reported as new does not exempt a message from later being reported
+as a flood: "this error exists" and "it is now constant" are different
+sentences and the operator is owed both.
+
+Reading is incremental through `TranscriptTail`, the reader written for the
+status monitor, which already handles a line whose newline has not arrived yet
+and a file that was truncated or replaced. The window is in memory and resets
+with the daemon: an alert about errors that stopped an hour ago is noise, and
+the file remains the record.
+
+The watcher reports its own blindness. Two consecutive failures to read the log
+raise one alert of their own — a monitor that stops working quietly is the
+defect this loop exists to remove, and it is not allowed to become one.
+
 ### fix: one answer to which containers exist
 
 The supervisor asked Docker twice. `sendStatusBroadcast` ran `docker ps -a`,

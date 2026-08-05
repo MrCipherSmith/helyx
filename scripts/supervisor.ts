@@ -28,6 +28,8 @@ import type postgres from "postgres";
 import { join, resolve } from "node:path";
 import { forceSummarize } from "../memory/summarizer.ts";
 import { clearCache } from "../memory/short-term.ts";
+import { ErrorWindow } from "../utils/error-stream.ts";
+import { TranscriptTail } from "../utils/transcript-locate.ts";
 import { isRequeued, markRequeued } from "../utils/requeue.ts";
 import { paneLines, hasActiveSpinner, escapeHtml } from "../utils/terminal.ts";
 import { stripReasoning } from "../utils/llm-output.ts";
@@ -1278,6 +1280,106 @@ export function recoveryDecision(
 
 const RECOVERY_HOLD_MS = 60_000;
 
+// --- Loop 9: the bot's own error stream ---
+
+/**
+ * The stream this supervisor had never read.
+ *
+ * Nine checks watch Docker, the queue, the sessions and the status table, and
+ * none of them watched what the bot writes about itself. Three separate
+ * repeating defects were live in one day of `logs/bot.log` and all three were
+ * found by a person reading the file for another reason.
+ *
+ * Reading is incremental and delegated to `TranscriptTail`, which was written
+ * for the status monitor and already handles the two things that go wrong when
+ * tailing a file someone else is writing: a line is not a line until its
+ * newline arrives, and a file that shrank or changed inode is a different file.
+ * A third copy of that reasoning is the last thing this repository needs.
+ */
+export interface ErrorStreamReader {
+  /** Lines appended since the last call. Throws when the file cannot be read. */
+  read(): Promise<string[]>;
+  window: ErrorWindow;
+  /**
+   * Consecutive read failures. Kept on the stream rather than in a module
+   * variable: the watcher's own health belongs to the thing it is watching, and
+   * a counter shared by every caller in the process makes one test's failure
+   * the next test's starting condition.
+   */
+  failures: number;
+}
+
+export function createErrorStreamReader(
+  path: string = join(BOT_DIR, "logs", "bot.log"),
+): ErrorStreamReader {
+  let tail: TranscriptTail | null = null;
+  const window = new ErrorWindow();
+  return {
+    window,
+    failures: 0,
+    async read(): Promise<string[]> {
+      // Opened at the end, not the beginning: the file holds weeks of history
+      // and replaying it on every daemon restart would alert about errors that
+      // stopped long ago.
+      if (!tail) tail = await TranscriptTail.atEnd(path);
+      return tail.read();
+    },
+  };
+}
+
+export interface ErrorStreamDeps {
+  alert: (text: string, key: string) => Promise<void>;
+  note: (message: string) => void;
+  now: () => number;
+}
+
+/** Consecutive read failures before the watcher reports that it is blind. */
+export const ERROR_STREAM_BLIND_AFTER = 2;
+
+export async function checkErrorStream(
+  reader: ErrorStreamReader,
+  deps: ErrorStreamDeps = {
+    alert: async (text, key) => {
+      if (!shouldAlert(key)) return;
+      await sendAlertWithButtons(text, [
+        [{ text: "🔕 Тишина на 1 ч", callback_data: `sup:ack:${key}:0` }],
+      ]);
+    },
+    note: (message) => console.error(`[supervisor] ${message}`),
+    now: () => Date.now(),
+  },
+): Promise<void> {
+  let lines: string[];
+  try {
+    lines = await reader.read();
+    reader.failures = 0;
+  } catch (err: any) {
+    // A monitor that stops running quietly is the defect this loop exists to
+    // remove, so its own failure is not allowed to be quiet either.
+    reader.failures++;
+    deps.note(`error stream unreadable: ${err?.message ?? String(err)}`);
+    if (reader.failures === ERROR_STREAM_BLIND_AFTER) {
+      await deps.alert(
+        "⚠️ <b>Лог бота не читается</b>\nНаблюдение за ошибками не работает — супервизор не видит, что пишет бот.",
+        "error_stream:unreadable",
+      );
+    }
+    return;
+  }
+
+  for (const alert of reader.window.observe(lines, deps.now())) {
+    const minutes = Math.round(alert.windowMs / 60_000);
+    const since = new Date(alert.firstAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+    const heading = alert.reason === "novel" ? "🆕 <b>Новая ошибка в логе бота</b>" : "⚠️ <b>Ошибки в логе бота</b>";
+    const body =
+      alert.reason === "novel"
+        ? `<code>${escapeHtml(alert.msg)}</code>\nвпервые в ${since}`
+        : `<code>${escapeHtml(alert.msg)}</code>\n${alert.count} раз за ${minutes} мин · впервые в ${since}`;
+    const detail = alert.detail ? `\n<i>${escapeHtml(alert.detail)}</i>` : "";
+    await deps.alert(`${heading}\n${body}${detail}`, `error_stream:${alert.msg}`);
+  }
+}
+
 async function checkRecovery(sql: postgres.Sql): Promise<void> {
   for (const [dedupKey, alert] of activeAlerts) {
     const project = projectFromSessionProblemKey(dedupKey);
@@ -1419,6 +1521,20 @@ export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
     }, 2 * 60_000);
     unansweredTimer.unref?.();
   }, 45_000);
+
+  // Loop 9: the bot's own error stream — every 90s, offset 25s from the rest.
+  // Reads only what has been appended since the last pass, so the interval is
+  // its own rate limit.
+  const errorStream = createErrorStreamReader();
+  setTimeout(() => {
+    let errorStreamRunning = false;
+    const errorStreamTimer = setInterval(() => {
+      if (errorStreamRunning) return;
+      errorStreamRunning = true;
+      checkErrorStream(errorStream).catch(() => {}).finally(() => { errorStreamRunning = false; });
+    }, 90_000);
+    errorStreamTimer.unref?.();
+  }, 25_000);
 
   // Loop: Recovery check — every 60s (offset 30s from session loop)
   setTimeout(() => {
