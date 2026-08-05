@@ -19,8 +19,51 @@ import { attachmentFor, isImage, fitsInline, anthropicImageMime } from "../utils
 
 
 
-/** Deliver a downloaded file to Claude (cli queue or standalone LLM). */
-async function deliverMedia(
+/**
+ * What `deliverMedia` reaches through to the rest of the system.
+ *
+ * A seam rather than module replacement, which was tried first and could not
+ * stay: replacing `memory/db.ts` in the module registry re-evaluates everything
+ * behind this file — which is most of the bot — and left
+ * `services/provider-service.ts` half-initialised for four tests in another
+ * file that had nothing to do with media. What a test does to the module
+ * registry outlives the test.
+ *
+ * Only this function goes through it. The rest of the file still calls its
+ * imports directly, and gains a seam when something needs one.
+ */
+export interface MediaDeps {
+  sql: typeof sql;
+  addMessage: typeof addMessage;
+  composePrompt: typeof composePrompt;
+  getProviderInfo: typeof getProviderInfo;
+  streamToTelegram: typeof streamToTelegram;
+  maybeAttachVoice: typeof maybeAttachVoice;
+  appendLog: typeof appendLog;
+  getBotRef: typeof getBotRef;
+}
+
+const PRODUCTION_DEPS: MediaDeps = {
+  sql, addMessage, composePrompt, getProviderInfo,
+  streamToTelegram, maybeAttachVoice, appendLog, getBotRef,
+};
+
+let deps: MediaDeps = PRODUCTION_DEPS;
+
+/** Stand something else in for a test; the returned function puts it back. */
+export function setMediaDeps(next: Partial<MediaDeps>): () => void {
+  const previous = deps;
+  deps = { ...deps, ...next };
+  return () => { deps = previous; };
+}
+
+/**
+ * Deliver a downloaded file to Claude (cli queue or standalone LLM).
+ *
+ * Exported for the tests: the branch below decides whether a picture is seen
+ * or merely mentioned, and it is reachable no other way.
+ */
+export async function deliverMedia(
   ctx: Context,
   route: Awaited<ReturnType<typeof routeMessage>>,
   filePath: string,
@@ -33,7 +76,7 @@ async function deliverMedia(
   messageId?: number,
   forumTopicId?: number | null,
 ): Promise<void> {
-  const bot = getBotRef();
+  const bot = deps.getBotRef();
   const chatId = String(ctx.chat!.id);
   const fromUser = ctx.from?.username ?? ctx.from?.first_name ?? "user";
   const text = `${description}: ${caption}\n[file: ${hostPath}]`;
@@ -52,7 +95,7 @@ async function deliverMedia(
     }
     const attachment = attachmentFor({ ...facts, byteLength }, base64) as unknown as Record<string, unknown>;
 
-    await addMessage({
+    await deps.addMessage({
       sessionId: route.sessionId,
       projectPath: route.projectPath,
       chatId,
@@ -60,7 +103,7 @@ async function deliverMedia(
       content: text,
       metadata: { fileId, filePath, messageId },
     });
-    await sql`
+    await deps.sql`
       INSERT INTO message_queue (session_id, chat_id, from_user, content, message_id, attachments)
       VALUES (
         ${route.sessionId}, ${chatId}, ${fromUser}, ${text},
@@ -75,9 +118,9 @@ async function deliverMedia(
 
   // Standalone
   const sessionId = route.sessionId;
-  const { provider } = getProviderInfo();
+  const { provider } = deps.getProviderInfo();
 
-  await addMessage({
+  await deps.addMessage({
     sessionId,
     projectPath: route.projectPath,
     chatId,
@@ -100,21 +143,21 @@ async function deliverMedia(
       if (!fitsInline(fileData.byteLength)) throw new Error("image too large to inline");
       const base64 = Buffer.from(fileData).toString("base64");
       const imageMime = anthropicImageMime(mimeType);
-      const { system, messages } = await composePrompt(sessionId, chatId, caption);
+      const { system, messages } = await deps.composePrompt(sessionId, chatId, caption);
       const lastMsg = messages[messages.length - 1];
       const imageBlocks: ContentBlock[] = [
         { type: "image", source: { type: "base64", media_type: imageMime, data: base64 } },
         { type: "text", text: caption },
       ];
       messages[messages.length - 1] = { role: lastMsg.role, content: imageBlocks };
-      appendLog(sessionId, chatId, "llm", "analyzing image...");
-      const response = await streamToTelegram(bot, ctx.chat!.id, system, messages, { sessionId, chatId, operation: "chat" }, forumTopicId);
-      appendLog(sessionId, chatId, "reply", `image reply sent ${response.length} chars`);
-      await addMessage({ sessionId, projectPath: route.projectPath, chatId, role: "assistant", content: response });
-      maybeAttachVoice(bot, ctx.chat!.id, response, forumTopicId);
+      deps.appendLog(sessionId, chatId, "llm", "analyzing image...");
+      const response = await deps.streamToTelegram(bot, ctx.chat!.id, system, messages, { sessionId, chatId, operation: "chat" }, forumTopicId);
+      deps.appendLog(sessionId, chatId, "reply", `image reply sent ${response.length} chars`);
+      await deps.addMessage({ sessionId, projectPath: route.projectPath, chatId, role: "assistant", content: response });
+      deps.maybeAttachVoice(bot, ctx.chat!.id, response, forumTopicId);
       return;
     } catch (err: any) {
-      appendLog(sessionId, chatId, "llm", `image analysis failed: ${err?.message}`, "error");
+      deps.appendLog(sessionId, chatId, "llm", `image analysis failed: ${err?.message}`, "error");
     }
   }
 
