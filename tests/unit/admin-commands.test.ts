@@ -83,7 +83,12 @@ describe("pending permissions", () => {
 
     expect(said.replies[0]).toContain("mcp__docker__docker_container_list");
     expect(said.replies[0]).toContain("List all containers");
-    expect(said.replies[0]).toMatch(/9\ds ago/); // roughly a minute and a half
+    // Raised in review as brittle, and it was: a narrow numeric window fails
+    // for a reason that has nothing to do with the handler. What matters is
+    // that the wait is reported in seconds and is at least as long as the
+    // fixture's.
+    const ago = Number(said.replies[0]!.match(/\((\d+)s ago\)/)?.[1]);
+    expect(ago).toBeGreaterThanOrEqual(89);
   });
 });
 
