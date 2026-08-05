@@ -5,50 +5,13 @@
   "title": "Asking what is happening should not have to wait for the session to answer",
   "status": "implemented",
   "createdAt": "2026-08-05T21:42:04.356Z",
-  "updatedAt": "2026-08-05T22:05:39.228Z",
+  "updatedAt": "2026-08-05T21:50:00.892Z",
   "source": {
     "type": "description",
     "ref": null
   },
   "acChecksum": "sha256:a991d8548cadc450550b1dfa081bacb397eecb99f626e1b20db87941a5d8c63c",
-  "acConfirmed": {
-    "AC1": {
-      "at": "2026-08-05T22:05:38.263Z"
-    },
-    "AC2": {
-      "at": "2026-08-05T22:05:38.349Z"
-    },
-    "AC3": {
-      "at": "2026-08-05T22:05:38.438Z"
-    },
-    "AC4": {
-      "at": "2026-08-05T22:05:38.522Z"
-    },
-    "AC5": {
-      "at": "2026-08-05T22:05:38.612Z"
-    },
-    "AC6": {
-      "at": "2026-08-05T22:05:38.702Z"
-    },
-    "AC7": {
-      "at": "2026-08-05T22:05:38.787Z"
-    },
-    "AC8": {
-      "at": "2026-08-05T22:05:38.875Z"
-    },
-    "AC9": {
-      "at": "2026-08-05T22:05:38.962Z"
-    },
-    "AC10": {
-      "at": "2026-08-05T22:05:39.053Z"
-    },
-    "AC11": {
-      "at": "2026-08-05T22:05:39.143Z"
-    },
-    "AC12": {
-      "at": "2026-08-05T22:05:39.228Z"
-    }
-  },
+  "acConfirmed": {},
   "pr": {
     "url": "https://github.com/MrCipherSmith/helyx/pull/87"
   },
@@ -128,66 +91,6 @@
       "at": "2026-08-05T21:50:00.892Z",
       "event": "implemented",
       "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/87"
-    },
-    {
-      "at": "2026-08-05T22:05:38.263Z",
-      "event": "ac-confirmed",
-      "detail": "AC1"
-    },
-    {
-      "at": "2026-08-05T22:05:38.349Z",
-      "event": "ac-confirmed",
-      "detail": "AC2"
-    },
-    {
-      "at": "2026-08-05T22:05:38.438Z",
-      "event": "ac-confirmed",
-      "detail": "AC3"
-    },
-    {
-      "at": "2026-08-05T22:05:38.522Z",
-      "event": "ac-confirmed",
-      "detail": "AC4"
-    },
-    {
-      "at": "2026-08-05T22:05:38.612Z",
-      "event": "ac-confirmed",
-      "detail": "AC5"
-    },
-    {
-      "at": "2026-08-05T22:05:38.702Z",
-      "event": "ac-confirmed",
-      "detail": "AC6"
-    },
-    {
-      "at": "2026-08-05T22:05:38.787Z",
-      "event": "ac-confirmed",
-      "detail": "AC7"
-    },
-    {
-      "at": "2026-08-05T22:05:38.875Z",
-      "event": "ac-confirmed",
-      "detail": "AC8"
-    },
-    {
-      "at": "2026-08-05T22:05:38.962Z",
-      "event": "ac-confirmed",
-      "detail": "AC9"
-    },
-    {
-      "at": "2026-08-05T22:05:39.053Z",
-      "event": "ac-confirmed",
-      "detail": "AC10"
-    },
-    {
-      "at": "2026-08-05T22:05:39.143Z",
-      "event": "ac-confirmed",
-      "detail": "AC11"
-    },
-    {
-      "at": "2026-08-05T22:05:39.228Z",
-      "event": "ac-confirmed",
-      "detail": "AC12"
     }
   ]
 }
