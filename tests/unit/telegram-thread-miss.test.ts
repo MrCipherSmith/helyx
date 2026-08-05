@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { sendTelegramMessage, deleteTelegramMessage } from "../../channel/telegram.ts";
+import { sendTelegramMessage } from "../../channel/telegram.ts";
 import { channelLogger } from "../../logger.ts";
 
 /**
@@ -85,12 +85,18 @@ describe("send into a forum topic", () => {
     expect(errors).toEqual([]);
   });
 
-  test("a method that returns no message is not mistaken for a miss", async () => {
+  // Raised in review: the first version of this case called the fire-and-forget
+  // `deleteTelegramMessage` and waited on `Bun.sleep(0)` for the logging to have
+  // happened. The assertion held by timing rather than by sequence, and a change
+  // that delayed the work by one more tick would have turned it into a false
+  // pass. The guard it exercises — a result that carries no `message_id` — is
+  // reachable from an awaited call, so it is tested from one.
+  test("a response that is not a message is not mistaken for a miss", async () => {
     stubTelegram(true);
 
-    deleteTelegramMessage(TOKEN, CHAT, 500);
-    await Bun.sleep(0);
+    const res = await sendTelegramMessage(TOKEN, CHAT, "hi", { message_thread_id: 1159 });
 
+    expect(res.ok).toBe(true);
     expect(errors).toEqual([]);
   });
 });
