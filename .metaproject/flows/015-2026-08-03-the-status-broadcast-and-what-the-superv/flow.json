@@ -3,9 +3,9 @@
   "id": "015",
   "slug": "the-status-broadcast-and-what-the-superv",
   "title": "the status broadcast, and what the supervisor is answerable for",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-03T21:57:55.986Z",
-  "updatedAt": "2026-08-03T22:15:03.529Z",
+  "updatedAt": "2026-08-04T20:45:24.787Z",
   "source": {
     "type": "description",
     "ref": null
@@ -54,7 +54,7 @@
     }
   },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/51"
   },
   "tasks": [
     {
@@ -341,6 +341,20 @@
       "at": "2026-08-03T22:15:03.529Z",
       "event": "ac-confirmed",
       "detail": "AC10: typecheck clean, lint 0 errors, 961 tests, dupes 2 both documented, supervisor 46.76% lines"
+    },
+    {
+      "at": "2026-08-04T20:45:22.872Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/51 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-08-04T20:45:22.968Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-04T20:45:24.787Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
   ]
 }

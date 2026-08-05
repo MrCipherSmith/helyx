@@ -51,8 +51,20 @@ export const HEADER_BUDGET_CHARS = 64;
 /** A spinner frame and a phase marker are one glyph each. */
 export const GLYPH_BUDGET_CHARS = 8;
 
-/** Lines of recent activity to keep. */
-export const ACTIVITY_LINES = 15;
+/**
+ * Lines of recent activity to keep.
+ *
+ * Fifteen while the only source was a terminal scrape, where a whitelist threw
+ * away everything that was not a tool call and fifteen lines was more than the
+ * source could usually produce. The transcript reader produces the session's
+ * actual reasoning and prose as well, so the cap was the binding constraint
+ * rather than the safety margin it was meant to be.
+ *
+ * Raising it does not risk the message: `tailWithinBudget` below is what bounds
+ * what is sent, and it is unchanged. This only decides how many lines are
+ * offered to that budget.
+ */
+export const ACTIVITY_LINES = 40;
 /** Lines of raw pane to show. */
 export const PANE_LINES = 9;
 

@@ -230,21 +230,36 @@ export function parseModelsResponse(body: unknown): ProviderModel[] | null {
  * a sibling path. Returns null if nothing answers — the caller falls back to
  * the preset suggestions rather than leaving the operator with no list.
  */
-export async function fetchProviderModels(
-  baseUrl: string,
-  authToken: string,
-  authScheme: AuthScheme,
-): Promise<ProviderModel[] | null> {
-  // anthropic-version goes on every request, not just the api_key one: Anthropic
-  // answers 400 without it whatever the scheme, and a bearer token is exactly
-  // how a Claude Code session authenticates. OpenAI-compatible endpoints ignore
-  // the header, so sending it always costs nothing.
+/**
+ * How a provider wants to be authenticated, as headers.
+ *
+ * One definition because there are two callers. `fetchProviderModels` had this
+ * inline and `reviewer-service.ts:callProviderReview` restated it as a
+ * hardcoded `Bearer`, which is correct for DeepSeek and a 401 for the first
+ * `api_key` provider anyone registers — a bug that would then have been
+ * reported as "limit/auth/unavailable" and blamed on the account.
+ *
+ * anthropic-version goes on every request, not just the api_key one: Anthropic
+ * answers 400 without it whatever the scheme, and a bearer token is exactly
+ * how a Claude Code session authenticates. OpenAI-compatible endpoints ignore
+ * the header, so sending it always costs nothing.
+ */
+export function providerAuthHeaders(authToken: string, authScheme: AuthScheme): Record<string, string> {
   const headers: Record<string, string> = {
     "content-type": "application/json",
     "anthropic-version": "2023-06-01",
   };
   if (authScheme === "api_key") headers["x-api-key"] = authToken;
   else headers.authorization = `Bearer ${authToken}`;
+  return headers;
+}
+
+export async function fetchProviderModels(
+  baseUrl: string,
+  authToken: string,
+  authScheme: AuthScheme,
+): Promise<ProviderModel[] | null> {
+  const headers = providerAuthHeaders(authToken, authScheme);
 
   const root = baseUrl.replace(/\/+$/, "");
   // Some providers mount the model list only at the bare root `/models` while

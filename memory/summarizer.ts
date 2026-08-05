@@ -179,7 +179,11 @@ async function trySummarize(
   try {
     logger.info({ sessionId, chatId, messageCount: messages.length, trigger, projectPath: projectPath ?? null }, "summarizing");
 
-    const { summary, facts } = await summarizeConversation(messages);
+    const { summary, facts: rawFacts } = await summarizeConversation(messages);
+    // Defense in depth: summarizeConversation normalizes facts, but a future
+    // caller or regression could still hand us undefined — guard so neither
+    // `.filter` nor `.length` below throws.
+    const facts = Array.isArray(rawFacts) ? rawFacts : [];
 
     // Post-check: validate the generated summary before saving
     if (!isSummaryWorthSaving(summary)) {
