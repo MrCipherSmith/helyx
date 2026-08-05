@@ -431,15 +431,24 @@ export async function extractFactsFromTranscript(
   transcriptPath: string,
   projectPath: string,
 ): Promise<number> {
-  const { readFileSync, existsSync } = await import("fs");
+  const { readFileSync } = await import("fs");
+  const { localTranscriptPath, resolveTranscript } = await import("../utils/transcript-locate.ts");
 
-  if (!existsSync(transcriptPath)) {
-    logger.warn({ transcriptPath }, "extractFactsFromTranscript: file not found");
+  // The hook posts a host path and this process may be in a container. Failing
+  // to translate it is what made this function log a warning per session and
+  // save nothing, for weeks. The scan is the second answer, not the first: it
+  // opens up to forty files, and this path runs once per session end, which is
+  // the only place that can afford it.
+  const readable =
+    localTranscriptPath(transcriptPath) ?? (await resolveTranscript(projectPath));
+
+  if (!readable) {
+    logger.warn({ transcriptPath, projectPath }, "extractFactsFromTranscript: file not found");
     return 0;
   }
 
   // Parse JSONL transcript — extract user/assistant turns
-  const lines = readFileSync(transcriptPath, "utf-8").split("\n").filter(Boolean);
+  const lines = readFileSync(readable, "utf-8").split("\n").filter(Boolean);
   const turns: { role: string; content: string }[] = [];
   for (const line of lines) {
     try {

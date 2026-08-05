@@ -30,6 +30,7 @@
 
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { existsSync } from "node:fs";
 import { readdir, stat, open } from "node:fs/promises";
 
 /** One line of the transcript, parsed. Fields beyond these are ignored, not rejected. */
@@ -63,6 +64,53 @@ export interface TranscriptEntry {
  */
 export function claudeConfigRoot(env: Record<string, string | undefined> = process.env): string {
   return env.HOST_CLAUDE_CONFIG || join(homedir(), ".claude");
+}
+
+/**
+ * A transcript path this process can actually open.
+ *
+ * The Stop hook posts the path from the host's point of view —
+ * `/home/<user>/.claude/projects/<slug>/<id>.jsonl` — because the session runs
+ * on the host. The bot reading it runs in a container, where that path does not
+ * exist and the same directory is mounted at `HOST_CLAUDE_CONFIG`. Both
+ * consumers of the hook took the host path literally, so both had never once
+ * succeeded in a container deployment: one logged `file not found` 4136 times,
+ * the other fails silently by design and left no trace at all.
+ *
+ * The re-rooting carries only the segment *after* `/.claude/`. The incoming
+ * path was validated by the caller before it got here and the derived one is
+ * not validated again, so the derivation must be unable to point anywhere else:
+ * a `..` inside the carried segment rejects the candidate rather than resolving
+ * it.
+ *
+ * `exists` and `root` are parameters for the same reason `claudeConfigRoot`
+ * takes its env: the branches are then testable without a filesystem or a
+ * container.
+ */
+export function localTranscriptPath(
+  path: string,
+  root: string = claudeConfigRoot(),
+  exists: (candidate: string) => boolean = existsSync,
+): string | null {
+  if (!path) return null;
+  if (exists(path)) return path;
+
+  const marker = "/.claude/";
+  const at = path.indexOf(marker);
+  if (at === -1) return null;
+
+  // A doubled separator in the reported path leaves the carried segment with a
+  // leading slash. `join` treats such a segment as relative and keeps the
+  // candidate under the root — measured, not assumed: `join("/root", "/etc/x")`
+  // is `/root/etc/x` where `resolve` would be `/etc/x`. Two review rounds read
+  // that line as an escape anyway, and an invariant that needs the reader to
+  // know which of two similar functions was called is not one worth keeping.
+  // Normalising the segment first makes containment independent of `join`.
+  const carried = path.slice(at + marker.length).replace(/^\/+/, "");
+  if (!carried || carried.split("/").includes("..")) return null;
+
+  const candidate = join(root, carried);
+  return exists(candidate) ? candidate : null;
 }
 
 /**
