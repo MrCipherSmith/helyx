@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+### test: the operator's console, against a database that answers and one that does not
+
+`bot/commands/admin.ts` was 3.65% covered. Its handlers are the ones a person
+reaches for when something is already wrong, which is the worst possible moment
+for one of them to answer with an exception instead of a number.
+
+Covered: pending permissions when there are none and when there are, with how
+long each has waited; system status reporting the database as unreachable
+rather than throwing — the case an operator hits precisely because something is
+broken; permission statistics over a week with no requests, where a percentage
+of zero gets written; and the statistics handler showing the typing indicator
+before it starts reading.
+
+The database is replaced per test and restored afterwards, never at module
+scope: a top-level `mock.module` in this repository leaked into five tests in
+other files earlier today, and the containment is the whole difference.
+
+One note kept in the test rather than smoothed away: the first version left the
+statistics summary query returning no rows, and the handler threw. That query is
+a plain aggregate with no `GROUP BY`, so Postgres always returns exactly one row
+— the fake was lying about the world, not the code failing. The row is now
+programmed and the reason is written down.
+
+Coverage of the file: 3.65% → 21.46%.
+
 ### test: what the watchdog concludes from a terminal
 
 `scripts/tmux-watchdog.ts` reads every session's pane and decides from the text
