@@ -1416,8 +1416,16 @@ export interface ReviewerHealthDeps {
   clear: (text: string, key: string) => Promise<void>;
 }
 
-/** Last known availability per reviewer id. In memory: a restart re-announces at most once. */
-const reviewerWasAvailable = new Map<string, boolean>();
+/**
+ * Last known state per reviewer id. In memory: a restart re-announces at most
+ * once.
+ *
+ * `downForBalance` is remembered because clearing needs a stronger fact than
+ * going down did. Raised in review: a balance endpoint that throws reports
+ * `balance check failed`, which contains no number, and treating "no number" as
+ * "recovered" announced a recovery on the strength of knowing nothing.
+ */
+const reviewerWasAvailable = new Map<string, { healthy: boolean; downForBalance: boolean }>();
 
 /** Exported for the tests, which drive transitions rather than a real CLI. */
 export function resetReviewerHealthState(): void {
@@ -1430,9 +1438,16 @@ export function balanceBelowFloor(detail: string, floor = REVIEWER_BALANCE_FLOOR
   return amount !== undefined && parseFloat(amount) < floor;
 }
 
-function balanceRearmed(detail: string): boolean {
+/**
+ * Enough of a balance to clear a balance alert.
+ *
+ * A missing number is *unknown*, not *resolved*: `balance check failed` is what
+ * a thrown probe reports, and it must not read as a recovery.
+ */
+export function balanceRearmed(detail: string): boolean {
   const amount = detail.match(/balance \$([0-9]+(?:\.[0-9]+)?)/)?.[1];
-  return amount === undefined || parseFloat(amount) >= REVIEWER_BALANCE_FLOOR_USD + REVIEWER_BALANCE_MARGIN_USD;
+  if (amount === undefined) return false;
+  return parseFloat(amount) >= REVIEWER_BALANCE_FLOOR_USD + REVIEWER_BALANCE_MARGIN_USD;
 }
 
 export async function checkReviewerHealth(deps: ReviewerHealthDeps): Promise<void> {
@@ -1447,11 +1462,13 @@ export async function checkReviewerHealth(deps: ReviewerHealthDeps): Promise<voi
     // An unprobed reviewer is not evidence of anything, in either direction.
     if (!status.probed) continue;
 
-    const healthy = status.available && !balanceBelowFloor(status.detail);
-    const wasHealthy = reviewerWasAvailable.get(status.id);
+    const lowBalance = balanceBelowFloor(status.detail);
+    const healthy = status.available && !lowBalance;
+    const previous = reviewerWasAvailable.get(status.id);
+    const wasHealthy = previous?.healthy;
 
     if (wasHealthy === undefined) {
-      reviewerWasAvailable.set(status.id, healthy);
+      reviewerWasAvailable.set(status.id, { healthy, downForBalance: lowBalance });
       // First sighting of a reviewer that is already down is worth saying once;
       // one that is up is not news.
       if (!healthy) {
@@ -1464,7 +1481,7 @@ export async function checkReviewerHealth(deps: ReviewerHealthDeps): Promise<voi
     }
 
     if (wasHealthy && !healthy) {
-      reviewerWasAvailable.set(status.id, false);
+      reviewerWasAvailable.set(status.id, { healthy: false, downForBalance: lowBalance });
       await deps.alert(
         `🔴 <b>Ревьюер недоступен</b>\n${escapeHtml(status.label)} (${escapeHtml(status.model)}) — ${escapeHtml(status.detail)}`,
         `reviewer_down:${status.id}`,
@@ -1472,8 +1489,11 @@ export async function checkReviewerHealth(deps: ReviewerHealthDeps): Promise<voi
       continue;
     }
 
-    if (!wasHealthy && healthy && balanceRearmed(status.detail)) {
-      reviewerWasAvailable.set(status.id, true);
+    // A balance outage needs a fresh number above the floor plus margin to
+    // clear; anything else needs only to be healthy again.
+    const cleared = healthy && (previous?.downForBalance ? balanceRearmed(status.detail) : true);
+    if (!wasHealthy && cleared) {
+      reviewerWasAvailable.set(status.id, { healthy: true, downForBalance: false });
       await deps.clear(
         `✅ Ревьюер снова доступен: ${escapeHtml(status.label)} (${escapeHtml(status.model)}) — ${escapeHtml(status.detail)}`,
         `reviewer_down:${status.id}`,

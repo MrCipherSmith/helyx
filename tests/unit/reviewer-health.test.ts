@@ -20,6 +20,7 @@ import {
   checkReviewerHealth,
   resetReviewerHealthState,
   balanceBelowFloor,
+  balanceRearmed,
   type ReviewerHealthDeps,
 } from "../../scripts/supervisor.ts";
 import type { ReviewerStatus } from "../../services/reviewer-service.ts";
@@ -60,6 +61,36 @@ describe("what the last run says", () => {
     // merging the two would invent a history nobody recorded.
     expect(outcomes.get("codex")).toMatchObject({ ok: false, error: "limit until aug 11th, 2026" });
     expect(outcomes.get("provider:4")).toMatchObject({ ok: true });
+  });
+
+  test("a reviewer the newest run does not mention keeps its last evidence", async () => {
+    // Raised in review: reading only the newest artifact meant that if Codex
+    // failed on a quota and DeepSeek then ran alone, Codex's evidence vanished
+    // and the login probe put a green tick back on it. Silence about a
+    // reviewer is not news about it.
+    const root = tempRoot();
+    writeRun(root, "2026-08-05T10-00-00-main", 120, [
+      { reviewerId: "codex", ok: false, error: "limit until aug 11th, 2026" },
+      { reviewerId: "provider:4", ok: true, error: null },
+    ]);
+    writeRun(root, "2026-08-05T16-00-00-main", 1, [
+      { reviewerId: "provider:4", ok: true, error: null },
+    ]);
+
+    const outcomes = await lastOutcomeByReviewer(root);
+
+    expect(outcomes.get("codex")).toMatchObject({ ok: false, error: "limit until aug 11th, 2026" });
+    expect(outcomes.get("provider:4")).toMatchObject({ ok: true });
+  });
+
+  test("an unreadable newest record does not stop the search", async () => {
+    const root = tempRoot();
+    writeRun(root, "2026-08-05T10-00-00-main", 120, [{ reviewerId: "codex", ok: false, error: "auth" }]);
+    const broken = join(root, "2026-08-05T16-00-00-main");
+    mkdirSync(broken, { recursive: true });
+    writeFileSync(join(broken, "run.json"), "{ not json");
+
+    expect((await lastOutcomeByReviewer(root)).get("codex")).toMatchObject({ ok: false, error: "auth" });
   });
 
   test("no artifacts is an empty answer, not a failure", async () => {
@@ -104,6 +135,16 @@ describe("balanceBelowFloor", () => {
     expect(balanceBelowFloor("balance $7.43")).toBe(false);
     // No balance in the detail is not a low balance.
     expect(balanceBelowFloor("logged in")).toBe(false);
+  });
+});
+
+describe("balanceRearmed", () => {
+  test("a missing number is unknown, not resolved", () => {
+    // `balance check failed` is what a thrown probe reports. Treating it as a
+    // recovery announced one on the strength of knowing nothing.
+    expect(balanceRearmed("balance check failed")).toBe(false);
+    expect(balanceRearmed("balance $2.10")).toBe(false); // floor 2 + margin 1
+    expect(balanceRearmed("balance $3.50")).toBe(true);
   });
 });
 
@@ -201,6 +242,28 @@ describe("checkReviewerHealth", () => {
     expect(clears).toEqual([]);
 
     await checkReviewerHealth(deps([{ ...provider, detail: "balance $3.50" }]));
+
+    expect(clears).toHaveLength(1);
+  });
+
+  test("a failed balance check does not clear a low-balance alert", async () => {
+    // The false clear: no number means unknown, and a recovery message on the
+    // strength of knowing nothing is worse than silence.
+    const provider = status({ id: "provider:4", label: "DeepSeek", detail: "balance $7.00" });
+
+    await checkReviewerHealth(deps([provider]));
+    await checkReviewerHealth(deps([{ ...provider, detail: "balance $0.31" }]));
+    await checkReviewerHealth(deps([{ ...provider, detail: "balance check failed" }]));
+
+    expect(alerts).toHaveLength(1);
+    expect(clears).toEqual([]);
+  });
+
+  test("a reviewer down for a reason other than balance clears without one", async () => {
+    // Codex has no balance to report; requiring one would leave it down for ever.
+    await checkReviewerHealth(deps([status()]));
+    await checkReviewerHealth(deps([status({ available: false, detail: "limit until aug 11th" })]));
+    await checkReviewerHealth(deps([status({ detail: "logged in" })]));
 
     expect(clears).toHaveLength(1);
   });

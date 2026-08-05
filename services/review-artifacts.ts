@@ -160,6 +160,15 @@ export async function persistReviewRun(
   }
 }
 
+/**
+ * How far back to look for a reviewer's last outcome.
+ *
+ * Bounded because the search is only useful while the evidence is: a reviewer
+ * absent from the last twenty runs is not being used, and the live probe is a
+ * better answer than an archaeological one.
+ */
+export const MAX_RUNS_CONSULTED = 20;
+
 export interface ReviewerOutcome {
   ok: boolean;
   error: string | null;
@@ -176,8 +185,12 @@ export interface ReviewerOutcome {
  * for a spent quota. A record of the last real run cannot disagree with reality
  * that way — it *is* reality, from the most recent time it was tested.
  *
- * Reads only the newest artifact. An older one describes a state that has since
- * been superseded, and merging several would invent a history nobody recorded.
+ * Newest first, and the first record of a reviewer wins — but an older run is
+ * still consulted for a reviewer the newer one does not mention. Raised in
+ * review: reading only the newest artifact meant that if A failed on a quota and
+ * B then ran alone, A's evidence vanished and the login probe put a green tick
+ * back on it. A record is superseded only by a newer record *of the same
+ * reviewer*; silence about A is not news about A.
  */
 export async function lastOutcomeByReviewer(
   root: string = DEFAULT_ARTIFACT_ROOT,
@@ -201,20 +214,22 @@ export async function lastOutcomeByReviewer(
 
   runs.sort((a, b) => b.mtimeMs - a.mtimeMs);
 
-  let parsed: { startedAt?: string; reports?: Array<{ reviewerId?: string; ok?: boolean; error?: string | null }> };
-  try {
-    parsed = JSON.parse(await Bun.file(runs[0]!.path).text());
-  } catch {
-    return out;
-  }
+  for (const run of runs.slice(0, MAX_RUNS_CONSULTED)) {
+    let parsed: { startedAt?: string; reports?: Array<{ reviewerId?: string; ok?: boolean; error?: string | null }> };
+    try {
+      parsed = JSON.parse(await Bun.file(run.path).text());
+    } catch {
+      continue; // a half-written or hand-edited record is not the end of the search
+    }
 
-  for (const report of parsed.reports ?? []) {
-    if (!report.reviewerId) continue;
-    out.set(report.reviewerId, {
-      ok: report.ok === true,
-      error: report.error ?? null,
-      at: parsed.startedAt ?? "",
-    });
+    for (const report of parsed.reports ?? []) {
+      if (!report.reviewerId || out.has(report.reviewerId)) continue;
+      out.set(report.reviewerId, {
+        ok: report.ok === true,
+        error: report.error ?? null,
+        at: parsed.startedAt ?? "",
+      });
+    }
   }
   return out;
 }
