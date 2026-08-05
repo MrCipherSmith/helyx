@@ -131,7 +131,33 @@ export async function findSubagents(
   }
 
   found.sort((a, b) => b.mtimeMs - a.mtimeMs);
-  return found.slice(0, options.max ?? MAX_TRACKED_AGENTS);
+  return options.max === undefined ? found : found.slice(0, options.max);
+}
+
+/**
+ * Which of the fan-out to follow, given which are already being followed.
+ *
+ * Newest-first alone was wrong in two ways, both raised in review:
+ *
+ * - **A slow agent starved.** An agent that writes rarely falls out of the
+ *   newest three and its progress is never shown, however long it runs — the
+ *   motionless status this whole flow exists to fix, in miniature.
+ * - **The set flapped, and flapping re-read.** With four agents the newest
+ *   three change every poll; a tail dropped and re-created starts at offset
+ *   zero, so its lines arrive a second time and its tokens are counted twice.
+ *
+ * So a followed agent keeps its place until its file goes away, and the free
+ * slots go to the newest of the rest. The operator watches the same agents
+ * rather than a set that reshuffles under them.
+ */
+export function selectAgents(
+  found: readonly SubagentFile[],
+  tracked: ReadonlySet<string>,
+  max: number = MAX_TRACKED_AGENTS,
+): SubagentFile[] {
+  const keep = found.filter((f) => tracked.has(f.agentId));
+  const rest = found.filter((f) => !tracked.has(f.agentId));
+  return [...keep, ...rest].slice(0, Math.max(max, keep.length));
 }
 
 /**

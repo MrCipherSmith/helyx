@@ -21,8 +21,8 @@ import {
   subagentDir,
   labelFor,
   findSubagents,
+  selectAgents,
   markLines,
-  MAX_TRACKED_AGENTS,
   type FileAccess,
 } from "../../utils/subagent-transcripts.ts";
 
@@ -107,16 +107,52 @@ describe("which ones are read", () => {
     expect(found.map((f) => f.agentId)).toEqual(["a1"]);
   });
 
-  test("a fan-out wider than the cap is followed newest-first", async () => {
-    // Thirty agents would be thirty tails and thirty times the lines, and the
-    // operator can read neither.
+  test("they come back newest first", async () => {
     const entries: Record<string, { mtimeMs?: number }> = {};
     for (let i = 0; i < 10; i++) entries[`${DIR}/agent-a${i}.jsonl`] = { mtimeMs: NOW - i * 1_000 };
 
     const found = await findSubagents(PARENT, { since: 0, files: tree(entries) });
 
-    expect(found).toHaveLength(MAX_TRACKED_AGENTS);
-    expect(found.map((f) => f.agentId)).toEqual(["a0", "a1", "a2"]);
+    expect(found.map((f) => f.agentId).slice(0, 3)).toEqual(["a0", "a1", "a2"]);
+  });
+});
+
+describe("which of a wide fan-out is followed", () => {
+  const agent = (id: string, mtimeMs: number) => ({ path: `${DIR}/agent-${id}.jsonl`, agentId: id, label: id, mtimeMs });
+  const wide = [agent("a", NOW), agent("b", NOW - 1_000), agent("c", NOW - 2_000), agent("d", NOW - 3_000)];
+
+  test("the newest, when nothing is being followed yet", async () => {
+    // Thirty agents would be thirty tails and thirty times the lines, and the
+    // operator can read neither.
+    expect(selectAgents(wide, new Set()).map((f) => f.agentId)).toEqual(["a", "b", "c"]);
+  });
+
+  test("an agent already being followed keeps its place, however quiet it goes", () => {
+    // Raised in review, and it is the same defect as the one this flow fixes,
+    // in miniature: an agent that writes rarely would fall out of the newest
+    // three and its progress would never be shown, however long it ran.
+    const quiet = [agent("a", NOW), agent("b", NOW - 1_000), agent("c", NOW - 2_000), agent("slow", NOW - 60_000)];
+
+    const chosen = selectAgents(quiet, new Set(["slow"])).map((f) => f.agentId);
+
+    expect(chosen).toContain("slow");
+  });
+
+  test("the set does not reshuffle under the operator, and so is never re-read", () => {
+    // The other half of the same finding: a tail dropped and re-created starts
+    // at offset zero, so its lines arrive twice and its tokens are counted
+    // twice. Stability is what prevents that, not a special case for it.
+    const first = selectAgents(wide, new Set()).map((f) => f.agentId);
+    // "d" is newest now; the three already followed still are.
+    const later = [agent("d", NOW), agent("a", NOW - 5_000), agent("b", NOW - 6_000), agent("c", NOW - 7_000)];
+
+    expect(selectAgents(later, new Set(first)).map((f) => f.agentId).sort()).toEqual(["a", "b", "c"]);
+  });
+
+  test("an agent that has gone away frees its slot", () => {
+    const remaining = [agent("a", NOW), agent("d", NOW - 500)];
+
+    expect(selectAgents(remaining, new Set(["a", "b", "c"])).map((f) => f.agentId)).toEqual(["a", "d"]);
   });
 });
 

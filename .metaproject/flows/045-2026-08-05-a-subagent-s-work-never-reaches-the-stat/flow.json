@@ -3,9 +3,9 @@
   "id": "045",
   "slug": "a-subagent-s-work-never-reaches-the-stat",
   "title": "A subagent's work never reaches the status",
-  "status": "in-progress",
+  "status": "implemented",
   "createdAt": "2026-08-05T21:07:39.751Z",
-  "updatedAt": "2026-08-05T21:23:26.300Z",
+  "updatedAt": "2026-08-05T21:24:21.108Z",
   "source": {
     "type": "description",
     "ref": null
@@ -13,7 +13,7 @@
   "acChecksum": "sha256:c772d5e9eec314d073c8ce44e294533addb75ad9c81a0cd600be3f2c915eab85",
   "acConfirmed": {},
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/86"
   },
   "tasks": [
     {
@@ -86,6 +86,11 @@
     {
       "at": "2026-08-05T21:23:26.300Z",
       "event": "started"
+    },
+    {
+      "at": "2026-08-05T21:24:21.108Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/86"
     }
   ]
 }

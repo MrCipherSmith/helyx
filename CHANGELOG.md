@@ -28,6 +28,14 @@ id when there is neither. Unmarked, a fan-out reads as the main agent editing
 two files at once. The marker goes after the bullet rather than over it, because
 the bullet is what the renderer and the tool counters key on.
 
+Raised in review and fixed before landing: newest-first alone starved a slow
+agent — one that writes rarely fell out of the followed three and its progress
+was never shown, which is the motionless status this flow exists to fix, in
+miniature. It also made the set flap, and a tail dropped and re-created starts
+at offset zero, so its lines arrived twice and its tokens were counted twice. An
+agent now keeps its place until its file goes away, and the free slots go to the
+newest of the rest.
+
 The layout is Claude Code's, not this repository's. It is stated in the tests as
 assertions, so a change to it fails by name instead of going quietly silent.
 

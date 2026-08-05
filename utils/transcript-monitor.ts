@@ -20,7 +20,7 @@
 
 import { resolveTranscript, TranscriptTail, parseEntry, claudeConfigRoot } from "./transcript-locate.ts";
 import { renderEntry, outputTokens, renderTokenLine } from "./transcript-events.ts";
-import { findSubagents, markLines, MAX_TRACKED_AGENTS, type FileAccess, type SubagentFile } from "./subagent-transcripts.ts";
+import { findSubagents, selectAgents, markLines, MAX_TRACKED_AGENTS, type FileAccess, type SubagentFile } from "./subagent-transcripts.ts";
 import { readdir, stat, readFile } from "fs/promises";
 
 /** A file tail, not a subprocess — cheap enough to ask often. */
@@ -162,11 +162,13 @@ export class TranscriptSession {
     const parent = this.tail?.path;
     if (!parent) return [];
 
-    const found = await findSubagents(parent, {
+    // Uncapped here: the cap is applied by `selectAgents`, which has to see
+    // the ones already being followed before it decides what to drop.
+    const all = await findSubagents(parent, {
       since: this.startedAt,
       files: this.files,
-      max: this.options.maxAgents ?? MAX_TRACKED_AGENTS,
     }).catch(() => [] as SubagentFile[]);
+    const found = selectAgents(all, new Set(this.agents.keys()), this.options.maxAgents ?? MAX_TRACKED_AGENTS);
 
     const live = new Set(found.map((f) => f.agentId));
     for (const id of [...this.agents.keys()]) {
