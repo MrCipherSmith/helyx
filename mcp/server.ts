@@ -58,7 +58,7 @@ async function isAuthenticated(req: IncomingMessage): Promise<boolean> {
   return (await verifyJwt(token)) !== null;
 }
 
-function isLocalRequest(req: IncomingMessage): boolean {
+export function isLocalRequest(req: IncomingMessage): boolean {
   const raw = req.socket.remoteAddress ?? "";
   if (raw === "127.0.0.1" || raw === "::1" || raw === "::ffff:127.0.0.1" || raw === "") return true;
   // Normalize IPv4-mapped IPv6
@@ -361,6 +361,467 @@ export async function deliverTurnSummary(
   });
 }
 
+/**
+ * The router every MCP tool call, every Claude Code hook and — in webhook mode
+ * — every Telegram update passes through.
+ *
+ * Named and exported rather than an arrow inside `createServer`, which is how
+ * it was written and why nothing tested it: the only way in was
+ * `startMcpHttpServer`, which binds a fixed port and can call `process.exit`.
+ * The decisions in here are authorization decisions — who counts as local, the
+ * shared secret in front of the ask-question hook, the transcript path the Stop
+ * hook is handed — and a change that widened one of them would have been
+ * invisible.
+ *
+ * `mcp/dashboard-api.ts` already exports `handleDashboardRequest` in this shape
+ * and is called from inside this function; the two now match.
+ */
+export async function handleMcpRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  bot: Bot | null,
+): Promise<void> {
+  const url = new URL(req.url ?? "/", `http://localhost:${CONFIG.PORT}`);
+
+  if (url.pathname === "/health") {
+    try {
+      await sql`SELECT 1`;
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        status: "ok",
+        db: "connected",
+        uptime: Math.round(process.uptime()),
+        sessions: transports.size,
+      }));
+    } catch (err: any) {
+      console.error("[health] db check failed:", err?.message);
+      res.writeHead(503, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ status: "error", db: "disconnected" }));
+    }
+    return;
+  }
+
+  // API: trigger summarization for a session (requires auth or local)
+  if (url.pathname === "/api/summarize" && req.method === "POST") {
+    if (!isLocalRequest(req) && !(await isAuthenticated(req))) {
+      res.writeHead(401, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Unauthorized" }));
+      return;
+    }
+    try {
+      const body = await new Promise<string>((resolve, reject) => {
+        let data = "";
+        req.on("data", (chunk) => (data += chunk));
+        req.on("end", () => resolve(data));
+        req.on("error", reject);
+      });
+      const { session_id, project_path } = JSON.parse(body);
+      if (!session_id) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "session_id required" }));
+        return;
+      }
+      // Run summarization in background
+      summarizeOnDisconnect(session_id, project_path).catch((err) =>
+        console.error("[api] summarize failed:", err)
+      );
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+    } catch (err: any) {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: err?.message }));
+    }
+    return;
+  }
+
+  // API: register a project session from shell CLI (local requests only)
+  if (url.pathname === "/api/sessions/register" && req.method === "POST") {
+    if (!isLocalRequest(req)) {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Forbidden" }));
+      return;
+    }
+    try {
+      const body = await new Promise<string>((resolve, reject) => {
+        let data = "";
+        req.on("data", (chunk) => (data += chunk));
+        req.on("end", () => resolve(data));
+        req.on("error", reject);
+      });
+      const parsed = JSON.parse(body);
+      const { projectPath, name } = parsed;
+      // parsed.cliType is accepted by callers but has never been stored or
+      // acted on; only cliConfig reaches the project record.
+      const rawConfig = parsed.cliConfig ?? {};
+
+      if (!projectPath || typeof projectPath !== "string") {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "projectPath required" }));
+        return;
+      }
+      const { basename } = await import("path");
+      const sessionName = name ?? basename(projectPath);
+      const clientId = `claude-${basename(projectPath)}-${Date.now()}`;
+      // Sanitize optional model from cliConfig
+      const cliConfig: Record<string, unknown> = {};
+      if (typeof rawConfig.model === "string") cliConfig.model = rawConfig.model;
+      const session = await sessionManager.register(clientId, sessionName, projectPath, cliConfig);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, sessionId: session.id, name: session.name }));
+    } catch (err: any) {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: err?.message }));
+    }
+    return;
+  }
+
+
+  // API: pre-register an expected HTTP MCP connection from channel.ts (local only)
+  if (url.pathname === "/api/sessions/expect" && req.method === "POST") {
+    if (!isLocalRequest(req)) {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Forbidden" }));
+      return;
+    }
+    try {
+      const body = await new Promise<string>((resolve, reject) => {
+        let data = "";
+        req.on("data", (chunk) => (data += chunk));
+        req.on("end", () => resolve(data));
+        req.on("error", reject);
+      });
+      const { session_id, project_path } = JSON.parse(body);
+      if (!session_id || typeof session_id !== "number") {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "session_id required" }));
+        return;
+      }
+      const expectPath = typeof project_path === "string" && project_path.startsWith("/") ? project_path : null;
+      await pushExpect(session_id, expectPath);
+      console.log(`[mcp] pending expect registered: session #${session_id}${expectPath ? ` (${expectPath})` : ""} (queue: ${pendingExpects.size})`);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+    } catch (err: any) {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: err?.message }));
+    }
+    return;
+  }
+
+  // POST /api/sessions/:id/summarize-work
+  const workSumMatch = url.pathname.match(/^\/api\/sessions\/(\d+)\/summarize-work$/);
+  if (req.method === "POST" && workSumMatch) {
+    if (!isLocalRequest(req) && !(await isAuthenticated(req))) {
+      res.writeHead(401, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Unauthorized" }));
+      return;
+    }
+    const sessionId = parseInt(workSumMatch[1], 10);
+    try {
+      const ok = await summarizeWork(sessionId);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, skipped: !ok }));
+    } catch (err: any) {
+      console.error("[api] summarize-work error:", err.message);
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: err.message }));
+    }
+    return;
+  }
+
+  // POST /api/hooks/ask-question — Claude Code PreToolUse hook for
+  // AskUserQuestion. Unlike the other hook endpoints this one *blocks*: it
+  // holds the request open until the operator taps an answer in Telegram, and
+  // the hook's own 600s timeout is what bounds it. Answering here is the
+  // whole point — a fire-and-forget notification would tell the operator
+  // about a question they still could not answer.
+  if (url.pathname === "/api/hooks/ask-question" && req.method === "POST") {
+    // Stricter than the other hook endpoints on purpose. This one sends a
+    // message to the operator's chat and then holds a connection open for ten
+    // minutes, while isLocalRequest trusts every container on the Docker
+    // network. The shared secret narrows that to whoever can read
+    // ~/.claude/helyx-hook-token.
+    if (!isLocalRequest(req) || !tokenMatches(HOOK_TOKEN, req.headers["x-helyx-hook-token"])) {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Forbidden" }));
+      return;
+    }
+    try {
+      if (askQuestionWaiters >= MAX_ASK_QUESTION_WAITERS) {
+        // Each waiter holds a socket and polls Postgres once a second. A cap
+        // keeps a misbehaving caller from turning that into a load source;
+        // 204 means the terminal simply keeps the question.
+        console.warn("[hooks/ask-question] too many waiters, declining");
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+
+      const body = await new Promise<string>((resolve, reject) => {
+        let data = "";
+        req.on("data", (chunk) => {
+          data += chunk;
+          // Bounded: the payload is a handful of questions, and an unbounded
+          // read on a local socket is a way to spend all the memory there is.
+          if (data.length > MAX_ASK_QUESTION_BODY) {
+            reject(new Error("payload too large"));
+            req.destroy();
+          }
+        });
+        req.on("end", () => resolve(data));
+        req.on("error", reject);
+      });
+
+      const input = parseHookInput(body);
+      // Not a question this path can carry. Silence lets the terminal have
+      // it, which is exactly the behaviour that existed before.
+      if (!input) {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+
+      const deps = {
+        sql,
+        sendMessage: async (chatId: string, text: string, extra: Record<string, unknown>) => {
+          const r = await sendTelegramMessage(CONFIG.TELEGRAM_BOT_TOKEN, chatId, text, extra);
+          return { ok: r.ok, messageId: r.messageId };
+        },
+        editMessage: async (chatId: string, messageId: number, text: string, extra?: Record<string, unknown>) =>
+          editTelegramMessage(CONFIG.TELEGRAM_BOT_TOKEN, chatId, messageId, text, {
+            parse_mode: "HTML",
+            ...extra,
+          }),
+      };
+
+      // Capacity is taken, and the socket watched, before any work is done.
+      //
+      // Registration sends Telegram messages, so doing it first meant every
+      // concurrent caller passed the capacity check and sent its prompts
+      // before any of them counted — and a client that hung up during those
+      // sends was never noticed, leaving the request to wait out its full ten
+      // minutes for nobody. The ordering itself lives in the service, where
+      // it can be tested.
+      askQuestionWaiters++;
+      let clientGone = false;
+      const onGone = () => { clientGone = true; };
+      req.on("aborted", onGone);
+      res.on("close", onGone);
+
+      let answers: Answer[] | null = null;
+      try {
+        answers = await runQuestionExchange(deps, input, {
+          timeoutMs: ANSWER_TIMEOUT_MS,
+          clientGone: () => clientGone,
+        });
+      } finally {
+        askQuestionWaiters--;
+        req.off("aborted", onGone);
+        res.off("close", onGone);
+      }
+
+      if (!answers) {
+        // Timed out, or withdrawn. The hook prints nothing, Claude Code
+        // proceeds as if it had not run, and the selector appears in the
+        // terminal as it always did.
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(denyWithAnswers(input.questions, answers));
+    } catch (err: unknown) {
+      console.error("[hooks/ask-question] error:", err instanceof Error ? err.message : String(err));
+      if (!res.headersSent) {
+        // 204 rather than 500: whatever went wrong here, the terminal must
+        // still get its selector.
+        res.writeHead(204);
+        res.end();
+      }
+    }
+    return;
+  }
+
+  // POST /api/hooks/stop — Claude Code Stop hook: extract facts from transcript
+  if (url.pathname === "/api/hooks/stop" && req.method === "POST") {
+    if (!isLocalRequest(req)) {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Forbidden" }));
+      return;
+    }
+    try {
+      const body = await new Promise<string>((resolve, reject) => {
+        let data = "";
+        req.on("data", (chunk) => (data += chunk));
+        req.on("end", () => resolve(data));
+        req.on("error", reject);
+      });
+      const { transcript_path, project_path } = JSON.parse(body);
+      if (!transcript_path || !project_path) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "transcript_path and project_path required" }));
+        return;
+      }
+      if (!isAllowedTranscriptPath(transcript_path)) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Invalid transcript_path" }));
+        return;
+      }
+      // Non-blocking — respond immediately, extract in background
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+      extractFactsFromTranscript(transcript_path as string, project_path as string)
+        .catch((err) => console.error("[hooks/stop] extractFactsFromTranscript error:", err?.message));
+      deliverTurnSummary(transcript_path as string, project_path as string)
+        .catch((err) => console.error("[hooks/stop] deliverTurnSummary error:", err?.message));
+    } catch (err: any) {
+      if (!res.headersSent) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: err?.message }));
+      }
+    }
+    return;
+  }
+
+  // Telegram webhook endpoint — return 200 immediately, process in background
+  if (bot && CONFIG.TELEGRAM_TRANSPORT === "webhook" && req.method === "POST" && url.pathname === CONFIG.TELEGRAM_WEBHOOK_PATH) {
+    // Validate secret token
+    const secretToken = req.headers["x-telegram-bot-api-secret-token"];
+    if (CONFIG.TELEGRAM_WEBHOOK_SECRET && secretToken !== CONFIG.TELEGRAM_WEBHOOK_SECRET) {
+      res.writeHead(401);
+      res.end();
+      return;
+    }
+
+    const body = await readBody(req);
+
+    // Acknowledge immediately — prevents Telegram retries and unblocks next update
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end("{}");
+
+    // Process update in background (non-blocking)
+    try {
+      const update = JSON.parse(body);
+      bot.handleUpdate(update).catch((err: any) =>
+        console.error("[webhook] handleUpdate error:", err?.message ?? err)
+      );
+    } catch (err: any) {
+      console.error("[webhook] parse error:", err?.message);
+    }
+    return;
+  }
+
+  // Dashboard API + static files.
+  // Gated on ENABLE_DASHBOARD: when off, dashboard routes simply do not
+  // exist and fall through to the 404 below. The /mcp route beneath this
+  // block is deliberately outside the guard — dashboard and MCP share this
+  // server, and disabling one must not touch the other.
+  if (CONFIG.ENABLE_DASHBOARD) {
+    try {
+      const handled = await handleDashboardRequest(req, res, url);
+      if (handled) return;
+    } catch (err: any) {
+      console.error("[dashboard] error:", err);
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: err?.message }));
+      return;
+    }
+  }
+
+  if (url.pathname !== "/mcp") {
+    res.writeHead(404);
+    res.end("Not Found");
+    return;
+  }
+
+  // MCP endpoint: loopback + Docker bridge only — no JWT.
+  // Intentional: Claude Code CLI connects from localhost or the Docker bridge
+  // (172.16–31.x.x). External JWT auth would break CLI auto-connect. If the
+  // port is ever exposed beyond localhost, add token auth here.
+  if (!isLocalRequest(req)) {
+    res.writeHead(403);
+    res.end("Forbidden");
+    return;
+  }
+
+  const sessionId = req.headers["mcp-session-id"] as string | undefined;
+  let transport = sessionId ? transports.get(sessionId) : undefined;
+
+  if (!transport) {
+    if (req.method === "GET" || req.method === "DELETE") {
+      res.writeHead(400);
+      res.end("Missing session ID");
+      return;
+    }
+
+    // Track transport's MCP session ID (UUID)
+    let transportSessionId: string | undefined;
+
+    const mcpServer = createMcpServer(bot, () => transportSessionId);
+
+    // Project identity declared by the CLI via header (set through
+    // HELYX_PROJECT_PATH env expansion in the mcp server config).
+    const rawProjectHeader = req.headers["x-helyx-project"];
+    const declaredProject =
+      typeof rawProjectHeader === "string" && rawProjectHeader.startsWith("/")
+        ? rawProjectHeader
+        : null;
+
+    transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: () => randomUUID(),
+      onsessioninitialized: (id: string) => {
+        transports.set(id, transport!);
+        registerMcpSession(id, mcpServer);
+        transportSessionId = id;
+        sessionManager.trackTransport(id);
+        if (declaredProject) rememberTransportProject(id, declaredProject);
+        console.log(`[mcp] transport initialized: ${id.slice(0, 12)}${declaredProject ? ` (${declaredProject})` : ""}`);
+        // Try auto-link immediately (if channel.ts registered expect before us)
+        tryAutoLink(id).catch((err) => console.error("[mcp] auto-link failed:", err?.message));
+      },
+    });
+
+    transport.onclose = async () => {
+      const sid = transport!.sessionId;
+      if (sid) {
+        transports.delete(sid);
+        unregisterMcpSession(sid);
+        const hasDbSession = sessionManager.getSessionIdByClient(sid) !== undefined;
+        sessionManager.untrackTransport(sid);
+        forgetTransportProject(sid);
+        if (hasDbSession) {
+          await sessionManager.disconnect(sid);
+        }
+        console.log(`[mcp] transport closed: ${sid.slice(0, 12)}${hasDbSession ? " (db session cleaned up)" : ""}`);
+      }
+    };
+
+    await mcpServer.connect(transport);
+  }
+
+  let body: unknown = undefined;
+  if (req.method === "POST") {
+    body = await new Promise<unknown>((resolve, reject) => {
+      let data = "";
+      req.on("data", (chunk) => {
+        data += chunk;
+        if (data.length > 5_000_000) { req.destroy(); reject(new Error("Body too large")); }
+      });
+      req.on("end", () => {
+        try {
+          resolve(JSON.parse(data));
+        } catch (e) {
+          reject(e);
+        }
+      });
+      req.on("error", reject);
+    });
+  }
+
+  await transport.handleRequest(req, res, body);
+}
+
 export function startMcpHttpServer(bot: Bot | null): ReturnType<typeof createServer> {
   if (CONFIG.TELEGRAM_TRANSPORT === "webhook" && !CONFIG.TELEGRAM_WEBHOOK_SECRET) {
     console.error("[security] FATAL: TELEGRAM_WEBHOOK_SECRET must be set in webhook mode. Generate with: openssl rand -hex 32");
@@ -398,447 +859,7 @@ export function startMcpHttpServer(bot: Bot | null): ReturnType<typeof createSer
   }
 
 
-  const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
-    const url = new URL(req.url ?? "/", `http://localhost:${CONFIG.PORT}`);
-
-    if (url.pathname === "/health") {
-      try {
-        await sql`SELECT 1`;
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({
-          status: "ok",
-          db: "connected",
-          uptime: Math.round(process.uptime()),
-          sessions: transports.size,
-        }));
-      } catch (err: any) {
-        console.error("[health] db check failed:", err?.message);
-        res.writeHead(503, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ status: "error", db: "disconnected" }));
-      }
-      return;
-    }
-
-    // API: trigger summarization for a session (requires auth or local)
-    if (url.pathname === "/api/summarize" && req.method === "POST") {
-      if (!isLocalRequest(req) && !(await isAuthenticated(req))) {
-        res.writeHead(401, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Unauthorized" }));
-        return;
-      }
-      try {
-        const body = await new Promise<string>((resolve, reject) => {
-          let data = "";
-          req.on("data", (chunk) => (data += chunk));
-          req.on("end", () => resolve(data));
-          req.on("error", reject);
-        });
-        const { session_id, project_path } = JSON.parse(body);
-        if (!session_id) {
-          res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "session_id required" }));
-          return;
-        }
-        // Run summarization in background
-        summarizeOnDisconnect(session_id, project_path).catch((err) =>
-          console.error("[api] summarize failed:", err)
-        );
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: true }));
-      } catch (err: any) {
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: err?.message }));
-      }
-      return;
-    }
-
-    // API: register a project session from shell CLI (local requests only)
-    if (url.pathname === "/api/sessions/register" && req.method === "POST") {
-      if (!isLocalRequest(req)) {
-        res.writeHead(403, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Forbidden" }));
-        return;
-      }
-      try {
-        const body = await new Promise<string>((resolve, reject) => {
-          let data = "";
-          req.on("data", (chunk) => (data += chunk));
-          req.on("end", () => resolve(data));
-          req.on("error", reject);
-        });
-        const parsed = JSON.parse(body);
-        const { projectPath, name } = parsed;
-        // parsed.cliType is accepted by callers but has never been stored or
-        // acted on; only cliConfig reaches the project record.
-        const rawConfig = parsed.cliConfig ?? {};
-
-        if (!projectPath || typeof projectPath !== "string") {
-          res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "projectPath required" }));
-          return;
-        }
-        const { basename } = await import("path");
-        const sessionName = name ?? basename(projectPath);
-        const clientId = `claude-${basename(projectPath)}-${Date.now()}`;
-        // Sanitize optional model from cliConfig
-        const cliConfig: Record<string, unknown> = {};
-        if (typeof rawConfig.model === "string") cliConfig.model = rawConfig.model;
-        const session = await sessionManager.register(clientId, sessionName, projectPath, cliConfig);
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: true, sessionId: session.id, name: session.name }));
-      } catch (err: any) {
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: err?.message }));
-      }
-      return;
-    }
-
-
-    // API: pre-register an expected HTTP MCP connection from channel.ts (local only)
-    if (url.pathname === "/api/sessions/expect" && req.method === "POST") {
-      if (!isLocalRequest(req)) {
-        res.writeHead(403, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Forbidden" }));
-        return;
-      }
-      try {
-        const body = await new Promise<string>((resolve, reject) => {
-          let data = "";
-          req.on("data", (chunk) => (data += chunk));
-          req.on("end", () => resolve(data));
-          req.on("error", reject);
-        });
-        const { session_id, project_path } = JSON.parse(body);
-        if (!session_id || typeof session_id !== "number") {
-          res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "session_id required" }));
-          return;
-        }
-        const expectPath = typeof project_path === "string" && project_path.startsWith("/") ? project_path : null;
-        await pushExpect(session_id, expectPath);
-        console.log(`[mcp] pending expect registered: session #${session_id}${expectPath ? ` (${expectPath})` : ""} (queue: ${pendingExpects.size})`);
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: true }));
-      } catch (err: any) {
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: err?.message }));
-      }
-      return;
-    }
-
-    // POST /api/sessions/:id/summarize-work
-    const workSumMatch = url.pathname.match(/^\/api\/sessions\/(\d+)\/summarize-work$/);
-    if (req.method === "POST" && workSumMatch) {
-      if (!isLocalRequest(req) && !(await isAuthenticated(req))) {
-        res.writeHead(401, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Unauthorized" }));
-        return;
-      }
-      const sessionId = parseInt(workSumMatch[1], 10);
-      try {
-        const ok = await summarizeWork(sessionId);
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: true, skipped: !ok }));
-      } catch (err: any) {
-        console.error("[api] summarize-work error:", err.message);
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: false, error: err.message }));
-      }
-      return;
-    }
-
-    // POST /api/hooks/ask-question — Claude Code PreToolUse hook for
-    // AskUserQuestion. Unlike the other hook endpoints this one *blocks*: it
-    // holds the request open until the operator taps an answer in Telegram, and
-    // the hook's own 600s timeout is what bounds it. Answering here is the
-    // whole point — a fire-and-forget notification would tell the operator
-    // about a question they still could not answer.
-    if (url.pathname === "/api/hooks/ask-question" && req.method === "POST") {
-      // Stricter than the other hook endpoints on purpose. This one sends a
-      // message to the operator's chat and then holds a connection open for ten
-      // minutes, while isLocalRequest trusts every container on the Docker
-      // network. The shared secret narrows that to whoever can read
-      // ~/.claude/helyx-hook-token.
-      if (!isLocalRequest(req) || !tokenMatches(HOOK_TOKEN, req.headers["x-helyx-hook-token"])) {
-        res.writeHead(403, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Forbidden" }));
-        return;
-      }
-      try {
-        if (askQuestionWaiters >= MAX_ASK_QUESTION_WAITERS) {
-          // Each waiter holds a socket and polls Postgres once a second. A cap
-          // keeps a misbehaving caller from turning that into a load source;
-          // 204 means the terminal simply keeps the question.
-          console.warn("[hooks/ask-question] too many waiters, declining");
-          res.writeHead(204);
-          res.end();
-          return;
-        }
-
-        const body = await new Promise<string>((resolve, reject) => {
-          let data = "";
-          req.on("data", (chunk) => {
-            data += chunk;
-            // Bounded: the payload is a handful of questions, and an unbounded
-            // read on a local socket is a way to spend all the memory there is.
-            if (data.length > MAX_ASK_QUESTION_BODY) {
-              reject(new Error("payload too large"));
-              req.destroy();
-            }
-          });
-          req.on("end", () => resolve(data));
-          req.on("error", reject);
-        });
-
-        const input = parseHookInput(body);
-        // Not a question this path can carry. Silence lets the terminal have
-        // it, which is exactly the behaviour that existed before.
-        if (!input) {
-          res.writeHead(204);
-          res.end();
-          return;
-        }
-
-        const deps = {
-          sql,
-          sendMessage: async (chatId: string, text: string, extra: Record<string, unknown>) => {
-            const r = await sendTelegramMessage(CONFIG.TELEGRAM_BOT_TOKEN, chatId, text, extra);
-            return { ok: r.ok, messageId: r.messageId };
-          },
-          editMessage: async (chatId: string, messageId: number, text: string, extra?: Record<string, unknown>) =>
-            editTelegramMessage(CONFIG.TELEGRAM_BOT_TOKEN, chatId, messageId, text, {
-              parse_mode: "HTML",
-              ...extra,
-            }),
-        };
-
-        // Capacity is taken, and the socket watched, before any work is done.
-        //
-        // Registration sends Telegram messages, so doing it first meant every
-        // concurrent caller passed the capacity check and sent its prompts
-        // before any of them counted — and a client that hung up during those
-        // sends was never noticed, leaving the request to wait out its full ten
-        // minutes for nobody. The ordering itself lives in the service, where
-        // it can be tested.
-        askQuestionWaiters++;
-        let clientGone = false;
-        const onGone = () => { clientGone = true; };
-        req.on("aborted", onGone);
-        res.on("close", onGone);
-
-        let answers: Answer[] | null = null;
-        try {
-          answers = await runQuestionExchange(deps, input, {
-            timeoutMs: ANSWER_TIMEOUT_MS,
-            clientGone: () => clientGone,
-          });
-        } finally {
-          askQuestionWaiters--;
-          req.off("aborted", onGone);
-          res.off("close", onGone);
-        }
-
-        if (!answers) {
-          // Timed out, or withdrawn. The hook prints nothing, Claude Code
-          // proceeds as if it had not run, and the selector appears in the
-          // terminal as it always did.
-          res.writeHead(204);
-          res.end();
-          return;
-        }
-
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(denyWithAnswers(input.questions, answers));
-      } catch (err: unknown) {
-        console.error("[hooks/ask-question] error:", err instanceof Error ? err.message : String(err));
-        if (!res.headersSent) {
-          // 204 rather than 500: whatever went wrong here, the terminal must
-          // still get its selector.
-          res.writeHead(204);
-          res.end();
-        }
-      }
-      return;
-    }
-
-    // POST /api/hooks/stop — Claude Code Stop hook: extract facts from transcript
-    if (url.pathname === "/api/hooks/stop" && req.method === "POST") {
-      if (!isLocalRequest(req)) {
-        res.writeHead(403, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Forbidden" }));
-        return;
-      }
-      try {
-        const body = await new Promise<string>((resolve, reject) => {
-          let data = "";
-          req.on("data", (chunk) => (data += chunk));
-          req.on("end", () => resolve(data));
-          req.on("error", reject);
-        });
-        const { transcript_path, project_path } = JSON.parse(body);
-        if (!transcript_path || !project_path) {
-          res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "transcript_path and project_path required" }));
-          return;
-        }
-        if (!isAllowedTranscriptPath(transcript_path)) {
-          res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "Invalid transcript_path" }));
-          return;
-        }
-        // Non-blocking — respond immediately, extract in background
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: true }));
-        extractFactsFromTranscript(transcript_path as string, project_path as string)
-          .catch((err) => console.error("[hooks/stop] extractFactsFromTranscript error:", err?.message));
-        deliverTurnSummary(transcript_path as string, project_path as string)
-          .catch((err) => console.error("[hooks/stop] deliverTurnSummary error:", err?.message));
-      } catch (err: any) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ ok: false, error: err?.message }));
-        }
-      }
-      return;
-    }
-
-    // Telegram webhook endpoint — return 200 immediately, process in background
-    if (bot && CONFIG.TELEGRAM_TRANSPORT === "webhook" && req.method === "POST" && url.pathname === CONFIG.TELEGRAM_WEBHOOK_PATH) {
-      // Validate secret token
-      const secretToken = req.headers["x-telegram-bot-api-secret-token"];
-      if (CONFIG.TELEGRAM_WEBHOOK_SECRET && secretToken !== CONFIG.TELEGRAM_WEBHOOK_SECRET) {
-        res.writeHead(401);
-        res.end();
-        return;
-      }
-
-      const body = await readBody(req);
-
-      // Acknowledge immediately — prevents Telegram retries and unblocks next update
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end("{}");
-
-      // Process update in background (non-blocking)
-      try {
-        const update = JSON.parse(body);
-        bot.handleUpdate(update).catch((err: any) =>
-          console.error("[webhook] handleUpdate error:", err?.message ?? err)
-        );
-      } catch (err: any) {
-        console.error("[webhook] parse error:", err?.message);
-      }
-      return;
-    }
-
-    // Dashboard API + static files.
-    // Gated on ENABLE_DASHBOARD: when off, dashboard routes simply do not
-    // exist and fall through to the 404 below. The /mcp route beneath this
-    // block is deliberately outside the guard — dashboard and MCP share this
-    // server, and disabling one must not touch the other.
-    if (CONFIG.ENABLE_DASHBOARD) {
-      try {
-        const handled = await handleDashboardRequest(req, res, url);
-        if (handled) return;
-      } catch (err: any) {
-        console.error("[dashboard] error:", err);
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: err?.message }));
-        return;
-      }
-    }
-
-    if (url.pathname !== "/mcp") {
-      res.writeHead(404);
-      res.end("Not Found");
-      return;
-    }
-
-    // MCP endpoint: loopback + Docker bridge only — no JWT.
-    // Intentional: Claude Code CLI connects from localhost or the Docker bridge
-    // (172.16–31.x.x). External JWT auth would break CLI auto-connect. If the
-    // port is ever exposed beyond localhost, add token auth here.
-    if (!isLocalRequest(req)) {
-      res.writeHead(403);
-      res.end("Forbidden");
-      return;
-    }
-
-    const sessionId = req.headers["mcp-session-id"] as string | undefined;
-    let transport = sessionId ? transports.get(sessionId) : undefined;
-
-    if (!transport) {
-      if (req.method === "GET" || req.method === "DELETE") {
-        res.writeHead(400);
-        res.end("Missing session ID");
-        return;
-      }
-
-      // Track transport's MCP session ID (UUID)
-      let transportSessionId: string | undefined;
-
-      const mcpServer = createMcpServer(bot, () => transportSessionId);
-
-      // Project identity declared by the CLI via header (set through
-      // HELYX_PROJECT_PATH env expansion in the mcp server config).
-      const rawProjectHeader = req.headers["x-helyx-project"];
-      const declaredProject =
-        typeof rawProjectHeader === "string" && rawProjectHeader.startsWith("/")
-          ? rawProjectHeader
-          : null;
-
-      transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => randomUUID(),
-        onsessioninitialized: (id: string) => {
-          transports.set(id, transport!);
-          registerMcpSession(id, mcpServer);
-          transportSessionId = id;
-          sessionManager.trackTransport(id);
-          if (declaredProject) rememberTransportProject(id, declaredProject);
-          console.log(`[mcp] transport initialized: ${id.slice(0, 12)}${declaredProject ? ` (${declaredProject})` : ""}`);
-          // Try auto-link immediately (if channel.ts registered expect before us)
-          tryAutoLink(id).catch((err) => console.error("[mcp] auto-link failed:", err?.message));
-        },
-      });
-
-      transport.onclose = async () => {
-        const sid = transport!.sessionId;
-        if (sid) {
-          transports.delete(sid);
-          unregisterMcpSession(sid);
-          const hasDbSession = sessionManager.getSessionIdByClient(sid) !== undefined;
-          sessionManager.untrackTransport(sid);
-          forgetTransportProject(sid);
-          if (hasDbSession) {
-            await sessionManager.disconnect(sid);
-          }
-          console.log(`[mcp] transport closed: ${sid.slice(0, 12)}${hasDbSession ? " (db session cleaned up)" : ""}`);
-        }
-      };
-
-      await mcpServer.connect(transport);
-    }
-
-    let body: unknown = undefined;
-    if (req.method === "POST") {
-      body = await new Promise<unknown>((resolve, reject) => {
-        let data = "";
-        req.on("data", (chunk) => {
-          data += chunk;
-          if (data.length > 5_000_000) { req.destroy(); reject(new Error("Body too large")); }
-        });
-        req.on("end", () => {
-          try {
-            resolve(JSON.parse(data));
-          } catch (e) {
-            reject(e);
-          }
-        });
-        req.on("error", reject);
-      });
-    }
-
-    await transport.handleRequest(req, res, body);
-  });
+  const httpServer = createServer((req, res) => handleMcpRequest(req, res, bot));
 
   httpServer.listen(CONFIG.PORT, () => {
     console.log(`[mcp] HTTP server listening on port ${CONFIG.PORT}`);

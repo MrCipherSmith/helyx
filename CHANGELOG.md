@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+### test: the door every MCP call and every hook enters by
+
+`mcp/server.ts` was 8.49% covered — 701 uncovered lines, eighth-largest gap in
+the repository — and it could not have been covered. Its router was an
+anonymous arrow inside `createServer`, reachable only through
+`startMcpHttpServer`, which binds a fixed port (held on this host by the running
+container) and can call `process.exit(1)` on the way in.
+
+The router is now `handleMcpRequest(req, res, bot)`, exported. The change is a
+move: same body, same route order, one parameter for the `bot` the arrow used to
+close over — `transports` was already module-level. It matches the shape of
+`handleDashboardRequest` in `mcp/dashboard-api.ts`, which this same function
+calls and which flow 040 tests the same way. `isLocalRequest` is exported too.
+
+Covered, and only this: the refusals. Who counts as local, across the whole
+172.16–31 bridge range and the IPv4-mapped loopback form; the MCP endpoint
+refusing anything outside it, which is the entire boundary in front of every
+tool call since no JWT can guard a route the CLI must reach; a session-less GET;
+the Stop hook refused from off the machine, refused without its fields, and
+refused a transcript path that resolves out of where transcripts live —
+`/home/../etc/passwd` is still a string beginning with `/home`; the
+ask-question hook refusing a local caller with the wrong shared secret and with
+none; and summarization refusing a caller that is neither local nor
+authenticated.
+
+The paths that succeed write rows and start summarization in the background.
+Reaching them from a unit test would mean reaching the real database, so they
+are left for a seam of their own and named here rather than implied.
+
+Line coverage 8.49% → 23.98%. This is the sixteenth and last flow of the
+observability programme, and the one that was blocked on a maintainer decision.
+
 ### test: what happens to a file after it has been downloaded
 
 `bot/media.ts` was 5.59% covered — 405 uncovered lines — and it is how every
