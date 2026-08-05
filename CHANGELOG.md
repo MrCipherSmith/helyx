@@ -36,6 +36,13 @@ Pressing `/now` again edits the same message rather than sending another — the
 operator presses it when they are impatient, which is exactly when they press it
 repeatedly.
 
+Raised in review and fixed: the synthetic `message_id` the button queues under
+now carries a random suffix and the insert says `ON CONFLICT DO NOTHING`, so two
+presses in the same millisecond cannot collide with the unique index — an
+unhandled rejection there would have left the button looking dead. The remembered
+card ids expire after `CARD_TTL_MS` rather than being kept for the life of the
+process.
+
 `/btw` through `tmux send-keys` was considered and rejected: it races the
 operator for the terminal's input, and its answer would have to be told from a
 real answer by guesswork.

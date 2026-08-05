@@ -49,7 +49,15 @@ const READING_TIMEOUT_MS = 6_000;
  * Ten presses in a topic must not be ten messages: the operator presses this
  * when they are impatient, which is exactly when they press it repeatedly.
  */
-const cards = new Map<string, number>();
+const cards = new Map<string, { messageId: number; at: number }>();
+
+/**
+ * How long a remembered card is worth editing.
+ *
+ * Telegram refuses to edit an old message anyway, and without a bound the map
+ * keeps one entry per topic for the life of the process. Raised in review.
+ */
+export const CARD_TTL_MS = 30 * 60_000;
 
 /** For tests: what the command sends and where it reads from. */
 export interface NowDeps {
@@ -140,7 +148,14 @@ async function readingFromModel(snapshot: SessionSnapshot, project: string): Pro
  * Read the session's own record, and its subagents', without disturbing either.
  *
  * The window is the tail of the file: a turn's worth, and nothing is written
- * back, so this cannot interfere with the monitor reading the same file.
+ * back, so this cannot interfere with the monitor reading the same file — two
+ * readers of an append-only file are independent.
+ *
+ * Starting mid-file means the first line read is usually a fragment, and a
+ * fragment is not valid JSON, so `parseEntry` returns null and it is skipped.
+ * That is deliberate: the alternative is scanning back for a newline, and one
+ * dropped line at the far end of the window is worth less than the complexity.
+ * The same answer covers an offset that lands inside a multi-byte character.
  */
 export async function snapshotForProject(projectPath: string, root?: string): Promise<SessionSnapshot> {
   const path = await resolveTranscript(projectPath, root ?? claudeConfigRoot());
@@ -193,7 +208,11 @@ export async function handleNow(ctx: Context): Promise<void> {
   const text = renderNow({ project: name, snapshot: withQuestion, reading });
 
   const key = topicId ? `${chatId}:${topicId}` : chatId;
-  const existing = cards.get(key);
+  for (const [k, card] of cards) {
+    if (deps.now() - card.at > CARD_TTL_MS) cards.delete(k);
+  }
+  const remembered = cards.get(key);
+  const existing = remembered && deps.now() - remembered.at <= CARD_TTL_MS ? remembered.messageId : undefined;
   const token = CONFIG.TELEGRAM_BOT_TOKEN;
 
   const markup = {
@@ -213,7 +232,7 @@ export async function handleNow(ctx: Context): Promise<void> {
 
   const sent = await replyInThread(ctx, text, { parse_mode: "HTML", reply_markup: markup });
   const messageId = (sent as { message_id?: number } | undefined)?.message_id;
-  if (messageId) cards.set(key, messageId);
+  if (messageId) cards.set(key, { messageId, at: deps.now() });
   logger.info({ chatId, project: name, waiting: withQuestion.waiting }, "now card sent");
 }
 
@@ -236,13 +255,20 @@ export async function handleNowCallback(ctx: Context): Promise<void> {
     return;
   }
 
+  // The id is synthetic and must not collide: the unique index on
+  // (chat_id, message_id) would reject a second press in the same millisecond,
+  // and an unhandled rejection here would leave the button looking dead.
+  // Raised in review.
+  const messageId = `now-${deps.now()}-${Math.random().toString(36).slice(2, 8)}`;
   await deps.sql`
     INSERT INTO message_queue (session_id, chat_id, from_user, content, message_id)
-    VALUES (
-      ${route.sessionId}, ${chatId}, ${fromUser},
-      ${QUESTION}, ${`now-${deps.now()}`}
-    )
-  `;
+    VALUES (${route.sessionId}, ${chatId}, ${fromUser}, ${QUESTION}, ${messageId})
+    ON CONFLICT (chat_id, message_id)
+      WHERE message_id IS NOT NULL AND message_id != '' AND message_id != 'tool'
+    DO NOTHING
+  `.catch((err: unknown) => {
+    logger.warn({ err }, "now: could not queue the question");
+  });
   await ctx.answerCallbackQuery({ text: "Спросил — ответит, когда закончит текущий шаг" });
 }
 

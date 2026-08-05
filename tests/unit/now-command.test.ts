@@ -158,6 +158,30 @@ describe("the button that asks the session", () => {
     expect(said.toasts[0]).toContain("Спросил");
   });
 
+  test("two presses in the same millisecond do not collide", async () => {
+    // The id is synthetic and the index on (chat_id, message_id) is unique, so
+    // a second press within the same millisecond would have been rejected —
+    // and an unhandled rejection here leaves the button looking dead.
+    await handleNowCallback(context({ callback: true }));
+    await handleNowCallback(context({ callback: true }));
+
+    const queued = db.matching("message_queue");
+    expect(queued).toHaveLength(2);
+    const ids = queued.map((q) => q.values.find((v) => typeof v === "string" && v.startsWith("now-")));
+    expect(new Set(ids).size).toBe(2);
+    expect(said.toasts).toHaveLength(2);
+  });
+
+  test("a database that refuses the insert still answers the press", async () => {
+    // The toast is the only feedback a button gives. Silence reads as broken,
+    // and the operator presses again.
+    db.program("message_queue", { error: new Error("deadlock detected") });
+
+    await handleNowCallback(context({ callback: true }));
+
+    expect(said.toasts).toHaveLength(1);
+  });
+
   test("a chat with no session says so instead of queueing into nothing", async () => {
     routed = { mode: "standalone", sessionId: 0 } as typeof routed;
 
