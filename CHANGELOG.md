@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### feat: a review that starts itself
+
+Nothing started one. `scripts/review.ts` ran when a person typed it, and
+`.git/hooks/pre-push` runs the security guard and nothing else — so the moment a
+review is most valuable, a branch that has stopped changing, is exactly the
+moment attention has moved on.
+
+Loop 11 checks every fifteen minutes and runs the pipeline when the current
+branch's diff has changed and then stayed still for one pass. Two identical
+hashes is what "settled" means, and at that interval it is a quarter of an hour
+of quiet — the difference between reviewing a branch and chasing one mid-edit.
+The default branch is never reviewed: a merge has already happened and a review
+of it is archaeology.
+
+Deliberately not a git hook. `REVIEW_TIMEOUT_MS` is ten minutes; a `pre-push`
+that can hold a push for that long is disabled within a week, and then nothing
+runs at all. This observes the work instead of standing in front of it — it
+writes an artifact and posts one message, and it cannot block a push, a commit
+or a container.
+
+The decision is a pure function with a named reason for every answer, so the
+rules are testable without a repository, a database or a reviewer. State lives
+in `bot_config`, because the supervisor restarts often and in-memory state would
+re-review on every restart; the in-flight flag is cleared even when a review
+throws, or the loop would never run again.
+
 ### fix: a reviewer that cannot review no longer reads as available
 
 Three failures of one thing, all of them live and all of them measured on

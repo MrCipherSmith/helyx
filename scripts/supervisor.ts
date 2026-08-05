@@ -31,6 +31,8 @@ import { forceSummarize } from "../memory/summarizer.ts";
 import { clearCache } from "../memory/short-term.ts";
 import { ErrorWindow } from "../utils/error-stream.ts";
 import { getReviewerStatuses, type ReviewerStatus } from "../services/reviewer-service.ts";
+import { persistReviewRun, scheduledReviewDecision, type ScheduledReviewState } from "../services/review-artifacts.ts";
+import { runReviewers, gitReviewDiff } from "../services/reviewer-service.ts";
 import { TranscriptTail } from "../utils/transcript-locate.ts";
 import { isRequeued, markRequeued } from "../utils/requeue.ts";
 import { paneLines, hasActiveSpinner, escapeHtml } from "../utils/terminal.ts";
@@ -1502,6 +1504,125 @@ export async function checkReviewerHealth(deps: ReviewerHealthDeps): Promise<voi
   }
 }
 
+/** The real world, for Loop 11. Separated so the loop itself is testable. */
+function scheduledReviewDeps(sql: postgres.Sql, runShell: RunShell): ScheduledReviewDeps {
+  return {
+    branch: async () => (await runShell("git rev-parse --abbrev-ref HEAD")).output.trim(),
+    diff: async () => gitReviewDiff(),
+    loadState: async () => {
+      const rows = await sql`SELECT value FROM bot_config WHERE key = ${REVIEW_STATE_KEY}`.catch(() => []);
+      try {
+        return JSON.parse((rows as any[])[0]?.value ?? "{}") as ScheduledReviewState;
+      } catch {
+        return {};
+      }
+    },
+    saveState: async (state) => {
+      await sql`
+        INSERT INTO bot_config (key, value) VALUES (${REVIEW_STATE_KEY}, ${JSON.stringify(state)})
+        ON CONFLICT (key) DO UPDATE SET value = ${JSON.stringify(state)}, updated_at = now()
+      `.catch(() => {});
+    },
+    runReview: async (prompt) => {
+      const started = Date.now();
+      const diff = await gitReviewDiff();
+      const result = await runReviewers(prompt, async () => diff);
+      const branch = (await runShell("git rev-parse --abbrev-ref HEAD")).output.trim();
+      const head = (await runShell("git rev-parse HEAD")).output.trim();
+      const artifact = await persistReviewRun(result, {
+        trigger: "scheduled",
+        prompt,
+        git: { branch, head, mergeBase: "", diffBytes: Buffer.byteLength(diff, "utf-8") },
+        startedAt: started,
+        finishedAt: Date.now(),
+      });
+      const ok = result.reports.filter((r) => r.ok).length;
+      return {
+        artifactDir: artifact?.dir ?? null,
+        summary: `${ok} из ${result.reports.length} ревьюеров ответили`,
+      };
+    },
+    note: (message) => console.error(`[supervisor] ${message}`),
+    post: async (text) => { await sendAlert(text); },
+  };
+}
+
+// --- Loop 11: a review nobody asked for ---
+
+/**
+ * The review that starts itself.
+ *
+ * Nothing did. `scripts/review.ts` ran when a person typed it, and the moment a
+ * review is most valuable — a branch that has stopped changing — is exactly the
+ * moment attention has moved on.
+ *
+ * Deliberately not a git hook. `REVIEW_TIMEOUT_MS` is ten minutes; a `pre-push`
+ * that can hold a push for that long is disabled within a week, and then
+ * nothing runs at all. This observes the work instead of standing in front of
+ * it: it writes a file and posts one message, and it cannot block a push, a
+ * commit or a container.
+ */
+export const REVIEW_STATE_KEY = "review_state";
+
+export interface ScheduledReviewDeps {
+  branch: () => Promise<string>;
+  diff: () => Promise<string>;
+  loadState: () => Promise<ScheduledReviewState>;
+  saveState: (state: ScheduledReviewState) => Promise<void>;
+  runReview: (prompt: string) => Promise<{ artifactDir: string | null; summary: string }>;
+  note: (message: string) => void;
+  post: (text: string) => Promise<void>;
+}
+
+/** Stable, cheap, and it only has to detect change. */
+export function diffHash(diff: string): string {
+  return diff.trim() ? Bun.hash(diff).toString(16) : "";
+}
+
+export async function maybeRunScheduledReview(deps: ScheduledReviewDeps): Promise<void> {
+  let branch: string;
+  let hash: string;
+  let state: ScheduledReviewState;
+  try {
+    branch = await deps.branch();
+    hash = diffHash(await deps.diff());
+    state = await deps.loadState();
+  } catch (err: any) {
+    deps.note(`scheduled review: could not read the branch state: ${err?.message ?? String(err)}`);
+    return;
+  }
+
+  const decision = scheduledReviewDecision({
+    branch,
+    defaultBranch: "main",
+    diffHash: hash,
+    state,
+  });
+
+  if (!decision.run) {
+    // The seen-hash is remembered even when the answer is no: that is what
+    // makes "the same hash twice" mean "it stopped changing".
+    if (state.lastSeenHash !== hash) await deps.saveState({ ...state, lastSeenHash: hash });
+    return;
+  }
+
+  await deps.saveState({ ...state, lastSeenHash: hash, running: true });
+  try {
+    const result = await deps.runReview(
+      `Scheduled review of branch ${branch}. Report only real defects in the change itself.`,
+    );
+    await deps.saveState({ lastSeenHash: hash, lastReviewedHash: hash, running: false });
+    await deps.post(
+      `🔍 <b>Ревью ветки</b> <code>${escapeHtml(branch)}</code>\n${escapeHtml(result.summary)}` +
+        (result.artifactDir ? `\n<code>${escapeHtml(result.artifactDir)}</code>` : ""),
+    );
+  } catch (err: any) {
+    // The flag must not survive a failure, or the loop never runs again.
+    await deps.saveState({ ...state, lastSeenHash: hash, running: false }).catch(() => {});
+    deps.note(`scheduled review failed: ${err?.message ?? String(err)}`);
+  }
+}
+
 async function checkRecovery(sql: postgres.Sql): Promise<void> {
   for (const [dedupKey, alert] of activeAlerts) {
     const project = projectFromSessionProblemKey(dedupKey);
@@ -1677,6 +1798,20 @@ export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
     }, 30 * 60_000);
     reviewerHealthTimer.unref?.();
   }, 50_000);
+
+  // Loop 11: a review nobody asked for — every 15 min. Two passes with the same
+  // diff hash is what "the branch stopped changing" means.
+  setTimeout(() => {
+    let scheduledReviewRunning = false;
+    const scheduledReviewTimer = setInterval(() => {
+      if (scheduledReviewRunning) return;
+      scheduledReviewRunning = true;
+      maybeRunScheduledReview(scheduledReviewDeps(sql, runShell))
+        .catch(() => {})
+        .finally(() => { scheduledReviewRunning = false; });
+    }, 15 * 60_000);
+    scheduledReviewTimer.unref?.();
+  }, 70_000);
 
   // Loop: Recovery check — every 60s (offset 30s from session loop)
   setTimeout(() => {

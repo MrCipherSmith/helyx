@@ -234,6 +234,56 @@ export async function lastOutcomeByReviewer(
   return out;
 }
 
+/** What the supervisor remembers between passes, stored in `bot_config`. */
+export interface ScheduledReviewState {
+  /** Diff hash of the last review this loop started. */
+  lastReviewedHash?: string;
+  /** Diff hash seen on the previous pass, whether or not it was reviewed. */
+  lastSeenHash?: string;
+  /** Set while a review is in flight, so a second one is refused rather than queued. */
+  running?: boolean;
+}
+
+export interface ScheduledReviewDecision {
+  run: boolean;
+  /** Why — carried so a log line or a test can say it rather than infer it. */
+  reason:
+    | "default-branch"
+    | "empty-diff"
+    | "already-reviewed"
+    | "still-changing"
+    | "review-in-flight"
+    | "settled";
+}
+
+/**
+ * Whether to start a review nobody asked for.
+ *
+ * Pure on purpose: the rules are the whole of this feature, and they are worth
+ * being able to test without a git repository, a database or a reviewer.
+ *
+ * "Settled" is a hash seen twice in a row. At the loop's interval that is a
+ * quarter of an hour of quiet, which is the difference between reviewing a
+ * branch and chasing one mid-edit.
+ */
+export function scheduledReviewDecision(input: {
+  branch: string;
+  defaultBranch: string;
+  diffHash: string;
+  state: ScheduledReviewState;
+}): ScheduledReviewDecision {
+  const { branch, defaultBranch, diffHash, state } = input;
+
+  // A merge has already happened; a review of the default branch is
+  // archaeology, and the interesting moment was before it.
+  if (!branch || branch === defaultBranch) return { run: false, reason: "default-branch" };
+  if (!diffHash) return { run: false, reason: "empty-diff" };
+  if (state.running) return { run: false, reason: "review-in-flight" };
+  if (state.lastReviewedHash === diffHash) return { run: false, reason: "already-reviewed" };
+  if (state.lastSeenHash !== diffHash) return { run: false, reason: "still-changing" };
+  return { run: true, reason: "settled" };
+}
+
 export interface PruneOptions {
   maxAgeDays?: number;
   maxRuns?: number;
