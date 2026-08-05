@@ -15,6 +15,7 @@
  */
 
 import { sql } from "../memory/db.ts";
+import { lastOutcomeByReviewer, type ReviewerOutcome } from "./review-artifacts.ts";
 import { providerService, providerAuthHeaders, type Provider } from "./provider-service.ts";
 import { stripAnsi } from "../utils/terminal.ts";
 
@@ -51,6 +52,14 @@ export interface ReviewerStatus {
   label: string;
   model: string;
   available: boolean;
+  /**
+   * Whether anything actually tested this reviewer.
+   *
+   * A third state, and the honest one. Backends without a balance endpoint used
+   * to be reported available on the strength of having no probe, which is a
+   * green tick meaning "nobody asked".
+   */
+  probed: boolean;
   detail: string;
 }
 
@@ -292,7 +301,16 @@ export function classifyCodexFailure(
   if (/not supported when using codex with|model .* is not supported/.test(all)) {
     return "model-unsupported: this account cannot use the configured model";
   }
-  if (/rate limit|quota|too many requests/.test(all)) return "limit";
+  // `usage limit` is Codex's own wording, captured verbatim on 2026-08-05:
+  //   ERROR: You've hit your usage limit. Visit … or try again at Aug 11th, 2026 5:49 PM.
+  // It matched none of the three patterns above, so eleven review rounds that
+  // day recorded `failed (exit 1)` — true, and useless. The one string that
+  // named the problem was discarded by the classifier that exists to name it.
+  if (/rate limit|usage limit|quota|too many requests/.test(all)) {
+    // "try again at <when>" is the whole of what the operator needs next.
+    const until = all.match(/try again at ([^.\n]+)/)?.[1]?.trim();
+    return until ? `limit until ${until}` : "limit";
+  }
   if (/unauthorized|not logged|401|authentication/.test(all)) return "auth";
   if (exitCode !== 0) return `failed (exit ${exitCode})`;
   if (!out) return "empty output";
@@ -669,9 +687,31 @@ export function reviewConsoleLines(result: ReviewRunResult): string[] {
   return lines;
 }
 
+/**
+ * Whether a recorded failure is one a live probe cannot see.
+ *
+ * Raised in review: overriding the probe on *any* failed last run means one
+ * flaky network timeout marks a reviewer unavailable until somebody happens to
+ * run a successful review, which may be hours away.
+ *
+ * The distinction that fixes it is not recency — a spent quota lasts six days
+ * and a stale record of it is still true — but *kind*. A limit, a rejected
+ * login or an unusable model are exactly the states a login probe reports as
+ * healthy; a timeout or a bare non-zero exit is not evidence about anything the
+ * probe cannot check for itself.
+ */
+export function failureHidesFromProbe(error: string | null): boolean {
+  if (!error) return false;
+  return /\blimit\b|\bquota\b|\bauth\b|unauthorized|not logged|model-unsupported|cli-usage/i.test(error);
+}
+
 /** Availability for `/reviewers` — Codex login state, provider balances. */
 export async function getReviewerStatuses(): Promise<ReviewerStatus[]> {
   const reviewers = await getReviewers();
+  // What each reviewer did the last time one actually ran. A login probe
+  // answered "logged in" for six days while every run was refused for a spent
+  // quota; a record of the last real run cannot disagree with reality that way.
+  const lastRun = await lastOutcomeByReviewer().catch(() => new Map<string, ReviewerOutcome>());
   const out: ReviewerStatus[] = [];
   for (const r of reviewers) {
     if (r.kind === "codex") {
@@ -690,17 +730,30 @@ export async function getReviewerStatuses(): Promise<ReviewerStatus[]> {
       } catch {
         detail = "status check failed";
       }
-      out.push({ id: r.id, label: "Codex", model: r.model, available, detail });
+      const last = lastRun.get(r.id);
+      if (last && !last.ok) {
+        if (failureHidesFromProbe(last.error)) {
+          // Logged in and unable to review is the case this exists for.
+          available = false;
+          detail = last.error ?? "last run failed";
+        } else {
+          // A transient failure is worth showing and not worth overriding: the
+          // probe can still answer for itself.
+          detail = `${detail} · последний прогон: ${last.error ?? "не удался"}`;
+        }
+      }
+      out.push({ id: r.id, label: "Codex", model: r.model, available, probed: true, detail });
       continue;
     }
 
     const prov = await providerService.get(r.providerId ?? -1);
     if (!prov) {
-      out.push({ id: r.id, label: r.id, model: r.model, available: false, detail: "unknown provider" });
+      out.push({ id: r.id, label: r.id, model: r.model, available: false, probed: true, detail: "unknown provider" });
       continue;
     }
     let available = true;
     let detail = "ok";
+    let probed = false;
     // DeepSeek exposes a balance endpoint; the others get a best-effort pass.
     if (prov.name.toLowerCase().includes("deepseek")) {
       try {
@@ -713,11 +766,27 @@ export async function getReviewerStatuses(): Promise<ReviewerStatus[]> {
         const total = parseFloat(data.balance_infos?.[0]?.total_balance ?? "0");
         available = data.is_available !== false && total > 0;
         detail = available ? `balance $${total.toFixed(2)}` : "no balance";
+        probed = true;
       } catch {
         detail = "balance check failed";
+        probed = true;
       }
     }
-    out.push({ id: r.id, label: prov.name, model: r.model, available, detail });
+
+    const last = lastRun.get(r.id);
+    if (last) {
+      probed = true;
+      if (!last.ok) {
+        if (failureHidesFromProbe(last.error)) {
+          available = false;
+          detail = last.error ?? "last run failed";
+        } else {
+          detail = `${detail} · последний прогон: ${last.error ?? "не удался"}`;
+        }
+      }
+    }
+    if (!probed) detail = "не проверялся";
+    out.push({ id: r.id, label: prov.name, model: r.model, available, probed, detail });
   }
   return out;
 }

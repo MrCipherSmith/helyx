@@ -160,6 +160,80 @@ export async function persistReviewRun(
   }
 }
 
+/**
+ * How far back to look for a reviewer's last outcome.
+ *
+ * Bounded because the search is only useful while the evidence is: a reviewer
+ * absent from the last twenty runs is not being used, and the live probe is a
+ * better answer than an archaeological one.
+ */
+export const MAX_RUNS_CONSULTED = 20;
+
+export interface ReviewerOutcome {
+  ok: boolean;
+  error: string | null;
+  /** When the run that produced this outcome started. */
+  at: string;
+}
+
+/**
+ * What each reviewer actually did, last time anyone ran one.
+ *
+ * The honest answer to "is this reviewer available", and the reason this
+ * function exists at all: asking a CLI about its own login answered
+ * `Logged in using ChatGPT` for six days while every `codex exec` was refused
+ * for a spent quota. A record of the last real run cannot disagree with reality
+ * that way — it *is* reality, from the most recent time it was tested.
+ *
+ * Newest first, and the first record of a reviewer wins — but an older run is
+ * still consulted for a reviewer the newer one does not mention. Raised in
+ * review: reading only the newest artifact meant that if A failed on a quota and
+ * B then ran alone, A's evidence vanished and the login probe put a green tick
+ * back on it. A record is superseded only by a newer record *of the same
+ * reviewer*; silence about A is not news about A.
+ */
+export async function lastOutcomeByReviewer(
+  root: string = DEFAULT_ARTIFACT_ROOT,
+): Promise<Map<string, ReviewerOutcome>> {
+  const out = new Map<string, ReviewerOutcome>();
+
+  let entries: string[];
+  try {
+    entries = await readdir(root);
+  } catch {
+    return out;
+  }
+
+  const runs: Array<{ path: string; mtimeMs: number }> = [];
+  for (const name of entries) {
+    const path = join(root, name, "run.json");
+    const info = await stat(path).catch(() => null);
+    if (info?.isFile()) runs.push({ path, mtimeMs: info.mtimeMs });
+  }
+  if (runs.length === 0) return out;
+
+  runs.sort((a, b) => b.mtimeMs - a.mtimeMs);
+
+  for (const run of runs.slice(0, MAX_RUNS_CONSULTED)) {
+    let parsed: { startedAt?: string; reports?: Array<{ reviewerId?: string; ok?: boolean; error?: string | null }> };
+    try {
+      parsed = JSON.parse(await Bun.file(run.path).text());
+    } catch {
+      continue; // a half-written or hand-edited record is not the end of the search
+    }
+
+    for (const report of parsed.reports ?? []) {
+      if (!report.reviewerId || out.has(report.reviewerId)) continue;
+      out.set(report.reviewerId, {
+        ok: report.ok === true,
+        error: report.error ?? null,
+        at: parsed.startedAt ?? "",
+      });
+    }
+  }
+  return out;
+}
+
 export interface PruneOptions {
   maxAgeDays?: number;
   maxRuns?: number;

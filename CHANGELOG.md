@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+### fix: a reviewer that cannot review no longer reads as available
+
+Three failures of one thing, all of them live and all of them measured on
+2026-08-05.
+
+The question was wrong. `getReviewerStatuses` asked Codex `codex login status`,
+which answered `Logged in using ChatGPT` while every `codex exec` was refused
+with `You've hit your usage limit … try again at Aug 11th, 2026`. `/reviewers`
+would have shown a green tick for six days against a reviewer that could not
+review.
+
+Nobody asked it. The only caller was the `/reviewers` command, so a dead
+reviewer announced itself inside the review you had just asked for.
+
+And the failure was misfiled. `classifyCodexFailure` matched
+`rate limit|quota|too many requests`; Codex says **usage limit**, which is none
+of them, so every round that day recorded `failed (exit 1)` — true, and
+useless.
+
+- The classifier learns Codex's own wording, and carries the reset time through:
+  `limit until aug 11th, 2026 5:49 pm` rather than an exit code.
+- Availability is answered by evidence. `lastOutcomeByReviewer` reads what each
+  reviewer actually did in the newest run artifact, and a reviewer whose last
+  real run failed is unavailable whatever its login says.
+- `ReviewerStatus` gains `probed`. A backend with no probe and no recorded run
+  is a third state — `/reviewers` renders it ⚪ — rather than a green tick
+  meaning "nobody asked".
+- Loop 10 checks every 30 minutes and alerts on **transitions**: a reviewer down
+  for six days is one alert, not two hundred and eighty-eight. A balance below
+  the floor counts as down, and re-arms only above floor plus margin so a
+  balance at the line does not alternate.
+
 ### feat: a review leaves something behind
 
 `scripts/review.ts` ran every reviewer, printed the reports to a terminal and
