@@ -18,7 +18,7 @@ import {
   claudeConfigRoot,
   TranscriptTail,
 } from "../../utils/transcript-locate.ts";
-import { TranscriptSession, LineBuffer } from "../../utils/transcript-monitor.ts";
+import { TranscriptSession, LineBuffer, RERESOLVE_AFTER_EMPTY_POLLS } from "../../utils/transcript-monitor.ts";
 
 let root: string;
 
@@ -120,6 +120,19 @@ describe("resolveTranscript", () => {
     expect(await resolveTranscript(PROJECT, root)).toBeNull();
   });
 
+  test("a transcript nobody has written to in a long time is not this session's", async () => {
+    // Raised in review: attaching always succeeds, because a dead file still
+    // opens and still reports an end. A project whose last session was days ago
+    // would sit on it and never fall back to the terminal monitors — an empty
+    // status rather than a wrong one, which is harder to notice.
+    const path = writeTranscript("slug", "a.jsonl", PROJECT);
+    age(path, 60 * 60 * 24); // a day
+
+    expect(await resolveTranscript(PROJECT, root, { maxAgeMs: 60_000 })).toBeNull();
+    expect(await resolveTranscript(PROJECT, root, { maxAgeMs: 60 * 60 * 48 * 1000 })).toBe(path);
+    expect(await resolveTranscript(PROJECT, root)).toBe(path); // no bound asked for, no bound applied
+  });
+
   test("a config root that does not exist is null", async () => {
     expect(await resolveTranscript(PROJECT, join(root, "nope"))).toBeNull();
   });
@@ -200,6 +213,49 @@ describe("TranscriptTail", () => {
     const lines = await tail.read();
     expect(lines).toHaveLength(1);
     expect(JSON.parse(lines[0]!).note).toBe("fresh");
+  });
+
+  test("a different file at the same path is read from its start", async () => {
+    // Raised in review: the size check only fires when the new file is
+    // *smaller*. Delete and recreate with more bytes and the offset points into
+    // the middle of a file it never read the beginning of.
+    const path = writeTranscript("slug", "a.jsonl", PROJECT, [{ type: "assistant", note: "one" }]);
+    const tail = await TranscriptTail.atEnd(path);
+
+    rmSync(path);
+    const longer = [
+      { type: "assistant", note: "fresh one" },
+      { type: "assistant", note: "fresh two" },
+      { type: "assistant", note: "fresh three" },
+    ].map((e) => JSON.stringify(e)).join("\n");
+    writeFileSync(path, `${longer}\n`);
+
+    const lines = await tail.read();
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toContain("fresh one");
+  });
+
+  test("a character split across two reads survives", async () => {
+    // Raised in review: decoding each byte range on its own turns both halves
+    // of a split emoji into replacement characters. The transcript's reasoning
+    // lines are exactly where emoji live.
+    const path = writeTranscript("slug", "a.jsonl", PROJECT);
+    const tail = await TranscriptTail.atEnd(path);
+
+    const record = Buffer.from(`${JSON.stringify({ type: "assistant", note: "🧠 thinking" })}\n`, "utf8");
+    // Split *inside* the emoji, not merely somewhere in the record: the four
+    // bytes of U+1F9E0 begin with 0xF0, and the cut goes two bytes in.
+    const emojiStart = record.indexOf(0xf0);
+    expect(emojiStart).toBeGreaterThan(0);
+    const split = emojiStart + 2;
+    appendFileSync(path, record.subarray(0, split));
+    expect(await tail.read()).toEqual([]);
+    appendFileSync(path, record.subarray(split));
+
+    const lines = await tail.read();
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0]!).note).toBe("🧠 thinking");
+    expect(lines[0]).not.toContain("�");
   });
 
   test("a file that vanished is empty, not an error", async () => {
@@ -338,6 +394,43 @@ describe("TranscriptSession", () => {
     const session = new TranscriptSession(PROJECT, { root, fromStart: true });
     await session.attach();
     expect(await session.poll()).toContain("written before we attached");
+  });
+
+  /**
+   * Raised in review of PR #61: `reresolve` swapped the file and kept the
+   * counters, so a new session opened with the previous one's token total and
+   * the previous one's last lines still on screen.
+   */
+  test("following the session to a new transcript leaves the old one behind", async () => {
+    const first = writeTranscript("slug", "first.jsonl", PROJECT);
+    age(first, 60);
+    const session = new TranscriptSession(PROJECT, { root, bufferLines: 20 });
+    await session.attach();
+
+    appendEntry(first, assistantEntry([{ type: "text", text: "old session line" }], { output_tokens: 5_000 }));
+    const before = (await session.poll())!;
+    expect(before).toContain("old session line");
+    expect(before).toContain("5.0k tokens");
+
+    // A newer transcript for the same project, and enough quiet polls for the
+    // monitor to go looking for one.
+    const second = writeTranscript("slug", "second.jsonl", PROJECT, [
+      assistantEntry([{ type: "text", text: "new session line" }], { output_tokens: 100 }),
+    ]);
+    age(second, 1);
+    // The append above made `first` the newest file on disk. Resolution picks
+    // by mtime, so the fixture has to put the two in the order a real handover
+    // would: the finished session stops being written to.
+    age(first, 60);
+    for (let i = 0; i < RERESOLVE_AFTER_EMPTY_POLLS; i++) await session.poll();
+
+    expect(session.path).toBe(second);
+
+    const after = (await session.poll())!;
+    expect(after).toContain("new session line");
+    expect(after).not.toContain("old session line");
+    expect(after).toContain("100 tokens");
+    expect(after).not.toContain("5.1k tokens");
   });
 
   test("the resolved path is the one it reads", async () => {

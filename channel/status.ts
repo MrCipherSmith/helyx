@@ -133,6 +133,8 @@ export class StatusManager {
    */
   private currentQuestion = new Map<string, string>();
   private sessionStats = new Map<string, SessionStats>();
+  /** Line-change lines already counted, per chat — see `accumulateStats`. */
+  private readonly countedStatLines = new Map<string, Set<string>>();
   private activeTyping = new Map<string, TypingHandle>();
   private readonly typingTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private activeMonitors = new Map<string, TmuxMonitorHandle | OutputMonitorHandle | TranscriptMonitorHandle>();
@@ -818,6 +820,24 @@ export class StatusManager {
       stats = { filesEdited: new Set(), linesAdded: 0, linesRemoved: 0 };
       this.sessionStats.set(key, stats);
     }
+
+    // Counted once per line, not once per emission.
+    //
+    // Raised in review. Both monitors re-send a whole block on every update, so
+    // the same "Added N lines, removed M lines" arrives again with each new
+    // entry beneath it — and the counters below simply added it each time. The
+    // transcript reader makes this worse rather than introduces it: its buffer
+    // holds sixty lines and it emits on every entry, so one edit could be
+    // counted a dozen times. `filesEdited` is a Set and was never affected.
+    const seen = this.countedStatLines.get(key) ?? new Set<string>();
+    this.countedStatLines.set(key, seen);
+    const fresh = stage.split("\n").filter((line) => {
+      if (!/Added \d+ lines?/.test(line)) return true;
+      if (seen.has(line)) return false;
+      seen.add(line);
+      return true;
+    });
+    stage = fresh.join("\n");
     // Track file edits from status updates (e.g. "Editing: status.ts" or "● Edit: file.ts")
     const editMatch = stage.match(/(?:Editing|● (?:Edit|Write)):\s*([^\s\n]+)/);
     if (editMatch) stats.filesEdited.add(editMatch[1]);

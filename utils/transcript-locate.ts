@@ -165,16 +165,23 @@ function normalizePath(path: string): string {
 export async function resolveTranscript(
   projectPath: string,
   root: string = claudeConfigRoot(),
+  options: { maxAgeMs?: number; now?: number } = {},
 ): Promise<string | null> {
   const wanted = normalizePath(projectPath);
   const candidates = await listTranscripts(root);
+  const now = options.now ?? Date.now();
 
   let examined = 0;
   for (const candidate of candidates) {
     if (examined >= MAX_CANDIDATES) break;
     examined++;
     const cwd = declaredCwd(await readHead(candidate.path));
-    if (cwd && normalizePath(cwd) === wanted) return candidate.path;
+    if (!cwd || normalizePath(cwd) !== wanted) continue;
+    // A match that has not been written to in a long time is a finished
+    // session, not this one. Candidates are newest-first, so the first match
+    // being stale means every match is.
+    if (options.maxAgeMs !== undefined && now - candidate.mtimeMs > options.maxAgeMs) return null;
+    return candidate.path;
   }
   return null;
 }
@@ -196,13 +203,35 @@ export async function resolveTranscript(
  */
 export class TranscriptTail {
   private partial = "";
+  /**
+   * Decodes across reads rather than per read.
+   *
+   * Raised in review: a poll can catch the writer mid-character. Decoding each
+   * byte range on its own turns both halves of a split emoji into replacement
+   * characters before the partial line is ever held — and the transcript's
+   * reasoning lines are exactly where emoji live. `stream: true` keeps the
+   * trailing bytes until their partner arrives.
+   */
+  private decoder = new TextDecoder("utf-8", { fatal: false });
+  /**
+   * Which file the offset belongs to.
+   *
+   * Raised in review: a file deleted and recreated at the same path is a
+   * different file, and if the new one is *larger* than the stored offset the
+   * size check below sees nothing wrong and reads from the middle of it. The
+   * path is the same, so the monitor's re-resolve does not help either. The
+   * inode is what actually changed.
+   */
+  private inode: number | null = null;
 
   private constructor(readonly path: string, private offset: number) {}
 
   /** Start reading from the end — see the note on this module. */
   static async atEnd(path: string): Promise<TranscriptTail> {
-    const size = await stat(path).then((s) => s.size).catch(() => 0);
-    return new TranscriptTail(path, size);
+    const info = await stat(path).catch(() => null);
+    const tail = new TranscriptTail(path, info?.size ?? 0);
+    tail.inode = info?.ino ?? null;
+    return tail;
   }
 
   /** Start from a known byte offset. For tests, and for resuming a known file. */
@@ -215,17 +244,53 @@ export class TranscriptTail {
     return this.offset;
   }
 
+  /**
+   * Whether the stored offset still sits where a record ended.
+   *
+   * The format is one JSON object per line, so a resume point is always just
+   * after a newline — unless a partial line is being held, which is exactly the
+   * case where it is deliberately mid-record.
+   *
+   * This is the check the inode comparison cannot make. A file deleted and
+   * recreated at the same path often gets the same inode back immediately; on
+   * the filesystem this was written against it always does, and the creation
+   * timestamp is identical to the nanosecond. The byte before the offset is
+   * what actually differs, and it is one read to look.
+   */
+  private async offsetIsARecordBoundary(): Promise<boolean> {
+    if (this.offset === 0 || this.partial !== "") return true;
+    const handle = await open(this.path, "r").catch(() => null);
+    if (!handle) return true;
+    try {
+      const buffer = Buffer.alloc(1);
+      const { bytesRead } = await handle.read(buffer, 0, 1, this.offset - 1);
+      return bytesRead === 1 && buffer[0] === 0x0a;
+    } catch {
+      return true;
+    } finally {
+      await handle.close().catch(() => {});
+    }
+  }
+
   /** Complete lines appended since the last call. Empty when nothing was written. */
   async read(): Promise<string[]> {
-    const size = await stat(this.path).then((s) => s.size).catch(() => null);
-    if (size === null) return [];
+    const info = await stat(this.path).catch(() => null);
+    if (info === null) return [];
+    const size = info.size;
 
-    if (size < this.offset) {
-      // Truncated or replaced. The held fragment belongs to a file that no
-      // longer exists — carrying it would splice two files together.
+    // Truncated, or replaced by a different file at the same path. Either way
+    // the held fragment and the offset belong to a file that is no longer
+    // there — carrying them would splice two files together, or start reading
+    // the new one from the middle.
+    const replaced = this.inode !== null && info.ino !== this.inode;
+    if (size < this.offset || replaced || !(await this.offsetIsARecordBoundary())) {
       this.offset = 0;
       this.partial = "";
+      // A decoder holding half a character from the old file would prepend it
+      // to the first character of the new one.
+      this.decoder = new TextDecoder("utf-8", { fatal: false });
     }
+    this.inode = info.ino;
     if (size === this.offset) return [];
 
     const handle = await open(this.path, "r").catch(() => null);
@@ -237,7 +302,7 @@ export class TranscriptTail {
       const { bytesRead } = await handle.read(buffer, 0, length, this.offset);
       this.offset += bytesRead;
 
-      const combined = this.partial + buffer.subarray(0, bytesRead).toString("utf8");
+      const combined = this.partial + this.decoder.decode(buffer.subarray(0, bytesRead), { stream: true });
       const parts = combined.split("\n");
       // The last piece has no newline yet: it is either empty, or the front half
       // of an object the writer has not finished. Held for the next read.

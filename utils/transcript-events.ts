@@ -65,9 +65,17 @@ function asString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
 }
 
-/** The last path segment, the way `pane-parse.ts` does it. */
+/**
+ * The last path segment, the way `pane-parse.ts` does it.
+ *
+ * A trailing slash makes `pop()` return the empty string, and the line then
+ * reads `● Edit: · Added 3 lines` — a colon with nothing after it, and nothing
+ * for the file-name patterns downstream to match. Raised in review; the
+ * non-empty segment is the answer, and the whole path is the fallback.
+ */
 function baseName(path: string): string {
-  return path.split("/").pop() || path;
+  const segments = path.split("/").filter(Boolean);
+  return segments.at(-1) || path;
 }
 
 /**
@@ -97,9 +105,18 @@ function mcpToolName(name: string): string | null {
   return parts.length >= 3 ? parts[parts.length - 1]! : null;
 }
 
-/** Lines in a block of text. An empty string is no lines, not one. */
-function countLines(text: string): number {
-  return text === "" ? 0 : text.split("\n").length;
+/**
+ * Lines in a block of text.
+ *
+ * A trailing newline terminates the last line rather than starting another —
+ * `"a\n"` is one line. Raised in review: counting the pieces `split` returns
+ * made every file that ends the way files do read as one line longer than it
+ * is, and the closing summary's `+N` carried the error.
+ */
+export function countLines(text: string): number {
+  if (text === "") return 0;
+  const body = text.endsWith("\n") ? text.slice(0, -1) : text;
+  return body.split("\n").length;
 }
 
 /**

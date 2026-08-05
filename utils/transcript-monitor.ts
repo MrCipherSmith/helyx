@@ -36,6 +36,21 @@ export const BUFFER_LINES = 60;
 /** Empty polls before asking whether the session moved to a new transcript. */
 export const RERESOLVE_AFTER_EMPTY_POLLS = 15;
 
+/**
+ * How old the newest transcript may be and still be worth attaching to.
+ *
+ * Raised in review, and the sharper half of the finding: attaching always
+ * succeeds, because a file that has not been written to since last week still
+ * opens and still reports an end. So a project whose last Claude Code session
+ * was days ago would take the transcript path, sit on a dead file, and never
+ * fall through to the terminal monitors — a status that is empty rather than
+ * wrong, which is harder to notice.
+ *
+ * Twelve hours: long enough to cover a session that has been idle while its
+ * operator slept, short enough that an abandoned project falls back.
+ */
+export const TRANSCRIPT_STALE_MS = 12 * 60 * 60 * 1_000;
+
 export interface TranscriptMonitorHandle {
   stop: () => void;
 }
@@ -56,6 +71,10 @@ export class LineBuffer {
     }
   }
 
+  clear(): void {
+    this.lines = [];
+  }
+
   get size(): number {
     return this.lines.length;
   }
@@ -68,6 +87,8 @@ export class LineBuffer {
 export interface TranscriptSessionOptions {
   /** Where `~/.claude` is. Defaults to the mount point or the real home. */
   root?: string;
+  /** How stale a transcript may be and still be attached to. */
+  maxAgeMs?: number;
   bufferLines?: number;
   /**
    * Start reading from the beginning of the resolved file.
@@ -103,7 +124,9 @@ export class TranscriptSession {
   /** Attach to the newest transcript for this project. False when there is none. */
   async attach(): Promise<boolean> {
     const root = this.options.root ?? claudeConfigRoot();
-    const path = await resolveTranscript(this.projectPath, root);
+    const path = await resolveTranscript(this.projectPath, root, {
+      maxAgeMs: this.options.maxAgeMs ?? TRANSCRIPT_STALE_MS,
+    });
     if (!path) return false;
     this.tail = this.options.fromStart
       ? TranscriptTail.at(path, 0)
@@ -162,12 +185,27 @@ export class TranscriptSession {
    * A new file is read from its beginning: it is a new turn's worth of bytes,
    * not a session's history, and skipping to its end would hide the very lines
    * the operator is waiting for.
+   *
+   * The counters go with it. Carrying them over meant the new session's header
+   * opened with the old one's token total, and its first status still showed
+   * the previous session's last few lines — an operator watching a fresh
+   * session read someone else's work as their own. Found in review rather than
+   * by anyone watching a handover, which is the only way this would have
+   * surfaced otherwise.
    */
   private async reresolve(): Promise<void> {
     const root = this.options.root ?? claudeConfigRoot();
-    const path = await resolveTranscript(this.projectPath, root);
+    // The same freshness bound as `attach`. Raised in review: without it, a
+    // session whose transcript disappears could be re-attached to an arbitrarily
+    // old one and replay it from the beginning.
+    const path = await resolveTranscript(this.projectPath, root, {
+      maxAgeMs: this.options.maxAgeMs ?? TRANSCRIPT_STALE_MS,
+    });
     if (!path || path === this.tail?.path) return;
     this.tail = TranscriptTail.at(path, 0);
+    this.buffer.clear();
+    this.tokenTotal = 0;
+    this.lastEmitted = null;
   }
 }
 

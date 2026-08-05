@@ -1,0 +1,591 @@
+{
+  "schemaVersion": 2,
+  "id": "026",
+  "slug": "the-reviewers-that-never-ran-and-the-dia",
+  "title": "the reviewers that never ran, and the diagnosis that said otherwise",
+  "status": "in-progress",
+  "createdAt": "2026-08-04T23:08:08.621Z",
+  "updatedAt": "2026-08-05T00:25:33.964Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:1f0ebb3b8d308c9e1bf81f944a4c550eb28d96c701522221366dc6d04668e8b6",
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-05T00:25:33.241Z",
+      "note": "codexArgv returns ['npx','@openai/codex','exec','-m',model,prompt]; tests/unit/reviewer-calls.test.ts asserts 'exec' present and '--no-interactive' absent, and callCodexReview's spawned argv is captured and checked"
+    },
+    "AC2": {
+      "at": "2026-08-05T00:25:33.329Z",
+      "note": "classifyCodexFailure returns distinct cli-usage / model-unsupported / limit / auth / failed(exit N) / empty output; the two real CLI outputs observed in this flow are pinned verbatim in tests and asserted never to classify as a limit. Proven in production: run 2 reported model-unsupported where run 1 had wrongly said cli-usage"
+    },
+    "AC3": {
+      "at": "2026-08-05T00:25:33.415Z",
+      "note": "REVIEW_MAX_TOKENS 32000 with a 4096 retry on a budget rejection; a faked 200 with finish_reason 'length' and empty content yields REVIEW_TRUNCATED, asserted not to be 'empty response'"
+    },
+    "AC4": {
+      "at": "2026-08-05T00:25:33.505Z",
+      "note": "providerAuthHeaders extracted into provider-service.ts and used by both fetchProviderModels and callProviderReview; tests cover bearer and api_key on the helper and on the wire via the faked provider"
+    },
+    "AC5": {
+      "at": "2026-08-05T00:25:33.602Z",
+      "note": "tests/unit/reviewer-run.test.ts drives runReviewers with a sentence and a fake diff against a real database and a faked provider, then asserts the request body carries both the sentence and the diff content"
+    },
+    "AC6": {
+      "at": "2026-08-05T00:25:33.691Z",
+      "note": "buildReviewPrompt cuts to a byte budget and appends '[diff truncated at N bytes of M; ... the rest was not provided]'; tested over an oversized diff and over a cut landing inside a multi-byte character"
+    },
+    "AC7": {
+      "at": "2026-08-05T00:25:33.784Z",
+      "note": "callCodexReview takes SpawnCodex, callProviderReview takes fetch and GetProvider, all defaulting to the real ones; the suite uses tests/fixtures/fake-fetch.ts and a fake spawn, and asserts blockedRequests() is unchanged across the provider block"
+    },
+    "AC8": {
+      "at": "2026-08-05T00:25:33.873Z",
+      "note": "bun run typecheck clean; bun run lint 206 problems 0 errors, unchanged from the pre-flow baseline; bun test tests/unit/ 1349 pass 0 fail across 65 files, up from 1288 at the start of the flow"
+    },
+    "AC9": {
+      "at": "2026-08-05T00:25:33.964Z",
+      "note": "Six real runs against PR 61. Run 1: codex cli-usage (honest), deepseek asked for the diff. Run 3: both ok=true, mode external. Runs 5 and 6 produced substantive reviews from both; every valid finding was fixed and the one architectural item (binding the transcript to a session id) is reported to the operator as an open decision"
+    }
+  },
+  "pr": {
+    "url": null
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T5",
+      "title": "share the auth-header rule; honour providers.auth_scheme in review calls",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T6",
+      "title": "classifyCodexFailure: a usage error is not a spent quota",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T7",
+      "title": "callCodexReview: codex exec, injectable spawn, real classification",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T8",
+      "title": "callProviderReview: injectable fetch, budget for reasoning, truncation reported as truncation",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T9",
+      "title": "buildReviewPrompt: the service attaches the bounded diff, not the caller",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T10",
+      "title": "tests over both world-facing calls with fake fetch and fake spawn",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T11",
+      "title": "full gate, then run the reviewers on PR 61 for real",
+      "kind": "review",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T12",
+      "title": "classifier must subtract the prompt: codex echoes it back on stderr",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T13",
+      "title": "review finding: reresolve carried the old session's tokens and lines",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T14",
+      "title": "review timeout sized for a reasoning model, and a body read that cannot escape the guard",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T15",
+      "title": "review findings: surrogate-safe diff cut, and a strip that cannot form a match across the seam",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T16",
+      "title": "classify from the CLI's own error lines, not from whatever it printed while exploring",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T17",
+      "title": "review findings: runSingleReviewer must attach the diff too; tail must notice a same-path replacement",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T18",
+      "title": "review round 2: untracked files, codex timeout, argv byte bound, per-provider budget retry",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T19",
+      "title": "review round 2: stale transcript must not block the tmux fallback; countLines off-by-one",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T20",
+      "title": "review round 3: streaming decode, stale re-resolve, kill that cannot be waited on, per-reviewer budget, stats dedup",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-04T23:08:08.621Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-04T23:10:14.163Z",
+      "event": "task-added",
+      "detail": "T5: share the auth-header rule; honour providers.auth_scheme in review calls"
+    },
+    {
+      "at": "2026-08-04T23:10:14.247Z",
+      "event": "task-added",
+      "detail": "T6: classifyCodexFailure: a usage error is not a spent quota"
+    },
+    {
+      "at": "2026-08-04T23:10:14.335Z",
+      "event": "task-added",
+      "detail": "T7: callCodexReview: codex exec, injectable spawn, real classification"
+    },
+    {
+      "at": "2026-08-04T23:10:14.423Z",
+      "event": "task-added",
+      "detail": "T8: callProviderReview: injectable fetch, budget for reasoning, truncation reported as truncation"
+    },
+    {
+      "at": "2026-08-04T23:10:14.508Z",
+      "event": "task-added",
+      "detail": "T9: buildReviewPrompt: the service attaches the bounded diff, not the caller"
+    },
+    {
+      "at": "2026-08-04T23:10:14.594Z",
+      "event": "task-added",
+      "detail": "T10: tests over both world-facing calls with fake fetch and fake spawn"
+    },
+    {
+      "at": "2026-08-04T23:10:14.680Z",
+      "event": "task-added",
+      "detail": "T11: full gate, then run the reviewers on PR 61 for real"
+    },
+    {
+      "at": "2026-08-04T23:10:37.870Z",
+      "event": "frozen",
+      "detail": "9 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-04T23:10:37.956Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-04T23:19:41.549Z",
+      "event": "task-added",
+      "detail": "T12: classifier must subtract the prompt: codex echoes it back on stderr"
+    },
+    {
+      "at": "2026-08-04T23:19:41.638Z",
+      "event": "task-added",
+      "detail": "T13: review finding: reresolve carried the old session's tokens and lines"
+    },
+    {
+      "at": "2026-08-04T23:25:45.262Z",
+      "event": "task-added",
+      "detail": "T14: review timeout sized for a reasoning model, and a body read that cannot escape the guard"
+    },
+    {
+      "at": "2026-08-04T23:34:30.866Z",
+      "event": "task-added",
+      "detail": "T15: review findings: surrogate-safe diff cut, and a strip that cannot form a match across the seam"
+    },
+    {
+      "at": "2026-08-05T00:01:22.133Z",
+      "event": "task-added",
+      "detail": "T16: classify from the CLI's own error lines, not from whatever it printed while exploring"
+    },
+    {
+      "at": "2026-08-05T00:01:22.220Z",
+      "event": "task-added",
+      "detail": "T17: review findings: runSingleReviewer must attach the diff too; tail must notice a same-path replacement"
+    },
+    {
+      "at": "2026-08-05T00:08:51.732Z",
+      "event": "task-added",
+      "detail": "T18: review round 2: untracked files, codex timeout, argv byte bound, per-provider budget retry"
+    },
+    {
+      "at": "2026-08-05T00:08:51.874Z",
+      "event": "task-added",
+      "detail": "T19: review round 2: stale transcript must not block the tmux fallback; countLines off-by-one"
+    },
+    {
+      "at": "2026-08-05T00:21:29.741Z",
+      "event": "task-added",
+      "detail": "T20: review round 3: streaming decode, stale re-resolve, kill that cannot be waited on, per-reviewer budget, stats dedup"
+    },
+    {
+      "at": "2026-08-05T00:25:13.030Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-05T00:25:13.119Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-05T00:25:13.206Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-05T00:25:13.293Z",
+      "event": "task-done",
+      "detail": "T5: share the auth-header rule; honour providers.auth_scheme in review calls"
+    },
+    {
+      "at": "2026-08-05T00:25:13.380Z",
+      "event": "task-done",
+      "detail": "T6: classifyCodexFailure: a usage error is not a spent quota"
+    },
+    {
+      "at": "2026-08-05T00:25:13.470Z",
+      "event": "task-done",
+      "detail": "T7: callCodexReview: codex exec, injectable spawn, real classification"
+    },
+    {
+      "at": "2026-08-05T00:25:13.554Z",
+      "event": "task-done",
+      "detail": "T8: callProviderReview: injectable fetch, budget for reasoning, truncation reported as truncation"
+    },
+    {
+      "at": "2026-08-05T00:25:13.640Z",
+      "event": "task-done",
+      "detail": "T9: buildReviewPrompt: the service attaches the bounded diff, not the caller"
+    },
+    {
+      "at": "2026-08-05T00:25:13.727Z",
+      "event": "task-done",
+      "detail": "T10: tests over both world-facing calls with fake fetch and fake spawn"
+    },
+    {
+      "at": "2026-08-05T00:25:13.813Z",
+      "event": "task-done",
+      "detail": "T11: full gate, then run the reviewers on PR 61 for real"
+    },
+    {
+      "at": "2026-08-05T00:25:13.901Z",
+      "event": "task-done",
+      "detail": "T12: classifier must subtract the prompt: codex echoes it back on stderr"
+    },
+    {
+      "at": "2026-08-05T00:25:13.991Z",
+      "event": "task-done",
+      "detail": "T13: review finding: reresolve carried the old session's tokens and lines"
+    },
+    {
+      "at": "2026-08-05T00:25:14.079Z",
+      "event": "task-done",
+      "detail": "T14: review timeout sized for a reasoning model, and a body read that cannot escape the guard"
+    },
+    {
+      "at": "2026-08-05T00:25:14.166Z",
+      "event": "task-done",
+      "detail": "T15: review findings: surrogate-safe diff cut, and a strip that cannot form a match across the seam"
+    },
+    {
+      "at": "2026-08-05T00:25:14.251Z",
+      "event": "task-done",
+      "detail": "T16: classify from the CLI's own error lines, not from whatever it printed while exploring"
+    },
+    {
+      "at": "2026-08-05T00:25:14.339Z",
+      "event": "task-done",
+      "detail": "T17: review findings: runSingleReviewer must attach the diff too; tail must notice a same-path replacement"
+    },
+    {
+      "at": "2026-08-05T00:25:14.428Z",
+      "event": "task-done",
+      "detail": "T18: review round 2: untracked files, codex timeout, argv byte bound, per-provider budget retry"
+    },
+    {
+      "at": "2026-08-05T00:25:14.515Z",
+      "event": "task-done",
+      "detail": "T19: review round 2: stale transcript must not block the tmux fallback; countLines off-by-one"
+    },
+    {
+      "at": "2026-08-05T00:25:14.602Z",
+      "event": "task-done",
+      "detail": "T20: review round 3: streaming decode, stale re-resolve, kill that cannot be waited on, per-reviewer budget, stats dedup"
+    },
+    {
+      "at": "2026-08-05T00:25:33.241Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: codexArgv returns ['npx','@openai/codex','exec','-m',model,prompt]; tests/unit/reviewer-calls.test.ts asserts 'exec' present and '--no-interactive' absent, and callCodexReview's spawned argv is captured and checked"
+    },
+    {
+      "at": "2026-08-05T00:25:33.329Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: classifyCodexFailure returns distinct cli-usage / model-unsupported / limit / auth / failed(exit N) / empty output; the two real CLI outputs observed in this flow are pinned verbatim in tests and asserted never to classify as a limit. Proven in production: run 2 reported model-unsupported where run 1 had wrongly said cli-usage"
+    },
+    {
+      "at": "2026-08-05T00:25:33.415Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: REVIEW_MAX_TOKENS 32000 with a 4096 retry on a budget rejection; a faked 200 with finish_reason 'length' and empty content yields REVIEW_TRUNCATED, asserted not to be 'empty response'"
+    },
+    {
+      "at": "2026-08-05T00:25:33.505Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: providerAuthHeaders extracted into provider-service.ts and used by both fetchProviderModels and callProviderReview; tests cover bearer and api_key on the helper and on the wire via the faked provider"
+    },
+    {
+      "at": "2026-08-05T00:25:33.602Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: tests/unit/reviewer-run.test.ts drives runReviewers with a sentence and a fake diff against a real database and a faked provider, then asserts the request body carries both the sentence and the diff content"
+    },
+    {
+      "at": "2026-08-05T00:25:33.691Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: buildReviewPrompt cuts to a byte budget and appends '[diff truncated at N bytes of M; ... the rest was not provided]'; tested over an oversized diff and over a cut landing inside a multi-byte character"
+    },
+    {
+      "at": "2026-08-05T00:25:33.784Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: callCodexReview takes SpawnCodex, callProviderReview takes fetch and GetProvider, all defaulting to the real ones; the suite uses tests/fixtures/fake-fetch.ts and a fake spawn, and asserts blockedRequests() is unchanged across the provider block"
+    },
+    {
+      "at": "2026-08-05T00:25:33.873Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: bun run typecheck clean; bun run lint 206 problems 0 errors, unchanged from the pre-flow baseline; bun test tests/unit/ 1349 pass 0 fail across 65 files, up from 1288 at the start of the flow"
+    },
+    {
+      "at": "2026-08-05T00:25:33.964Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: Six real runs against PR 61. Run 1: codex cli-usage (honest), deepseek asked for the diff. Run 3: both ok=true, mode external. Runs 5 and 6 produced substantive reviews from both; every valid finding was fixed and the one architectural item (binding the transcript to a session id) is reported to the operator as an open decision"
+    }
+  ]
+}

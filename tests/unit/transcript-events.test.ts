@@ -20,6 +20,7 @@ import {
   resultText,
   toolArgument,
   outputTokens,
+  countLines,
   formatTokens,
   renderTokenLine,
   SIDECHAIN_PREFIX,
@@ -66,6 +67,15 @@ describe("renderToolUse", () => {
   test("a tool with no usable argument is still named", () => {
     expect(renderToolUse({ type: "tool_use", name: "SomeNewTool", input: { count: 3 } }))
       .toBe("● SomeNewTool");
+  });
+
+  test("a path with a trailing slash still names something", () => {
+    // Raised in review: `pop()` on a trailing slash returns the empty string,
+    // and the line read `● Edit: ` — a colon with nothing after it, and nothing
+    // for the file-name patterns downstream to find.
+    const line = renderToolUse({ type: "tool_use", name: "Read", input: { file_path: "/a/b/" } })!;
+    expect(line).toBe("● Read: b");
+    expect(line).not.toBe("● Read: ");
   });
 
   test("a block with no name produces nothing", () => {
@@ -229,6 +239,16 @@ describe("the existing consumers still understand these lines", () => {
     const match = line.match(pattern)!;
     expect(match[1]).toBe("3");
     expect(match[2]).toBe("2");
+  });
+
+  test("a trailing newline terminates the last line, it does not start another", () => {
+    // Raised in review: `"a\n".split("\n")` is two pieces and one line. Every
+    // file that ends the way files do was counted one line long.
+    expect(countLines("")).toBe(0);
+    expect(countLines("a")).toBe(1);
+    expect(countLines("a\n")).toBe(1);
+    expect(countLines("a\nb")).toBe(2);
+    expect(countLines("a\nb\n")).toBe(2);
   });
 
   test("a written file counts as all added", () => {
