@@ -26,6 +26,7 @@
 
 import type postgres from "postgres";
 import { join, resolve } from "node:path";
+import { existsSync } from "node:fs";
 import { forceSummarize } from "../memory/summarizer.ts";
 import { clearCache } from "../memory/short-term.ts";
 import { ErrorWindow } from "../utils/error-stream.ts";
@@ -1321,7 +1322,17 @@ export function createErrorStreamReader(
       // Opened at the end, not the beginning: the file holds weeks of history
       // and replaying it on every daemon restart would alert about errors that
       // stopped long ago.
-      if (!tail) tail = await TranscriptTail.atEnd(path);
+      //
+      // A tail is not opened for a file that is not there yet. Raised in review
+      // as "the watcher stays blind for ever"; the mechanism is different and
+      // worse. `TranscriptTail.atEnd` does not throw on a missing file — it
+      // resolves `stat` to null and starts at offset 0 — so the first read after
+      // the file appeared would replay the whole of it. On this host that is
+      // 4217 old warnings arriving as though they had just happened.
+      if (!tail) {
+        if (!existsSync(path)) return [];
+        tail = await TranscriptTail.atEnd(path);
+      }
       return tail.read();
     },
   };

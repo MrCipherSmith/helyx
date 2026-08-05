@@ -9,8 +9,11 @@
  * So these drive the real `checkErrorStream` and look at what came out.
  */
 
-import { describe, test, expect } from "bun:test";
-import { checkErrorStream, ERROR_STREAM_BLIND_AFTER, type ErrorStreamReader } from "../../scripts/supervisor.ts";
+import { describe, test, expect, afterEach } from "bun:test";
+import { mkdtempSync, writeFileSync, appendFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { checkErrorStream, createErrorStreamReader, ERROR_STREAM_BLIND_AFTER, type ErrorStreamReader } from "../../scripts/supervisor.ts";
 import { ErrorWindow, LEVEL_ERROR } from "../../utils/error-stream.ts";
 
 const NOW = 1_700_000_000_000;
@@ -51,6 +54,44 @@ function harness(batches: string[][], options: { fail?: boolean } = {}): Harness
     },
   };
 }
+
+describe("the reader over a real file", () => {
+  const made: string[] = [];
+
+  afterEach(() => {
+    for (const dir of made.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  function tempLog(): string {
+    const dir = mkdtempSync(join(tmpdir(), "helyx-errlog-"));
+    made.push(dir);
+    return join(dir, "bot.log");
+  }
+
+  test("a log that does not exist yet is silence, and its history is not replayed when it appears", async () => {
+    // Raised in review as "the watcher stays blind for ever". The mechanism is
+    // different and worse: TranscriptTail.atEnd does not throw on a missing
+    // file, it starts at offset 0 — so the first read after the file appeared
+    // would have replayed the whole of it. On this host that is 4217 old
+    // warnings arriving as though they had just happened.
+    const path = tempLog();
+    const reader = createErrorStreamReader(path);
+
+    expect(await reader.read()).toEqual([]);
+
+    writeFileSync(path, [line(LEVEL_ERROR, "old news"), line(LEVEL_ERROR, "older news")].join("\n") + "\n");
+
+    // The file exists now: the tail opens at its end, so nothing already in it
+    // is news.
+    expect(await reader.read()).toEqual([]);
+
+    appendFileSync(path, line(LEVEL_ERROR, "this just happened") + "\n");
+
+    const fresh = await reader.read();
+    expect(fresh).toHaveLength(1);
+    expect(fresh[0]).toContain("this just happened");
+  });
+});
 
 describe("checkErrorStream", () => {
   test("a new error reaches the operator, named and keyed", async () => {

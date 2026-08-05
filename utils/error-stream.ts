@@ -220,7 +220,10 @@ export class ErrorWindow {
    * and a slow one.
    */
   private forget(now: number): void {
-    for (const [msg, seen] of this.lastSeen) {
+    // Iterating a snapshot rather than the live map. Deleting the entry you are
+    // standing on is specified as safe, and a reader should not have to know
+    // that to be sure this loop is right.
+    for (const [msg, seen] of [...this.lastSeen]) {
       if (now - seen <= this.noveltyMs) continue;
       this.lastSeen.delete(msg);
       this.occurrences.delete(msg);
