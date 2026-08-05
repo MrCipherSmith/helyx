@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+### fix: a model that answers with nothing no longer becomes the session's record
+
+`memory/summarizer.ts` decides what the system remembers, and 322 of its 390
+lines were uncovered. It is also where defect D1 of this programme lived: for
+weeks it resolved a host path inside a container, logged `file not found` 4136
+times and saved nothing, and a person reading the log by accident was the only
+thing that noticed.
+
+Covering it found a second one of the same shape. `summarizeWork` guards its
+model call with a timeout and falls back to the raw conversation when the call
+throws — but an answer of `""` is not a throw. A model replying with nothing
+therefore produced an empty `project_context`: a whole work session recorded as
+an empty string, saved without complaint. An empty answer is now treated as no
+answer, and the fallback that already existed does its job.
+
+The tests drive the real decisions with the collaborators replaced at the module
+boundary — the summarizer takes `sql`, the model client and both memory layers
+as imports rather than as parameters, so that is where the doubles go. A `fetch`
+stub was the obvious alternative and is worse: the client picks its transport
+from the environment, so the stub would cover whichever one the machine happens
+to use.
+
+What is covered: too little to summarize, a summary the triage rejects, facts
+written as facts beside the summary and a fact too short to keep, project
+knowledge with and without a project path, the work-session close including the
+fallback above, and the idle timer's lifecycle — set, replaced, cleared —
+because a timer left behind summarizes a session that has already ended.
+
+Coverage of the file: 17.44% → 77.67%.
+
 ### test: the supervisor's loop inventory is now asserted
 
 `scripts/supervisor.ts` is the highest-risk file in the repository by the

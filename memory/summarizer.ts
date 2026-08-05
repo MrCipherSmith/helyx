@@ -358,6 +358,11 @@ export async function summarizeWork(sessionId: number): Promise<boolean> {
         setTimeout(() => reject(new Error("timeout")), 30_000),
       ),
     ]) as string;
+    // An answer with nothing in it is not an answer. The fallback below existed
+    // only for a throw or a timeout, so a model that replied with an empty
+    // string produced an empty project_context — a session's whole record
+    // saved as "". Found by covering this path.
+    if (!result.trim()) throw new Error("empty summary");
     summary = result;
   } catch (err) {
     // Fallback: concatenate raw messages
