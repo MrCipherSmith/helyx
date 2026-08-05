@@ -35,6 +35,14 @@ async function summarize(lcov: string): Promise<Record<string, { lines: { total:
   });
   await proc.exited;
 
+  // Raised in review: without this, a script that failed while leaving an
+  // older or partial file behind would be read as a pass. The assertions are
+  // strict enough that it is unlikely, and "unlikely" is not the standard for
+  // the thing the whole quality reading rests on.
+  if (proc.exitCode !== 0) {
+    throw new Error(`coverage-summary.ts exited ${proc.exitCode}: ${await new Response(proc.stderr).text()}`);
+  }
+
   return JSON.parse(readFileSync(join(dir, "coverage-summary.json"), "utf-8"));
 }
 
