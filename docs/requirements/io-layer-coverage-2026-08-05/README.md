@@ -50,12 +50,16 @@ Flows: 034 (the gate itself), 035 `scripts/supervisor.ts`, 037
 `mcp/dashboard-api.ts`, 041 `scripts/tmux-watchdog.ts`, 042
 `bot/commands/admin.ts` — PRs #70, #71, #72, #73, #77, #74, #75, #76.
 
-**036 `mcp/server.ts` is blocked** and is the one flow of the sixteen that did
-not land. Its request handler lives inside the `createServer` arrow, so nothing
-can reach it without either extracting it — a production change to the file
-every MCP tool call enters through — or binding port 3847, which is already
-held on this host. The choice belongs to the maintainer; the flow records it
-rather than guessing.
+**036 `mcp/server.ts` landed** (PR #79). It was blocked from 18:35 to 20:20 on
+2026-08-05 on a decision the flow would not make for itself: its router was an
+anonymous arrow inside `createServer`, reachable only through a function that
+binds a fixed port and can call `process.exit(1)`. The maintainer chose the
+extraction, and `handleMcpRequest(req, res, bot)` is now exported — a move, not
+a rewrite. Coverage 8.49% → 23.98%, over the refusals only; the routes that
+succeed write rows and start background work and are left for a seam of their
+own.
+
+All sixteen flows of this programme are now merged. None of them is deployed.
 
 ## Document Index
 
