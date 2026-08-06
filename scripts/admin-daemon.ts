@@ -22,7 +22,7 @@ import { startHostIngress } from "./host-ingress.ts";
 import { summarizeTmuxHost, parseScopeState, TMUX_HEALTH_NAME } from "../sessions/tmux-server.ts";
 import { parseWindowNames } from "../sessions/tmux-windows.ts";
 import { runCurator, getLastCuratorRun } from "../utils/curator.ts";
-import { takeRestartLease, heldMessage } from "../utils/restart-lease.ts";
+import { takeRestartLease, releaseRestartLease, heldMessage } from "../utils/restart-lease.ts";
 import { sendCuratorSummary } from "../utils/skill-approval.ts";
 
 const BOT_DIR = resolve(import.meta.dir, "..");
@@ -348,6 +348,23 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
     return { ok: true };
   };
 
+  /**
+   * Hand the lease back when the spawn itself failed.
+   *
+   * The lease is taken before the work is launched, and the launch can fail —
+   * a missing shell, a full process table. Reporting success and holding the
+   * lease anyway would lock the operator out of every restart for the whole
+   * expiry, with nothing running and nothing to wait for. Raised in review.
+   */
+  const spawned = (
+    shell: { ok: boolean; output: string },
+    ifOk: { ok: boolean; output: string; deferred?: boolean },
+  ): { ok: boolean; output: string; deferred?: boolean } => {
+    if (shell.ok) return ifOk;
+    releaseRestartLease();
+    return { ok: false, output: `failed to start: ${shell.output.slice(0, 200)}` };
+  };
+
   try {
     switch (row.command) {
       case "tmux_start":
@@ -404,8 +421,8 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
           `HELYX_RESTART_ROW=${row.id} ` +
           `'${bunBin}' '${resolve(import.meta.dir, "restart-host-run.ts")}' ` +
           `>> /tmp/helyx-bounce.log 2>&1`;
-        await runShell(`nohup bash -c ${JSON.stringify(inner)} &`);
-        result = { ok: true, deferred: true, output: "bounce running (log: /tmp/helyx-bounce.log)" };
+        const shell = await runShell(`nohup bash -c ${JSON.stringify(inner)} &`);
+        result = spawned(shell, { ok: true, deferred: true, output: "bounce running (log: /tmp/helyx-bounce.log)" });
         break;
       }
 
@@ -484,18 +501,16 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
           `HELYX_RESTART_ROW=${row.id} ` +
           `'${bunBin}' '${resolve(import.meta.dir, "restart-host-run.ts")}' ` +
           `>> /tmp/helyx-host-restart.log 2>&1`;
-        if (hasSystemdRun) {
-          await runShell(`systemd-run --user --collect --quiet bash -c ${JSON.stringify(inner)}`);
-        } else {
-          await runShell(`nohup bash -c ${JSON.stringify(inner)} &`);
-        }
-        result = {
+        const shell = hasSystemdRun
+          ? await runShell(`systemd-run --user --collect --quiet bash -c ${JSON.stringify(inner)}`)
+          : await runShell(`nohup bash -c ${JSON.stringify(inner)} &`);
+        result = spawned(shell, {
           ok: true,
           deferred: true,
           output: hasSystemdRun
             ? "host restart running: bounce sessions → restart admin-daemon (log: /tmp/helyx-host-restart.log)"
             : "host restart running: bounce sessions (systemd-run absent — admin-daemon left alone; log: /tmp/helyx-host-restart.log)",
-        };
+        });
         break;
       }
 
@@ -511,10 +526,10 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
         // The finisher runs whatever the build and the bounce did — it releases
         // the lease and closes the row, and a restart that failed must not hold
         // the lease for the whole expiry.
-        await runShell(
+        const shell = await runShell(
           `nohup bash -c "(cd \\"${BOT_DIR}\\"; docker compose up -d --build bot; sleep 5; \\"${bunBin}\\" \\"${CLI}\\" bounce; \\"${bunBin}\\" \\"${finish}\\" ${row.id}) >> /tmp/helyx-full-restart.log 2>&1" &`
         );
-        result = { ok: true, deferred: true, output: "full restart running: rebuild bot → bounce sessions (log: /tmp/helyx-full-restart.log)" };
+        result = spawned(shell, { ok: true, deferred: true, output: "full restart running: rebuild bot → bounce sessions (log: /tmp/helyx-full-restart.log)" });
         break;
       }
 

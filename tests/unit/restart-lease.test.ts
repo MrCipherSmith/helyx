@@ -44,7 +44,7 @@ describe("taking the lease", () => {
     const result = takeRestartLease("bounce", path, NOW);
 
     expect(result.ok).toBe(true);
-    expect(readRestartLease(path)).toEqual({ owner: "bounce", takenAt: NOW });
+    expect(readRestartLease(path)).toMatchObject({ owner: "bounce", takenAt: NOW });
   });
 
   test("the second is refused, and told who holds it", () => {
@@ -103,6 +103,44 @@ describe("a lease that outlived its restart", () => {
 
     expect(later.ok).toBe(false);
     expect(readRestartLease(path)!.owner).toBe("host_restart");
+  });
+
+  test("two takers breaking the same stale lease do not both win", () => {
+    // The race review pushed on, and it is real: `O_EXCL` decides the ordinary
+    // case, but on the stale path both takers read the same dead lease, both
+    // unlink it, and both create — the second unlink removing the first taker's
+    // *fresh* lease. Both would walk away believing they held it, which is the
+    // concurrent restart this whole file exists to prevent.
+    //
+    // The settle is the seam: a competing taker landing inside that window is
+    // exactly the interleaving being guarded against, so the test writes one
+    // there rather than hoping two threads collide.
+    takeRestartLease("host_restart", path, NOW);
+    const afterExpiry = NOW + LEASE_EXPIRY_MS + 1;
+
+    const loser = takeRestartLease("bounce", path, afterExpiry, () => {
+      // The other taker gets there second and takes the file from under us.
+      rmSync(path, { force: true });
+      writeFileSync(path, JSON.stringify({ owner: "full_restart", takenAt: afterExpiry, token: "other" }));
+    });
+
+    expect(loser.ok).toBe(false);
+    if (loser.ok) throw new Error("unreachable");
+    expect(loser.held.owner).toBe("full_restart");
+    // And the winner keeps it: a loser must not clean up on its way out.
+    expect(readRestartLease(path)!.owner).toBe("full_restart");
+  });
+
+  test("a takeover that nobody contests still succeeds", () => {
+    // The other half of the check above: verification must not turn every
+    // takeover into a refusal, or a restart that died would wedge the stack for
+    // ever — which is worse than the race.
+    takeRestartLease("host_restart", path, NOW);
+
+    const winner = takeRestartLease("bounce", path, NOW + LEASE_EXPIRY_MS + 1, () => {});
+
+    expect(winner.ok).toBe(true);
+    expect(readRestartLease(path)!.owner).toBe("bounce");
   });
 
   test("a corrupt file is not a lease anybody is holding", () => {

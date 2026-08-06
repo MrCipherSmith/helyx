@@ -293,8 +293,13 @@ export class HostIngress {
       console.error(`[host-ingress] broke stale lease from ${lease.broke.owner}`);
     }
 
-    await this.reply(chatId, threadId, "🔧 Поднимаю стек с хоста — контейнеры, затем сессии…");
     try {
+      // Inside the try, not before it: a reply that throws — and this one goes
+      // over the network to Telegram, in the middle of an outage — would
+      // otherwise exit past the `finally` and strand the lease for the whole
+      // expiry, locking the operator out of the door they opened to recover.
+      // Raised in review.
+      await this.reply(chatId, threadId, "🔧 Поднимаю стек с хоста — контейнеры, затем сессии…");
       const result = await bringStackUp(this.deps.run, this.deps.stack);
       const head = result.ok ? "✅ Стек поднят" : "⚠️ Поднял не всё";
       await this.reply(chatId, threadId, `${head}\n\n<pre>${escapeHtml(result.summary.slice(0, 3000))}</pre>`);
