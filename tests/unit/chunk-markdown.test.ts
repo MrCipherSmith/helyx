@@ -11,8 +11,10 @@ import { describe, expect, test } from "bun:test";
 import { chunkMarkdown } from "../../utils/chunk.ts";
 import {
   asRecapQuote,
+  fitRecap,
   proseOf,
   shouldSummarize,
+  RECAP_PREFIX,
   SUMMARY_MIN_CHARS,
 } from "../../utils/reply-summary.ts";
 
@@ -157,5 +159,58 @@ describe("asRecapQuote", () => {
   test("escapes the summary, so a stray angle bracket cannot break the quote", () => {
     expect(asRecapQuote("сравнил a < b & b > c"))
       .toBe("<blockquote expandable>сравнил a &lt; b &amp; b &gt; c</blockquote>");
+  });
+});
+
+/**
+ * The recap fitted to a message.
+ *
+ * The defect this replaces was `slice(0, 700)`: a recap that overran its budget
+ * ended in the middle of a word, and what the operator read was not "there was
+ * more" but a session that had stopped mid-thought.
+ */
+describe("fitRecap", () => {
+  /** What the caller actually sends, and therefore what the budget applies to. */
+  const rendered = (t: string) => asRecapQuote(`${RECAP_PREFIX}${t}`).length;
+
+  test("a recap that fits is not touched", () => {
+    const text = "Правка ушла в main. Тесты зелёные.";
+    expect(fitRecap(text)).toBe(text);
+  });
+
+  test("an overlong recap ends on a sentence, not mid-word", () => {
+    const sentence = `${"слово ".repeat(20)}конец.`;
+    const out = fitRecap(Array(40).fill(sentence).join(" "), 500);
+
+    expect(rendered(out)).toBeLessThanOrEqual(500);
+    expect(out.endsWith("конец.")).toBe(true);
+  });
+
+  test("the budget is measured after escaping, not before", () => {
+    // Prose is short enough to fit raw and too long once every `&` has become
+    // five characters. Counting before the escape is the bug that lets a
+    // message Telegram will reject through.
+    const text = `${"a & b. ".repeat(30)}`;
+    const out = fitRecap(text, 300);
+
+    expect(rendered(out)).toBeLessThanOrEqual(300);
+  });
+
+  test("one enormous sentence is cut on a word and says so", () => {
+    // No sentence boundary anywhere, so the fallback decides — and an ellipsis
+    // is the difference between "there was more" and "it died here".
+    const out = fitRecap("слово ".repeat(300).trim(), 200);
+
+    expect(rendered(out)).toBeLessThanOrEqual(200);
+    expect(out.endsWith("…")).toBe(true);
+    expect(out).not.toMatch(/сло…$/);
+  });
+
+  test("the quote tags and the speaker glyph come out of the same budget", () => {
+    // A cap that ignores its own wrapper is a cap that overruns by the size of
+    // the wrapper — which is what sends a message Telegram refuses.
+    const out = fitRecap("Одно. Два. Три. Четыре. Пять. Шесть.", 60);
+
+    expect(rendered(out)).toBeLessThanOrEqual(60);
   });
 });
