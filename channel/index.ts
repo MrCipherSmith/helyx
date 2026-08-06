@@ -239,14 +239,13 @@ async function main() {
       channelLogger.warn({ err, failCount: heartbeatFailCount }, "heartbeat: DB error renewing lease");
       if (heartbeatFailCount >= 2) {
         channelLogger.error("too many heartbeat failures — exiting to avoid zombie session");
-        shutdown().catch(() => {}).finally(() => setTimeout(() => process.exit(1), 10_000));
+        leave(1);
       }
       return;
     }
     if (!leaseHeld) {
       channelLogger.warn("lease lost on heartbeat — exiting to yield to new owner");
-      shutdown().catch(() => {}).finally(() => setTimeout(() => process.exit(1), 10_000));
-      return;
+      leave(1);
     }
     // Re-register expect so a fresh one is always available (idempotent with Map-based queue).
     // Guards against the race where the transport initialized before channel.ts had time to push
@@ -266,6 +265,31 @@ async function main() {
       } catch { /* non-critical */ }
     }
   }, HEARTBEAT_INTERVAL_MS);
+
+  /**
+   * Leave, and mean it.
+   *
+   * The deadline is armed before the graceful path is even started, because
+   * the graceful path is what failed. `shutdown()` awaits `markDisconnected()`
+   * and `sql.end()`, and the reason it is being called is usually that
+   * Postgres is unreachable — so both awaits can hang, and a deadline chained
+   * to their settlement never arms. The process then lives on in the worst
+   * possible shape: the poller stopped, but the MCP transport and every status
+   * timer still running, so the status message keeps painting the session's
+   * work while `reply` dies on the first `ctx.sql` before a byte reaches
+   * Telegram. That is the "answer visible in the status, nothing in the topic"
+   * report, and it fires on every restart of the stack.
+   *
+   * `unref()` so a channel that shuts down cleanly is not held open for ten
+   * seconds by its own escape hatch.
+   */
+  const leave = (code: number) => {
+    setTimeout(() => {
+      channelLogger.error("shutdown did not finish in time — exiting hard");
+      process.exit(code);
+    }, 10_000).unref();
+    shutdown().catch(() => process.exit(code));
+  };
 
   let shuttingDown = false;
   const shutdown = async () => {

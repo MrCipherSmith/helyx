@@ -240,10 +240,22 @@ export class StatusManager {
   getBusyChats(): Set<string> {
     const out = new Set<string>();
     for (const state of this.activeStatus.values()) {
-      // A continuation is the tail of a finished step, not a turn in progress.
-      // Reporting it busy would hold the operator's next message behind work
-      // that has already been answered once — trading one silence for another.
-      if (state.continuation) continue;
+      // A continuation counts as busy, and the exemption it used to get cost
+      // the operator the answer itself.
+      //
+      // The reasoning for the exemption was that a continuation is the tail of
+      // a step already reported, so holding the next message behind it trades
+      // one silence for another. What it actually did was inject that message
+      // into a turn already running: Claude Code folds it into the turn in
+      // flight, the model answers it in its ordinary terminal text, and a turn
+      // that has already called `reply` rarely calls it a second time. The
+      // answer then existed only in the status — which is exactly the report
+      // this comment now exists to prevent.
+      //
+      // The wait it reintroduces is bounded and small: a continuation closes
+      // after `continuationIdleMs` of silence (see the timer in
+      // `scheduleNextEdit`), so the message waits for work that is still
+      // moving and no longer than that once it stops.
       out.add(state.chatId);
     }
     return out;
@@ -471,6 +483,14 @@ export class StatusManager {
 
       // The Telegram message id rides along so the reply tool can still mark
       // the operator's original message answered once this one is picked up.
+      //
+      // On conflict the row is revived rather than inserted twice: the id is
+      // the one this question already arrived under, and
+      // `idx_queue_msgid_dedup` is UNIQUE on `(chat_id, message_id)`. The plain
+      // INSERT this replaces raised a duplicate key on every single re-queue,
+      // was swallowed by the catch below, and returned false — so the operator
+      // got the red alert and never the question back. The net has been in the
+      // code, and broken, since the day it was written.
       await this.ctx.sql`
         INSERT INTO message_queue (session_id, chat_id, from_user, content, message_id, delivered)
         VALUES (
@@ -481,6 +501,10 @@ export class StatusManager {
           ${queued.message_id ?? null},
           false
         )
+        ON CONFLICT (chat_id, message_id)
+          WHERE message_id IS NOT NULL AND message_id != '' AND message_id != 'tool'
+        DO UPDATE
+          SET delivered = false, content = EXCLUDED.content, session_id = EXCLUDED.session_id
       `;
       channelLogger.warn({ chatId, sessionId }, "response guard: re-queued the unanswered question");
       return true;
@@ -967,6 +991,15 @@ export class StatusManager {
    * and a rate limit in the face.
    */
   private async maybeMoveToBottom(key: string, state: StatusState): Promise<void> {
+    // The state may have been closed while the edit above was in flight: a
+    // reply deletes the status, and `noteReplySent` has just recorded a message
+    // id above this one — so `shouldMove` says yes and a status closed a moment
+    // ago is re-sent, pinned, and the ✅ summary it was replaced by is deleted
+    // as "the old status". Seven of one hundred and thirty-three moves in one
+    // day ended that way: a pinned, never-closed status showing the answer, and
+    // no closing message anywhere.
+    if (this.activeStatus.get(key) !== state) return;
+
     const lastOther = this.lastOtherMessageId.get(key) ?? null;
     if (!shouldMove({ statusMessageId: state.messageId, lastOtherMessageId: lastOther, movedFor: state.movedFor })) return;
 

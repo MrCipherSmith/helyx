@@ -101,9 +101,12 @@ describe("what counts as having spoken", () => {
   });
 });
 
+/** Everything the operator would read, in order — the summary is now sent in parts. */
+const forwarded = (t: string) => summaryFor(t)?.parts.join("\n") ?? null;
+
 describe("what gets forwarded", () => {
   test("the final text, marked as coming from the bot", () => {
-    const out = summaryFor(transcript(operator("go"), used("Bash"), result(), said("Done — all green.")));
+    const out = forwarded(transcript(operator("go"), used("Bash"), result(), said("Done — all green.")));
 
     expect(out).toContain("Done — all green.");
     expect(out).toContain(FORWARDED_MARKER);
@@ -132,7 +135,7 @@ describe("what gets forwarded", () => {
   });
 
   test("the last thing said wins", () => {
-    const out = summaryFor(transcript(operator("go"), said("first thought"), used("Bash"), result(), said("final word")));
+    const out = forwarded(transcript(operator("go"), said("first thought"), used("Bash"), result(), said("final word")));
     expect(out).toContain("final word");
     expect(out).not.toContain("first thought");
   });
@@ -142,7 +145,7 @@ describe("what gets forwarded", () => {
       type: "assistant",
       message: { content: [{ type: "text", text: "part one" }, { type: "text", text: "part two" }] },
     });
-    const out = summaryFor(transcript(operator("go"), two));
+    const out = forwarded(transcript(operator("go"), two));
     expect(out).toContain("part one");
     expect(out).toContain("part two");
   });
@@ -152,21 +155,33 @@ describe("the message always fits and is well-formed", () => {
   test("markup in the session's own words is escaped", () => {
     // Sent with parse_mode HTML, and this text is full of code — an unescaped
     // bracket fails the send outright, which loses the summary entirely.
-    const out = summaryFor(transcript(operator("go"), said("use <div> and a && b")));
+    const out = forwarded(transcript(operator("go"), said("use <div> and a && b")));
     expect(out).toContain("&lt;div&gt;");
     expect(out).not.toContain("<div>");
   });
 
-  test("a long answer is trimmed to fit", () => {
-    const out = summaryFor(transcript(operator("go"), said("x".repeat(9000))));
-    expect(out!.length).toBeLessThan(TELEGRAM_MAX_CHARS);
+  test("a long answer is carried across messages, not cut down to one", () => {
+    // It used to be clamped to the budget and sent as a single message, which
+    // is how a long answer reached the operator as its opening paragraph and
+    // an ellipsis.
+    const said9k = "x".repeat(9000);
+    const out = summaryFor(transcript(operator("go"), said(said9k)))!;
+
+    expect(out.parts.length).toBeGreaterThan(1);
+    for (const p of out.parts) expect(p.length).toBeLessThan(TELEGRAM_MAX_CHARS);
+    expect(out.parts.join("").replace(FORWARDED_MARKER, "").replace(/\s/g, "")).toBe(said9k);
   });
 
   test("and a long answer full of ampersands too", () => {
     // Escaping multiplies length by five, and a message over the limit is
     // rejected rather than trimmed — the summary would simply never arrive.
-    const out = summaryFor(transcript(operator("go"), said("&".repeat(9000))));
-    expect(out!.length).toBeLessThan(TELEGRAM_MAX_CHARS);
+    const out = summaryFor(transcript(operator("go"), said("&".repeat(9000))))!;
+    for (const p of out.parts) expect(p.length).toBeLessThan(TELEGRAM_MAX_CHARS);
+  });
+
+  test("what is spoken is the answer itself, not the escaped markup", () => {
+    const out = summaryFor(transcript(operator("go"), said("use <div> and a && b")))!;
+    expect(out.spoken).toBe("use <div> and a && b");
   });
 
   test("the budget leaves room for the marker and the tags", () => {
@@ -177,6 +192,6 @@ describe("the message always fits and is well-formed", () => {
   test("an ordinary answer is not trimmed", () => {
     // The other side of the bound: the summary exists to be read whole.
     const real = "Заход 019 закрыт: PR #55 смерджен, 1039 тестов, health 68.";
-    expect(summaryFor(transcript(operator("go"), said(real)))).toContain(real);
+    expect(forwarded(transcript(operator("go"), said(real)))).toContain(real);
   });
 });

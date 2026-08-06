@@ -79,14 +79,30 @@ describe("work that outlives its reply", () => {
     expect(telegram.pins.at(-1)!.messageId).toBe(telegram.sent.length + 999);
   });
 
-  test("a chat whose only status is a continuation is not busy", async () => {
+  test("a chat whose only status is a continuation is busy", async () => {
     // `getBusyChats` is what makes the poller hold the operator's next message
-    // until the turn is over. A continuation is the tail of a turn that has
-    // already answered once; reporting it busy would trade one silence for
-    // another.
+    // until the turn is over. This used to exempt continuations, on the
+    // reasoning that a continuation is the tail of a turn that has already
+    // answered once — and the exemption cost the operator the answer itself:
+    // the message was injected into a turn still running, folded into it, and
+    // answered in the session's terminal text without a second `reply`. The
+    // wait is bounded by the idle window (see the test below), which is the
+    // whole of what the exemption was buying.
     const { status } = await manager();
     await upToTheReply(status);
     await status.updateStatus(CHAT, "● Explore: still reading");
+
+    expect(status.getBusyChats().has(CHAT)).toBe(true);
+  });
+
+  test("and stops being busy once the continuation goes quiet", async () => {
+    // The bound on the wait above. Without this the operator's next message
+    // would sit behind a status nobody closes.
+    const { status } = await manager();
+    await upToTheReply(status);
+    await status.updateStatus(CHAT, "● Explore: still reading");
+
+    await sleep(IDLE_MS * 3);
 
     expect(status.getBusyChats().has(CHAT)).toBe(false);
   });
@@ -114,8 +130,15 @@ describe("work that outlives its reply", () => {
     await status.sendStatusMessage(other, "Thinking");
     await reopening;
 
+    // Both are busy now — that is no longer what separates them. What does is
+    // silence: a continuation closes itself when the work stops, a turn does
+    // not, and the flag leaking would have closed this one out from under the
+    // operator.
+    await sleep(IDLE_MS * 3);
+
     expect(status.getBusyChats().has(other)).toBe(true);
     expect(status.getBusyChats().has(CHAT)).toBe(false);
+    cleanups.push(() => void status.deleteStatusMessage(other));
   });
 
   test("nothing is re-opened while the operator has a message waiting", async () => {

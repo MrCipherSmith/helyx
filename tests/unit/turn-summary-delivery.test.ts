@@ -61,6 +61,9 @@ function harness(options: { transcript?: string; forum?: boolean; token?: string
       sent.push({ token, chatId, text, extra });
       return { ok: true, messageId: 1 };
     }) as unknown as TurnSummaryDeps["send"],
+    // No synthesiser in a test, and nothing here is about the audio itself —
+    // only about whether it is asked for.
+    speak: () => {},
   };
 
   return { deps, sent, db };
@@ -80,6 +83,31 @@ describe("delivering the summary", () => {
     expect(sent[0]!.chatId).toBe(FORUM);
     expect(sent[0]!.extra.message_thread_id).toBe(TOPIC);
     expect(sent[0]!.text).toContain("Done — all green.");
+  });
+
+  test("a long answer arrives whole, across as many messages as it takes", async () => {
+    // The wiring half of "not cut down to one message": the parts are only
+    // useful if the caller sends all of them.
+    const { deps, sent } = harness({
+      transcript: [operator("go"), said("х".repeat(9000))].join("\n"),
+    });
+
+    await deliverTurnSummary("/tmp/t.jsonl", PROJECT, deps);
+
+    expect(sent.length).toBeGreaterThan(1);
+    for (const s of sent) expect(s.extra.message_thread_id).toBe(TOPIC);
+  });
+
+  test("and is spoken, like a reply of the same length would be", async () => {
+    const spoken: string[] = [];
+    const { deps, sent } = harness({ transcript: [operator("go"), said("Готово, всё зелёное.")].join("\n") });
+    deps.speak = (_token, _chat, text) => void spoken.push(text);
+
+    await deliverTurnSummary("/tmp/t.jsonl", PROJECT, deps);
+
+    expect(sent.length).toBe(1);
+    // The answer itself, not the escaped markup that went into the message.
+    expect(spoken).toEqual(["Готово, всё зелёное."]);
   });
 
   test("sent as HTML, and marked as coming from the bot", async () => {

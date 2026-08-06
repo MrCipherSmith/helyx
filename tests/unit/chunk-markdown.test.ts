@@ -46,12 +46,56 @@ describe("chunkMarkdown", () => {
     for (const c of chunks) expect(fencesBalanced(c)).toBe(true);
   });
 
-  test("emits an oversized code block whole instead of bisecting it", () => {
-    // Cutting it would be the one outcome worse than an overlong message.
+  test("carries an oversized code block across chunks, fence closed and re-opened", () => {
+    // This used to emit the block whole — "an oversized message is Telegram's
+    // problem to reject". Telegram rejected it, the send bailed, and the whole
+    // reply was lost. Every piece must now fit and parse on its own.
     const body = Array.from({ length: 60 }, (_, i) => `line ${i}`).join("\n");
     const chunks = chunkMarkdown(`before\n\n\`\`\`\n${body}\n\`\`\`\n\nafter`, 120);
-    for (const c of chunks) expect(fencesBalanced(c)).toBe(true);
-    expect(chunks.join("\n")).toContain("line 59");
+
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const c of chunks) {
+      expect(fencesBalanced(c)).toBe(true);
+      expect(c.length).toBeLessThanOrEqual(120);
+    }
+    for (let i = 0; i < 60; i++) expect(chunks.join("\n")).toContain(`line ${i}`);
+  });
+
+  test("keeps the info string when it re-opens a fence, so highlighting survives", () => {
+    const body = Array.from({ length: 40 }, (_, i) => `const line${i} = ${i};`).join("\n");
+    const chunks = chunkMarkdown(`\`\`\`ts\n${body}\n\`\`\``, 200);
+
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const c of chunks) expect(c.startsWith("```ts")).toBe(true);
+  });
+
+  test("a paragraph longer than one message is cut on a word, not lost", () => {
+    // The other shape of the same defect: no fence to preserve and nowhere to
+    // break but inside the line itself.
+    const text = `${"слово ".repeat(200)}конец.`;
+    const chunks = chunkMarkdown(text, 300);
+
+    for (const c of chunks) expect(c.length).toBeLessThanOrEqual(300);
+    expect(chunks.join(" ")).toContain("конец.");
+    for (const c of chunks) expect(c).not.toMatch(/сло$/);
+  });
+
+  test("no chunk is ever over the budget, whatever the shape", () => {
+    // The one property the send depends on: what comes out of here is a
+    // message Telegram will accept.
+    const shapes = [
+      `\`\`\`\n${"x".repeat(9000)}\n\`\`\``, // one enormous line inside a fence
+      `\`\`\`ts\n${"const x = 1;\n".repeat(900)}\`\`\``, // a long block of short lines
+      "y".repeat(9000), // one enormous line, no spaces at all
+      `intro\n\n\`\`\`\n${"z".repeat(9000)}\n\`\`\`\n\noutro`, // prose around it
+      `\`\`\`\n${"unterminated ".repeat(800)}`, // a fence nobody closed
+    ];
+
+    for (const shape of shapes) {
+      const chunks = chunkMarkdown(shape, 4096);
+      expect(chunks.length).toBeGreaterThan(0);
+      for (const c of chunks) expect(c.length).toBeLessThanOrEqual(4096);
+    }
   });
 
   test("keeps a table header with its rows", () => {

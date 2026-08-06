@@ -10,7 +10,7 @@ import { markdownToTelegramHtml } from "../bot/format.ts";
 import type { StatusManager } from "./status.ts";
 import { sendTelegramMessage, sendRichTelegramMessage, setTelegramReaction, editTelegramMessage, editRichTelegramMessage, sendTelegramPoll, deleteTelegramMessage, sendTelegramPhoto } from "./telegram.ts";
 import { splitForVoice, sendVoiceTracks } from "../utils/tts.ts";
-import { chunkMarkdown } from "../utils/chunk.ts";
+import { chunkMarkdown, chunkText } from "../utils/chunk.ts";
 import { asRecapQuote, shouldSummarize, summarizeForSpeech, RECAP_PREFIX } from "../utils/reply-summary.ts";
 import { channelLogger } from "../logger.ts";
 import { scanProjectKnowledge } from "../memory/project-scanner.ts";
@@ -76,6 +76,57 @@ async function sendReplyText(
     res = await sendTelegramMessage(token, chatId, md, extra); // plain text
   }
   return res;
+}
+
+/** Telegram's way of saying the message is over the limit. */
+const isTooLong = (error?: string) => !!error && /too long|MESSAGE_TOO_LONG/i.test(error);
+
+/**
+ * Send every chunk of a reply, and never let one of them fail in silence.
+ *
+ * Two failures of the old two-line version are fixed here. It checked `.ok`
+ * only on the first chunk, so a reply whose second block Telegram refused
+ * arrived truncated while the model was told it had been sent. And when a chunk
+ * was refused for length there was nothing behind it — the answer was simply
+ * gone. `chunkMarkdown` no longer produces oversized chunks, but a message can
+ * still overrun once escaped into HTML, so the length refusal keeps a
+ * last-resort behind it: split it again, this time by nothing but the limit.
+ *
+ * Returns the first chunk's send result — the anchor the status and the
+ * reactions key off — plus how many chunks never landed.
+ */
+async function sendReplyChunks(
+  token: string,
+  chatId: string,
+  chunks: string[],
+  anchorExtra: Record<string, unknown>,
+  restExtra: Record<string, unknown>,
+): Promise<{ anchor: { ok: boolean; messageId?: number | null; errorBody?: string }; lost: number }> {
+  let anchor: { ok: boolean; messageId?: number | null; errorBody?: string } | null = null;
+  let lost = 0;
+
+  for (const [i, chunk] of chunks.entries()) {
+    const extra = i === 0 ? anchorExtra : restExtra;
+    let res = await sendReplyText(token, chatId, chunk, extra);
+
+    if (!res.ok && isTooLong(res.errorBody)) {
+      channelLogger.warn({ len: chunk.length }, "reply: chunk refused for length, splitting again");
+      let first: typeof res | null = null;
+      for (const [j, piece] of chunkText(chunk).entries()) {
+        const sub = await sendReplyText(token, chatId, piece, j === 0 ? extra : restExtra);
+        first ??= sub;
+        if (!sub.ok) lost++;
+      }
+      if (first) res = first;
+    } else if (!res.ok) {
+      channelLogger.warn({ error: res.errorBody, index: i }, "reply: chunk not delivered");
+      lost++;
+    }
+
+    anchor ??= res;
+  }
+
+  return { anchor: anchor ?? { ok: false, errorBody: "no chunks" }, lost };
 }
 
 /**
@@ -415,9 +466,19 @@ async function handleTelegramTool(
         // Pre-mark as delivered before sending to Telegram — prevents recovery from
         // resending on restart if the process dies after a successful Telegram send
         // but before the post-send UPDATE completes (TOCTOU duplicate bug).
+        //
+        // Cleared again if the send fails (below). Marked-and-never-sent is the
+        // one state this table cannot represent: `channel/recovery.ts` looks for
+        // `delivered_at IS NULL`, so a reply that died in Telegram was buffered,
+        // stamped as delivered and never seen again.
         if (pendingReplyId) {
           ctx.sql`UPDATE pending_replies SET delivered_at = NOW() WHERE id = ${pendingReplyId}`.catch(() => {});
         }
+        const unmarkPending = () => {
+          if (pendingReplyId) {
+            ctx.sql`UPDATE pending_replies SET delivered_at = NULL WHERE id = ${pendingReplyId}`.catch(() => {});
+          }
+        };
 
         let replyText = String(args!.text);
         if (!isActiveDm && sessionId) {
@@ -442,19 +503,31 @@ async function handleTelegramTool(
         // through a fence. What cannot be spoken is not removed from the text;
         // a separate recap is spoken instead (below).
         const textChunks = chunkMarkdown(replyText);
+        if (!textChunks.length) {
+          // Nothing but whitespace. Said out loud rather than crashed on:
+          // `textChunks[0]!` used to be dereferenced regardless, and an empty
+          // reply took the whole tool call down as a JSON-RPC error with the
+          // status left pinned mid-stage.
+          unmarkPending();
+          return text("Reply text is empty — nothing was sent.");
+        }
 
-        // The first chunk is the "anchor" message and carries reactions/markup.
-        const res = await sendReplyText(token, chatId, textChunks[0]!, commonExtra);
+        const { anchor: res, lost } = await sendReplyChunks(token, chatId, textChunks, commonExtra, forumExtra);
         if (!res.ok) {
           channelLogger.warn({ error: res.errorBody }, "reply: Telegram API error");
+          unmarkPending();
           status.deleteStatusMessage(chatId).catch(() => {});
-          return text(`Telegram API error`);
+          // The error body, not just the word "error": a model told only
+          // "Telegram API error" restates the answer as plain terminal text,
+          // where the operator never sees it. Told the message was refused for
+          // length, it sends a shorter one.
+          return text(`Telegram API error — reply NOT delivered: ${res.errorBody ?? "unknown"}`);
         }
-        for (const chunk of textChunks.slice(1)) {
-          await sendReplyText(token, chatId, chunk, forumExtra);
+        if (lost) {
+          channelLogger.warn({ chatId, lost, chunks: textChunks.length }, "reply: partially delivered");
         }
 
-        channelLogger.info({ phase: "tools", step: "reply-sent", chatId, chunks: textChunks.length, t: Date.now() }, "perf");
+        channelLogger.info({ phase: "tools", step: "reply-sent", chatId, chunks: textChunks.length, lost, t: Date.now() }, "perf");
         // 💯 — Claude replied successfully (replaces ⚡)
         const incomingMsgId = ctx.incomingTgMsgId?.(chatId);
         if (incomingMsgId) {
@@ -499,7 +572,11 @@ async function handleTelegramTool(
           `;
         }
         touchIdleTimer();
-        return text(`Sent to chat ${args!.chat_id}`);
+        return text(
+          lost
+            ? `Partially sent to chat ${args!.chat_id} — ${lost} of ${textChunks.length} parts were refused by Telegram. Resend what is missing, shorter.`
+            : `Sent to chat ${args!.chat_id}`,
+        );
       }
 
       case "send_photo": {

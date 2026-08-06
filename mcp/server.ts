@@ -16,6 +16,7 @@ import { parseHookInput, denyWithAnswers, ANSWER_TIMEOUT_MS, type Answer } from 
 
 import { readOrCreateToken, tokenMatches } from "../utils/hook-token.ts";
 import { summaryFor } from "../utils/turn-summary.ts";
+import { maybeAttachVoiceRaw } from "../utils/tts.ts";
 import { existsSync, readFileSync, writeFileSync, chmodSync } from "fs";
 
 /** The shared secret, read once — created on first start by whichever side runs first. */
@@ -310,6 +311,8 @@ export interface TurnSummaryDeps {
    * complete set of dependencies.
    */
   locate?: (path: string) => string | null;
+  /** How the forwarded answer is spoken. Injected so a test hears it without a synthesiser. */
+  speak?: (token: string, chatId: string | number, text: string, threadId?: number | null) => void;
 }
 
 export async function deliverTurnSummary(
@@ -349,16 +352,26 @@ export async function deliverTurnSummary(
   const summary = summaryFor(transcript);
   if (!summary) return;
 
+
   // The same resolution the question hook uses: by working directory, to the
   // project's topic. A summary in the forum's General is a summary the operator
   // does not read — and this whole feature exists to be read.
   const target = await resolveTarget(deps.sql, { sessionId: "", cwd: projectPath });
   if (!target) return;
 
-  await deps.send(deps.token, target.chatId, summary, {
-    parse_mode: "HTML",
-    ...target.extra,
-  });
+  for (const part of summary.parts) {
+    await deps.send(deps.token, target.chatId, part, {
+      parse_mode: "HTML",
+      ...target.extra,
+    });
+  }
+
+  // And spoken, like a reply of the same length would be. A forwarded answer
+  // is still the answer; the operator asked for the text in the topic and the
+  // audio after it, and the only thing that made this one silent was that it
+  // was written as a fallback rather than as a way of answering.
+  const speak = deps.speak ?? maybeAttachVoiceRaw;
+  speak(deps.token, target.chatId, summary.spoken, (target.extra.message_thread_id as number) ?? null);
 }
 
 /**

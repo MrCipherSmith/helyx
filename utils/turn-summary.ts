@@ -15,6 +15,7 @@
  */
 
 import { escapeHtml } from "./html.ts";
+import { chunkMarkdown } from "./chunk.ts";
 import { clampEscaped, TELEGRAM_MAX_CHARS } from "./status-render.ts";
 
 /** One parsed JSONL line, narrowed to what this file reads. */
@@ -117,17 +118,38 @@ export function finalAssistantText(turn: readonly TranscriptEntry[]): string | n
   return null;
 }
 
+/** What the bot sends on the session's behalf, in the order it sends it. */
+export interface TurnSummary {
+  /** Ready-to-send HTML messages; the first carries the marker. */
+  parts: string[];
+  /** The same words unescaped, for the voice track that follows them. */
+  spoken: string;
+}
+
 /** The message to send, or null when there is nothing to say. */
-export function summaryFor(transcript: string): string | null {
+export function summaryFor(transcript: string): TurnSummary | null {
   const turn = lastTurn(parseTranscript(transcript));
   if (repliedThisTurn(turn)) return null;
 
   const said = finalAssistantText(turn);
   if (!said) return null;
 
-  const body = clampEscaped(escapeHtml(said), SUMMARY_BUDGET_CHARS);
-  const message = `${FORWARDED_MARKER}\n${body}`;
-  // Belt and braces: the budget already leaves room, and an over-long message
-  // is rejected outright rather than trimmed.
-  return message.length < TELEGRAM_MAX_CHARS ? message : clampEscaped(message, TELEGRAM_MAX_CHARS - 1);
+  // Sent whole, across as many messages as it takes.
+  //
+  // It used to be one message clamped to 3500 characters, which is how a long
+  // answer reached the operator as its first paragraph and an ellipsis — "часть
+  // ответа". The reply path has carried long answers in pieces for as long as
+  // it has existed; there was never a reason for the forwarded one not to,
+  // beyond the assumption that a summary is short.
+  const parts = chunkMarkdown(said, SUMMARY_BUDGET_CHARS).map((piece, i) =>
+    i === 0 ? `${FORWARDED_MARKER}\n${escapeHtml(piece)}` : escapeHtml(piece),
+  );
+  if (!parts.length) return null;
+
+  // Belt and braces: the budget leaves room for the marker and the escaping,
+  // and an over-long message is rejected outright rather than trimmed.
+  return {
+    parts: parts.map((p) => (p.length < TELEGRAM_MAX_CHARS ? p : clampEscaped(p, TELEGRAM_MAX_CHARS - 1))),
+    spoken: said,
+  };
 }
