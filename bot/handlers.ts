@@ -229,6 +229,11 @@ export function registerHandlers(b: Bot): void {
 
   // System control
   b.command("system", handleSystem);
+  // The two halves, typeable. See bot/commands/system.ts — these do not depend
+  // on the panel rendering, which is itself something that failed to tell the
+  // truth during the restart these were written for.
+  b.command("restart_docker", (ctx) => import("./commands/system.ts").then((m) => m.handleRestartDocker(ctx)));
+  b.command("restart_host", (ctx) => import("./commands/system.ts").then((m) => m.handleRestartHost(ctx)));
   b.command("menu", handleMenu);
   b.command("supervisor", async (ctx) => {
     const { handleSupervisorCommand } = await import("./commands/supervisor-actions.ts");

@@ -1,0 +1,193 @@
+{
+  "schemaVersion": 2,
+  "id": "048",
+  "slug": "a-restart-that-reports-success-while-hal",
+  "title": "A restart that reports success while half the system is dead, and no way to see it from Telegram",
+  "status": "implemented",
+  "createdAt": "2026-08-05T23:08:00.491Z",
+  "updatedAt": "2026-08-06T07:51:28.959Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:5b502f6d0ed12492a9fccb07c6615b58726b01b8fa82c9a1fd88d26796b24f3e",
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-06T07:51:28.270Z"
+    },
+    "AC2": {
+      "at": "2026-08-06T07:51:28.355Z"
+    },
+    "AC3": {
+      "at": "2026-08-06T07:51:28.442Z"
+    },
+    "AC4": {
+      "at": "2026-08-06T07:51:28.529Z"
+    },
+    "AC5": {
+      "at": "2026-08-06T07:51:28.615Z"
+    },
+    "AC6": {
+      "at": "2026-08-06T07:51:28.699Z"
+    },
+    "AC7": {
+      "at": "2026-08-06T07:51:28.786Z"
+    },
+    "AC8": {
+      "at": "2026-08-06T07:51:28.873Z"
+    },
+    "AC9": {
+      "at": "2026-08-06T07:51:28.959Z"
+    }
+  },
+  "pr": {
+    "url": "https://github.com/MrCipherSmith/helyx/pull/89"
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-05T23:08:00.491Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-05T23:09:24.029Z",
+      "event": "frozen",
+      "detail": "9 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-05T23:09:24.116Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-06T07:51:20.493Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-06T07:51:20.579Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-06T07:51:20.666Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-06T07:51:20.748Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-06T07:51:25.350Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/89"
+    },
+    {
+      "at": "2026-08-06T07:51:28.270Z",
+      "event": "ac-confirmed",
+      "detail": "AC1"
+    },
+    {
+      "at": "2026-08-06T07:51:28.355Z",
+      "event": "ac-confirmed",
+      "detail": "AC2"
+    },
+    {
+      "at": "2026-08-06T07:51:28.442Z",
+      "event": "ac-confirmed",
+      "detail": "AC3"
+    },
+    {
+      "at": "2026-08-06T07:51:28.529Z",
+      "event": "ac-confirmed",
+      "detail": "AC4"
+    },
+    {
+      "at": "2026-08-06T07:51:28.615Z",
+      "event": "ac-confirmed",
+      "detail": "AC5"
+    },
+    {
+      "at": "2026-08-06T07:51:28.699Z",
+      "event": "ac-confirmed",
+      "detail": "AC6"
+    },
+    {
+      "at": "2026-08-06T07:51:28.786Z",
+      "event": "ac-confirmed",
+      "detail": "AC7"
+    },
+    {
+      "at": "2026-08-06T07:51:28.873Z",
+      "event": "ac-confirmed",
+      "detail": "AC8"
+    },
+    {
+      "at": "2026-08-06T07:51:28.959Z",
+      "event": "ac-confirmed",
+      "detail": "AC9"
+    }
+  ]
+}

@@ -15,7 +15,12 @@ import { startTmuxWatchdog } from "./tmux-watchdog.ts";
 import { startSupervisor } from "./supervisor.ts";
 import { startTmuxSessionLogger } from "./tmux-session-logger.ts";
 import { bringStackUp, type StackUpOptions } from "./stack-up.ts";
+// The host half runs in restart-host-run.ts, detached — the sequence ends by
+// restarting this very service, so it cannot run in this process.
+import { restartDockerHalf } from "./restart-docker.ts";
 import { startHostIngress } from "./host-ingress.ts";
+import { summarizeTmuxHost, parseScopeState, TMUX_HEALTH_NAME } from "../sessions/tmux-server.ts";
+import { parseWindowNames } from "../sessions/tmux-windows.ts";
 import { runCurator, getLastCuratorRun } from "../utils/curator.ts";
 import { sendCuratorSummary } from "../utils/skill-approval.ts";
 
@@ -238,6 +243,29 @@ async function writeProcessHealth(): Promise<void> {
     `.catch(() => {});
   }
 
+  // The session half, from the host's point of view.
+  //
+  // `/system` used to describe it by counting rows in `sessions`, and during
+  // the 2026-08-05 outage that counter read zero — which is equally true of a
+  // session half that never started and one that started and failed to
+  // register. Those need different repairs. Window count tells them apart, and
+  // this is the only process with a shell on the host to go and look.
+  const hasSession = await runShell(`tmux has-session -t bots 2>/dev/null`);
+  const windows = hasSession.ok
+    ? await runShell(`tmux list-windows -t bots -F '#{window_name}' 2>/dev/null || true`)
+    : { ok: false, output: "" };
+  const scope = await runShell(`systemctl --user is-active helyx-tmux.scope 2>/dev/null || true`);
+  const tmuxHealth = summarizeTmuxHost({
+    sessionExists: hasSession.ok,
+    windowNames: [...parseWindowNames(windows.output)],
+    scopeState: parseScopeState(scope.output),
+  });
+  await sql`
+    INSERT INTO process_health (name, status, detail, updated_at)
+    VALUES (${TMUX_HEALTH_NAME}, ${tmuxHealth.status}, ${sql.json(tmuxHealth.detail as any)}, now())
+    ON CONFLICT (name) DO UPDATE SET status = EXCLUDED.status, detail = EXCLUDED.detail, updated_at = now()
+  `.catch(() => {});
+
   // Remove entries for containers that no longer appear in `docker ps`
   const activeNames = dockerOut.split("\n").filter(Boolean).map((l) => {
     const tab = l.indexOf("\t");
@@ -337,15 +365,20 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
       }
 
       case "bounce": {
-        // Restart all tmux bot sessions (down + up). Spawned detached so the
-        // daemon itself survives the kill-session that tears down its own window.
-        // Paths are double-quoted to handle spaces; single-quote delimiters are
-        // avoided since BOT_DIR/CLI come from import.meta.dir and are safe but
-        // defensive quoting prevents breakage if ever deployed to unusual paths.
+        // The same work `host_restart` does, minus the daemon step — and
+        // deliberately the same code, not a second copy of it. The outage this
+        // was written after came from one broken start path that four buttons
+        // all reached; a repair that leaves two paths to keep in step earns the
+        // same bug back later. See scripts/restart-host.ts.
+        //
+        // Spawned detached so the daemon survives the kill-session that tears
+        // down its own window.
         const bunBin = Bun.which("bun") ?? process.execPath;
-        await runShell(
-          `nohup bash -c "(sleep 2; cd \\"${BOT_DIR}\\"; \\"${bunBin}\\" \\"${CLI}\\" bounce) >> /tmp/helyx-bounce.log 2>&1" &`
-        );
+        const inner =
+          `sleep 2; cd '${BOT_DIR}' && HELYX_RESTART_ADMIN=0 ` +
+          `'${bunBin}' '${resolve(import.meta.dir, "restart-host-run.ts")}' ` +
+          `>> /tmp/helyx-bounce.log 2>&1`;
+        await runShell(`nohup bash -c ${JSON.stringify(inner)} &`);
         result = { ok: true, output: "bounce scheduled (log: /tmp/helyx-bounce.log)" };
         break;
       }
@@ -386,6 +419,48 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
         // by design — see scripts/stack-up.ts.
         const stack = await bringStackUp(runShell, stackOptions());
         result = { ok: stack.ok, output: stack.summary.slice(0, 3000) };
+        break;
+      }
+
+      case "docker_restart_all": {
+        // The container half by name. Short enough to run inline — no rebuild,
+        // so this is seconds, not the minutes `full_restart` takes.
+        const docker = await restartDockerHalf(runShell, { botDir: BOT_DIR });
+        result = { ok: docker.ok, output: docker.summary.slice(0, 3000) };
+        break;
+      }
+
+      case "host_restart": {
+        // The other half: tmux windows, the Claude process in each, their
+        // channel.ts, and the daemon carrying the supervisor.
+        //
+        // Detached for the reason `bounce` is — the bounce tears down this
+        // daemon's own tmux window, and the daemon restart at the end of the
+        // sequence ends the process running it. Under `systemd-run` rather than
+        // `nohup` so the work escapes this service's cgroup and survives that
+        // last step; `nohup` alone does not leave the cgroup, which would kill
+        // the restart halfway through and leave exactly the half-up state this
+        // whole flow is about. Falls back to `nohup` where systemd-run is
+        // absent, in which case the daemon step is skipped rather than run in a
+        // way that would cut its own throat.
+        const bunBin = Bun.which("bun") ?? process.execPath;
+        const hasSystemdRun = (await runShell(`command -v systemd-run >/dev/null 2>&1`)).ok;
+        const inner =
+          `cd '${BOT_DIR}' && ` +
+          `HELYX_RESTART_ADMIN=${hasSystemdRun ? "1" : "0"} ` +
+          `'${bunBin}' '${resolve(import.meta.dir, "restart-host-run.ts")}' ` +
+          `>> /tmp/helyx-host-restart.log 2>&1`;
+        if (hasSystemdRun) {
+          await runShell(`systemd-run --user --collect --quiet bash -c ${JSON.stringify(inner)}`);
+        } else {
+          await runShell(`nohup bash -c ${JSON.stringify(inner)} &`);
+        }
+        result = {
+          ok: true,
+          output: hasSystemdRun
+            ? "host restart scheduled: bounce sessions → restart admin-daemon (log: /tmp/helyx-host-restart.log)"
+            : "host restart scheduled: bounce sessions (systemd-run absent — admin-daemon left alone; log: /tmp/helyx-host-restart.log)",
+        };
         break;
       }
 

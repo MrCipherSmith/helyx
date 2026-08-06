@@ -77,6 +77,8 @@ const GROUPS: Group[] = [
     commands: [
       { name: "system",           label: "🖥 Control" },
       { name: "monitor",          label: "📊 Monitor" },
+      { name: "restart_docker",   label: "🐳 Рестарт контейнеров" },
+      { name: "restart_host",     label: "🖥 Рестарт хоста" },
       { name: "remote_control",   label: "🎮 Remote" },
       { name: "interrupt",        label: "⚡ Interrupt" },
       { name: "prepare_restart",  label: "💾 Prep Restart" },
@@ -85,7 +87,11 @@ const GROUPS: Group[] = [
   {
     id: "monitoring",
     label: "🛡 Monitoring",
+    // `/now` lives here rather than under Session because Session is dmOnly and
+    // this bot is used from forum topics, where a session-scoped question is
+    // the most natural thing to ask and the Session group is not shown at all.
     commands: [
+      { name: "now",               label: "⚡ Now" },
       { name: "supervisor_status", label: "📊 Статус" },
       { name: "tmux_log",          label: "📜 Tmux Log" },
     ],
@@ -266,10 +272,13 @@ async function dispatch(ctx: Context, name: string): Promise<void> {
     case "project_facts": { const { handleProjectFacts } = await import("./project-facts.ts"); await handleProjectFacts(ctx); break; }
     case "project_scan":  { const { handleProjectScan }  = await import("./project-facts.ts"); await handleProjectScan(ctx);  break; }
     // Monitoring
+    case "now":                { const { handleNow }                 = await import("./now.ts");                 await handleNow(ctx);                break; }
     case "supervisor_status":  { const { handleSupervisorCommand }  = await import("./supervisor-actions.ts"); await handleSupervisorCommand(ctx);  break; }
     case "prepare_restart":    { const { handlePrepareRestart }     = await import("./prepare-restart.ts");    await handlePrepareRestart(ctx);     break; }
     // System
     case "system":         { const { handleSystem }        = await import("./system.ts");        await handleSystem(ctx);        break; }
+    case "restart_docker": { const { handleRestartDocker } = await import("./system.ts");        await handleRestartDocker(ctx); break; }
+    case "restart_host":   { const { handleRestartHost }   = await import("./system.ts");        await handleRestartHost(ctx);   break; }
     case "monitor":        { const { handleMonitor }       = await import("./monitor.ts");        await handleMonitor(ctx);       break; }
     case "remote_control": { const { handleRemoteControl } = await import("./remote-control.ts"); await handleRemoteControl(ctx); break; }
     case "interrupt":      { const { handleInterrupt }     = await import("./interrupt.ts");      await handleInterrupt(ctx);     break; }
