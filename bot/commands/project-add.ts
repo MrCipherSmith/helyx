@@ -1,5 +1,5 @@
 import type { Context } from "grammy";
-import { join } from "path";
+import { join, sep } from "path";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { setPendingInput } from "../handlers.ts";
 import { projectService } from "../../services/project-service.ts";
@@ -14,10 +14,10 @@ const HOST_PROJECTS_DIR = process.env.HOST_PROJECTS_DIR ?? "";
 /** Convert a host-side absolute path to the container-visible path for existence checks. */
 function toContainerPath(hostPath: string): string {
   // Check /host-projects first — it's writable and more specific
-  if (HOST_PROJECTS_DIR && hostPath.startsWith(HOST_PROJECTS_DIR)) {
+  if (HOST_PROJECTS_DIR && (hostPath === HOST_PROJECTS_DIR || hostPath.startsWith(HOST_PROJECTS_DIR + sep))) {
     return "/host-projects" + hostPath.slice(HOST_PROJECTS_DIR.length);
   }
-  if (HOST_HOME && hostPath.startsWith(HOST_HOME)) {
+  if (HOST_HOME && (hostPath === HOST_HOME || hostPath.startsWith(HOST_HOME + sep))) {
     return "/host-home" + hostPath.slice(HOST_HOME.length);
   }
   return hostPath;
