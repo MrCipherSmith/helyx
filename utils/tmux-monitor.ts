@@ -10,6 +10,14 @@ const POLL_INTERVAL_MS = 15_000;
 
 export interface TmuxMonitorHandle {
   stop: () => void;
+  /**
+   * Never present here, and declared so the three monitors keep one shape.
+   *
+   * This one photographs a terminal: it has no idea whether what it captured
+   * came from the session or from a subagent it spawned, so it answers nothing
+   * rather than answering none.
+   */
+  agents?: () => string[];
 }
 
 type StatusCallback = (status: string) => void;

@@ -15,6 +15,8 @@ const TAIL_LINES = 40;
 
 export interface OutputMonitorHandle {
   stop: () => void;
+  /** Never present here — see `TmuxMonitorHandle.agents`, same reason. */
+  agents?: () => string[];
 }
 
 type StatusCallback = (status: string) => void;
