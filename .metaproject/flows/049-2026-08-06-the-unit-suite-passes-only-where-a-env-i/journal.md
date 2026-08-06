@@ -8,3 +8,14 @@
 - 2026-08-06T09:35:24.614Z - task-done: T1: Collect remaining context
 - 2026-08-06T09:35:24.710Z - task-done: T2: Implement per plan
 - 2026-08-06T09:35:24.800Z - task-done: T3: Add/adjust tests and make them pass
+- 2026-08-06T09:36:11.353Z - task-done: T4: Self-review and prepare draft PR
+- 2026-08-06T09:36:13.226Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/90
+- 2026-08-06T09:37:35.292Z - ac-confirmed: AC1: Ran the full unit suite with .env moved aside and dashboard/dist removed — the CI condition reproduced locally: 1805 pass, 0 fail, four consecutive runs. With the real .env in place: 1831 pass, 0 fail, three consecutive runs.
+- 2026-08-06T09:37:35.382Z - ac-confirmed: AC2: tests/preload.ts pins YANDEX_API_KEY, YANDEX_FOLDER_ID and GROQ_API_KEY to fake non-empty values and OPENAI_API_KEY / OPENROUTER_API_KEY to empty, with the reasoning stated beside the existing TELEGRAM_BOT_TOKEN and SUPERVISOR_CHAT_ID pins.
+- 2026-08-06T09:37:35.470Z - ac-confirmed: AC3: utils/tts.ts: the Russian auto branch runs synthesizePiper first and reaches synthesizeYandex only when it returns nothing; Groq stays the final fallback. The docstring above synthesize and the inline comment both now read Piper -> Yandex -> Groq.
+- 2026-08-06T09:37:43.785Z - ac-confirmed: AC4: tts-chain.test.ts records the order voices were tried in a doors.tried array — Piper is a subprocess and leaves no URL — and asserts ['piper','yandex'] exactly. 'Piper answers, and nothing is spent on a provider' scripts Yandex to succeed and fails if it is asked at all; 'Piper goes quiet and Yandex answers' proves the fallback still runs.
+- 2026-08-06T09:37:43.879Z - ac-confirmed: AC5: Ran tests/unit/dashboard-auth.test.ts with dashboard/dist moved away: 10 pass, 0 fail, and the directory it created was gone afterwards. The real dist was restored and is untouched by the run.
+- 2026-08-06T09:37:43.969Z - ac-confirmed: AC6: synthesizePiper now writes to /tmp/piper-tts-<ms>-<uuid>.wav. The CI log shows the collision it removes: two syntheses 1ms apart, the first one's deferred unlink deleting the second's audio, ENOENT on a file the process had just written.
+- 2026-08-06T09:37:44.066Z - ac-confirmed: AC7: PR #90: test pass (52s), build pass (38s) — https://github.com/MrCipherSmith/helyx/actions/runs/31089791492. First green run in more than a day.
+- 2026-08-06T09:46:07.813Z - completing
+- 2026-08-06T09:46:09.556Z - done: all gates passed

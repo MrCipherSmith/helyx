@@ -5,7 +5,7 @@
   "title": "A restart that reports success while half the system is dead, and no way to see it from Telegram",
   "status": "in-progress",
   "createdAt": "2026-08-05T23:08:00.491Z",
-  "updatedAt": "2026-08-06T07:56:32.363Z",
+  "updatedAt": "2026-08-06T09:46:21.981Z",
   "source": {
     "type": "description",
     "ref": null
@@ -195,6 +195,20 @@
     },
     {
       "at": "2026-08-06T07:56:32.363Z",
+      "event": "completion-failed",
+      "detail": "pull-request: PR checks not green"
+    },
+    {
+      "at": "2026-08-06T09:46:20.072Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/89 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-08-06T09:46:20.162Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-06T09:46:21.981Z",
       "event": "completion-failed",
       "detail": "pull-request: PR checks not green"
     }

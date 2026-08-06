@@ -3,17 +3,46 @@
   "id": "049",
   "slug": "the-unit-suite-passes-only-where-a-env-i",
   "title": "The unit suite passes only where a .env is, and CI has been red for a day",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-06T09:25:54.315Z",
-  "updatedAt": "2026-08-06T09:35:24.800Z",
+  "updatedAt": "2026-08-06T09:46:09.556Z",
   "source": {
     "type": "description",
     "ref": null
   },
   "acChecksum": "sha256:d618bbc6d3007461c7fa03565ecea509c92bfcd342808217f0df1cd762fc160b",
-  "acConfirmed": {},
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-06T09:37:35.292Z",
+      "note": "Ran the full unit suite with .env moved aside and dashboard/dist removed — the CI condition reproduced locally: 1805 pass, 0 fail, four consecutive runs. With the real .env in place: 1831 pass, 0 fail, three consecutive runs."
+    },
+    "AC2": {
+      "at": "2026-08-06T09:37:35.382Z",
+      "note": "tests/preload.ts pins YANDEX_API_KEY, YANDEX_FOLDER_ID and GROQ_API_KEY to fake non-empty values and OPENAI_API_KEY / OPENROUTER_API_KEY to empty, with the reasoning stated beside the existing TELEGRAM_BOT_TOKEN and SUPERVISOR_CHAT_ID pins."
+    },
+    "AC3": {
+      "at": "2026-08-06T09:37:35.470Z",
+      "note": "utils/tts.ts: the Russian auto branch runs synthesizePiper first and reaches synthesizeYandex only when it returns nothing; Groq stays the final fallback. The docstring above synthesize and the inline comment both now read Piper -> Yandex -> Groq."
+    },
+    "AC4": {
+      "at": "2026-08-06T09:37:43.785Z",
+      "note": "tts-chain.test.ts records the order voices were tried in a doors.tried array — Piper is a subprocess and leaves no URL — and asserts ['piper','yandex'] exactly. 'Piper answers, and nothing is spent on a provider' scripts Yandex to succeed and fails if it is asked at all; 'Piper goes quiet and Yandex answers' proves the fallback still runs."
+    },
+    "AC5": {
+      "at": "2026-08-06T09:37:43.879Z",
+      "note": "Ran tests/unit/dashboard-auth.test.ts with dashboard/dist moved away: 10 pass, 0 fail, and the directory it created was gone afterwards. The real dist was restored and is untouched by the run."
+    },
+    "AC6": {
+      "at": "2026-08-06T09:37:43.969Z",
+      "note": "synthesizePiper now writes to /tmp/piper-tts-<ms>-<uuid>.wav. The CI log shows the collision it removes: two syntheses 1ms apart, the first one's deferred unlink deleting the second's audio, ENOENT on a file the process had just written."
+    },
+    "AC7": {
+      "at": "2026-08-06T09:37:44.066Z",
+      "note": "PR #90: test pass (52s), build pass (38s) — https://github.com/MrCipherSmith/helyx/actions/runs/31089791492. First green run in more than a day."
+    }
+  },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/90"
   },
   "tasks": [
     {
@@ -65,7 +94,7 @@
       "id": "T4",
       "title": "Self-review and prepare draft PR",
       "kind": "review",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -73,7 +102,8 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     }
   ],
   "history": [
@@ -114,6 +144,60 @@
       "at": "2026-08-06T09:35:24.800Z",
       "event": "task-done",
       "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-06T09:36:11.353Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-06T09:36:13.226Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/90"
+    },
+    {
+      "at": "2026-08-06T09:37:35.292Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: Ran the full unit suite with .env moved aside and dashboard/dist removed — the CI condition reproduced locally: 1805 pass, 0 fail, four consecutive runs. With the real .env in place: 1831 pass, 0 fail, three consecutive runs."
+    },
+    {
+      "at": "2026-08-06T09:37:35.382Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: tests/preload.ts pins YANDEX_API_KEY, YANDEX_FOLDER_ID and GROQ_API_KEY to fake non-empty values and OPENAI_API_KEY / OPENROUTER_API_KEY to empty, with the reasoning stated beside the existing TELEGRAM_BOT_TOKEN and SUPERVISOR_CHAT_ID pins."
+    },
+    {
+      "at": "2026-08-06T09:37:35.470Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: utils/tts.ts: the Russian auto branch runs synthesizePiper first and reaches synthesizeYandex only when it returns nothing; Groq stays the final fallback. The docstring above synthesize and the inline comment both now read Piper -> Yandex -> Groq."
+    },
+    {
+      "at": "2026-08-06T09:37:43.785Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: tts-chain.test.ts records the order voices were tried in a doors.tried array — Piper is a subprocess and leaves no URL — and asserts ['piper','yandex'] exactly. 'Piper answers, and nothing is spent on a provider' scripts Yandex to succeed and fails if it is asked at all; 'Piper goes quiet and Yandex answers' proves the fallback still runs."
+    },
+    {
+      "at": "2026-08-06T09:37:43.879Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: Ran tests/unit/dashboard-auth.test.ts with dashboard/dist moved away: 10 pass, 0 fail, and the directory it created was gone afterwards. The real dist was restored and is untouched by the run."
+    },
+    {
+      "at": "2026-08-06T09:37:43.969Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: synthesizePiper now writes to /tmp/piper-tts-<ms>-<uuid>.wav. The CI log shows the collision it removes: two syntheses 1ms apart, the first one's deferred unlink deleting the second's audio, ENOENT on a file the process had just written."
+    },
+    {
+      "at": "2026-08-06T09:37:44.066Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: PR #90: test pass (52s), build pass (38s) — https://github.com/MrCipherSmith/helyx/actions/runs/31089791492. First green run in more than a day."
+    },
+    {
+      "at": "2026-08-06T09:46:07.813Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-06T09:46:09.556Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
   ]
 }
