@@ -147,8 +147,11 @@ export function splitForVoice(text: string, maxSeconds = MAX_VOICE_SECONDS): str
 }
 
 /** Index just past the last sentence terminator (. ! ? … and Cyrillic variants)
- *  followed by whitespace, at or before `limit`. Returns -1 if none found. */
-function lastSentenceEnd(text: string, limit: number): number {
+ *  followed by whitespace, at or before `limit`. Returns -1 if none found.
+ *
+ *  Exported because the recap trims prose on the same boundaries this splits it
+ *  on, and two copies of a sentence-boundary rule are two rules that drift. */
+export function lastSentenceEnd(text: string, limit: number): number {
   const window = text.slice(0, Math.min(limit, text.length));
   let found = -1;
   const re = /[.!?…](?=\s)/g;
@@ -693,25 +696,30 @@ export function maybeAttachVoiceRaw(
 }
 
 /**
- * Interleave a long reply as ⟨text, voice⟩ pairs of ≤ MAX_VOICE_SECONDS each:
- * sends chunk[0]'s voice (its text is assumed already sent by the caller as the
- * main reply message), then for each later chunk sends its text followed by its
- * voice. Sequential so Telegram delivers everything in order. Fire-and-forget —
- * never throws.
+ * Speak a text that has already been sent, as one track per voice-sized piece.
+ *
+ * The text is not repeated. It used to be: this interleaved ⟨text, voice⟩ pairs
+ * because the recap was cut to fit a single track, so the pieces after the first
+ * had never been shown. The recap is now sent whole and collapsed — Telegram
+ * hides it behind a "show more" whatever its length — and only the audio has a
+ * duration to respect. Repeating the prose alongside each track would put the
+ * same words in the topic three times.
+ *
+ * Sequential, so Telegram delivers the tracks in the order they are meant to be
+ * listened to. Fire-and-forget: a track that fails to synthesise costs its own
+ * audio and nothing else.
  */
-export async function sendVoicedReply(
+export async function sendVoiceTracks(
   token: string,
   chatId: number | string,
   chunks: string[],
   threadId: number | null,
-  sendText: (chunk: string) => Promise<void>,
 ): Promise<void> {
   for (let i = 0; i < chunks.length; i++) {
     try {
-      if (i > 0) await sendText(chunks[i]!);
       await sendOneVoice(token, chatId, chunks[i]!, threadId);
     } catch (err) {
-      channelLogger.error({ err, i }, "tts: sendVoicedReply chunk failed");
+      channelLogger.error({ err, i, of: chunks.length }, "tts: voice track failed");
     }
   }
 }

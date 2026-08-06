@@ -9,9 +9,9 @@ import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprot
 import { markdownToTelegramHtml } from "../bot/format.ts";
 import type { StatusManager } from "./status.ts";
 import { sendTelegramMessage, sendRichTelegramMessage, setTelegramReaction, editTelegramMessage, editRichTelegramMessage, sendTelegramPoll, deleteTelegramMessage, sendTelegramPhoto } from "./telegram.ts";
-import { splitForVoice, sendVoicedReply } from "../utils/tts.ts";
+import { splitForVoice, sendVoiceTracks } from "../utils/tts.ts";
 import { chunkMarkdown } from "../utils/chunk.ts";
-import { asRecapQuote, shouldSummarize, summarizeForSpeech } from "../utils/reply-summary.ts";
+import { asRecapQuote, shouldSummarize, summarizeForSpeech, RECAP_PREFIX } from "../utils/reply-summary.ts";
 import { channelLogger } from "../logger.ts";
 import { scanProjectKnowledge } from "../memory/project-scanner.ts";
 import { handleSkillView } from "../utils/skill-handlers.ts";
@@ -480,14 +480,16 @@ async function handleTelegramTool(
           void (async () => {
             const summary = await summarizeForSpeech(replyText).catch(() => null);
             if (!summary) return;
-            const chunks = splitForVoice(summary);
-            const sendQuoted = (chunk: string) =>
-              sendTelegramMessage(token, chatId, asRecapQuote(chunk), {
-                parse_mode: "HTML",
-                ...forumExtra,
-              }).then(() => {});
-            await sendQuoted(`🔊 ${chunks[0]!}`).catch(() => {});
-            await sendVoicedReply(token, chatId, chunks, forumTopicId ?? null, sendQuoted);
+            // The recap goes out whole, in one collapsed quote: it is already
+            // fitted to what a message can carry, and a quote costs the operator
+            // nothing to scroll past however long it is. Only the audio has a
+            // duration worth respecting, so only the audio is divided — a long
+            // recap arrives as one block of text and the tracks to hear it in.
+            await sendTelegramMessage(token, chatId, asRecapQuote(`${RECAP_PREFIX}${summary}`), {
+              parse_mode: "HTML",
+              ...forumExtra,
+            }).catch(() => {});
+            await sendVoiceTracks(token, chatId, splitForVoice(summary), forumTopicId ?? null);
           })();
         }
         if (sessionId) {
