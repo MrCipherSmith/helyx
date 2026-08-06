@@ -376,7 +376,14 @@ async function synthesizeOpenAI(text: string): Promise<Buffer | null> {
 /** Synthesize via Piper local TTS (offline). Picks model by language. Returns WAV buffer. */
 async function synthesizePiper(text: string, isRussian = true): Promise<Buffer | null> {
   const modelPath = isRussian ? PIPER_MODEL_RU : PIPER_MODEL_EN;
-  const tmpFile = `/tmp/piper-tts-${Date.now()}.wav`;
+  // Unique per call, not per millisecond. Two syntheses starting inside the
+  // same millisecond used to be handed the same path, and the `finally` below
+  // deletes it — asynchronously, so the deletion belonging to the first call
+  // lands after the second has written its audio and before it reads it. The
+  // symptom is an ENOENT on a file the process itself just wrote, and the
+  // operator hears nothing; it showed up in CI, where two voice tests run back
+  // to back with no network in between to slow them down.
+  const tmpFile = `/tmp/piper-tts-${Date.now()}-${crypto.randomUUID()}.wav`;
   try {
     const proc = Bun.spawn(
       [PIPER_BIN, "--model", modelPath, "--output_file", tmpFile],
@@ -419,7 +426,7 @@ async function synthesizeKokoro(text: string): Promise<Buffer | null> {
 /**
  * Convert text to speech.
  * Provider selection via TTS_PROVIDER env var:
- *   "auto"   — Piper → Yandex → Groq (Russian), Kokoro → Groq (English)
+ *   "auto"   — Piper → Yandex → Groq (Russian), Piper → Kokoro → Groq (English)
  *   "piper"  — local Piper only (Russian, offline)
  *   "yandex" — Yandex SpeechKit only (Russian, best quality)
  *   "kokoro" — local Kokoro only (English, offline)
@@ -502,10 +509,25 @@ export async function synthesize(text: string): Promise<{ buf: Buffer; fmt: "mp3
     return synthesizeGroq(clean).then(b => wrap(b, "wav"));
   }
 
-  // auto (Russian): Yandex → Piper → Groq
-  // Yandex first because it handles mixed Russian/English text correctly.
+  // auto (Russian): Piper → Yandex → Groq
   // auto (English): Piper(EN) → Kokoro → Groq
+  //
+  // Yandex used to be first here, for handling mixed Russian/English text
+  // better than a local model does. It is second now by decision rather than by
+  // measurement: the account is not one we are spending on at the moment, and a
+  // provider that is first is paid for on every spoken reply. It stays in the
+  // chain — Piper going quiet is exactly when the better voice is wanted.
   if (isRussian) {
+    try {
+      const buf = await synthesizePiper(clean, true);
+      if (buf) {
+        channelLogger.info({}, "tts: provider=piper-ru");
+        return { buf, fmt: "wav" };
+      }
+    } catch (err) {
+      channelLogger.warn({ err }, "tts: Piper failed, trying Yandex");
+    }
+
     if (YANDEX_API_KEY && YANDEX_FOLDER_ID) {
       try {
         const buf = await synthesizeYandex(clean);
@@ -514,18 +536,8 @@ export async function synthesize(text: string): Promise<{ buf: Buffer; fmt: "mp3
           return { buf, fmt: "mp3" };
         }
       } catch (err) {
-        channelLogger.warn({ err }, "tts: Yandex failed, trying Piper");
+        channelLogger.warn({ err }, "tts: Yandex failed, trying Groq");
       }
-    }
-
-    try {
-      const buf = await synthesizePiper(clean, true);
-      if (buf) {
-        channelLogger.info({}, "tts: provider=piper-ru");
-        return { buf, fmt: "wav" };
-      }
-    } catch (err) {
-      channelLogger.warn({ err }, "tts: Piper failed, trying Groq");
     }
   } else {
     try {

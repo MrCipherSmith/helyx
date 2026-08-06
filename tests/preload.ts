@@ -50,6 +50,26 @@ process.env.TELEGRAM_BOT_TOKEN = "test-bot-token";
 process.env.SUPERVISOR_CHAT_ID = "-100999000111";
 process.env.SUPERVISOR_TOPIC_ID = "7";
 
+// And so are the voice chain's providers, for the same reason and one more.
+//
+// `utils/tts.ts` reads its credentials into module constants at import, so a
+// test file cannot turn a provider on or off — by the time it runs, the chain
+// has already been decided by whatever `.env` sits beside the checkout. That is
+// not a small difference: an absent `YANDEX_API_KEY` removes a step from the
+// chain, and a test that asserts what the chain did then asserts it about a
+// different chain. It is why this suite was green here and red in CI for a day,
+// eight failures that reproduce exactly by blanking two keys.
+//
+// So every credential the chain reads is set here, to the same value on every
+// machine. Fake and non-empty where the provider should be reachable, empty
+// where it should not — a developer who has an `OPENAI_API_KEY` gets the same
+// run as one who does not.
+process.env.YANDEX_API_KEY = "test-yandex-key";
+process.env.YANDEX_FOLDER_ID = "test-folder-id";
+process.env.GROQ_API_KEY = "test-groq-key";
+process.env.OPENAI_API_KEY = "";
+process.env.OPENROUTER_API_KEY = "";
+
 // Cleared before anything else. The marker means "this run provisioned a
 // database"; inherited from a parent shell or a previous run it would mean
 // nothing, and a test file reading it would take a stale value as proof of

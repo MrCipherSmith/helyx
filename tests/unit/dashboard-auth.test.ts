@@ -13,10 +13,43 @@
  * prove the gate opens for a genuine token rather than that a mock said yes.
  */
 
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, beforeAll, afterAll } from "bun:test";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { IncomingMessage, ServerResponse } from "http";
 import { handleDashboardRequest } from "../../mcp/dashboard-api.ts";
 import { signJwt } from "../../dashboard/auth.ts";
+
+/**
+ * The SPA the dispatcher serves, guaranteed rather than assumed.
+ *
+ * `dashboard/dist` is a build artifact: gitignored, sitting there on a machine
+ * that has run the build, absent on a clean checkout. The asset test below
+ * asserts that an `/index.html` request is answered, which on CI was an
+ * assertion about a directory that did not exist — it failed there and only
+ * there, for a day, while passing on every developer's machine.
+ *
+ * A real build is not what that test is about, so it does not wait for one. The
+ * one file it needs is written when it is missing, and only what was written is
+ * removed afterwards: a checkout that has a real dashboard keeps it.
+ */
+const DIST_DIR = join(import.meta.dir, "../../dashboard/dist");
+const DIST_INDEX = join(DIST_DIR, "index.html");
+let createdIndex = false;
+let createdDir = false;
+
+beforeAll(() => {
+  if (existsSync(DIST_INDEX)) return;
+  createdDir = !existsSync(DIST_DIR);
+  mkdirSync(DIST_DIR, { recursive: true });
+  writeFileSync(DIST_INDEX, "<!doctype html><title>dashboard</title>\n");
+  createdIndex = true;
+});
+
+afterAll(() => {
+  if (createdIndex) rmSync(DIST_INDEX, { force: true });
+  if (createdDir) rmSync(DIST_DIR, { force: true, recursive: true });
+});
 
 /**
  * A route under `/api/` that no handler claims.
