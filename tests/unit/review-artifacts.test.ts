@@ -206,6 +206,22 @@ describe("bounding the directory", () => {
   test("a directory that does not exist is not an error", async () => {
     expect(await pruneReviewArtifacts({}, join(tempRoot(), "never-made"))).toEqual({ removed: 0 });
   });
+
+  test("writing a run prunes, so no caller has to remember to", async () => {
+    // The gap this closes: pruning was the caller's job, and of the two callers
+    // only the manual CLI did it. The supervisor's scheduled review — the one
+    // that runs unattended every fifteen minutes — wrote and never swept, so the
+    // directory grew for as long as the supervisor lived.
+    const root = tempRoot();
+    const stale = run(root, "2026-01-01T00-00-00-feat-gone", 200);
+    run(root, "2026-01-02T00-00-00-feat-gone", 199);
+
+    await persistReviewRun(twoReviewers, meta({ trigger: "scheduled" }), root);
+
+    // The older of the branch's two runs is 200 days past the limit and is not
+    // the newest, so nothing protects it.
+    expect(existsSync(stale)).toBe(false);
+  });
 });
 
 describe("the console contract CLAUDE.md depends on", () => {

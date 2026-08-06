@@ -397,7 +397,12 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
         if (!/^[a-zA-Z0-9_.-]+$/.test(container)) {
           result = { ok: false, output: `invalid container name: ${container}` }; break;
         }
-        const shellResult = await runShell(`docker restart ${container} 2>&1`);
+        // Bounded like every other docker step here, and for the reason stated
+        // in `stack-up.ts`: the command queue is single-threaded, so a hung
+        // daemon does not merely fail this restart — it holds every command
+        // behind it, including the ones an operator would reach for to recover.
+        // This was the one step without a bound. Raised in review.
+        const shellResult = await runShell(`timeout 240 docker restart ${container} 2>&1`);
         // `compose down` removes containers rather than stopping them, so after
         // one there is nothing named to restart and this failed with "No such
         // container" — the one situation where the operator most needs it to
