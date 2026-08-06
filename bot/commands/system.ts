@@ -6,6 +6,7 @@
 import type { Context } from "grammy";
 import { InlineKeyboard } from "grammy";
 import { sql } from "../../memory/db.ts";
+import { renderTmuxHealthLine, TMUX_HEALTH_NAME } from "../../sessions/tmux-server.ts";
 
 function isAdmin(ctx: Context): boolean {
   const adminChatId = process.env.TELEGRAM_CHAT_ID;
@@ -24,7 +25,7 @@ async function systemStatus(): Promise<{ lines: string[]; running: boolean; pend
     `,
     sql`
       SELECT command FROM admin_commands
-      WHERE command IN ('tmux_start','tmux_stop','bounce','channel_kill','docker_restart','stack_up','full_restart')
+      WHERE command IN ('tmux_start','tmux_stop','bounce','channel_kill','docker_restart','stack_up','full_restart','docker_restart_all','host_restart')
         AND status IN ('pending','processing')
       ORDER BY created_at DESC
       LIMIT 3
@@ -39,7 +40,7 @@ async function systemStatus(): Promise<{ lines: string[]; running: boolean; pend
     // table the whole time. A silent catch around a query is only honest when
     // the empty result means something; here it meant the section was gone.
     sql`
-      SELECT name, status, updated_at FROM process_health
+      SELECT name, status, detail, updated_at FROM process_health
       ORDER BY name
     `.catch(() => [] as any[]),
   ]);
@@ -67,6 +68,8 @@ export interface HealthRow {
   name: string;
   status: string | null;
   updated_at: string | Date | null;
+  /** JSONB. Only `tmux:bots` carries anything the panel reads. */
+  detail?: unknown;
 }
 
 /**
@@ -99,6 +102,14 @@ export function renderHealthLines(
 ): string[] {
   const out: string[] = [];
 
+  // The session half first, because it is the half that can be dead while
+  // everything else looks fine — and the one the operator could not see during
+  // the 2026-08-05 outage. A stale row is worse than none here: it would say
+  // "10 windows" about a session killed a minute ago, which is the exact lie
+  // this line exists to stop telling.
+  const tmuxRow = rows.find((r) => r.name === TMUX_HEALTH_NAME);
+  out.push(renderTmuxHealthLine(tmuxRow && !isStale(tmuxRow, now) ? parseTmuxDetail(tmuxRow.detail) : null));
+
   for (const name of HOST_PROCESSES) {
     const row = rows.find((r) => r.name === name);
     if (!row) {
@@ -117,6 +128,29 @@ export function renderHealthLines(
   }
 
   return out;
+}
+
+/**
+ * `detail` as the panel needs it, or null when it is anything else.
+ *
+ * postgres.js hands JSONB back as an object or, depending on the column and
+ * the driver's mood, as the string it was stored as. Both are handled and
+ * everything else — a null, an array, a half-written row from an older daemon —
+ * degrades to "нет данных" rather than throwing inside a status panel.
+ */
+function parseTmuxDetail(detail: unknown): { session: boolean; windows: number; scope: string | null } | null {
+  let value = detail;
+  if (typeof value === "string") {
+    try { value = JSON.parse(value); } catch { return null; }
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const d = value as Record<string, unknown>;
+  if (typeof d.windows !== "number" || typeof d.session !== "boolean") return null;
+  return {
+    session: d.session,
+    windows: d.windows,
+    scope: typeof d.scope === "string" ? d.scope : null,
+  };
 }
 
 function isStale(row: HealthRow, now: number): boolean {
@@ -166,9 +200,57 @@ function buildKeyboard(running: boolean, busy: boolean): InlineKeyboard {
     // bounces the sessions, so new code reaches both halves.
     kb.row();
     kb.text("🚀 Поднять всё", "sys:stack_up").text("♻️ Полный рестарт", "sys:full_restart");
+    // The two halves, named as halves. Everything above either does one thing
+    // to one container or does both halves at once; there was no way to say
+    // "restart the containers" or "restart everything that is not a container",
+    // which is how the operator actually thinks about this system.
+    kb.row();
+    kb.text("🐳 Рестарт контейнеров", "sys:restart_docker").text("🖥 Рестарт хоста", "sys:restart_host");
   }
   kb.row().text("🔄 Refresh", "sys:refresh");
   return kb;
+}
+
+/**
+ * The two halves as commands rather than buttons.
+ *
+ * The panel already had buttons for everything, and during the outage the
+ * panel was one of the things that could not be trusted — it counted database
+ * rows and reported a session half that was not there. A command that can be
+ * typed does not depend on the panel rendering correctly first.
+ *
+ * Both go through the same `admin_commands` queue as the buttons, so there is
+ * one execution path per half and the duplicate guard covers a button and a
+ * command racing each other.
+ */
+async function enqueue(ctx: Context, command: string, label: string): Promise<void> {
+  if (!isAdmin(ctx)) {
+    await ctx.reply("⛔ Admin only.");
+    return;
+  }
+
+  const already = await sql`
+    SELECT id FROM admin_commands
+    WHERE command = ${command} AND status IN ('pending','processing')
+    LIMIT 1
+  `;
+  if (already.length > 0) {
+    await ctx.reply(`⏳ ${label} — уже выполняется.`);
+    return;
+  }
+
+  await sql`INSERT INTO admin_commands (command, payload) VALUES (${command}, ${sql.json({} as any)})`;
+  await ctx.reply(`${label}\n\nПрогресс — /system, кнопка 🔄 Refresh.`);
+}
+
+/** `/restart_docker` — the container half. */
+export async function handleRestartDocker(ctx: Context): Promise<void> {
+  await enqueue(ctx, "docker_restart_all", "🐳 Перезапускаю контейнеры (up -d → restart)");
+}
+
+/** `/restart_host` — tmux windows, Claude, channel.ts, admin-daemon. */
+export async function handleRestartHost(ctx: Context): Promise<void> {
+  await enqueue(ctx, "host_restart", "🖥 Перезапускаю всё вне докера (сессии → admin-daemon)");
 }
 
 export async function handleSystemCallback(ctx: Context): Promise<void> {
@@ -195,6 +277,8 @@ export async function handleSystemCallback(ctx: Context): Promise<void> {
     channel_kill: { command: "channel_kill",  payload: {},                                label: "⚡ Killing channels..." },
     stack_up:     { command: "stack_up",      payload: {},                                label: "🚀 Поднимаю всё..." },
     full_restart: { command: "full_restart",  payload: {},                                label: "♻️ Полный рестарт..." },
+    restart_docker: { command: "docker_restart_all", payload: {},                         label: "🐳 Рестарт контейнеров..." },
+    restart_host:   { command: "host_restart",       payload: {},                         label: "🖥 Рестарт хоста..." },
   };
 
   const entry = cmdMap[action];

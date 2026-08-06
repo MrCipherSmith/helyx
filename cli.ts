@@ -20,6 +20,7 @@ import { existsSync, readFileSync, writeFileSync, statSync } from "fs";
 import { resolve, basename, dirname } from "path";
 import { homedir, tmpdir } from "os";
 import { windowName, parseWindowNames, partitionByWindow } from "./sessions/tmux-windows.ts";
+import { decideTmuxScope, verifyStart, TMUX_SCOPE_UNIT_FILE } from "./sessions/tmux-server.ts";
 import { parseFlags, flagValue } from "./utils/cli-flags.ts";
 import { resolveMemoryMb, presetsThatFit } from "./utils/host-memory.ts";
 import { dashboardEnvLines } from "./utils/dashboard-readiness.ts";
@@ -1362,32 +1363,102 @@ async function loadProjects(): Promise<Project[]> {
  * pile up in message_queue with nothing left to consume them.
  */
 async function tmuxServerScope(): Promise<string[]> {
-  if (process.platform !== "linux") return [];
-  const available = await run(["which", "systemd-run"], { silent: true });
-  if (!available.ok) return [];
-  // Clear a lingering unit from a previous server so --unit does not collide.
-  await run(["systemctl", "--user", "reset-failed", "helyx-tmux.scope"], { silent: true });
-  return ["systemd-run", "--user", "--scope", "--unit=helyx-tmux", "--collect", "--quiet"];
+  const decision = decideTmuxScope({
+    platform: process.platform,
+    hasSystemdRun: (await run(["which", "systemd-run"], { silent: true })).ok,
+    // The question that decides everything, and the one the old code never
+    // asked. See decideTmuxScope for why the unit's own state is the wrong
+    // thing to look at.
+    hasTmuxServer: (await run(["tmux", "list-sessions"], { silent: true })).ok,
+  });
+
+  if (decision.clearUnit) {
+    // Reached only when no server is running, so nothing shares this unit and
+    // stopping it costs nobody a session. `reset-failed` on its own was the
+    // 2026-08-05 bug: it clears a failed unit and ignores an active one.
+    await run(["systemctl", "--user", "stop", TMUX_SCOPE_UNIT_FILE], { silent: true });
+    await run(["systemctl", "--user", "reset-failed", TMUX_SCOPE_UNIT_FILE], { silent: true });
+  }
+
+  return decision.prefix;
 }
 
-async function startWindow(p: Project, first: boolean, usePanes: boolean, paneCount: number): Promise<void> {
+/** Why a window did not start, or null when it did. */
+type WindowError = string | null;
+
+/**
+ * Start one window, and say whether it worked.
+ *
+ * This used to return void and discard every exit code, which is how a restart
+ * that created nothing still printed a green tick for each of ten projects. The
+ * caller needs the failure more than the console does.
+ */
+async function startWindow(p: Project, first: boolean, usePanes: boolean, paneCount: number): Promise<WindowError> {
   const wname = windowName(p);
   const cmd = `${BOT_DIR}/scripts/run-cli.sh ${p.path}`;
 
   if (first) {
     const scope = await tmuxServerScope();
-    await run([...scope, "tmux", "new-session", "-d", "-s", TMUX_SESSION, "-n", wname, "-c", p.path]);
+    const created = await run([...scope, "tmux", "new-session", "-d", "-s", TMUX_SESSION, "-n", wname, "-c", p.path]);
+    // Without this the rest of the run sends keys into a session that is not
+    // there, and every one of those failures is silent too.
+    if (!created.ok) return `tmux new-session failed${created.output ? `: ${created.output}` : ""}`;
     // Use window index 0 to avoid race with shell renaming the window title
-    await run(["tmux", "send-keys", "-t", `${TMUX_SESSION}:0`, cmd, "Enter"]);
-  } else if (usePanes) {
-    const direction = paneCount % 2 === 0 ? "-v" : "-h";
-    await run(["tmux", "split-window", direction, "-t", TMUX_SESSION, "-c", p.path]);
-    await run(["tmux", "send-keys", "-t", TMUX_SESSION, cmd, "Enter"]);
-    await run(["tmux", "select-layout", "-t", TMUX_SESSION, "tiled"]);
-  } else {
-    await run(["tmux", "new-window", "-t", TMUX_SESSION, "-n", wname, "-c", p.path]);
-    await run(["tmux", "send-keys", "-t", `${TMUX_SESSION}:${wname}`, cmd, "Enter"]);
+    const keys = await run(["tmux", "send-keys", "-t", `${TMUX_SESSION}:0`, cmd, "Enter"]);
+    if (!keys.ok) return "tmux send-keys failed — window exists but nothing was started in it";
+    return null;
   }
+
+  if (usePanes) {
+    const direction = paneCount % 2 === 0 ? "-v" : "-h";
+    const split = await run(["tmux", "split-window", direction, "-t", TMUX_SESSION, "-c", p.path]);
+    if (!split.ok) return `tmux split-window failed${split.output ? `: ${split.output}` : ""}`;
+    const keys = await run(["tmux", "send-keys", "-t", TMUX_SESSION, cmd, "Enter"]);
+    if (!keys.ok) return "tmux send-keys failed — pane exists but nothing was started in it";
+    await run(["tmux", "select-layout", "-t", TMUX_SESSION, "tiled"]);
+    return null;
+  }
+
+  const created = await run(["tmux", "new-window", "-t", TMUX_SESSION, "-n", wname, "-c", p.path]);
+  if (!created.ok) return `tmux new-window failed${created.output ? `: ${created.output}` : ""}`;
+  const keys = await run(["tmux", "send-keys", "-t", `${TMUX_SESSION}:${wname}`, cmd, "Enter"]);
+  if (!keys.ok) return "tmux send-keys failed — window exists but nothing was started in it";
+  return null;
+}
+
+/**
+ * Ask tmux what is actually there, and judge the run by that.
+ *
+ * Separate from `tmuxStart` because the judgement is the part worth testing and
+ * the two `tmux` calls are the part that cannot be. See `verifyStart`.
+ */
+async function verifyTmuxStart(
+  expected: readonly string[],
+  failed: readonly { window: string; error: string }[],
+): Promise<{ ok: boolean; problems: string[]; summary: string }> {
+  const sessionExists = (await run(["tmux", "has-session", "-t", TMUX_SESSION], { silent: true })).ok;
+  const listed = sessionExists
+    ? await run(["tmux", "list-windows", "-t", TMUX_SESSION, "-F", "#{window_name}"], { silent: true })
+    : { ok: false, output: "" };
+  return verifyStart({
+    sessionExists,
+    windows: parseWindowNames(listed.output),
+    failed,
+    expected,
+  });
+}
+
+/** Print the verdict and set the exit code. Returns whether the run was good. */
+function reportTmuxStart(verdict: { ok: boolean; problems: string[]; summary: string }): boolean {
+  if (verdict.ok) {
+    console.log(`\n  ${c.green("Verified:")} ${verdict.summary}`);
+    return true;
+  }
+  console.log(`\n  ${c.red("Start failed — the session half is not up.")}`);
+  for (const p of verdict.problems) console.log(`    ${c.red("✗")} ${p}`);
+  console.log(`\n  ${c.dim("Runbook: docs/restart-problem.md")}`);
+  process.exitCode = 1;
+  return false;
 }
 
 async function ensureAdminDaemon(): Promise<void> {
@@ -1437,21 +1508,28 @@ async function tmuxStart() {
     const { toStart } = partitionByWindow(present, existingWindows);
     const startNames = new Set(toStart.map(windowName));
 
+    const failed: { window: string; error: string }[] = [];
     for (const p of present) {
       const wname = windowName(p);
       if (!startNames.has(wname)) {
         console.log(`  ${c.dim("·")} ${wname} — already running`);
         continue;
       }
-      await run(["tmux", "new-window", "-t", TMUX_SESSION, "-n", wname, "-c", p.path]);
-      const cmd = `${BOT_DIR}/scripts/run-cli.sh ${p.path}`;
-      await run(["tmux", "send-keys", "-t", `${TMUX_SESSION}:${wname}`, cmd, "Enter"]);
+      const error = await startWindow(p, false, false, 0);
+      if (error) {
+        failed.push({ window: wname, error });
+        console.log(`  ${c.red("✗")} ${wname} — ${error}`);
+        continue;
+      }
       console.log(`  ${c.green("✓")} ${wname} — started`);
     }
     if (toStart.length === 0) {
       console.log(`\n  ${c.dim("All windows already running.")}`);
     }
-    console.log(`\n  Attach: ${c.cyan(`tmux attach -t ${TMUX_SESSION}`)}`);
+    const verdict = await verifyTmuxStart(toStart.map(windowName), failed);
+    if (reportTmuxStart(verdict)) {
+      console.log(`\n  Attach: ${c.cyan(`tmux attach -t ${TMUX_SESSION}`)}`);
+    }
     await ensureAdminDaemon();
     return;
   }
@@ -1460,6 +1538,8 @@ async function tmuxStart() {
 
   let first = true;
   let paneCount = 0;
+  const expected: string[] = [];
+  const failed: { window: string; error: string }[] = [];
   for (const p of projects) {
     if (!existsSync(p.path)) {
       console.log(`  ${c.yellow("SKIP")} ${p.name} — ${p.path} not found`);
@@ -1467,17 +1547,35 @@ async function tmuxStart() {
     }
 
     const wname = windowName(p);
-    await startWindow(p, first, usePanes, paneCount);
+    expected.push(wname);
+    const error = await startWindow(p, first, usePanes, paneCount);
+    if (error) {
+      failed.push({ window: wname, error });
+      console.log(`  ${c.red("✗")} ${wname} — ${error}`);
+      // The first window carries the session. Once it is gone every later
+      // window fails the same way and the log becomes ten copies of one
+      // problem, which is what buried the real error last time.
+      if (first) {
+        console.log(`  ${c.dim("Session was never created — skipping the remaining projects.")}`);
+        break;
+      }
+      first = false;
+      paneCount++;
+      continue;
+    }
     first = false;
     paneCount++;
     console.log(`  ${c.green("✓")} ${wname} — ${p.path}`);
   }
 
-  console.log(`\n  ${c.green("Done!")} Attach: ${c.cyan(`tmux attach -t ${TMUX_SESSION}`)}`);
-  if (usePanes) {
-    console.log(`  Navigate: ${c.dim("Ctrl+B,Arrow — switch pane / Ctrl+B,Z — zoom pane")}`);
-  } else {
-    console.log(`  Navigate: ${c.dim("Ctrl+B,N (next) / Ctrl+B,P (prev) / Ctrl+B,W (list)")}`);
+  const verdict = await verifyTmuxStart(expected, failed);
+  if (reportTmuxStart(verdict)) {
+    console.log(`\n  ${c.green("Done!")} Attach: ${c.cyan(`tmux attach -t ${TMUX_SESSION}`)}`);
+    if (usePanes) {
+      console.log(`  Navigate: ${c.dim("Ctrl+B,Arrow — switch pane / Ctrl+B,Z — zoom pane")}`);
+    } else {
+      console.log(`  Navigate: ${c.dim("Ctrl+B,N (next) / Ctrl+B,P (prev) / Ctrl+B,W (list)")}`);
+    }
   }
 
   await ensureAdminDaemon();

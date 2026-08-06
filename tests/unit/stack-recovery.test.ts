@@ -110,8 +110,16 @@ describe("bringing the stack up", () => {
 describe("the health section of /system", () => {
   const fresh = new Date(Date.now()).toISOString();
 
+  const healthyTmux: HealthRow = {
+    name: "tmux:bots",
+    status: "running",
+    updated_at: fresh,
+    detail: { session: true, windows: 10, scope: "active", names: [] },
+  };
+
   test("shows the host processes and our containers", () => {
     const rows: HealthRow[] = [
+      healthyTmux,
       { name: "admin-daemon", status: "running", updated_at: fresh },
       { name: "supervisor", status: "running", updated_at: fresh },
       { name: "docker:helyx-bot-1", status: "running", updated_at: fresh },
@@ -124,6 +132,43 @@ describe("the health section of /system", () => {
     expect(lines.join("\n")).toContain("supervisor");
     expect(lines.join("\n")).toContain("helyx-bot-1");
     expect(lines.every((l) => l.startsWith("✅"))).toBe(true);
+  });
+
+  test("the session half gets a line of its own, from the host rather than the database", () => {
+    // The counter this panel used to rely on reads zero for a session half that
+    // never started *and* for one that started and failed to register. During
+    // the 2026-08-05 outage that ambiguity was the whole problem.
+    const lines = renderHealthLines([healthyTmux], Date.now(), "helyx");
+    expect(lines[0]).toContain("10");
+    expect(lines[0]).toContain("tmux");
+  });
+
+  test("a session with no windows is shown as the failure it is", () => {
+    const rows: HealthRow[] = [{
+      name: "tmux:bots",
+      status: "stopped",
+      updated_at: fresh,
+      detail: { session: true, windows: 0, scope: "active", names: [] },
+    }];
+    expect(renderHealthLines(rows, Date.now(), "helyx")[0]).toStartWith("⚠️");
+  });
+
+  test("a heartbeat too old to trust is not rendered as a session count", () => {
+    // Worse than no line: it would report ten windows about a session killed a
+    // minute ago, which is the exact false success this flow exists to end.
+    const stale = new Date(Date.now() - HEALTH_STALE_MS - 1000).toISOString();
+    const rows: HealthRow[] = [{
+      name: "tmux:bots",
+      status: "running",
+      updated_at: stale,
+      detail: { session: true, windows: 10, scope: "active", names: [] },
+    }];
+    expect(renderHealthLines(rows, Date.now(), "helyx")[0]).toContain("нет данных");
+  });
+
+  test("no tmux row at all says so rather than staying silent", () => {
+    const rows: HealthRow[] = [{ name: "admin-daemon", status: "running", updated_at: fresh }];
+    expect(renderHealthLines(rows, Date.now(), "helyx")[0]).toContain("нет данных");
   });
 
   test("and not the dozen unrelated containers on the host", () => {

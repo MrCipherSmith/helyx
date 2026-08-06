@@ -60,6 +60,7 @@ async function main() {
       { command: "providers",   description: "LLM providers (add/remove)" },
       { command: "project_add", description: "Register a new project" },
       { command: "sessions",  description: "List sessions" },
+      { command: "now",       description: "What the session is doing right now" },
       { command: "switch",    description: "Switch session" },
       { command: "resume",    description: "Resume with context briefing" },
       { command: "model",     description: "Switch Claude model" },
@@ -68,6 +69,8 @@ async function main() {
       { command: "pending",   description: "Pending CLI permissions" },
       { command: "interrupt", description: "Interrupt current Claude session" },
       { command: "system",    description: "System control (start/stop/bounce/restart)" },
+      { command: "restart_docker", description: "Restart the containers" },
+      { command: "restart_host",   description: "Restart sessions and everything outside Docker" },
       { command: "help",      description: "Help" },
     ], { scope: { type: "all_private_chats" } }).catch((err) => console.error("[main] failed to set private commands:", err));
     await bot.api.setMyCommands([
@@ -81,6 +84,11 @@ async function main() {
       { command: "remember",      description: "Save to memory" },
       { command: "recall",        description: "Search memory" },
       { command: "system",        description: "System control" },
+      // `/now` reads the session's own record and answers at once, so it works
+      // in a topic where asking the session would mean waiting for it.
+      { command: "now",           description: "What the session is doing right now" },
+      { command: "restart_docker", description: "Restart the containers" },
+      { command: "restart_host",   description: "Restart sessions and everything outside Docker" },
       { command: "status",        description: "Bot health" },
       { command: "help",          description: "Help" },
     ], { scope: { type: "all_group_chats" } }).catch((err) => console.error("[main] failed to set group commands:", err));
