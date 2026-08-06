@@ -2,6 +2,51 @@
 
 ## Unreleased
 
+### fix: the turn that ended and the dialogue that did not
+
+A session that answers without calling `reply` has its answer forwarded by the
+Stop hook — "итог хода" — and that half worked. What did not was the closing:
+the status message stayed open, the chat stayed inside `getBusyChats`, and the
+poller holds messages for busy chats. The operator read the answer and then
+watched their next message sit in `message_queue` until the response guard
+happened to look at it, between five and ten minutes later.
+
+Measured on `arena`: message queued at 21:20:30, delivered at 21:23:15, and
+what delivered it was the guard's second firing, not anything that knew the
+turn was over.
+
+`deliverTurnSummary` now says so, through the only thing that reaches the
+channel process from inside the container: `pg_notify('turn_closed_<session>',
+'<chat>:<ms>')`. The channel listens for it beside the queue and closes that
+turn's status — guard disarmed, `active_status_messages` row gone, chat out of
+`getBusyChats`, and the poller woken in the same motion, so the waiting message
+goes out immediately.
+
+The timestamp is not decoration. The guard can beat the hook to the same turn:
+it unblocks the chat, the poller delivers, a new status opens — and a late
+close would tear down a turn that is only just starting. A status younger than
+the turn being closed is left alone.
+
+### feat: the reply rule, stated where every session can see it
+
+The rule the whole channel rests on — the operator reads what goes through the
+`reply` tool and nothing else — was written down nowhere. `arena` hung on that;
+its CLAUDE.md is about models. `vantage-frontend` (34 KB of project rules) and
+`vantage-backend` (10 KB) never mention the channel either, and neither does
+the global CLAUDE.md: they work because the model guesses right, which is not a
+mechanism. The tool's own description was "Send a message to a Telegram chat" —
+true, and no help to a session deciding whether printing the answer is enough.
+
+It is now stated in `channel/reply-rule.ts` and read from there on three
+different paths into the context: the MCP server's `instructions`, which the
+client puts in the system prompt before the session has read a single file; the
+`reply` tool's description; and a note in front of every delivered message,
+which is the copy a long turn cannot leave behind.
+
+Composing that message is now `composeDelivery` — pure, and exported, because
+the order of its parts is the behaviour while the loop around it needs a
+database, a Telegram and a live MCP client to run.
+
 ## v1.55.0
 
 ### fix: one restart at a time, and a row that stops lying

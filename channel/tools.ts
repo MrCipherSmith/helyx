@@ -13,6 +13,7 @@ import { splitForVoice, sendVoiceTracks } from "../utils/tts.ts";
 import { chunkMarkdown, chunkText } from "../utils/chunk.ts";
 import { asRecapQuote, shouldSummarize, summarizeForSpeech, RECAP_PREFIX } from "../utils/reply-summary.ts";
 import { channelLogger } from "../logger.ts";
+import { REPLY_TOOL_DESCRIPTION } from "./reply-rule.ts";
 import { scanProjectKnowledge } from "../memory/project-scanner.ts";
 import { handleSkillView } from "../utils/skill-handlers.ts";
 import { distillSkill, listAgentSkills, approveSkill, rejectSkill, validateSkillInput } from "../utils/skill-distiller.ts";
@@ -136,7 +137,7 @@ async function sendReplyChunks(
 const TOOL_DEFINITIONS = [
       {
         name: "reply",
-        description: "Send a message to a Telegram chat",
+        description: REPLY_TOOL_DESCRIPTION,
         inputSchema: {
           type: "object",
           properties: {

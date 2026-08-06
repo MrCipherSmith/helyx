@@ -122,6 +122,32 @@ describe("delivering the summary", () => {
     expect(sent[0]!.text).toContain(FORWARDED_MARKER);
   });
 
+  test("and the turn it ended is closed, so the queue moves", async () => {
+    // The half that was missing: the answer reached the topic and the status
+    // stayed open behind it, which kept the chat busy and held everything the
+    // operator sent next for the response guard's five-to-ten minutes.
+    const { deps, sent, db } = harness({ transcript: [operator("go"), said("done")].join("\n") });
+    deps.now = () => 1_700_000_000_000;
+
+    await deliverTurnSummary("/tmp/t.jsonl", PROJECT, deps);
+
+    expect(sent.length).toBe(1);
+    const notified = db.matching("pg_notify")[0];
+    expect(notified?.values).toEqual(["turn_closed_7", `${FORUM}:1700000000000`]);
+  });
+
+  test("a turn that already replied closes nothing", async () => {
+    // The reply tool closed its own status. A second close here would tear
+    // down whatever the session opened after it.
+    const { deps, db } = harness({
+      transcript: [operator("go"), used("mcp__helyx-channel__reply"), said("done")].join("\n"),
+    });
+
+    await deliverTurnSummary("/tmp/t.jsonl", PROJECT, deps);
+
+    expect(db.count("pg_notify")).toBe(0);
+  });
+
   test("a turn that already replied sends nothing", async () => {
     // Being told the same thing twice is its own failure.
     const { deps, sent } = harness({

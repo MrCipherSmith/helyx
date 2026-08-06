@@ -262,6 +262,39 @@ export class StatusManager {
   }
 
   /**
+   * The turn ended without a `reply`, and the Stop hook forwarded its answer.
+   *
+   * The forwarding half already worked: the operator reads the answer under
+   * "итог хода". What did not was the closing — the status stayed open, the
+   * chat stayed in `getBusyChats`, and the next message the operator sent sat
+   * in the queue until the response guard happened to look at it, between five
+   * and ten minutes later. An answer had arrived and the dialogue was still
+   * stopped.
+   *
+   * `turnEndedAt` is when the hook fired, and it is the whole reason this is
+   * not simply `deleteStatusMessage`. The guard can beat the hook to the same
+   * turn: it unblocks the chat, the poller delivers the waiting message, and a
+   * new status opens — a late close would then tear down a turn that is only
+   * just starting. A status younger than the turn being closed belongs to
+   * something else and is left alone.
+   */
+  async closeForForwardedTurn(chatId: string, turnEndedAt: number): Promise<boolean> {
+    const key = this.stateKey(chatId);
+    const state = this.activeStatus.get(key);
+    if (!state) return false;
+    if (state.startedAt > turnEndedAt) {
+      channelLogger.info(
+        { chatId, statusStartedAt: state.startedAt, turnEndedAt },
+        "turn-summary: status belongs to a newer turn, leaving it open",
+      );
+      return false;
+    }
+    channelLogger.info({ chatId, statusLifeMs: Date.now() - state.startedAt }, "turn-summary: closing the turn the forwarded answer ended");
+    await this.deleteStatusMessage(chatId);
+    return true;
+  }
+
+  /**
    * A reply went out: the step is over, the turn may not be.
    *
    * Called instead of tearing everything down, which is what used to happen and
