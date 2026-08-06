@@ -20,7 +20,6 @@
 import { runReviewers, gitReviewDiff, reviewConsoleLines } from "../services/reviewer-service.ts";
 import {
   persistReviewRun,
-  pruneReviewArtifacts,
   type GitContext,
 } from "../services/review-artifacts.ts";
 
@@ -70,7 +69,9 @@ const artifact = await persistReviewRun(result, {
 });
 
 if (artifact) {
-  await pruneReviewArtifacts();
+  // No prune here: `persistReviewRun` bounds the directory itself, because a
+  // caller that has to remember is a caller that forgets — the scheduled review
+  // did, for as long as it existed.
   // Printed after the reports and after `SELF`, so a reader of either is
   // unaffected: CLAUDE.md matches the reports and the bare `SELF` line.
   console.error(`[review] artifact: ${artifact.dir}`);

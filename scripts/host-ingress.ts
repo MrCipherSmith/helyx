@@ -46,6 +46,7 @@
  */
 
 import { bringStackUp, type RunShell, type StackUpOptions } from "./stack-up.ts";
+import { takeRestartLease, releaseRestartLease, heldMessage } from "../utils/restart-lease.ts";
 
 /** Consecutive failed probes before the door opens. */
 export const ARM_AFTER_FAILURES = 2;
@@ -278,10 +279,36 @@ export class HostIngress {
       return;
     }
 
-    await this.reply(chatId, threadId, "🔧 Поднимаю стек с хоста — контейнеры, затем сессии…");
-    const result = await bringStackUp(this.deps.run, this.deps.stack);
-    const head = result.ok ? "✅ Стек поднят" : "⚠️ Поднял не всё";
-    await this.reply(chatId, threadId, `${head}\n\n<pre>${escapeHtml(result.summary.slice(0, 3000))}</pre>`);
+    // The same lease the admin daemon takes, for the reason it is a file and
+    // not a row: this door is armed when the bot is confirmed dead, and the
+    // daemon does not stop when the bot does — it may be minutes into a
+    // `host_restart` right now, with its own database connection. Running a
+    // second bring-up over that is the race this guards. Raised in review.
+    const lease = takeRestartLease("/up", undefined, Date.now());
+    if (!lease.ok) {
+      await this.reply(chatId, threadId, `⏳ ${heldMessage(lease.held)}`);
+      return;
+    }
+    if (lease.broke) {
+      console.error(`[host-ingress] broke stale lease from ${lease.broke.owner}`);
+    }
+
+    try {
+      // Inside the try, not before it: a reply that throws — and this one goes
+      // over the network to Telegram, in the middle of an outage — would
+      // otherwise exit past the `finally` and strand the lease for the whole
+      // expiry, locking the operator out of the door they opened to recover.
+      // Raised in review.
+      await this.reply(chatId, threadId, "🔧 Поднимаю стек с хоста — контейнеры, затем сессии…");
+      const result = await bringStackUp(this.deps.run, this.deps.stack);
+      const head = result.ok ? "✅ Стек поднят" : "⚠️ Поднял не всё";
+      await this.reply(chatId, threadId, `${head}\n\n<pre>${escapeHtml(result.summary.slice(0, 3000))}</pre>`);
+    } finally {
+      // In a `finally`: a bring-up that throws must not leave the lease behind
+      // for fifteen minutes, which is the whole window an operator would be
+      // locked out of the door they opened to recover.
+      releaseRestartLease();
+    }
   }
 
   /** What is running, as seen from the host rather than from the database. */

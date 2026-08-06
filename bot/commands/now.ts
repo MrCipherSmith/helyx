@@ -23,6 +23,7 @@ import type { Context } from "grammy";
 import { sql } from "../../memory/db.ts";
 import { routeMessage } from "../../sessions/router.ts";
 import { resolveTranscript, TranscriptTail, claudeConfigRoot } from "../../utils/transcript-locate.ts";
+import { TRANSCRIPT_STALE_MS } from "../../utils/transcript-monitor.ts";
 import { findSubagents, markLines } from "../../utils/subagent-transcripts.ts";
 import { renderEntry } from "../../utils/transcript-events.ts";
 import { parseEntry } from "../../utils/transcript-locate.ts";
@@ -167,7 +168,15 @@ async function readingFromModel(snapshot: SessionSnapshot, project: string): Pro
  * The same answer covers an offset that lands inside a multi-byte character.
  */
 export async function snapshotForProject(projectPath: string, root?: string): Promise<SessionSnapshot> {
-  const path = await resolveTranscript(projectPath, root ?? claudeConfigRoot());
+  // Bounded, like every other resolve in the codebase. Without the bound this
+  // was the one caller that would take a match of any age: a topic whose
+  // session is not running — stopped, never started, or mid-restart — still has
+  // a transcript on disk from whenever it last ran, and `/now` would read it
+  // and answer confidently about a session that ended days ago. A snapshot that
+  // invents is worse than one that admits. Raised in review.
+  const path = await resolveTranscript(projectPath, root ?? claudeConfigRoot(), {
+    maxAgeMs: TRANSCRIPT_STALE_MS,
+  });
   if (!path) return NO_SESSION;
 
   const size = Bun.file(path).size;

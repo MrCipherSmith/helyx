@@ -1248,6 +1248,12 @@ export class StatusManager {
     const stats = this.sessionStats.get(key);
     this.lastTokenInfo.delete(key);
     this.sessionStats.delete(key);
+    // The turn's stats are per-turn, and so is the record of which lines have
+    // already been counted into them. Kept across turns it did two things, both
+    // wrong: an identical "Added 1 lines, removed 1 lines" in a later turn was
+    // silently dropped before it could be counted, and the set grew for the life
+    // of the process. Raised in review.
+    this.countedStatLines.delete(key);
 
     const parts: string[] = [`⏱ ${elapsed}`];
     if (stats?.filesEdited.size) {

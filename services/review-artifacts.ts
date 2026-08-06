@@ -141,6 +141,13 @@ export function renderReportMd(result: ReviewRunResult, meta: RunMeta): string {
  *
  * Never throws: the caller has already printed a review that succeeded, and a
  * full disk is not a reason to fail it.
+ *
+ * Pruning happens here rather than in the caller, and that is the point. It was
+ * the caller's job once, and only one of the two callers did it: the manual CLI
+ * pruned, the supervisor's scheduled review did not — and the scheduled one is
+ * the one that runs unattended every fifteen minutes. Bounding the directory
+ * from the only place that writes to it is what stops a third caller from
+ * reintroducing the same gap. Raised in review.
  */
 export async function persistReviewRun(
   result: ReviewRunResult,
@@ -154,6 +161,9 @@ export async function persistReviewRun(
     const reportMd = join(dir, "report.md");
     await writeFile(runJson, renderRunJson(result, meta), "utf-8");
     await writeFile(reportMd, renderReportMd(result, meta), "utf-8");
+    // After the write, so a prune that fails cannot cost the run it was called
+    // to make room for.
+    await pruneReviewArtifacts({}, root).catch(() => ({ removed: 0 }));
     return { dir, runJson, reportMd };
   } catch {
     return null;

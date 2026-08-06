@@ -22,6 +22,7 @@ import { startHostIngress } from "./host-ingress.ts";
 import { summarizeTmuxHost, parseScopeState, TMUX_HEALTH_NAME } from "../sessions/tmux-server.ts";
 import { parseWindowNames } from "../sessions/tmux-windows.ts";
 import { runCurator, getLastCuratorRun } from "../utils/curator.ts";
+import { takeRestartLease, releaseRestartLease, heldMessage } from "../utils/restart-lease.ts";
 import { sendCuratorSummary } from "../utils/skill-approval.ts";
 
 const BOT_DIR = resolve(import.meta.dir, "..");
@@ -323,7 +324,46 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
   // postgres.js may return JSONB as string — normalize
   const payload: Record<string, any> = typeof row.payload === "string" ? JSON.parse(row.payload) : row.payload;
   console.log(`[admin-daemon] executing: ${row.command} ${JSON.stringify(payload)}`);
-  let result: { ok: boolean; output: string };
+  // `deferred` means the work was handed to a detached process and is still
+  // running: the row stays `processing` until that process closes it, rather
+  // than going `done` a second after a restart that takes minutes started.
+  // Reporting success at spawn time is what made the duplicate check useless —
+  // it only refuses while a row is pending or processing, and the row stopped
+  // being either almost at once. Raised in review.
+  let result: { ok: boolean; output: string; deferred?: boolean };
+
+  /**
+   * Take the restart lease, or refuse.
+   *
+   * The three restarts exclude each other, not merely themselves: "🔄 Bounce"
+   * followed by "♻️ Полный рестарт" ran two `tmux kill-session` sequences over
+   * one session name, each tearing down what the other had built.
+   */
+  const claimRestart = (): { ok: true } | { ok: false; result: { ok: boolean; output: string } } => {
+    const lease = takeRestartLease(String(row.command));
+    if (!lease.ok) return { ok: false, result: { ok: false, output: heldMessage(lease.held) } };
+    if (lease.broke) {
+      console.error(`[admin-daemon] broke stale lease from ${lease.broke.owner}`);
+    }
+    return { ok: true };
+  };
+
+  /**
+   * Hand the lease back when the spawn itself failed.
+   *
+   * The lease is taken before the work is launched, and the launch can fail —
+   * a missing shell, a full process table. Reporting success and holding the
+   * lease anyway would lock the operator out of every restart for the whole
+   * expiry, with nothing running and nothing to wait for. Raised in review.
+   */
+  const spawned = (
+    shell: { ok: boolean; output: string },
+    ifOk: { ok: boolean; output: string; deferred?: boolean },
+  ): { ok: boolean; output: string; deferred?: boolean } => {
+    if (shell.ok) return ifOk;
+    releaseRestartLease();
+    return { ok: false, output: `failed to start: ${shell.output.slice(0, 200)}` };
+  };
 
   try {
     switch (row.command) {
@@ -373,13 +413,16 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
         //
         // Spawned detached so the daemon survives the kill-session that tears
         // down its own window.
+        const claim = claimRestart();
+        if (!claim.ok) { result = claim.result; break; }
         const bunBin = Bun.which("bun") ?? process.execPath;
         const inner =
           `sleep 2; cd '${BOT_DIR}' && HELYX_RESTART_ADMIN=0 ` +
+          `HELYX_RESTART_ROW=${row.id} ` +
           `'${bunBin}' '${resolve(import.meta.dir, "restart-host-run.ts")}' ` +
           `>> /tmp/helyx-bounce.log 2>&1`;
-        await runShell(`nohup bash -c ${JSON.stringify(inner)} &`);
-        result = { ok: true, output: "bounce scheduled (log: /tmp/helyx-bounce.log)" };
+        const shell = await runShell(`nohup bash -c ${JSON.stringify(inner)} &`);
+        result = spawned(shell, { ok: true, deferred: true, output: "bounce running (log: /tmp/helyx-bounce.log)" });
         break;
       }
 
@@ -397,7 +440,12 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
         if (!/^[a-zA-Z0-9_.-]+$/.test(container)) {
           result = { ok: false, output: `invalid container name: ${container}` }; break;
         }
-        const shellResult = await runShell(`docker restart ${container} 2>&1`);
+        // Bounded like every other docker step here, and for the reason stated
+        // in `stack-up.ts`: the command queue is single-threaded, so a hung
+        // daemon does not merely fail this restart — it holds every command
+        // behind it, including the ones an operator would reach for to recover.
+        // This was the one step without a bound. Raised in review.
+        const shellResult = await runShell(`timeout 240 docker restart ${container} 2>&1`);
         // `compose down` removes containers rather than stopping them, so after
         // one there is nothing named to restart and this failed with "No such
         // container" — the one situation where the operator most needs it to
@@ -443,24 +491,26 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
         // whole flow is about. Falls back to `nohup` where systemd-run is
         // absent, in which case the daemon step is skipped rather than run in a
         // way that would cut its own throat.
+        const claim = claimRestart();
+        if (!claim.ok) { result = claim.result; break; }
         const bunBin = Bun.which("bun") ?? process.execPath;
         const hasSystemdRun = (await runShell(`command -v systemd-run >/dev/null 2>&1`)).ok;
         const inner =
           `cd '${BOT_DIR}' && ` +
           `HELYX_RESTART_ADMIN=${hasSystemdRun ? "1" : "0"} ` +
+          `HELYX_RESTART_ROW=${row.id} ` +
           `'${bunBin}' '${resolve(import.meta.dir, "restart-host-run.ts")}' ` +
           `>> /tmp/helyx-host-restart.log 2>&1`;
-        if (hasSystemdRun) {
-          await runShell(`systemd-run --user --collect --quiet bash -c ${JSON.stringify(inner)}`);
-        } else {
-          await runShell(`nohup bash -c ${JSON.stringify(inner)} &`);
-        }
-        result = {
+        const shell = hasSystemdRun
+          ? await runShell(`systemd-run --user --collect --quiet bash -c ${JSON.stringify(inner)}`)
+          : await runShell(`nohup bash -c ${JSON.stringify(inner)} &`);
+        result = spawned(shell, {
           ok: true,
+          deferred: true,
           output: hasSystemdRun
-            ? "host restart scheduled: bounce sessions → restart admin-daemon (log: /tmp/helyx-host-restart.log)"
-            : "host restart scheduled: bounce sessions (systemd-run absent — admin-daemon left alone; log: /tmp/helyx-host-restart.log)",
-        };
+            ? "host restart running: bounce sessions → restart admin-daemon (log: /tmp/helyx-host-restart.log)"
+            : "host restart running: bounce sessions (systemd-run absent — admin-daemon left alone; log: /tmp/helyx-host-restart.log)",
+        });
         break;
       }
 
@@ -469,11 +519,21 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
         // both halves. Detached for the same reason `bounce` is: the bounce
         // tears down the daemon's own tmux window, and a build measured in
         // minutes would otherwise block this single-threaded command queue.
+        const claim = claimRestart();
+        if (!claim.ok) { result = claim.result; break; }
         const bunBin = Bun.which("bun") ?? process.execPath;
-        await runShell(
-          `nohup bash -c "(cd \\"${BOT_DIR}\\"; docker compose up -d --build bot; sleep 5; \\"${bunBin}\\" \\"${CLI}\\" bounce) >> /tmp/helyx-full-restart.log 2>&1" &`
+        const finish = resolve(import.meta.dir, "restart-finish.ts");
+        // The finisher runs whatever the build and the bounce did — it releases
+        // the lease and closes the row, and a restart that failed must not hold
+        // the lease for the whole expiry.
+        // `&&` between the steps and the finisher *outside* the subshell, taking
+        // its exit status: chained with `;` a failed build still ran the bounce
+        // and still closed the row as done, so a restart that never rebuilt
+        // anything reported success. Raised in review.
+        const shell = await runShell(
+          `nohup bash -c "(cd \\"${BOT_DIR}\\" && docker compose up -d --build bot && sleep 5 && \\"${bunBin}\\" \\"${CLI}\\" bounce) >> /tmp/helyx-full-restart.log 2>&1; \\"${bunBin}\\" \\"${finish}\\" ${row.id} \\$? >> /tmp/helyx-full-restart.log 2>&1" &`
         );
-        result = { ok: true, output: "full restart scheduled: rebuild bot → bounce sessions (log: /tmp/helyx-full-restart.log)" };
+        result = spawned(shell, { ok: true, deferred: true, output: "full restart running: rebuild bot → bounce sessions (log: /tmp/helyx-full-restart.log)" });
         break;
       }
 
@@ -639,11 +699,19 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
     result = { ok: false, output: err?.message ?? String(err) };
   }
 
-  await sql`
-    UPDATE admin_commands
-    SET status = ${result.ok ? "done" : "error"}, result = ${result.output}, executed_at = now()
-    WHERE id = ${row.id as unknown as number}
-  `;
+  if (result.deferred) {
+    // Still running. The row keeps its `processing` status — which is what the
+    // enqueue-time duplicate check reads — and the detached work closes it.
+    await sql`
+      UPDATE admin_commands SET result = ${result.output} WHERE id = ${row.id as unknown as number}
+    `;
+  } else {
+    await sql`
+      UPDATE admin_commands
+      SET status = ${result.ok ? "done" : "error"}, result = ${result.output}, executed_at = now()
+      WHERE id = ${row.id as unknown as number}
+    `;
+  }
 
   console.log(`[admin-daemon] ${result.ok ? "✓" : "✗"} ${row.command}: ${result.output.slice(0, 100)}`);
 }

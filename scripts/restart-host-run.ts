@@ -16,6 +16,7 @@
 
 import { resolve } from "path";
 import { restartHostHalf } from "./restart-host.ts";
+import { finishRestart } from "./restart-finish.ts";
 
 const BOT_DIR = resolve(import.meta.dir, "..");
 const CLI = resolve(BOT_DIR, "cli.ts");
@@ -30,12 +31,26 @@ async function runShell(cmd: string): Promise<{ ok: boolean; output: string }> {
   return { ok: proc.exitCode === 0, output: (stdout + stderr).trim() };
 }
 
-const result = await restartHostHalf(runShell, {
-  botDir: BOT_DIR,
-  bunBin: Bun.which("bun") ?? process.execPath,
-  cli: CLI,
-  restartAdminDaemon: process.env.HELYX_RESTART_ADMIN === "1",
-});
+let result: Awaited<ReturnType<typeof restartHostHalf>>;
+// Assumed failed until the work says otherwise, so the row records what
+// happened rather than what was hoped: a bounce that hit its timeout, or a step
+// that threw, used to close the row as `done` like any success. The only
+// evidence left was a log file somebody had to think to open. Raised in review.
+let ok = false;
+try {
+  result = await restartHostHalf(runShell, {
+    botDir: BOT_DIR,
+    bunBin: Bun.which("bun") ?? process.execPath,
+    cli: CLI,
+    restartAdminDaemon: process.env.HELYX_RESTART_ADMIN === "1",
+  });
+  ok = result.ok;
+} finally {
+  // In a `finally`, and before the exit below: a restart that threw halfway
+  // must not hold the lease for the whole expiry, because the operator's next
+  // move after a failed restart is to try again.
+  await finishRestart(Number(process.env.HELYX_RESTART_ROW), ok ? "done" : "error");
+}
 
 console.log(`[host-restart] ${result.ok ? "ok" : "FAILED"}\n${result.summary}`);
 process.exit(result.ok ? 0 : 1);
