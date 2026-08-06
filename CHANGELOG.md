@@ -98,6 +98,14 @@ line, the last tool call stripped of its bullet and label. Both glance lines sit
 above the activity quote, which is trimmed from the front, so a busy turn cannot
 drop them.
 
+### feat: whisper is told the vocabulary the operator actually uses
+
+Groq's transcription now receives an `initial_prompt` listing the names that
+recur in this project's speech. It is not an instruction — whisper uses it to
+bias token choice — and it exists because `whisper-large-v3` mangles English
+product names inside Russian sentences ("Gemma 4E4B" came back as "гема 4 и 4
+by"). Listing them fixes those and tightens the Russian prose around them.
+
 ### fix: a test suite that only passed where a `.env` was
 
 `bun test tests/unit/` was green on a developer's machine and red in CI, and had
