@@ -7,6 +7,7 @@ import type { Context } from "grammy";
 import { InlineKeyboard } from "grammy";
 import { sql } from "../../memory/db.ts";
 import { renderTmuxHealthLine, TMUX_HEALTH_NAME } from "../../sessions/tmux-server.ts";
+import { LEASE_EXPIRY_MS } from "../../utils/restart-lease.ts";
 
 function isAdmin(ctx: Context): boolean {
   const adminChatId = process.env.TELEGRAM_CHAT_ID;
@@ -229,9 +230,16 @@ async function enqueue(ctx: Context, command: string, label: string): Promise<vo
     return;
   }
 
+  // Bounded by the lease expiry, and that bound is what makes leaving the row
+  // `processing` safe. A detached restart closes its own row, but it can be
+  // killed — and a row that stays `processing` for ever would take this button
+  // with it. The lease is the real mutual exclusion; this check exists to
+  // explain, and an explanation that outlives the thing it describes is a lie.
   const already = await sql`
     SELECT id FROM admin_commands
-    WHERE command = ${command} AND status IN ('pending','processing')
+    WHERE command = ${command}
+      AND status IN ('pending','processing')
+      AND created_at > now() - ${`${Math.ceil(LEASE_EXPIRY_MS / 1000)} seconds`}::interval
     LIMIT 1
   `;
   if (already.length > 0) {
