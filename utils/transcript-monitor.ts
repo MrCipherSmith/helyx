@@ -58,6 +58,18 @@ export const TRANSCRIPT_STALE_MS = 12 * 60 * 60 * 1_000;
 
 export interface TranscriptMonitorHandle {
   stop: () => void;
+  /**
+   * Labels of the subagents being followed right now.
+   *
+   * A getter rather than a widening of the status callback, which carries a
+   * rendered block of text: a count of running agents is not a block of text,
+   * and every other monitor would have had to learn to send one.
+   *
+   * Optional on the interface because the two terminal monitors share it and
+   * cannot answer — they photograph a screen and have no idea what a subagent
+   * is.
+   */
+  agents?: () => string[];
 }
 
 type StatusCallback = (status: string) => void;
@@ -239,6 +251,17 @@ export class TranscriptSession {
     return this.tail?.path ?? null;
   }
 
+  /**
+   * What to call the subagents being followed right now.
+   *
+   * Read from the same map `readAgents` maintains, so an agent that finished is
+   * gone from here for the same reason its lines stopped arriving — there is no
+   * second list to fall out of step with the first.
+   */
+  get agentLabels(): string[] {
+    return [...this.agents.values()].map((tracked) => tracked.file.label);
+  }
+
   /** Attach to the newest transcript for this project. False when there is none. */
   async attach(): Promise<boolean> {
     const root = this.options.root ?? claudeConfigRoot();
@@ -372,5 +395,8 @@ export async function startTranscriptMonitor(
 
   loop().catch((err) => console.error("[transcript-monitor] fatal error:", err));
 
-  return { stop: () => { running = false; } };
+  return {
+    stop: () => { running = false; },
+    agents: () => session.agentLabels,
+  };
 }

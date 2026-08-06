@@ -68,6 +68,15 @@ export const ACTIVITY_LINES = 40;
 /** Lines of raw pane to show. */
 export const PANE_LINES = 9;
 
+/**
+ * What the two glanceable lines above the work block may cost.
+ *
+ * Small on purpose. They are read at a glance, and anything that does not fit
+ * in a phone's width is not glanceable however much of it survives.
+ */
+export const AGENTS_BUDGET_CHARS = 120;
+export const SUMMARY_BUDGET_CHARS = 160;
+
 export interface StatusParts {
   /** The activity lines, newest last. */
   stage: string;
@@ -83,6 +92,74 @@ export interface StatusParts {
   fileCount?: number;
   /** What the operator asked, so the status says what it is working on. */
   question?: string | null;
+  /**
+   * Milliseconds since the session last did anything, or undefined when there
+   * is no monitor to know.
+   *
+   * The one number that separates working from hung: the elapsed clock and the
+   * spinner both keep moving for a turn that died three minutes ago.
+   */
+  idleMs?: number;
+  /** Labels of the subagents currently running, newest last. */
+  agents?: readonly string[];
+  /** One line of what is happening now, above the work block. */
+  summary?: string | null;
+}
+
+/**
+ * The age of the last event, rounded to what the operator can act on.
+ *
+ * Rounded, not exact, and that is the whole point of the function. The text of
+ * the status is hashed to suppress redundant edits; a field that changes every
+ * tick would make that hash differ every tick and the message would be edited
+ * once a second forever. Whole seconds under a minute, whole minutes above —
+ * "3s" and "4m" answer the question, and between two rounding steps the dedup
+ * still works.
+ */
+export function formatIdle(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}m`;
+}
+
+/** A line of activity that is a tool call rather than prose. */
+const TOOL_LINE_RE = /^[●·⎿]\s*/;
+/**
+ * The prefix `markLines` puts in front of a subagent's output.
+ *
+ * Unbounded on purpose: `labelFor` caps a label derived from a description but
+ * returns `agentType` at whatever length it is, so a long custom agent name
+ * produces a prefix no bound here would match — and the line would be read as
+ * prose and dropped from the summary. Raised in review.
+ */
+const AGENT_LABEL_RE = /^\[[^\]]+\]\s*/;
+
+/**
+ * One line of what the session is doing now, derived from what it just did.
+ *
+ * Derived rather than generated: this message is redrawn every few seconds, so
+ * asking a model would cost tokens on every redraw and arrive after the answer
+ * had changed. `/now` is where a model writes a summary, on request.
+ *
+ * The last tool call is the honest answer to "what is happening", and it is
+ * already in hand. Prose lines are skipped — a paragraph of reasoning is not a
+ * summary of itself — and null means the status renders without the line at
+ * all rather than with an empty one.
+ */
+export function summarizeActivity(stage: string): string | null {
+  const lines = stage.replace(/^⏳\s*/, "").split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const raw = lines[i]!.trim();
+    if (!raw) continue;
+    // The marker may sit either side of the agent label: `markLines` puts the
+    // label after the bullet for a bulleted line and in front of anything else.
+    const withoutBullet = raw.replace(TOOL_LINE_RE, "");
+    const cleaned = withoutBullet.replace(AGENT_LABEL_RE, "").trim();
+    if (!cleaned) continue;
+    if (!TOOL_LINE_RE.test(raw) && !AGENT_LABEL_RE.test(raw)) continue;
+    return cleaned;
+  }
+  return null;
 }
 
 /** A question longer than this is a paragraph, not a heading. */
@@ -216,7 +293,14 @@ export function renderStatus(parts: StatusParts): string {
   const phase = phaseIcon ? ` ${phaseIcon}` : "";
   // Bounded and escaped: this is caller text, it carries the scraped token
   // count, and it sits outside the work budget.
-  const elapsed = clampEscaped(escaped(parts.elapsed), HEADER_BUDGET_CHARS);
+  //
+  // The idle age is appended before the clamp rather than after it, so the two
+  // fields share one budget and the one that overflows it is the new one. A
+  // header already at its limit keeps the elapsed clock it was carrying and
+  // loses the age — clamping them separately would have let a scraped token
+  // count push the header past a budget that exists to stop exactly that.
+  const idle = parts.idleMs === undefined ? "" : ` · ⧗ ${formatIdle(parts.idleMs)}`;
+  const elapsed = clampEscaped(`${escaped(parts.elapsed)}${idle}`, HEADER_BUDGET_CHARS);
   const header = `${icon} <i>${elapsed}</i>${phase}`.trim();
 
   const stats = renderStats(parts);
@@ -236,6 +320,24 @@ export function renderStatus(parts: StatusParts): string {
     remaining -= text.length;
   }
 
+  // Above the work block, and that is a requirement rather than a preference:
+  // `tailWithinBudget` trims the quote from the front, so a line written into
+  // it would be the first thing dropped on the busy turn that most needs it.
+  let glance = "";
+  const agents = (parts.agents ?? []).filter((label) => label.trim().length > 0);
+  if (agents.length > 0) {
+    const word = agents.length === 1 ? "агент" : "агента";
+    const line = clampEscaped(escaped(`${agents.length} ${word}: ${agents.join(" · ")}`), AGENTS_BUDGET_CHARS);
+    glance += `\n🧩 ${line}`;
+    remaining -= line.length;
+  }
+  const summary = parts.summary?.trim();
+  if (summary) {
+    const line = clampEscaped(escaped(summary), SUMMARY_BUDGET_CHARS);
+    glance += `\n▸ ${line}`;
+    remaining -= line.length;
+  }
+
   const activity = parts.stage.replace(/^⏳\s*/, "");
   if (!activity.includes("\n")) {
     // Budgeted too. A one-line stage comes from `update_status`, which takes
@@ -244,7 +346,7 @@ export function renderStatus(parts: StatusParts): string {
     // limit is rejected rather than trimmed.
     const single = tailWithinBudget([escaped(activity)], Math.max(0, remaining))[0] ?? "";
     const body = single.trim() ? `\n${single}` : "";
-    return `${header}${body}${paneBlock}${statsBlock}`;
+    return `${header}${glance}${body}${paneBlock}${statsBlock}`;
   }
 
   const lines = activity.split("\n").slice(-ACTIVITY_LINES);
@@ -253,5 +355,5 @@ export function renderStatus(parts: StatusParts): string {
   // until the operator asks for it.
   const work = `\n<blockquote expandable>${kept.join("\n")}</blockquote>`;
 
-  return `${header}${work}${paneBlock}${statsBlock}`;
+  return `${header}${glance}${work}${paneBlock}${statsBlock}`;
 }

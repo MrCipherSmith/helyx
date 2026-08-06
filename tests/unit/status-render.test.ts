@@ -19,6 +19,8 @@ import {
   clampEscaped,
   ACTIVITY_LINES,
   PANE_LINES,
+  formatIdle,
+  summarizeActivity,
 } from "../../utils/status-render.ts";
 
 const base = { stage: "working", elapsed: "2m 26s" };
@@ -340,5 +342,137 @@ describe("the finished turn keeps its work", () => {
     const out = renderFinal(SUMMARY, Array.from({ length: 200 }, (_, i) => `s${i}`).join("\n"));
     expect(out).toContain("s199");
     expect(out).not.toContain("s0\n");
+  });
+});
+
+/**
+ * The three lines that answer "is it still moving".
+ *
+ * The elapsed clock and the spinner both keep going for a turn that died three
+ * minutes ago, which is why none of what follows can be derived from them.
+ */
+describe("the idle age", () => {
+  test("seconds under a minute, minutes above", () => {
+    expect(formatIdle(0)).toBe("0s");
+    expect(formatIdle(3_400)).toBe("3s");
+    expect(formatIdle(59_999)).toBe("59s");
+    expect(formatIdle(60_000)).toBe("1m");
+    expect(formatIdle(4 * 60_000 + 30_000)).toBe("4m");
+  });
+
+  test("rounded, so the edit-suppressing signature is not defeated", () => {
+    // Two renders 400ms apart must produce the same text. Without rounding the
+    // status would be edited on every tick for as long as a turn ran.
+    expect(renderStatus({ ...base, idleMs: 3_100 })).toBe(renderStatus({ ...base, idleMs: 3_500 }));
+  });
+
+  test("it reaches the header", () => {
+    expect(renderStatus({ ...base, idleMs: 3_000 })).toContain("⧗ 3s");
+  });
+
+  test("a status with no monitor claims nothing", () => {
+    // Not "⧗ 0s": nothing has reported, so the age is unknown rather than zero,
+    // and an unknown age must not read as a fresh one.
+    const out = renderStatus({ ...base });
+    expect(out).not.toContain("⧗");
+  });
+
+  test("a negative clock skew does not produce a negative age", () => {
+    expect(formatIdle(-5_000)).toBe("0s");
+  });
+
+  test("it shares the header budget rather than adding to it", () => {
+    // The budget exists because the elapsed field carries a token count scraped
+    // with a regex. A new field appended outside the clamp would reopen the hole
+    // the clamp was put there to close.
+    const out = renderStatus({ ...base, elapsed: "e".repeat(HEADER_BUDGET_CHARS), idleMs: 3_000 });
+    const field = out.slice(out.indexOf("<i>") + 3, out.indexOf("</i>"));
+    expect(field.length).toBeLessThanOrEqual(HEADER_BUDGET_CHARS);
+    // The age is what the overflow costs, not the clock that was there first.
+    expect(field).not.toContain("⧗");
+    expect(field.startsWith("e".repeat(HEADER_BUDGET_CHARS - 1))).toBe(true);
+  });
+});
+
+describe("the subagents line", () => {
+  test("says how many and what they are", () => {
+    const out = renderStatus({ ...base, agents: ["explore", "review"] });
+    expect(out).toContain("🧩 2 агента: explore · review");
+  });
+
+  test("one agent is not two", () => {
+    expect(renderStatus({ ...base, agents: ["explore"] })).toContain("🧩 1 агент: explore");
+  });
+
+  test("none means no line at all", () => {
+    expect(renderStatus({ ...base, agents: [] })).not.toContain("🧩");
+    expect(renderStatus({ ...base })).not.toContain("🧩");
+    // Whitespace is not an agent — a label that renders as nothing would leave
+    // "2 агента: · " in the message.
+    expect(renderStatus({ ...base, agents: ["  ", ""] })).not.toContain("🧩");
+  });
+
+  test("a label from a transcript is escaped", () => {
+    expect(renderStatus({ ...base, agents: ["<b>"] })).toContain("&lt;b&gt;");
+  });
+
+  test("it sits above the work block, where trimming cannot reach it", () => {
+    // `tailWithinBudget` drops from the front. A busy turn is exactly when the
+    // operator wants to know two agents are running, so the line must not be
+    // inside the thing that gets trimmed.
+    const stage = Array.from({ length: 400 }, (_, i) => `● line ${i} ${"x".repeat(200)}`).join("\n");
+    const out = renderStatus({ ...base, stage, agents: ["explore", "review"] });
+    expect(out.length).toBeLessThan(TELEGRAM_MAX_CHARS);
+    expect(out.indexOf("🧩")).toBeLessThan(out.indexOf("<blockquote"));
+  });
+});
+
+describe("summarizeActivity", () => {
+  test("the last tool call, without its bullet", () => {
+    expect(summarizeActivity("● Read: a.ts\n● Edit: b.ts")).toBe("Edit: b.ts");
+  });
+
+  test("a subagent's label is not part of the answer", () => {
+    // `markLines` writes the label after the bullet, so both markers have to go.
+    expect(summarizeActivity("● [explore] Read: a.ts")).toBe("Read: a.ts");
+    expect(summarizeActivity("[explore] Read: a.ts")).toBe("Read: a.ts");
+  });
+
+  test("a long agent name is still an agent name", () => {
+    // `labelFor` caps a label it derives from a description, but returns
+    // `agentType` at whatever length it is. A bounded pattern here read a long
+    // custom agent's line as prose and dropped it. Raised in review.
+    const long = "a-very-long-custom-subagent-type-name-that-exceeds-forty";
+    expect(long.length).toBeGreaterThan(40);
+    expect(summarizeActivity(`● [${long}] Read: a.ts`)).toBe("Read: a.ts");
+  });
+
+  test("prose is skipped in favour of the call above it", () => {
+    // A paragraph of reasoning is not a summary of itself.
+    expect(summarizeActivity("● Edit: b.ts\nI should check the tests next")).toBe("Edit: b.ts");
+  });
+
+  test("nothing that qualifies is null, not an empty line", () => {
+    expect(summarizeActivity("just thinking out loud")).toBeNull();
+    expect(summarizeActivity("")).toBeNull();
+    expect(summarizeActivity("●   \n·  ")).toBeNull();
+  });
+
+  test("the spinner prefix is not mistaken for content", () => {
+    expect(summarizeActivity("⏳ ● Read: a.ts")).toBe("Read: a.ts");
+  });
+
+  test("and the status carries it above the pane", () => {
+    // Composed the way `formatStatusText` composes it: the renderer is handed
+    // the summary rather than deriving one, so there is a single place that
+    // decides what "happening now" means.
+    const stage = "● Read: a.ts\n● Edit: b.ts";
+    const out = renderStatus({ ...base, stage, pane: "├── src", summary: summarizeActivity(stage) });
+    expect(out).toContain("▸ Edit: b.ts");
+    expect(out.indexOf("▸ Edit: b.ts")).toBeLessThan(out.indexOf("<pre>"));
+  });
+
+  test("no summary means no marker", () => {
+    expect(renderStatus({ ...base, stage: "thinking" })).not.toContain("▸");
   });
 });

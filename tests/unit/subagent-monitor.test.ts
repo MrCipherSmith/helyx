@@ -237,3 +237,63 @@ describe("a session that spawned subagents", () => {
     expect(await monitor.poll()).toContain("working alone");
   });
 });
+
+/**
+ * The count the status shows above the work block.
+ *
+ * The lines a fan-out produces are not the same question as whether a fan-out
+ * is running: an agent that has been spawned but has not written yet produces
+ * no lines at all, and that is exactly the moment the operator reads the status
+ * and sees nothing.
+ */
+describe("who is running right now", () => {
+  test("the labels of the agents being followed", async () => {
+    const { agents } = session();
+    const monitor = new TranscriptSession(PROJECT, { root, subagentsSince: 0 });
+    await monitor.attach();
+
+    spawnAgent(agents, "a1", { agentType: "Explore" });
+    spawnAgent(agents, "a2", { agentType: "code-reviewer" });
+    await monitor.poll();
+
+    expect(monitor.agentLabels.sort()).toEqual(["Explore", "code-reviewer"]);
+  });
+
+  test("an agent that has written nothing yet still counts", async () => {
+    // The reported symptom: "запускаю сабагентов" and then the status goes
+    // still. It goes still because there are no lines — not because there is
+    // no agent.
+    const { agents } = session();
+    const monitor = new TranscriptSession(PROJECT, { root, subagentsSince: 0 });
+    await monitor.attach();
+
+    spawnAgent(agents, "a1", { agentType: "Explore" });
+
+    expect(await monitor.poll()).toBeNull();
+    expect(monitor.agentLabels).toEqual(["Explore"]);
+  });
+
+  test("one that finished leaves the list", async () => {
+    const { agents } = session();
+    const monitor = new TranscriptSession(PROJECT, { root, subagentsSince: 0 });
+    await monitor.attach();
+
+    const agent = spawnAgent(agents, "a1", { agentType: "Explore" });
+    append(agent, toolCall("Read", { file_path: "one.ts" }));
+    await monitor.poll();
+    expect(monitor.agentLabels).toEqual(["Explore"]);
+
+    rmSync(agent);
+    await monitor.poll();
+
+    expect(monitor.agentLabels).toEqual([]);
+  });
+
+  test("a session with no fan-out reports none, not nothing", async () => {
+    const monitor = new TranscriptSession(PROJECT, { root, subagentsSince: 0 });
+    session();
+    await monitor.attach();
+
+    expect(monitor.agentLabels).toEqual([]);
+  });
+});

@@ -25,7 +25,7 @@ import {
   PHASE_LABEL,
 } from "../utils/status-format.ts";
 import { HoldCounter } from "../utils/hold-counter.ts";
-import { renderStatus, renderFinal, clampEscaped } from "../utils/status-render.ts";
+import { renderStatus, renderFinal, clampEscaped, summarizeActivity } from "../utils/status-render.ts";
 import { shouldReopen, shouldClose, shouldMove, CONTINUATION_IDLE_MS } from "../utils/status-continuation.ts";
 import { escapeHtml } from "../utils/html.ts";
 import { isRequeued, markRequeued } from "../utils/requeue.ts";
@@ -112,6 +112,10 @@ interface StatusExtras {
   fileCount?: number;
   /** What the operator asked — the second half of the status is about this. */
   question?: string | null;
+  /** Milliseconds since the monitor last reported anything. */
+  idleMs?: number;
+  /** Subagents running right now. */
+  agents?: readonly string[];
 }
 
 function formatStatusText(stage: string, elapsed: string, tokens: string, paneSnapshot?: string | null, spinnerIcon?: string, extras?: StatusExtras): string {
@@ -128,6 +132,12 @@ function formatStatusText(stage: string, elapsed: string, tokens: string, paneSn
     toolCount: extras?.toolCount,
     fileCount: extras?.fileCount,
     question: extras?.question,
+    idleMs: extras?.idleMs,
+    agents: extras?.agents,
+    // Derived here rather than passed in: the caller already hands over the
+    // stage this is read from, and two callers deriving it separately is how
+    // the header and the body come to disagree.
+    summary: summarizeActivity(stage),
   });
 }
 
@@ -1068,6 +1078,31 @@ export class StatusManager {
    * message was showing. Composing it a second way is how the moved copy would
    * come out subtly different from the one it replaced.
    */
+  /**
+   * The two things the operator reads before anything else: is it moving, and
+   * is anyone else working.
+   *
+   * `idleMs` is left undefined rather than defaulted to zero when the monitor
+   * has never reported: a status with no monitor behind it knows nothing about
+   * whether the session is alive, and rendering "⧗ 0s" would be a claim it
+   * cannot make.
+   *
+   * The monitor has to be alive for the age to mean anything, and that is a
+   * separate check from the timestamp existing. `lastMonitorActivity` is never
+   * cleared, so a turn that starts with no monitor available — the timestamp
+   * from the previous turn still in the map — would open showing "⧗ 8m" about
+   * a session nothing is watching. Raised in review.
+   */
+  private glanceExtras(key: string): Pick<StatusExtras, "idleMs" | "agents"> {
+    const monitor = this.activeMonitors.get(key);
+    const lastActivity = monitor ? this.lastMonitorActivity.get(key) : undefined;
+    const agents = monitor?.agents?.() ?? [];
+    return {
+      idleMs: lastActivity === undefined ? undefined : Date.now() - lastActivity,
+      agents: agents.length > 0 ? agents : undefined,
+    };
+  }
+
   private composeStatusText(state: StatusState): string {
     const elapsed = formatElapsed(Date.now() - state.startedAt);
     const key = state.threadId ? `${state.chatId}:${state.threadId}` : state.chatId;
@@ -1079,6 +1114,7 @@ export class StatusManager {
       toolCount: state.turnToolCount,
       fileCount: state.turnFileCount,
       question: this.currentQuestion.get(key),
+      ...this.glanceExtras(key),
     };
     const spinnerIcon = spinnerIconAt(state.spinnerFrame, state.lastUpdateAt, Date.now());
     return formatStatusText(state.stage, elapsed, tokenStr, state.paneSnapshot, spinnerIcon, extras);
@@ -1099,6 +1135,7 @@ export class StatusManager {
       toolCount: state.turnToolCount,
       fileCount: state.turnFileCount,
       question: this.currentQuestion.get(key),
+      ...this.glanceExtras(key),
     };
 
     // SU-1: compute signature from CONTENT ONLY, excluding the spinner icon.
