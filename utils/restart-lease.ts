@@ -35,7 +35,7 @@
  * it did so.
  */
 
-import { openSync, closeSync, writeSync, readFileSync, unlinkSync } from "node:fs";
+import { writeFileSync, linkSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -131,13 +131,28 @@ export function takeRestartLease(
   settle: (ms: number) => void = sleepSync,
 ): TakeResult {
   const token = `${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
+  // Staged, then linked into place.
+  //
+  // `open(O_CREAT|O_EXCL)` followed by `write` is two syscalls, and the file
+  // exists and is *empty* between them. A second taker reading in that gap gets
+  // no JSON, reads it as unreadable-and-therefore-stale, and unlinks the first
+  // taker's file — which the first taker then writes to anyway, through an fd
+  // POSIX keeps valid after the unlink. Both would return holding it. Raised in
+  // review, and closed at the root rather than papered over: `link` is atomic
+  // and fails when the target exists, so the lease is never observable in a
+  // half-written state.
   const write = (): void => {
-    // wx: create-or-fail. The exclusivity is the whole point — see the header.
-    const fd = openSync(path, "wx");
+    const staging = `${path}.${token}`;
+    writeFileSync(staging, JSON.stringify({ owner, takenAt: now, token }));
     try {
-      writeSync(fd, JSON.stringify({ owner, takenAt: now, token }));
+      linkSync(staging, path);
     } finally {
-      closeSync(fd);
+      try {
+        unlinkSync(staging);
+      } catch {
+        // The link either happened or did not; the staging copy is litter
+        // either way.
+      }
     }
   };
 

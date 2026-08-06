@@ -526,8 +526,12 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
         // The finisher runs whatever the build and the bounce did — it releases
         // the lease and closes the row, and a restart that failed must not hold
         // the lease for the whole expiry.
+        // `&&` between the steps and the finisher *outside* the subshell, taking
+        // its exit status: chained with `;` a failed build still ran the bounce
+        // and still closed the row as done, so a restart that never rebuilt
+        // anything reported success. Raised in review.
         const shell = await runShell(
-          `nohup bash -c "(cd \\"${BOT_DIR}\\"; docker compose up -d --build bot; sleep 5; \\"${bunBin}\\" \\"${CLI}\\" bounce; \\"${bunBin}\\" \\"${finish}\\" ${row.id}) >> /tmp/helyx-full-restart.log 2>&1" &`
+          `nohup bash -c "(cd \\"${BOT_DIR}\\" && docker compose up -d --build bot && sleep 5 && \\"${bunBin}\\" \\"${CLI}\\" bounce) >> /tmp/helyx-full-restart.log 2>&1; \\"${bunBin}\\" \\"${finish}\\" ${row.id} \\$? >> /tmp/helyx-full-restart.log 2>&1" &`
         );
         result = spawned(shell, { ok: true, deferred: true, output: "full restart running: rebuild bot → bounce sessions (log: /tmp/helyx-full-restart.log)" });
         break;

@@ -51,6 +51,13 @@ export async function finishRestart(rowId: number, status: "done" | "error" = "d
 }
 
 if (import.meta.main) {
-  await finishRestart(Number(process.argv[2]), process.argv[3] === "error" ? "error" : "done");
+  // The second argument is a shell exit status, because the caller that needs
+  // it is a shell pipeline: `0` is a restart that worked and anything else is
+  // one that did not. Absent means done — the callers that know they succeeded
+  // should not have to say so twice. `error` is accepted as a word for a human
+  // running this by hand.
+  const code = process.argv[3];
+  const failed = code !== undefined && code !== "0" && code !== "";
+  await finishRestart(Number(process.argv[2]), failed ? "error" : "done");
   process.exit(0);
 }

@@ -13,7 +13,7 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -67,6 +67,22 @@ describe("taking the lease", () => {
       takeRestartLease(`taker-${i}`, path, NOW));
 
     expect(results.filter((r) => r.ok)).toHaveLength(1);
+  });
+
+  test("the lease is never observable half-written, and leaves no litter", () => {
+    // `open(O_CREAT|O_EXCL)` then `write` is two syscalls with an *empty file*
+    // between them. A second taker reading in that gap sees no JSON, reads it as
+    // unreadable-and-therefore-stale, and unlinks a lease somebody is in the
+    // middle of taking. So the content is written to a staging file and `link`ed
+    // into place, which is atomic — and the staging copy must not survive,
+    // whether the link won or lost.
+    takeRestartLease("bounce", path, NOW);
+    takeRestartLease("full_restart", path, NOW + 1); // refused; its staging must go too
+
+    expect(readdirSync(dir)).toEqual(["restart.lease"]);
+    // Whatever a reader sees at the path parses: there is no moment at which the
+    // file exists and is empty.
+    expect(readRestartLease(path)).not.toBeNull();
   });
 
   test("a refusal says what to wait for, not only that the answer is no", () => {

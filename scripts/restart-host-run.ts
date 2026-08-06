@@ -32,6 +32,11 @@ async function runShell(cmd: string): Promise<{ ok: boolean; output: string }> {
 }
 
 let result: Awaited<ReturnType<typeof restartHostHalf>>;
+// Assumed failed until the work says otherwise, so the row records what
+// happened rather than what was hoped: a bounce that hit its timeout, or a step
+// that threw, used to close the row as `done` like any success. The only
+// evidence left was a log file somebody had to think to open. Raised in review.
+let ok = false;
 try {
   result = await restartHostHalf(runShell, {
     botDir: BOT_DIR,
@@ -39,11 +44,12 @@ try {
     cli: CLI,
     restartAdminDaemon: process.env.HELYX_RESTART_ADMIN === "1",
   });
+  ok = result.ok;
 } finally {
   // In a `finally`, and before the exit below: a restart that threw halfway
   // must not hold the lease for the whole expiry, because the operator's next
   // move after a failed restart is to try again.
-  await finishRestart(Number(process.env.HELYX_RESTART_ROW));
+  await finishRestart(Number(process.env.HELYX_RESTART_ROW), ok ? "done" : "error");
 }
 
 console.log(`[host-restart] ${result.ok ? "ok" : "FAILED"}\n${result.summary}`);
