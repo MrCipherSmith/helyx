@@ -5,6 +5,18 @@ const GROQ_API_KEY = CONFIG.GROQ_API_KEY;
 const WHISPER_URL = CONFIG.WHISPER_URL;
 const TIMEOUT_MS = 60000;
 
+/**
+ * initial_prompt sent to Groq's whisper. Not an instruction — whisper uses it to
+ * bias token choice, so it should be the vocabulary the operator actually says.
+ * English model/project names are exactly what whisper-large-v3 mangles in
+ * Russian speech ("Gemma 4E4B" -> "гема 4 и 4 by"); listing them here was
+ * measured to fix those and tighten the Russian prose around them.
+ */
+const GROQ_INITIAL_PROMPT =
+  "Helix, Keryx, Carlson, GoodAI, deprecated, Gemma, Qwen, Claude, self-RAG, " +
+  "docker, compose, контейнер, сервер, память, лимит, сессия, модель, " +
+  "распознавание, замена, достаточно, хватает";
+
 export interface TranscribeContext {
   sessionId?: number | null;
   chatId?: string | null;
@@ -26,6 +38,7 @@ export async function transcribeGroq(
     fileName,
   );
   form.append("model", "whisper-large-v3");
+  form.append("prompt", GROQ_INITIAL_PROMPT);
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);

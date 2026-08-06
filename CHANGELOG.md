@@ -2,6 +2,123 @@
 
 ## Unreleased
 
+## v1.55.0
+
+### fix: one restart at a time, and a row that stops lying
+
+`bounce`, `host_restart` and `full_restart` spawned their work detached and
+reported success immediately. The row went `done` in about a second while the
+work ran for minutes, and the only guard was a check for a row of *the same
+name* in `pending` or `processing`. So the window was about a second — and two
+differently-named restarts were never excluded from each other at all.
+
+Pressing "🔄 Bounce", watching the panel stop showing it as pending, concluding
+it had finished and pressing "♻️ Полный рестарт" ran two `tmux kill-session`
+sequences over one session name, each tearing down the windows the other had
+just created. Both logs reported success. `/up` through `host-ingress.ts` was a
+third door with no check whatsoever, armed exactly when the bot is dead — which
+does not stop the daemon, and does not stop it being minutes into a restart.
+
+The guard is a lease, and it is a file rather than a row because of where it has
+to hold: `/up` is used when the stack is down, and when the stack is down
+Postgres is down with it. A guard that cannot be consulted at the moment it
+matters is not a guard. Both spawners run on the host.
+
+Staleness is a timestamp, not a heartbeat — the work is detached and routinely
+kills the process that would have to send one. A lease older than the expiry may
+be broken by the next taker, which logs that it did: a lease nobody can break is
+a stack nobody can restart.
+
+The row stops lying too. The three commands report the work as *running* and
+stay `processing` until the detached work closes them, which also closes the
+one-second window in the same-name check. A row left open ages out; the
+duplicate check now ignores rows older than the expiry.
+
+Two review passes then found four defects in that fix, all closed here. The take
+itself was not atomic — `open(O_CREAT|O_EXCL)` then `write` leaves the file
+existing and empty between two syscalls, and a reader in that gap unlinks a
+lease somebody is taking. It is staged and `link`ed into place now. The
+stale-takeover path had its own race, two takers both breaking the same dead
+lease. The lease leaked when a spawn failed and when `/up`'s first reply threw.
+And a failed restart closed its row as `done`, because neither caller passed the
+status `finishRestart` had always accepted.
+
+### fix: four findings from a review of the day's work
+
+`docker restart` was the one step in the admin daemon without a timeout, a line
+above a `docker compose up -d` that had one. The command queue is
+single-threaded, so a hung dockerd held every later command behind it — in
+exactly the situation those buttons exist to recover from.
+
+Review artifacts grew without bound on the scheduled path. Pruning was the
+caller's job and only the manual CLI did it; the supervisor's review runs
+unattended every fifteen minutes and never swept. It happens in
+`persistReviewRun` now, the only place that writes.
+
+`/now` took a transcript of any age. Every other caller of `resolveTranscript`
+passes a staleness bound. A topic whose session is stopped or mid-restart still
+has yesterday's file on disk, and `/now` read it and answered about work that
+ended days ago.
+
+`countedStatLines` was never cleared. It stops one edit being counted once per
+poll within a turn; kept across turns it dropped a byte-identical `Added 1
+lines, removed 1 lines` — the ordinary shape of a one-line edit — so the
+completion notice under-reported a turn that really had edited a file.
+
+### fix: a spoken recap that is not cut off mid-word
+
+The recap ended with `summary.slice(0, 700)`: a count of characters, cut
+wherever the count landed. What arrived was a sentence that stopped in the
+middle of a word, which reads as a session that died rather than one that had
+more to say.
+
+The ceiling is now what a message can actually carry, measured against the
+rendered message rather than the raw text — the quote tags, the speaker glyph
+and whatever escaping adds all come out of the same 4096, and a cap counted
+before escaping is a cap that does not hold. In practice 4056 characters where
+it was 700. A cut, when unavoidable, lands on a sentence end.
+
+The audio is what gets divided now, not the text. The recap was cut to fit a
+single voice track, which is why the old sender interleaved text and voice; it
+goes out whole and collapsed, so only the audio has a duration to respect. A
+three-thousand-character recap arrives as one block of text and three tracks.
+
+### feat: a status that says whether anything is still moving
+
+The status answered "how long" and "what did it do". Neither is the question the
+operator has, which is *is it still moving* — and a turn thinking for four
+minutes rendered identically to one that died three minutes ago.
+
+Three lines, all derived from values already in hand: the age of the last event
+in the header, rounded so the edit-suppressing signature is not defeated by a
+number that changes every tick, and absent when no monitor can vouch for it; a
+subagents line naming who is running, counting an agent that has been spawned
+but has not written yet — the moment the status used to go still; and a summary
+line, the last tool call stripped of its bullet and label. Both glance lines sit
+above the activity quote, which is trimmed from the front, so a busy turn cannot
+drop them.
+
+### fix: a test suite that only passed where a `.env` was
+
+`bun test tests/unit/` was green on a developer's machine and red in CI, and had
+been red in every one of the last twelve workflow runs — a day of merges past a
+gate nobody could read.
+
+`utils/tts.ts` captures its provider credentials in module constants at import,
+so whether a provider is part of the voice chain is decided by whatever `.env`
+sits beside the checkout. Locally the Yandex step exists and the tests describe a
+chain that starts with it; on a clean checkout that step is skipped in silence
+and they describe a chain that did not run. The voice chain's credentials are
+pinned in `tests/preload.ts` now — fake where the provider should be reachable
+and empty where it should not — so a machine with an `OPENAI_API_KEY` gets the
+same run as one without.
+
+### fix: a restart that says it worked only when it did
+
+`full_restart` and `bounce` collided with the tmux server: the sequence ran under
+a `systemd-run` scope that the bounce itself tore down, so the restart killed the
+process carrying it out and reported success on the way past.
+
 ### fix: a dashboard that was enabled and never built
 
 Reported with a screenshot: the Mini App open, `Not Found` in it.

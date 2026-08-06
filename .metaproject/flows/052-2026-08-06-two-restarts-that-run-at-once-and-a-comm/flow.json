@@ -3,24 +3,61 @@
   "id": "052",
   "slug": "two-restarts-that-run-at-once-and-a-comm",
   "title": "Two restarts that run at once, and a command that says done before it starts",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-06T15:32:36.121Z",
-  "updatedAt": "2026-08-06T15:34:06.056Z",
+  "updatedAt": "2026-08-06T18:14:25.483Z",
   "source": {
     "type": "description",
     "ref": null
   },
   "acChecksum": "sha256:b5625e3397e489c723884a30a66799b0a1a51bfd235aa694700531174d3d9551",
-  "acConfirmed": {},
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-06T18:14:08.983Z",
+      "note": "utils/restart-lease.ts staged write + linkSync; test 'of many takers at the same instant, exactly one wins'"
+    },
+    "AC2": {
+      "at": "2026-08-06T18:14:09.071Z",
+      "note": "heldMessage(); test 'a refusal says what to wait for'"
+    },
+    "AC3": {
+      "at": "2026-08-06T18:14:09.159Z",
+      "note": "LEASE_EXPIRY_MS + broke reporting; test 'a stale one is broken, and the break is reported'"
+    },
+    "AC4": {
+      "at": "2026-08-06T18:14:17.800Z",
+      "note": "test 'a live one is not broken, however impatient the next press is'"
+    },
+    "AC5": {
+      "at": "2026-08-06T18:14:17.885Z",
+      "note": "releaseRestartLease(); tests 'the next take succeeds immediately' and 'releasing what was never held is not an error'"
+    },
+    "AC6": {
+      "at": "2026-08-06T18:14:17.972Z",
+      "note": "claimRestart() in scripts/admin-daemon.ts guards all three cases; lease keyed on the lease file, not the command name"
+    },
+    "AC7": {
+      "at": "2026-08-06T18:14:18.059Z",
+      "note": "deferred flag keeps the row processing; restart-finish.ts closes it; system.ts duplicate check bounded by LEASE_EXPIRY_MS"
+    },
+    "AC8": {
+      "at": "2026-08-06T18:14:18.145Z",
+      "note": "scripts/host-ingress.ts execute() takes the same file lease; guard needs no database"
+    },
+    "AC9": {
+      "at": "2026-08-06T18:14:18.231Z",
+      "note": "1881 pass 0 fail locally; tsc clean; CI test job green on aa748d2; 14 tests in tests/unit/restart-lease.test.ts against a real temp dir"
+    }
+  },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/93"
   },
   "tasks": [
     {
       "id": "T1",
       "title": "Collect remaining context",
       "kind": "context",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -28,13 +65,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T2",
       "title": "Implement per plan",
       "kind": "implement",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -42,13 +80,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T3",
       "title": "Add/adjust tests and make them pass",
       "kind": "test",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -56,13 +95,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T4",
       "title": "Self-review and prepare draft PR",
       "kind": "review",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -70,7 +110,8 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     }
   ],
   "history": [
@@ -86,6 +127,90 @@
     {
       "at": "2026-08-06T15:34:06.056Z",
       "event": "started"
+    },
+    {
+      "at": "2026-08-06T18:14:08.644Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-06T18:14:08.728Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-06T18:14:08.813Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-06T18:14:08.898Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-06T18:14:08.983Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: utils/restart-lease.ts staged write + linkSync; test 'of many takers at the same instant, exactly one wins'"
+    },
+    {
+      "at": "2026-08-06T18:14:09.071Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: heldMessage(); test 'a refusal says what to wait for'"
+    },
+    {
+      "at": "2026-08-06T18:14:09.159Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: LEASE_EXPIRY_MS + broke reporting; test 'a stale one is broken, and the break is reported'"
+    },
+    {
+      "at": "2026-08-06T18:14:17.800Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: test 'a live one is not broken, however impatient the next press is'"
+    },
+    {
+      "at": "2026-08-06T18:14:17.885Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: releaseRestartLease(); tests 'the next take succeeds immediately' and 'releasing what was never held is not an error'"
+    },
+    {
+      "at": "2026-08-06T18:14:17.972Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: claimRestart() in scripts/admin-daemon.ts guards all three cases; lease keyed on the lease file, not the command name"
+    },
+    {
+      "at": "2026-08-06T18:14:18.059Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: deferred flag keeps the row processing; restart-finish.ts closes it; system.ts duplicate check bounded by LEASE_EXPIRY_MS"
+    },
+    {
+      "at": "2026-08-06T18:14:18.145Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: scripts/host-ingress.ts execute() takes the same file lease; guard needs no database"
+    },
+    {
+      "at": "2026-08-06T18:14:18.231Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: 1881 pass 0 fail locally; tsc clean; CI test job green on aa748d2; 14 tests in tests/unit/restart-lease.test.ts against a real temp dir"
+    },
+    {
+      "at": "2026-08-06T18:14:25.388Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/93 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-08-06T18:14:25.475Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-06T18:14:25.483Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
-  ]
+  ],
+  "merged": {
+    "commit": "28d7166",
+    "ref": "origin/main",
+    "at": "2026-08-06T18:14:25.483Z"
+  }
 }

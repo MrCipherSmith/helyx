@@ -3,3 +3,19 @@
 - 2026-08-06T15:32:36.121Z - flow created
 - 2026-08-06T15:34:05.972Z - frozen: 9 criteria; checksum recorded
 - 2026-08-06T15:34:06.056Z - started
+- 2026-08-06T18:14:08.644Z - task-done: T1: Collect remaining context
+- 2026-08-06T18:14:08.728Z - task-done: T2: Implement per plan
+- 2026-08-06T18:14:08.813Z - task-done: T3: Add/adjust tests and make them pass
+- 2026-08-06T18:14:08.898Z - task-done: T4: Self-review and prepare draft PR
+- 2026-08-06T18:14:08.983Z - ac-confirmed: AC1: utils/restart-lease.ts staged write + linkSync; test 'of many takers at the same instant, exactly one wins'
+- 2026-08-06T18:14:09.071Z - ac-confirmed: AC2: heldMessage(); test 'a refusal says what to wait for'
+- 2026-08-06T18:14:09.159Z - ac-confirmed: AC3: LEASE_EXPIRY_MS + broke reporting; test 'a stale one is broken, and the break is reported'
+- 2026-08-06T18:14:17.800Z - ac-confirmed: AC4: test 'a live one is not broken, however impatient the next press is'
+- 2026-08-06T18:14:17.885Z - ac-confirmed: AC5: releaseRestartLease(); tests 'the next take succeeds immediately' and 'releasing what was never held is not an error'
+- 2026-08-06T18:14:17.972Z - ac-confirmed: AC6: claimRestart() in scripts/admin-daemon.ts guards all three cases; lease keyed on the lease file, not the command name
+- 2026-08-06T18:14:18.059Z - ac-confirmed: AC7: deferred flag keeps the row processing; restart-finish.ts closes it; system.ts duplicate check bounded by LEASE_EXPIRY_MS
+- 2026-08-06T18:14:18.145Z - ac-confirmed: AC8: scripts/host-ingress.ts execute() takes the same file lease; guard needs no database
+- 2026-08-06T18:14:18.231Z - ac-confirmed: AC9: 1881 pass 0 fail locally; tsc clean; CI test job green on aa748d2; 14 tests in tests/unit/restart-lease.test.ts against a real temp dir
+- 2026-08-06T18:14:25.388Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/93 (warning: PR is not a draft)
+- 2026-08-06T18:14:25.475Z - completing
+- 2026-08-06T18:14:25.483Z - done: all gates passed
