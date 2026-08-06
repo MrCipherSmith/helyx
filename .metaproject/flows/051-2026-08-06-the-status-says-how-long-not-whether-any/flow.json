@@ -3,24 +3,57 @@
   "id": "051",
   "slug": "the-status-says-how-long-not-whether-any",
   "title": "The status says how long, not whether anything is still moving",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-06T11:42:37.468Z",
-  "updatedAt": "2026-08-06T11:43:32.025Z",
+  "updatedAt": "2026-08-06T13:10:45.673Z",
   "source": {
     "type": "description",
     "ref": null
   },
   "acChecksum": "sha256:4f1ace32b15c8fed226648bf5f07f37c11cca4e4f8b4c9aaf5c1fc72306bad5c",
-  "acConfirmed": {},
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-06T13:10:29.819Z",
+      "note": "channel/status.ts glanceExtras + status-render.ts header; tests: 'it reaches the header', 'a status with no monitor claims nothing', status-idle-age.test.ts"
+    },
+    "AC2": {
+      "at": "2026-08-06T13:10:29.904Z",
+      "note": "formatIdle rounds; test 'rounded, so the edit-suppressing signature is not defeated'"
+    },
+    "AC3": {
+      "at": "2026-08-06T13:10:29.994Z",
+      "note": "renderStatus agents line; tests 'says how many and what they are', 'none means no line at all'"
+    },
+    "AC4": {
+      "at": "2026-08-06T13:10:30.078Z",
+      "note": "test 'it sits above the work block, where trimming cannot reach it'"
+    },
+    "AC5": {
+      "at": "2026-08-06T13:10:36.130Z",
+      "note": "summarizeActivity in status-render.ts; describe 'summarizeActivity' incl. long-label case from review"
+    },
+    "AC6": {
+      "at": "2026-08-06T13:10:36.221Z",
+      "note": "TranscriptSession.agentLabels + handle.agents(); tests/unit/subagent-monitor.test.ts describe 'who is running right now'"
+    },
+    "AC7": {
+      "at": "2026-08-06T13:10:36.309Z",
+      "note": "idle age clamped inside HEADER_BUDGET_CHARS; test 'it shares the header budget rather than adding to it'"
+    },
+    "AC8": {
+      "at": "2026-08-06T13:10:36.394Z",
+      "note": "bun test tests/unit/: 1855 pass 0 fail; tsc --noEmit clean; CI build+test green on PR #91"
+    }
+  },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/91"
   },
   "tasks": [
     {
       "id": "T1",
       "title": "Collect remaining context",
       "kind": "context",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -28,13 +61,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T2",
       "title": "Implement per plan",
       "kind": "implement",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -42,13 +76,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T3",
       "title": "Add/adjust tests and make them pass",
       "kind": "test",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -56,13 +91,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T4",
       "title": "Self-review and prepare draft PR",
       "kind": "review",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -70,7 +106,8 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     }
   ],
   "history": [
@@ -86,6 +123,85 @@
     {
       "at": "2026-08-06T11:43:32.025Z",
       "event": "started"
+    },
+    {
+      "at": "2026-08-06T13:10:23.045Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-06T13:10:23.134Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-06T13:10:23.226Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-06T13:10:23.314Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-06T13:10:29.820Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: channel/status.ts glanceExtras + status-render.ts header; tests: 'it reaches the header', 'a status with no monitor claims nothing', status-idle-age.test.ts"
+    },
+    {
+      "at": "2026-08-06T13:10:29.904Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: formatIdle rounds; test 'rounded, so the edit-suppressing signature is not defeated'"
+    },
+    {
+      "at": "2026-08-06T13:10:29.994Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: renderStatus agents line; tests 'says how many and what they are', 'none means no line at all'"
+    },
+    {
+      "at": "2026-08-06T13:10:30.078Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: test 'it sits above the work block, where trimming cannot reach it'"
+    },
+    {
+      "at": "2026-08-06T13:10:36.131Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: summarizeActivity in status-render.ts; describe 'summarizeActivity' incl. long-label case from review"
+    },
+    {
+      "at": "2026-08-06T13:10:36.221Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: TranscriptSession.agentLabels + handle.agents(); tests/unit/subagent-monitor.test.ts describe 'who is running right now'"
+    },
+    {
+      "at": "2026-08-06T13:10:36.309Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: idle age clamped inside HEADER_BUDGET_CHARS; test 'it shares the header budget rather than adding to it'"
+    },
+    {
+      "at": "2026-08-06T13:10:36.394Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: bun test tests/unit/: 1855 pass 0 fail; tsc --noEmit clean; CI build+test green on PR #91"
+    },
+    {
+      "at": "2026-08-06T13:10:45.578Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/91 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-08-06T13:10:45.666Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-06T13:10:45.673Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
-  ]
+  ],
+  "merged": {
+    "commit": "6e5a68c",
+    "ref": "origin/main",
+    "at": "2026-08-06T13:10:45.673Z"
+  }
 }
