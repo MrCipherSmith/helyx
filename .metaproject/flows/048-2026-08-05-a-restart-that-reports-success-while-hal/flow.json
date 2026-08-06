@@ -3,9 +3,9 @@
   "id": "048",
   "slug": "a-restart-that-reports-success-while-hal",
   "title": "A restart that reports success while half the system is dead, and no way to see it from Telegram",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-05T23:08:00.491Z",
-  "updatedAt": "2026-08-06T09:46:21.981Z",
+  "updatedAt": "2026-08-06T09:54:20.765Z",
   "source": {
     "type": "description",
     "ref": null
@@ -211,6 +211,21 @@
       "at": "2026-08-06T09:46:21.981Z",
       "event": "completion-failed",
       "detail": "pull-request: PR checks not green"
+    },
+    {
+      "at": "2026-08-06T09:54:20.758Z",
+      "event": "completing",
+      "detail": "merged commit: 968fbf5c76f8b41f50efcd5c24089d47cbcc5718"
+    },
+    {
+      "at": "2026-08-06T09:54:20.765Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
-  ]
+  ],
+  "merged": {
+    "commit": "968fbf5c76f8b41f50efcd5c24089d47cbcc5718",
+    "ref": "origin/main",
+    "at": "2026-08-06T09:54:20.765Z"
+  }
 }
