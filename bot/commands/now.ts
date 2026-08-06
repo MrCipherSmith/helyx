@@ -22,7 +22,6 @@
 import type { Context } from "grammy";
 import { sql } from "../../memory/db.ts";
 import { routeMessage } from "../../sessions/router.ts";
-import { sessionManager } from "../../sessions/manager.ts";
 import { resolveTranscript, TranscriptTail, claudeConfigRoot } from "../../utils/transcript-locate.ts";
 import { findSubagents, markLines } from "../../utils/subagent-transcripts.ts";
 import { renderEntry } from "../../utils/transcript-events.ts";

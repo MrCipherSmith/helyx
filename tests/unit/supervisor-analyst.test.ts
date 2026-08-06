@@ -11,7 +11,7 @@
  * runs in is worse than one that says nothing.
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect, afterEach } from "bun:test";
 import {
   formatSnapshotForGemma,
   callGemmaForHealth,

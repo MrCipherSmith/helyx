@@ -3,3 +3,17 @@
 - 2026-08-05T23:08:00.491Z - flow created
 - 2026-08-05T23:09:24.029Z - frozen: 9 criteria; checksum recorded
 - 2026-08-05T23:09:24.116Z - started
+- 2026-08-06T07:51:20.493Z - task-done: T1: Collect remaining context
+- 2026-08-06T07:51:20.579Z - task-done: T2: Implement per plan
+- 2026-08-06T07:51:20.666Z - task-done: T3: Add/adjust tests and make them pass
+- 2026-08-06T07:51:20.748Z - task-done: T4: Self-review and prepare draft PR
+- 2026-08-06T07:51:25.350Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/89
+- 2026-08-06T07:51:28.270Z - ac-confirmed: AC1
+- 2026-08-06T07:51:28.355Z - ac-confirmed: AC2
+- 2026-08-06T07:51:28.442Z - ac-confirmed: AC3
+- 2026-08-06T07:51:28.529Z - ac-confirmed: AC4
+- 2026-08-06T07:51:28.615Z - ac-confirmed: AC5
+- 2026-08-06T07:51:28.699Z - ac-confirmed: AC6
+- 2026-08-06T07:51:28.786Z - ac-confirmed: AC7
+- 2026-08-06T07:51:28.873Z - ac-confirmed: AC8
+- 2026-08-06T07:51:28.959Z - ac-confirmed: AC9
