@@ -3,9 +3,9 @@
   "id": "048",
   "slug": "a-restart-that-reports-success-while-hal",
   "title": "A restart that reports success while half the system is dead, and no way to see it from Telegram",
-  "status": "implemented",
+  "status": "in-progress",
   "createdAt": "2026-08-05T23:08:00.491Z",
-  "updatedAt": "2026-08-06T07:51:28.959Z",
+  "updatedAt": "2026-08-06T07:56:32.363Z",
   "source": {
     "type": "description",
     "ref": null
@@ -188,6 +188,15 @@
       "at": "2026-08-06T07:51:28.959Z",
       "event": "ac-confirmed",
       "detail": "AC9"
+    },
+    {
+      "at": "2026-08-06T07:56:30.544Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-06T07:56:32.363Z",
+      "event": "completion-failed",
+      "detail": "pull-request: PR checks not green"
     }
   ]
 }

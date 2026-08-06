@@ -2,15 +2,20 @@
  * The chain the operator actually hears.
  *
  * Every reply over 300 characters is spoken, so this runs on almost every
- * message — and it has been failing its first provider all day: `tts: Yandex
- * error` with a 401 on every synthesis, the chain falling through to Piper, and
+ * message — and for a long time it failed its first provider on every one of
+ * them: `tts: Yandex error` with a 401, the chain falling through to Piper, and
  * the operator hearing the second provider without anything saying so. The
- * fallback has been load-bearing in production and untested here.
+ * fallback was load-bearing in production and untested here.
+ *
+ * Piper is first now, and the fallback these tests exist for runs the other
+ * way: Yandex is what answers when the local model does not.
  *
  * `synthesize` reaches the world through exactly two doors — `fetch` for the
  * HTTP providers and the normalizer, `Bun.spawn` for Piper — so both are
  * replaced and the whole decision surface is driven without a network or a
- * voice model.
+ * voice model. Which providers are reachable at all is decided by credentials
+ * read at import; `tests/preload.ts` pins those, so this file describes the
+ * same chain on every machine.
  */
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
@@ -33,6 +38,14 @@ const ENGLISH = "Restarted the bot container and confirmed the queue is draining
 interface Doors {
   /** Every URL fetched, in order. */
   urls: string[];
+  /**
+   * Which voices were tried, in the order they were tried.
+   *
+   * `urls` cannot answer that question: Piper is a subprocess, not a request,
+   * so it leaves no entry there — and "Piper before Yandex" is precisely what
+   * this file has to be able to assert.
+   */
+  tried: string[];
   /** What each provider was asked to say. */
   spoken: { yandex?: string; groq?: string; kokoro?: string; piper?: string };
   /** Whether Piper was asked to run. */
@@ -52,7 +65,7 @@ interface Script {
 }
 
 function install(script: Script): void {
-  doors = { urls: [], spoken: {}, piperRuns: 0 };
+  doors = { urls: [], tried: [], spoken: {}, piperRuns: 0 };
 
   globalThis.fetch = (async (url: unknown, init?: { body?: string }) => {
     const target = String(url);
@@ -71,18 +84,21 @@ function install(script: Script): void {
     }
 
     if (target.includes("tts.api.cloud.yandex.net")) {
+      doors.tried.push("yandex");
       doors.spoken.yandex = String(new URLSearchParams(init?.body ?? "").get("text") ?? init?.body ?? "");
       if (script.yandex !== "ok") return new Response("unauthorized", { status: 401 });
       return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
     }
 
     if (target.includes("groq")) {
+      doors.tried.push("groq");
       doors.spoken.groq = String(asJson().input ?? "");
       if (script.groq !== "ok") return new Response("no", { status: 503 });
       return new Response(new Uint8Array([4, 5, 6]), { status: 200 });
     }
 
     // Anything else is Kokoro or another local voice endpoint.
+    doors.tried.push("kokoro");
     doors.spoken.kokoro = String(asJson().input ?? asJson().text ?? "");
     if (script.kokoro !== "ok") return new Response("no", { status: 503 });
     return Response.json({ audio: [0.1, 0.2, 0.3] });
@@ -92,6 +108,7 @@ function install(script: Script): void {
   // a stub that only reports an exit code would prove the binary was called
   // rather than that sound came back.
   (Bun as { spawn: unknown }).spawn = ((argv: string[], options?: { stdin?: Uint8Array }) => {
+    doors.tried.push("piper");
     doors.piperRuns++;
     doors.spoken.piper = options?.stdin ? new TextDecoder().decode(options.stdin) : "";
     const out = argv[argv.indexOf("--output_file") + 1];
@@ -123,37 +140,35 @@ describe("nothing to say", () => {
 });
 
 describe("the chain", () => {
-  test("Yandex answers, and that is what is returned", async () => {
+  test("Piper answers, and nothing is spent on a provider", async () => {
     settings.TTS_PROVIDER = "auto";
-    install({ yandex: "ok" });
+    // Yandex would answer if it were asked. It must not be asked.
+    install({ piper: "ok", yandex: "ok" });
+
+    const result = await synthesize(RUSSIAN);
+
+    expect(result?.fmt).toBe("wav");
+    // The bytes the stub wrote to the output path, read back through the real
+    // code. Raised in review: without this the test proves a binary was called
+    // and an exit code was zero, not that audio came back.
+    expect([...(result?.buf ?? [])]).toEqual([7, 8, 9]);
+    expect(doors.spoken.yandex).toBeUndefined();
+  });
+
+  test("Piper goes quiet and Yandex answers — the fallback, in the direction it now runs", async () => {
+    settings.TTS_PROVIDER = "auto";
+    install({ piper: "fail", yandex: "ok" });
 
     const result = await synthesize(RUSSIAN);
 
     expect(result?.fmt).toBe("mp3");
     expect([...(result?.buf ?? [])]).toEqual([1, 2, 3]); // Yandex's bytes, not another provider's
-    expect(doors.piperRuns).toBe(0);
-  });
-
-  test("Yandex fails and Piper answers — what production has done all day", async () => {
-    // `tts: Yandex error` 401 on every synthesis in logs/bot.log. The operator
-    // hears Piper, and until now nothing proved that path worked.
-    settings.TTS_PROVIDER = "auto";
-    install({ yandex: "fail", piper: "ok" });
-
-    const result = await synthesize(RUSSIAN);
-
-    expect(result?.fmt).toBe("wav");
-    expect(doors.piperRuns).toBe(1);
-    expect(doors.spoken.yandex).toBeDefined(); // it was tried first
-    // The bytes the stub wrote to the output path, read back through the real
-    // code. Raised in review: without this the test proves a binary was called
-    // and an exit code was zero, not that audio came back.
-    expect([...(result?.buf ?? [])]).toEqual([7, 8, 9]);
+    expect(doors.piperRuns).toBe(1); // it was tried first
   });
 
   test("both fail and the chain still reaches the third provider", async () => {
     settings.TTS_PROVIDER = "auto";
-    install({ yandex: "fail", piper: "fail", groq: "ok" });
+    install({ piper: "fail", yandex: "fail", groq: "ok" });
 
     const result = await synthesize(RUSSIAN);
 
@@ -164,7 +179,7 @@ describe("the chain", () => {
 
   test("everything fails and the answer is silence, not a crash", async () => {
     settings.TTS_PROVIDER = "auto";
-    install({ yandex: "fail", piper: "fail", groq: "fail" });
+    install({ piper: "fail", yandex: "fail", groq: "fail" });
 
     await expect(synthesize(RUSSIAN)).resolves.toBeNull();
   });
@@ -181,13 +196,16 @@ describe("language decides the order", () => {
     expect(doors.urls.some((u) => u.includes("yandex"))).toBe(false);
   });
 
-  test("Russian tries Yandex before anything else", async () => {
+  test("Russian tries Piper before Yandex, and only then", async () => {
+    // The order itself, asserted rather than inferred from which bytes came
+    // back: both providers answer here, so a chain that ran them the other way
+    // round would still return audio and still look like a pass.
     settings.TTS_PROVIDER = "auto";
-    install({ yandex: "ok" });
+    install({ piper: "fail", yandex: "ok" });
 
     await synthesize(RUSSIAN);
 
-    expect(doors.urls.find((u) => u.includes("tts.api"))).toContain("yandex");
+    expect(doors.tried.filter((t) => t === "piper" || t === "yandex")).toEqual(["piper", "yandex"]);
   });
 });
 
