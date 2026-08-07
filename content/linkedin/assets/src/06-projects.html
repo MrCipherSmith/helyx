@@ -1,113 +1,144 @@
 <!doctype html>
 <html><head><meta charset="utf-8"><link rel="stylesheet" href="_base.css"><style>
-  /* The opening line of the story post — eleven projects, one chat — as the
-     forum list it actually is. One topic per project, each with its own live
-     session, so the "switch by scrolling" claim is visible rather than stated. */
-  body { padding:0; background:#17212b; display:block; }
-  .wrap { width:1200px; height:630px; padding:14px 190px; display:flex; flex-direction:column; overflow:hidden; }
+  /* The forum list, drawn to match a real screenshot of it: mobile Telegram,
+     OLED black, topic rows with the sender line and the last message under the
+     name, hearts and unread badges on the right.
+     Only four projects may be named publicly, so the rest keep their rows and
+     lose their names. The count in the post stays true and nothing private
+     leaves the room. */
+  body { padding:0; background:#0d1117; display:flex; align-items:center; justify-content:center; }
 
-  .tbar { display:flex; align-items:center; gap:11px; padding-bottom:9px; border-bottom:1px solid #101921; margin-bottom:3px; }
-  .av { width:36px; height:36px; border-radius:50%; background:#3d5a80; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:600; color:#cfe0f5; }
-  .tname { font-size:16px; font-weight:600; color:#fff; }
-  .tsub { font-size:12px; color:#6d7f8f; }
+  .phone {
+    width:296px; height:614px; background:#000; border-radius:26px;
+    border:1px solid #23272e; overflow:hidden; display:flex; flex-direction:column;
+    font-family:-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
 
-  .row { display:flex; align-items:center; gap:11px; padding:9px 4px; border-bottom:1px solid #1c2836; }
-  .row:last-child { border-bottom:none; }
-  .ic { width:30px; height:30px; border-radius:8px; flex:none; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:600; color:#0d1117; }
-  .body { flex:1; min-width:0; }
-  .top { display:flex; align-items:baseline; gap:8px; }
-  .nm { font-size:13.4px; font-weight:600; color:#e9edf0; }
-  .st { font-size:10.5px; padding:1px 6px; border-radius:20px; background:#1d3a29; color:#7ee787; }
-  .st.idle { background:#2a2f36; color:#8b949e; }
-  .prev { font-size:12px; color:#7b8b99; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px; }
-  .right { text-align:right; flex:none; }
-  .tm { font-size:10.5px; color:#6d7f8f; }
-  .badge { display:inline-block; margin-top:3px; min-width:19px; padding:1px 6px; border-radius:20px; background:#5aa0e0; color:#17212b; font-size:10.5px; font-weight:600; text-align:center; }
+  .sbar { display:flex; justify-content:space-between; align-items:center; padding:7px 16px 3px; font-size:11px; color:#fff; font-weight:600; }
+  .sbar .r { display:flex; align-items:center; gap:4px; font-weight:500; color:#e6edf3; }
+  .batt { border:1px solid #6a7480; border-radius:3px; padding:0 3px; font-size:8.5px; }
+
+  .hdr { display:flex; align-items:center; gap:10px; padding:5px 12px 9px; }
+  .circ { width:26px; height:26px; border-radius:50%; background:#1c1f24; color:#c9d1d9; display:flex; align-items:center; justify-content:center; font-size:13px; flex:none; }
+  .htxt { flex:1; text-align:center; }
+  .htxt b { display:block; font-size:14px; color:#fff; }
+  .htxt span { font-size:10px; color:#7d8590; }
+
+  .tabs { display:flex; gap:6px; padding:0 10px 8px; }
+  .tab { font-size:10.5px; color:#8b949e; padding:4px 9px; border-radius:12px; display:flex; align-items:center; gap:5px; white-space:nowrap; }
+  .tab.on { background:#22262c; color:#fff; }
+  .pill { background:#2f353d; color:#c9d1d9; border-radius:9px; padding:0 5px; font-size:9px; }
+  .pill.b { background:#2b6cb8; color:#fff; }
+
+  .list { flex:1; overflow:hidden; }
+  .row { display:flex; gap:9px; padding:7px 12px; border-bottom:1px solid #14171b; align-items:flex-start; }
+  .ic { width:34px; height:34px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; color:#08090b; }
+  .mid { flex:1; min-width:0; }
+  .nm { font-size:12.5px; font-weight:600; color:#fff; }
+  .from { font-size:10.5px; color:#9198a1; margin-top:1px; }
+  .prev { font-size:10.5px; color:#8b949e; margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .rt { flex:none; text-align:right; padding-top:2px; }
+  .tm { font-size:9.5px; color:#7d8590; }
+  .hrt { font-size:12px; margin-top:9px; }
+  .bdg { display:inline-block; margin-top:8px; min-width:16px; padding:1px 5px; border-radius:9px; background:#2b6cb8; color:#fff; font-size:9px; font-weight:600; text-align:center; }
+
+  /* redacted: the row stays, the name does not */
+  .bar { height:9px; border-radius:5px; background:linear-gradient(90deg,#2a3038,#1d2229); }
+  .bar.n { width:82px; margin-top:2px; height:10px; }
+  .bar.p { width:150px; margin-top:6px; }
+  .ic.hid { background:#1c2128; color:#3f4750; font-size:12px; font-weight:400; }
+
+  .nav { display:flex; align-items:center; justify-content:space-around; padding:7px 8px 9px; border-top:1px solid #14171b; }
+  .nv { text-align:center; color:#7d8590; font-size:8px; position:relative; }
+  .nv .g { font-size:14px; display:block; }
+  .nv.on { color:#3b8ee0; }
+  .cnt { position:absolute; top:-3px; right:-12px; background:#c0392b; color:#fff; border-radius:8px; font-size:7.5px; padding:1px 4px; }
 </style></head><body>
-  <div class="wrap">
-    <div class="tbar">
-      <div class="av">H</div>
-      <div>
-        <div class="tname">Helyx</div>
-        <div class="tsub"><span data-lang="en">11 projects &middot; one session each &middot; 6 working right now</span><span data-lang="ru">11 проектов &middot; по сессии на каждый &middot; 6 работают прямо сейчас</span></div>
+  <div class="phone">
+    <div class="sbar">
+      <span>17:07 &#128263;</span>
+      <span class="r">&#9601;&#9603;&#9605; &#8226; <span class="batt">84</span></span>
+    </div>
+
+    <div class="hdr">
+      <div class="circ">&#8249;</div>
+      <div class="htxt"><b>GoodDev Hub</b><span data-lang="en">2 members</span><span data-lang="ru">2 участника</span></div>
+      <div class="circ">&#8943;</div>
+    </div>
+
+    <div class="tabs">
+      <div class="tab on">All</div>
+      <div class="tab">Personal <span class="pill">3</span></div>
+      <div class="tab">AI <span class="pill b">3</span></div>
+      <div class="tab">News</div>
+    </div>
+
+    <div class="list">
+      <div class="row">
+        <div class="ic" style="background:#7ee787">he</div>
+        <div class="mid"><div class="nm">helyx</div><div class="from">Helyx</div>
+          <div class="prev">&#128266; <span data-lang="en">Recap &mdash; the migration is additive now</span><span data-lang="ru">Пересказ — миграция теперь аддитивная</span></div></div>
+        <div class="rt"><div class="tm">16:32</div><div class="bdg">3</div></div>
+      </div>
+
+      <div class="row">
+        <div class="ic" style="background:#79c0ff">ke</div>
+        <div class="mid"><div class="nm">keryx</div><div class="from">Helyx</div>
+          <div class="prev">Helyx pinned "&#9989; &#9200; 50s &middot; &#8595; 624&hellip;"</div></div>
+        <div class="rt"><div class="tm">13:19</div><div class="hrt">&#10084;&#65039;</div></div>
+      </div>
+
+      <div class="row">
+        <div class="ic hid">&#128274;</div>
+        <div class="mid"><div class="bar n"></div><div class="from">Helyx</div><div class="bar p"></div></div>
+        <div class="rt"><div class="tm">12:07</div><div class="bdg">1</div></div>
+      </div>
+
+      <div class="row">
+        <div class="ic" style="background:#8b949e">de</div>
+        <div class="mid"><div class="nm">deprecated</div><div class="from">Helyx</div>
+          <div class="prev">&#128308; <span data-lang="en">Claude has not answered and tmux is silent for 30&hellip;</span><span data-lang="ru">Claude не отвечает и tmux молчит уже 30…</span></div></div>
+        <div class="rt"><div class="tm">Sun</div><div class="hrt">&#10084;&#65039;</div></div>
+      </div>
+
+      <div class="row">
+        <div class="ic hid">&#128274;</div>
+        <div class="mid"><div class="bar n"></div><div class="from">Helyx</div><div class="bar p" style="width:118px"></div></div>
+        <div class="rt"><div class="tm">Sat</div><div class="hrt">&#10084;&#65039;</div></div>
+      </div>
+
+      <div class="row">
+        <div class="ic" style="background:#bc8cff">gb</div>
+        <div class="mid"><div class="nm">goodai-base</div><div class="from">Helyx</div>
+          <div class="prev">&#129504; <span data-lang="en">Recalled: the review profile lives in rules/core</span><span data-lang="ru">Вспомнил: профиль ревью лежит в rules/core</span></div></div>
+        <div class="rt"><div class="tm">07/28</div><div class="hrt">&#10084;&#65039;</div></div>
+      </div>
+
+      <div class="row">
+        <div class="ic hid">&#128274;</div>
+        <div class="mid"><div class="bar n" style="width:104px"></div><div class="from">Helyx</div><div class="bar p" style="width:136px"></div></div>
+        <div class="rt"><div class="tm">07/28</div><div class="hrt">&#10084;&#65039;</div></div>
+      </div>
+
+      <div class="row">
+        <div class="ic hid">&#128274;</div>
+        <div class="mid"><div class="bar n" style="width:72px"></div><div class="from">You</div><div class="bar p" style="width:96px"></div></div>
+        <div class="rt"><div class="tm">07/27</div></div>
+      </div>
+
+      <div class="row">
+        <div class="ic hid">&#128274;</div>
+        <div class="mid"><div class="bar n" style="width:94px"></div><div class="from">Helyx</div><div class="bar p" style="width:126px"></div></div>
+        <div class="rt"><div class="tm">07/26</div><div class="hrt">&#10084;&#65039;</div></div>
       </div>
     </div>
 
-    <div class="row">
-      <div class="ic" style="background:#7ee787">he</div>
-      <div class="body"><div class="top"><span class="nm">helyx</span><span class="st">active</span></div>
-        <div class="prev"><span data-lang="en">🔧 47 tools · 12 files — writing the migration note into CHANGELOG.md</span><span data-lang="ru">🔧 47 tools · 12 files — пишу запись о миграции в CHANGELOG.md</span></div></div>
-      <div class="right"><div class="tm">14:09</div><div class="badge">3</div></div>
-    </div>
-
-    <div class="row">
-      <div class="ic" style="background:#79c0ff">ke</div>
-      <div class="body"><div class="top"><span class="nm">keryx</span><span class="st">active</span></div>
-        <div class="prev"><span data-lang="en">The rg wrapper choked on unescaped parens — escaping them at the boundary</span><span data-lang="ru">Обёртка над rg спотыкалась о неэкранированные скобки — экранирую на границе</span></div></div>
-      <div class="right"><div class="tm">14:02</div></div>
-    </div>
-
-    <div class="row">
-      <div class="ic" style="background:#bc8cff">ar</div>
-      <div class="body"><div class="top"><span class="nm">arena</span><span class="st">active</span></div>
-        <div class="prev"><span data-lang="en">🎤 voice message · 0:26</span><span data-lang="ru">🎤 голосовое · 0:26</span></div></div>
-      <div class="right"><div class="tm">13:58</div><div class="badge">1</div></div>
-    </div>
-
-    <div class="row">
-      <div class="ic" style="background:#ffa657">vf</div>
-      <div class="body"><div class="top"><span class="nm">vantage-frontend</span><span class="st">active</span></div>
-        <div class="prev"><span data-lang="en">🔐 Allow? — Edit · src/store/session.ts</span><span data-lang="ru">🔐 Allow? — Edit · src/store/session.ts</span></div></div>
-      <div class="right"><div class="tm">13:51</div><div class="badge">1</div></div>
-    </div>
-
-    <div class="row">
-      <div class="ic" style="background:#ff9492">vb</div>
-      <div class="body"><div class="top"><span class="nm">vantage-backend</span><span class="st">active</span></div>
-        <div class="prev"><span data-lang="en">All 214 tests green after the DTO change</span><span data-lang="ru">Все 214 тестов зелёные после правки DTO</span></div></div>
-      <div class="right"><div class="tm">13:44</div></div>
-    </div>
-
-    <div class="row">
-      <div class="ic" style="background:#7ee787">go</div>
-      <div class="body"><div class="top"><span class="nm">goodai</span><span class="st">active</span></div>
-        <div class="prev"><span data-lang="en">🔊 Recap — the router now picks the provider per project</span><span data-lang="ru">🔊 Пересказ — роутер теперь выбирает провайдера по проекту</span></div></div>
-      <div class="right"><div class="tm">13:30</div></div>
-    </div>
-
-    <div class="row">
-      <div class="ic" style="background:#79c0ff">gb</div>
-      <div class="body"><div class="top"><span class="nm">goodai-base</span><span class="st idle">idle</span></div>
-        <div class="prev"><span data-lang="en">🧠 Recalled: the review profile lives in rules/core, not in the skill</span><span data-lang="ru">🧠 Вспомнил: профиль ревью лежит в rules/core, а не в скилле</span></div></div>
-      <div class="right"><div class="tm">12:47</div></div>
-    </div>
-
-    <div class="row">
-      <div class="ic" style="background:#bc8cff">cb</div>
-      <div class="body"><div class="top"><span class="nm">carlson-bot</span><span class="st idle">idle</span></div>
-        <div class="prev"><span data-lang="en">Collector finished — 38 items, 4 duplicates dropped</span><span data-lang="ru">Сборщик закончил — 38 материалов, 4 дубля отброшено</span></div></div>
-      <div class="right"><div class="tm">11:12</div></div>
-    </div>
-
-    <div class="row">
-      <div class="ic" style="background:#ffa657">kv</div>
-      <div class="body"><div class="top"><span class="nm">kesha-voice-kit</span><span class="st idle">idle</span></div>
-        <div class="prev"><span data-lang="en">Piper voice swapped — Russian model now default</span><span data-lang="ru">Голос Piper заменён — русская модель теперь по умолчанию</span></div></div>
-      <div class="right"><div class="tm">10:05</div></div>
-    </div>
-
-    <div class="row">
-      <div class="ic" style="background:#8b949e">de</div>
-      <div class="body"><div class="top"><span class="nm">deprecated</span><span class="st idle">idle</span></div>
-        <div class="prev"><span data-lang="en">Shadow container still up — decide whether to keep it</span><span data-lang="ru">Теневой контейнер ещё поднят — решить, оставлять ли</span></div></div>
-      <div class="right"><div class="tm">09:20</div></div>
-    </div>
-
-    <div class="row">
-      <div class="ic" style="background:#79c0ff">al</div>
-      <div class="body"><div class="top"><span class="nm">altsay</span><span class="st idle">idle</span></div>
-        <div class="prev"><span data-lang="en">Nothing pending</span><span data-lang="ru">Ничего не ждёт</span></div></div>
-      <div class="right"><div class="tm">08:41</div></div>
+    <div class="nav">
+      <div class="nv"><span class="g">&#128100;</span>Contacts</div>
+      <div class="nv"><span class="g">&#128222;</span>Calls</div>
+      <div class="nv on"><span class="g">&#128172;</span>Chats<span class="cnt">166</span></div>
+      <div class="nv"><span class="g">&#9881;&#65039;</span>Settings</div>
+      <div class="nv"><span class="g">&#128269;</span></div>
     </div>
   </div>
 

@@ -39,15 +39,16 @@ re-encoding.
 | `03-telegram` | A topic mid-turn: voice in, live status, answer, spoken recap |
 | `04-numbers` | Counts taken from the repository, and the stack |
 | `05-control` | Memory recalled unprompted, and a tool call refused from the phone |
-| `06-projects` | The forum list — eleven projects, one live session each |
+| `06-projects` | The forum list on a phone — four projects named, the rest redacted |
 
 ### The carousel for the first post
 
 `02-story` opens on eleven projects and a lost context, so it ships as three
 frames in this order:
 
-1. `06-projects` — the claim in the first line, made visible. Eleven topics, one
-   session each, six of them working while nobody is looking.
+1. `06-projects` — the claim in the first line, made visible. The forum list as
+   it appears on a phone: a topic per project, the last message under each one,
+   unread counts and reactions.
 2. `03-telegram` — one of them opened: a question asked by voice, the work
    visible as it happens, the answer, and the spoken recap.
 3. `05-control` — the two things that are not a chat wrapper: memory recalled
@@ -70,12 +71,27 @@ its `✅ Yes / ✅ Always / ❌ No` row all follow what `utils/status-render.ts`
 `channel/tools.ts` and `channel/permissions.ts` actually render — but the
 conversations in them are written.
 
-**A real screenshot beats all three at launch**, even a scruffier one: an
+`06-projects` is drawn against a real screenshot of the forum, so the layout,
+the sender line under each topic name, the reaction hearts, the unread badges,
+the filter tabs and the bottom bar are all where they actually sit.
+
+**A real screenshot still beats a drawing at launch**, even a scruffier one: an
 audience can tell the difference, and a drawn interface invites the question of
-what else was drawn. Take one from a live topic and put it beside these; the
-mockups are the fallback for frames a screenshot cannot stage, not the preferred
-option. Whatever you do, do not caption a mockup as a screenshot — the honesty
-is worth more than the polish.
+what else was drawn. The mockups are the fallback for frames a screenshot cannot
+be published as — which, here, is most of them. Whatever you do, do not caption
+a mockup as a screenshot; the honesty is worth more than the polish.
+
+### Which project names may appear
+
+Only **`helyx`, `keryx`, `deprecated`, `goodai-base`**. Every other topic in the
+forum belongs to work that cannot be named publicly, so in `06-projects` those
+rows keep their place, their timestamps and their reactions, and lose their
+names to a redaction bar. Nothing is invented to fill the gap: a made-up project
+name in a frame that claims to be the real interface is the one thing worse than
+a blank.
+
+Check this list before adding a name to any frame. `01-architecture` names three
+of the four on its host card for the same reason.
 
 ## Re-rendering
 
