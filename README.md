@@ -436,7 +436,7 @@ Use Ollama for memory search + summarization?
   2. No, use main LLM provider (Claude/Google AI/etc.)
 
 Embedding model [nomic-embed-text]:
-Summarization model [gemma4:e4b]:
+Summarization model [geekom-model-1]:
 ```
 
 If you select **Yes**, `EMBEDDING_MODEL` and `SUMMARIZE_MODEL` are written to `.env`. If Ollama is not found, it's noted and these settings remain commented out — the main LLM provider is used as fallback.
@@ -697,7 +697,7 @@ ollama pull nomic-embed-text
 | `GOOGLE_AI_API_KEY` | No | Google AI API ([aistudio.google.com](https://aistudio.google.com/apikey)) |
 | `GOOGLE_AI_MODEL` | No | Google AI model (default: `gemma-4-31b-it`) |
 | `OPENROUTER_API_KEY` | No | OpenRouter API (many models available) |
-| `OLLAMA_CHAT_MODEL` | No | Local Ollama model (default: `gemma4:e4b`) |
+| `OLLAMA_CHAT_MODEL` | No | Local Ollama model (default: `geekom-model-1`) |
 | `GROQ_API_KEY` | No | Voice transcription ([free](https://console.groq.com)) |
 | `GITHUB_TOKEN` | No | PAT with repo read access — enables the PRs tab in the Mini App |
 | `DATABASE_URL` | Yes | PostgreSQL connection string |

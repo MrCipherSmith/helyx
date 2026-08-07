@@ -21,7 +21,7 @@
  *           STUCK_QUEUE_FORWARD_MINUTES (default 10) — forward threshold.
  *           If not set, alerts are logged only.
  *
- * LLM diagnosis: gemma4:e4b via Ollama (timeout 10s, non-blocking).
+ * LLM diagnosis: geekom-model-1 via Ollama (timeout 10s, non-blocking).
  */
 
 import type postgres from "postgres";
@@ -221,7 +221,7 @@ export async function getLlmExplanation(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: process.env.OLLAMA_CHAT_MODEL ?? process.env.SUMMARIZE_MODEL ?? "gemma4:e4b",
+        model: process.env.OLLAMA_CHAT_MODEL ?? process.env.SUMMARIZE_MODEL ?? "geekom-model-1",
         think: false,
         messages: [
           { role: "system", content: system },
@@ -1177,7 +1177,7 @@ export function formatSnapshotForGemma(snap: SystemSnapshot): string {
 
 /** Exported for the tests, which drive it against a stubbed endpoint rather than Ollama. */
 export async function callGemmaForHealth(snapshot: string): Promise<{ ok: boolean; digest: string }> {
-  const model = process.env.SUMMARIZE_MODEL || process.env.OLLAMA_CHAT_MODEL || "gemma4:e4b";
+  const model = process.env.SUMMARIZE_MODEL || process.env.OLLAMA_CHAT_MODEL || "geekom-model-1";
   const system = "Ты — аналитик здоровья системы Helyx. Прочитай снапшот состояния. Если всё в норме — ответь только словом OK. Если есть проблемы — кратко опиши их в 2–5 пунктах на русском. Не рассуждай, не задавай вопросы, только факты об обнаруженных проблемах.";
 
   try {

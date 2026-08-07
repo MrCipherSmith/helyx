@@ -246,7 +246,7 @@ interface Preset {
 const MODEL_PRESETS: Preset[] = [
   { id: "tiny", model: "qwen3:1.7b", ramMb: 2500, label: "tiny — qwen3:1.7b (1.4 GB download, 40K context)" },
   { id: "small", model: "qwen3:4b", ramMb: 4500, label: "small — qwen3:4b (2.5 GB download, 256K context)" },
-  { id: "heavy", model: "gemma4:e4b", ramMb: 12000, label: "heavy — gemma4:e4b (9.6 GB download)" },
+  { id: "heavy", model: "geekom-model-1", ramMb: 12000, label: "heavy — geekom-model-1 (9.3 GB download)" },
 ];
 
 /**
@@ -355,7 +355,7 @@ async function setup() {
   let googleAiModel = "gemma-4-31b-it";
   let openrouterKey = "";
   let openrouterModel = "qwen/qwen3-235b-a22b:free";
-  let ollamaModel = "gemma4:e4b";
+  let ollamaModel = "geekom-model-1";
 
   if (providerIdx === 0) {
     anthropicKey = UNATTENDED ? requireFlag("api-key", "Anthropic API key") : ask("Anthropic API Key", "", "api-key");

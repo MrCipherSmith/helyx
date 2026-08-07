@@ -285,7 +285,7 @@ ${safeMsg && safeMsg !== "?" ? `Вопрос администратора: ${saf
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: process.env.OLLAMA_CHAT_MODEL ?? process.env.SUMMARIZE_MODEL ?? "gemma4:e4b",
+        model: process.env.OLLAMA_CHAT_MODEL ?? process.env.SUMMARIZE_MODEL ?? "geekom-model-1",
         think: false,
         messages: [
           { role: "system", content: system },

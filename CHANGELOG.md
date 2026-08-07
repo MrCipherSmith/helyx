@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### chore: the local model the host actually runs
+
+The Ollama default was `gemma4:e4b`, hardcoded as the last fallback in six
+places — `config.ts`, the setup wizard's `heavy` preset in `cli.ts`, both
+supervisor diagnosis paths, `/now`'s summariser, and `.env.example`. The host
+runs `geekom-model-1` now (qwen3 14B, Q4_K_M, 9.3 GB), so the default follows
+it, along with the preset's download size, which had been quoting 9.6 GB.
+
+The environment variables are unchanged: `OLLAMA_CHAT_MODEL` and
+`SUMMARIZE_MODEL` still win over the default wherever they are set, and an
+installation that has `gemma4:e4b` and names it keeps using it. What changes is
+what a fresh install falls back to when neither is set.
+
+Documentation follows in the same commit — README's wizard transcript and env
+table, and the two model defaults in `docs/dev/onboarding.md` — so the pages do
+not start describing a default the code stopped using.
+
 ## v1.55.1
 
 ### fix: a project directory that matched by prefix, not by boundary

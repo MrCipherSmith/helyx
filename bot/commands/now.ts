@@ -120,7 +120,7 @@ export function setNowDeps(next: Partial<NowDeps>): () => void {
 async function readingFromModel(snapshot: SessionSnapshot, project: string): Promise<string | null> {
   if (!OLLAMA_URL) return null;
   if (!snapshot.found || !snapshot.lastLine) return null;
-  const model = process.env.SUMMARIZE_MODEL || process.env.OLLAMA_CHAT_MODEL || "gemma4:e4b";
+  const model = process.env.SUMMARIZE_MODEL || process.env.OLLAMA_CHAT_MODEL || "geekom-model-1";
   const agents = snapshot.agents.map((a) => `${a.label}: ${a.lastLine ?? "—"}`).join("\n");
 
   try {
