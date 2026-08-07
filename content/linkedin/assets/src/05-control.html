@@ -1,0 +1,92 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="_base.css"><style>
+  /* The second frame: the two things that separate this from a bot wrapper —
+     a tool call you can refuse from the phone, and memory the next session
+     picks up on its own.
+
+     The permission message follows channel/permissions.ts: a "🔐 Allow?" header,
+     the tool description, the diff in a code block, and one row of three
+     buttons — ✅ Yes / ✅ Always / ❌ No. */
+  body { padding:0; background:#17212b; display:block; }
+  .wrap { width:1200px; height:630px; padding:13px 170px; display:flex; flex-direction:column; gap:6px; overflow:hidden; }
+
+  .tbar { display:flex; align-items:center; gap:11px; padding-bottom:8px; border-bottom:1px solid #101921; margin-bottom:0; }
+  .av { width:34px; height:34px; border-radius:50%; background:#3d5a80; display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:600; color:#cfe0f5; }
+  .tname { font-size:15.5px; font-weight:600; color:#fff; }
+  .tsub { font-size:12px; color:#6d7f8f; }
+
+  .msg { max-width:88%; border-radius:12px; padding:9px 13px; font-size:13.6px; line-height:1.46; color:#e9edf0; background:#182533; align-self:flex-start; border-bottom-left-radius:4px; }
+  .out { background:#2b5278; align-self:flex-end; border-bottom-right-radius:4px; }
+  .meta { font-size:10px; color:#6d7f8f; margin-top:4px; text-align:right; }
+  .out .meta { color:#8fb0d0; }
+
+  .lock { font-weight:600; margin-bottom:7px; }
+  .desc { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; color:#c6d2dd; margin-bottom:6px; }
+  .pre { background:#0f1720; border-radius:6px; padding:7px 9px; margin-bottom:2px; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11px; line-height:1.5; white-space:pre; color:#8ba3b8; }
+  .pre .add { color:#7ee787; } .pre .del { color:#ff9492; } .pre .hd { color:#6d7f8f; }
+
+  .kb { display:flex; gap:6px; margin-top:8px; }
+  .btn { flex:1; text-align:center; background:#233648; border-radius:8px; padding:8px 6px; font-size:12.5px; color:#cfe0f5; }
+  .btn.no { background:#3a2830; color:#ffb3b0; box-shadow:0 0 0 1.5px #6b3a42 inset; }
+
+  .mem { border-left:2px solid #bc8cff; padding:5px 0 5px 9px; color:#c8b8e0; font-size:13.4px; line-height:1.52; }
+  .status { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.2px; line-height:1.58; }
+  .status .it { font-style:italic; color:#a8bccd; }
+  .status .sm { color:#8fd0a0; }
+  .tap { align-self:flex-end; font-size:11px; color:#6d7f8f; margin:-2px 4px 0 0; }
+</style></head><body>
+  <div class="wrap">
+    <div class="tbar">
+      <div class="av">H</div>
+      <div>
+        <div class="tname">helyx</div>
+        <div class="tsub"><span data-lang="en">project topic &middot; waiting for you</span><span data-lang="ru">топик проекта &middot; ждёт тебя</span></div>
+      </div>
+    </div>
+
+    <div class="msg">
+      <div class="mem">&#129504; <span data-lang="en">Recalled from memory: the queue stays in Postgres — Redis was considered in March and rejected, the restart guarantee is the reason.</span><span data-lang="ru">Вспомнил из памяти: очередь остаётся в Postgres — Redis рассматривали в марте и отклонили, причина в гарантии на рестарте.</span></div>
+      <div class="meta">14:07</div>
+    </div>
+
+    <div class="msg">
+      <div class="lock">&#128272; <span data-lang="en">Allow?</span><span data-lang="ru">Allow?</span></div>
+      <div class="desc">Edit &middot; memory/db.ts</div>
+      <div class="pre"><span class="hd">@@ -412,7 +412,7 @@</span>
+<span class="del">-  await sql`DROP TABLE message_queue`;</span>
+<span class="add">+  await sql`ALTER TABLE message_queue</span>
+<span class="add">+    ADD COLUMN reply_context jsonb`;</span></div>
+      <div class="kb">
+        <div class="btn">&#9989; Yes</div>
+        <div class="btn">&#9989; Always</div>
+        <div class="btn no">&#10060; No</div>
+      </div>
+      <div class="meta">14:08</div>
+    </div>
+
+    <div class="tap"><span data-lang="en">you tapped ❌ No</span><span data-lang="ru">ты нажал ❌ No</span></div>
+
+    <div class="msg">
+      <span data-lang="en">Understood — not dropping the table. Rewriting it as an additive migration so the queued messages survive the change.</span>
+      <span data-lang="ru">Понял — таблицу не роняю. Переписываю миграцию как аддитивную, чтобы сообщения в очереди пережили изменение.</span>
+      <div class="meta">14:08</div>
+    </div>
+
+    <div class="msg out">
+      <span data-lang="en">and add it to the changelog</span>
+      <span data-lang="ru">и добавь это в changelog</span>
+      <div class="meta">14:09</div>
+    </div>
+
+    <div class="msg status">
+      <div>&#9203; <span class="it">8s</span> &#128221;</div>
+      <div class="sm">&#9656; <span data-lang="en">Writing the migration note into CHANGELOG.md</span><span data-lang="ru">Пишу запись о миграции в CHANGELOG.md</span></div>
+      <div class="meta">14:09</div>
+    </div>
+  </div>
+
+<script>
+  var lang = new URLSearchParams(location.search).get("lang") === "ru" ? "ru" : "en";
+  document.querySelectorAll("[data-lang='" + lang + "']").forEach(function (el) { el.style.display = "inline"; });
+</script>
+</body></html>

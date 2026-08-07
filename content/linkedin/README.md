@@ -36,15 +36,29 @@ re-encoding.
 |---|---|
 | `01-architecture` | Telegram → queue → sessions, and what lives on the host |
 | `02-features` | Six capabilities, one card each |
-| `03-telegram` | What a topic looks like mid-turn: voice in, live status, answer, spoken recap |
+| `03-telegram` | A topic mid-turn: voice in, live status, answer, spoken recap |
 | `04-numbers` | Counts taken from the repository, and the stack |
+| `05-control` | Memory recalled unprompted, and a tool call refused from the phone |
 
-`03-telegram` is an **illustration**, not a screenshot. The message structure in
-it — the status header, the `🧩` subagent line, the expandable quote, the stats
-line, the `🔊` recap as a collapsed quote — follows what `utils/status-render.ts`
-and `channel/tools.ts` actually render, but the conversation in it is written for
-the picture. If you want a real screenshot, take one from a live topic and drop
-it in beside this file; do not relabel this one.
+`03-telegram` and `05-control` carry no explanatory column: the words belong to
+the post the image ships with, and saying them twice reads as a slideshow of the
+caption. They are the interface and nothing else.
+
+### These two are mockups
+
+`03-telegram` and `05-control` are **drawn, not captured**. The message structure
+is real — the status header, the `🧩` subagent line, the expandable quote, the
+stats line, the `🔊` recap as a collapsed quote, and the `🔐 Allow?` prompt with
+its `✅ Yes / ✅ Always / ❌ No` row all follow what `utils/status-render.ts`,
+`channel/tools.ts` and `channel/permissions.ts` actually render — but the
+conversations in them are written.
+
+**A real screenshot beats both of them at launch**, even a scruffier one: an
+audience can tell the difference, and a drawn interface invites the question of
+what else was drawn. Take one from a live topic and put it beside these; the
+mockups are the fallback for frames a screenshot cannot stage, not the preferred
+option. Whatever you do, do not caption a mockup as a screenshot — the honesty
+is worth more than the polish.
 
 ## Re-rendering
 
@@ -54,7 +68,7 @@ and forgotten in Russian.
 
 ```bash
 CHROME=~/.cache/ms-playwright/chromium-*/chrome-linux64/chrome
-for f in 01-architecture 02-features 03-telegram 04-numbers; do
+for f in 01-architecture 02-features 03-telegram 04-numbers 05-control; do
   for l in en ru; do
     $CHROME --headless --disable-gpu --no-sandbox --hide-scrollbars \
       --force-device-scale-factor=2 --window-size=1200,630 \

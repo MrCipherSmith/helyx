@@ -1,77 +1,41 @@
 <!doctype html>
 <html><head><meta charset="utf-8"><link rel="stylesheet" href="_base.css"><style>
-  /* An illustration of the Telegram topic, not a screenshot of one. The
-     layout, the status message structure and the recap quote follow what
-     utils/status-render.ts and channel/tools.ts actually produce. */
-  body { padding:0; flex-direction:row; background:#0d1117; }
-  .left { width:452px; padding:44px 36px 36px 52px; display:flex; flex-direction:column; }
-  h1 { font-size:32px; margin-bottom:10px; line-height:1.15; }
-  .sub { font-size:15.5px; line-height:1.6; margin-bottom:24px; }
-  .pt { font-size:13.5px; color:#8b949e; line-height:1.55; margin-bottom:13px; padding-left:16px; position:relative; }
-  .pt:before { content:""; position:absolute; left:0; top:7px; width:6px; height:6px; border-radius:50%; background:#3d5a80; }
-  .pt b { color:#c9d1d9; font-weight:600; }
-  .note { margin-top:auto; font-size:11.5px; color:#565f6b; line-height:1.5; }
+  /* The topic, full bleed and nothing else. The words belong to the post that
+     carries the image; repeating them here reads as saying it twice.
+     The message structure follows utils/status-render.ts and channel/tools.ts:
+     status header, subagent line, expandable quote, stats line, and the recap
+     as a collapsed quote under the answer. */
+  body { padding:0; background:#17212b; display:block; }
+  .wrap { width:1200px; height:630px; padding:18px 200px; display:flex; flex-direction:column; gap:7px; overflow:hidden; }
 
-  .phone { flex:1; background:#17212b; padding:16px 26px; display:flex; flex-direction:column; gap:7px; overflow:hidden; }
-  .tbar { display:flex; align-items:center; gap:10px; padding-bottom:9px; border-bottom:1px solid #101921; margin-bottom:1px; }
-  .av { width:30px; height:30px; border-radius:50%; background:#3d5a80; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:600; color:#cfe0f5; }
-  .tname { font-size:14.5px; font-weight:600; color:#fff; }
-  .tsub { font-size:11.5px; color:#6d7f8f; }
+  .tbar { display:flex; align-items:center; gap:11px; padding-bottom:10px; border-bottom:1px solid #101921; margin-bottom:2px; }
+  .av { width:34px; height:34px; border-radius:50%; background:#3d5a80; display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:600; color:#cfe0f5; }
+  .tname { font-size:15.5px; font-weight:600; color:#fff; }
+  .tsub { font-size:12px; color:#6d7f8f; }
 
-  .msg { max-width:86%; border-radius:12px; padding:9px 12px; font-size:12.8px; line-height:1.5; color:#e9edf0; }
+  .msg { max-width:88%; border-radius:12px; padding:9px 12px; font-size:13px; line-height:1.5; color:#e9edf0; }
   .in  { background:#182533; align-self:flex-start; border-bottom-left-radius:4px; }
   .out { background:#2b5278; align-self:flex-end; border-bottom-right-radius:4px; }
   .meta { font-size:10px; color:#6d7f8f; margin-top:4px; text-align:right; }
   .out .meta { color:#8fb0d0; }
 
   .voice { display:flex; align-items:center; gap:9px; }
-  .play { width:26px; height:26px; border-radius:50%; background:#5aa0e0; color:#17212b; display:flex; align-items:center; justify-content:center; font-size:11px; flex:none; }
+  .play { width:28px; height:28px; border-radius:50%; background:#5aa0e0; color:#17212b; display:flex; align-items:center; justify-content:center; font-size:12px; flex:none; }
   .wave { display:flex; align-items:center; gap:2px; height:20px; }
   .wave i { width:2px; background:#7fb3e3; border-radius:1px; display:block; }
-  .dur { font-size:10.5px; color:#8fb0d0; }
+  .dur { font-size:11px; color:#8fb0d0; }
 
-  .status { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11.4px; line-height:1.55; }
-  .status .hdr { color:#e9edf0; }
+  .status { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11.6px; line-height:1.58; }
   .status .it { font-style:italic; color:#a8bccd; }
   .status .ag { color:#c9a0ff; }
   .status .sm { color:#8fd0a0; }
-  .quote { border-left:2px solid #5aa0e0; padding:4px 0 4px 9px; margin:5px 0; color:#9fb3c4; font-size:11px; line-height:1.55; }
+  .quote { border-left:2px solid #5aa0e0; padding:4px 0 4px 9px; margin:5px 0; color:#9fb3c4; font-size:11.2px; line-height:1.55; }
   .quote .more { color:#5aa0e0; }
   .stats { color:#6d7f8f; }
-  .pre { background:#0f1720; border-radius:6px; padding:6px 8px; margin:5px 0; color:#8ba3b8; font-size:10.5px; line-height:1.45; white-space:pre; overflow:hidden; }
-  .recap { border-left:2px solid #5aa0e0; padding:5px 0 5px 9px; color:#b9c8d6; font-size:12.2px; line-height:1.5; }
+  .pre { background:#0f1720; border-radius:6px; padding:6px 9px; margin:5px 0; color:#8ba3b8; font-size:10.8px; line-height:1.45; white-space:pre; }
+  .recap { border-left:2px solid #5aa0e0; padding:5px 0 5px 9px; color:#b9c8d6; font-size:12.4px; line-height:1.5; }
 </style></head><body>
-  <div class="left">
-    <h1><span data-lang="en">What it looks like<br>while it works</span><span data-lang="ru">Как это выглядит<br>во время работы</span></h1>
-    <div class="sub">
-      <span data-lang="en">One topic. You ask, and the answer is not the only thing you get back.</span>
-      <span data-lang="ru">Один топик. Ты спрашиваешь — и получаешь не только ответ.</span>
-    </div>
-
-    <div class="pt">
-      <span data-lang="en"><b>Ask by voice.</b> It transcribes and passes the message to the session running on your machine.</span>
-      <span data-lang="ru"><b>Спроси голосом.</b> Он расшифрует и передаст сообщение сессии, работающей на твоей машине.</span>
-    </div>
-    <div class="pt">
-      <span data-lang="en"><b>Watch it work.</b> One status message, edited in place: elapsed time, subagents, the file it is reading right now.</span>
-      <span data-lang="ru"><b>Смотри за работой.</b> Один статус, который редактируется на месте: время, субагенты, файл, который читается прямо сейчас.</span>
-    </div>
-    <div class="pt">
-      <span data-lang="en"><b>Read the answer.</b> Full text, code fences intact — never trimmed to fit a voice track.</span>
-      <span data-lang="ru"><b>Читай ответ.</b> Полный текст, код не тронут — его никогда не режут ради голосовой дорожки.</span>
-    </div>
-    <div class="pt">
-      <span data-lang="en"><b>Or listen to it.</b> A separate short recap, collapsed under the answer and spoken aloud.</span>
-      <span data-lang="ru"><b>Или послушай.</b> Отдельный короткий пересказ, свёрнутый под ответом и озвученный.</span>
-    </div>
-
-    <div class="note">
-      <span data-lang="en">Illustration of the real message layout — status structure, expandable quote and recap follow what the code renders.</span>
-      <span data-lang="ru">Иллюстрация реальной раскладки сообщений — структура статуса, раскрывающаяся цитата и пересказ соответствуют тому, что рисует код.</span>
-    </div>
-  </div>
-
-  <div class="phone">
+  <div class="wrap">
     <div class="tbar">
       <div class="av">H</div>
       <div>
@@ -84,7 +48,7 @@
       <div class="voice">
         <div class="play">&#9654;</div>
         <div class="wave">
-          <i style="height:6px"></i><i style="height:11px"></i><i style="height:17px"></i><i style="height:9px"></i><i style="height:14px"></i><i style="height:20px"></i><i style="height:8px"></i><i style="height:13px"></i><i style="height:18px"></i><i style="height:7px"></i><i style="height:12px"></i><i style="height:16px"></i><i style="height:9px"></i><i style="height:5px"></i><i style="height:11px"></i><i style="height:15px"></i><i style="height:8px"></i><i style="height:6px"></i>
+          <i style="height:6px"></i><i style="height:11px"></i><i style="height:17px"></i><i style="height:9px"></i><i style="height:14px"></i><i style="height:20px"></i><i style="height:8px"></i><i style="height:13px"></i><i style="height:18px"></i><i style="height:7px"></i><i style="height:12px"></i><i style="height:16px"></i><i style="height:9px"></i><i style="height:5px"></i><i style="height:11px"></i><i style="height:15px"></i><i style="height:8px"></i><i style="height:6px"></i><i style="height:13px"></i><i style="height:10px"></i>
         </div>
         <div class="dur">0:14</div>
       </div>
@@ -92,7 +56,7 @@
     </div>
 
     <div class="msg in status">
-      <div class="hdr">&#9203; <span class="it">2m 14s</span> &#128296;</div>
+      <div>&#9203; <span class="it">2m 14s</span> &#128296;</div>
       <div class="ag">&#129513; <span data-lang="en">3 subagents: review:logic &middot; review:security &middot; verify:auth</span><span data-lang="ru">3 агента: review:logic &middot; review:security &middot; verify:auth</span></div>
       <div class="sm">&#9656; <span data-lang="en">Checking how an expired token is handled</span><span data-lang="ru">Проверяю обработку истёкшего токена</span></div>
       <div class="quote">
@@ -121,7 +85,7 @@
       <div class="voice">
         <div class="play">&#9654;</div>
         <div class="wave">
-          <i style="height:9px"></i><i style="height:15px"></i><i style="height:7px"></i><i style="height:18px"></i><i style="height:12px"></i><i style="height:6px"></i><i style="height:16px"></i><i style="height:10px"></i><i style="height:14px"></i><i style="height:19px"></i><i style="height:8px"></i><i style="height:13px"></i><i style="height:5px"></i><i style="height:17px"></i><i style="height:11px"></i><i style="height:7px"></i><i style="height:15px"></i><i style="height:9px"></i>
+          <i style="height:9px"></i><i style="height:15px"></i><i style="height:7px"></i><i style="height:18px"></i><i style="height:12px"></i><i style="height:6px"></i><i style="height:16px"></i><i style="height:10px"></i><i style="height:14px"></i><i style="height:19px"></i><i style="height:8px"></i><i style="height:13px"></i><i style="height:5px"></i><i style="height:17px"></i><i style="height:11px"></i><i style="height:7px"></i><i style="height:15px"></i><i style="height:9px"></i><i style="height:12px"></i><i style="height:6px"></i>
         </div>
         <div class="dur">0:21</div>
       </div>
