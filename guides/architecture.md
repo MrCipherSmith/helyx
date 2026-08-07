@@ -22,15 +22,33 @@ helyx/
 │   ├── media.ts             # Photo, document, voice, video handlers
 │   ├── streaming.ts         # LLM streaming → Telegram message edits
 │   ├── access.ts            # ALLOWED_USERS guard (required at startup)
-│   └── commands/            # One file per /command
+│   └── commands/            # One file per /command — 26 files
 │       ├── session.ts       # /sessions, /switch, /rename, /remove, /cleanup
 │       ├── projects.ts      # /projects + proj: callbacks
 │       ├── project-add.ts   # /project_add
+│       ├── project-facts.ts # /project_facts — scanned project-knowledge memories
 │       ├── memory.ts        # /remember, /recall, /memories, /forget
+│       ├── memory-export.ts # /memory_export, /memory_import
 │       ├── admin.ts         # /status, /stats, /logs, /tools, /skills, /rules
+│       ├── forum.ts         # /forum_setup, /forum_sync, /forum_clean, /topic_*
+│       ├── codex.ts         # /codex_setup, /codex_status, /codex_review
+│       ├── system.ts        # /system — admin-only start/stop/restart panel
 │       ├── model.ts         # /model + set_model: callbacks
+│       ├── providers.ts     # /providers — provider backends + model picker
+│       ├── reviewers.ts     # /reviewers — code-review provider config
 │       ├── remote-control.ts # /remote_control + rc: callbacks
-│       └── memory-export.ts # /memory_export, /memory_import
+│       ├── resume.ts        # /resume — restore last session summary
+│       ├── now.ts           # /now — live session snapshot from its transcript
+│       ├── btw.ts           # /btw — "what are you doing right now?"
+│       ├── monitor.ts       # /monitor — process/Docker health panel
+│       ├── quickstart.ts    # /quickstart — guided first-run setup
+│       ├── add.ts           # /add — quick project registration
+│       ├── menu.ts          # /menu — two-level inline command navigator
+│       ├── interrupt.ts     # /interrupt — Escape to the bound tmux pane
+│       ├── prepare-restart.ts # /prepare_restart — snapshot before a redeploy
+│       ├── supervisor-actions.ts # sup: inline-button callbacks
+│       ├── tmux-actions.ts  # tmux:ACTION:PROJECT callbacks (watchdog buttons)
+│       └── tmux-log.ts      # /tmux_log — tmux session lifecycle log
 │
 ├── channel/                 # stdio MCP channel adapter (one instance per Claude CLI)
 │   ├── index.ts             # Entrypoint — parse args, init all modules, read stdin
@@ -45,7 +63,14 @@ helyx/
 │   ├── session-service.ts   # SessionService — CRUD + rename
 │   ├── project-service.ts   # ProjectService — create (atomic), start, stop
 │   ├── permission-service.ts # PermissionService — state machine transitions
-│   └── memory-service.ts    # MemoryService — reconcile, save, recall, forget
+│   ├── memory-service.ts    # MemoryService — reconcile, save, recall, forget
+│   ├── message-service.ts   # MessageService — short-term messages + queue insert
+│   ├── forum-service.ts     # ForumService — Telegram forum topic CRUD
+│   ├── summarization-service.ts # SummarizationService — idle timers, force-summarize
+│   ├── provider-service.ts  # ProviderService — Anthropic-compatible provider backends
+│   ├── reviewer-service.ts  # ReviewerService — code-review provider orchestration
+│   ├── ask-question.ts      # AskUserQuestion hook backing: register, ask, wait, answer
+│   └── review-artifacts.ts  # persistReviewRun() — persists + prunes review output
 │
 ├── sessions/                # Session lifecycle and routing
 │   ├── manager.ts           # SessionManager — in-memory registry, DB sync
@@ -72,13 +97,24 @@ helyx/
 │
 ├── adapters/                # Message delivery adapters
 │   ├── index.ts             # Adapter registry
-│   └── claude-adapter.ts    # ClaudeAdapter — inserts into message_queue
+│   └── claude.ts            # claudeAdapter — inserts into message_queue
 │
-├── utils/
+├── orchestrator/            # State Matrix gate for outgoing replies/tool requests
+│   ├── gate.ts              # validateReplyGate() — allow/blocked/exhausted
+│   ├── matrix.ts            # StateMatrix load + validation rules
+│   └── store.ts             # orchestration_runs / matrix_violations persistence
+│
+├── utils/                   # 56 files — full list in docs/dev/modules.md#utils
 │   ├── files.ts             # File download + host path mapping (CONFIG.DOWNLOADS_DIR)
 │   ├── transcribe.ts        # Voice transcription (Groq / local Whisper)
 │   ├── stats.ts             # Append-only request log helper
-│   └── tools-reader.ts      # Read skills/commands from ~/.claude
+│   ├── tools-reader.ts      # Read skills/commands from ~/.claude
+│   ├── reply-context.ts     # What the operator's Telegram reply was pointing at
+│   ├── status-render.ts     # Status message body: terminal section + running totals
+│   ├── turn-summary.ts      # deliverTurnSummary() — closes a turn without a reply
+│   ├── ask-question.ts      # Telegram formatting for AskUserQuestion polls/answers
+│   ├── restart-lease.ts     # File-based one-restart-at-a-time lease
+│   └── dashboard-readiness.ts # ENABLE_DASHBOARD vs WITH_DASHBOARD agreement check
 │
 ├── tests/
 │   ├── unit/                # Pure unit tests (no DB, no network)
@@ -296,7 +332,7 @@ TTL defaults by type:
 Pure function tests — no DB, no network, no Telegram:
 
 ```bash
-bun test tests/unit/    # ~24ms, 43 tests
+bun test tests/unit/    # ~12s, 1902 tests across 109 files
 ```
 
 What's tested:

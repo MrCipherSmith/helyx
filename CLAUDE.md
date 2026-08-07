@@ -112,10 +112,12 @@ bun scripts/review.ts "<review request>"
 
 Pass the user's original request as the prompt. The pipeline runs every enabled
 reviewer concurrently (by default: Codex and the configured provider model,
-e.g. DeepSeek v4-pro) and prints each report. Reviewers are configured with
-`/reviewers` in Telegram (`/reviewers add provider DeepSeek deepseek-v4-pro`,
-`/reviewers remove <id>`, `/reviewers status`). Each provider model reads the
-git diff itself from the prompt.
+e.g. DeepSeek v4-pro) and prints each report. Reviewers are configured in
+Telegram with underscore-separated commands: `/reviewers` alone lists them,
+`/reviewers_add` adds one (`/reviewers_add provider DeepSeek deepseek-v4-pro`),
+`/reviewers_remove <id>` removes one, `/reviewers_status` checks availability,
+and `/reviewers_default` resets to the default set. Each provider model reads
+the git diff itself from the prompt.
 
 If a reviewer prints `[<label>] unavailable: ...` — that reviewer is down
 (rate limit / balance / auth). Deliver the reports of the ones that succeeded.
@@ -190,8 +192,24 @@ Command map — use these names, do not improvise:
 | Ship new code everywhere | `full_restart` admin command (rebuild bot → bounce sessions), or ♻️ Полный рестарт |
 | Only the bot container | `docker compose up -d --build bot` |
 | Only the sessions | `bun cli.ts bounce`, or 🔄 Bounce |
-| One project's session | `/projects` → stop/start, or the `proj_start` admin command |
+| One project's session | `/projects` → stop/start, or the `proj_start`/`proj_stop` admin commands |
 | Only the channel subprocesses | `channel_kill` admin command |
+
+**`bounce`, `host_restart` and `full_restart` (the Telegram buttons and their
+admin commands) take a file lease before they run** (`utils/restart-lease.ts`,
+claimed via `claimRestart` in `scripts/admin-daemon.ts`). A second restart
+started while one is in flight is refused with who holds it and how long ago,
+instead of racing it — the lease expires after 15 minutes so a restart that
+died without releasing does not lock the operator out permanently.
+
+**That lease does not cover `bun cli.ts bounce` run directly on the host.**
+The CLI's own `bounce` case (`cli.ts`, the `"bounce"` switch branch that calls
+`tmuxStop()` then `tmuxStart()`) never calls `claimRestart`. Running it from a
+terminal while a Telegram-triggered bounce or full restart is still in flight
+can still race it exactly the way the lease exists to prevent. Prefer the
+Telegram buttons or admin commands when a restart might overlap another one;
+treat `bun cli.ts bounce` as the one path that still needs a human to check
+nothing else is restarting first.
 
 **Never leave the stack half-down.** `docker compose down`, `helyx stop` and
 `tmux_stop` take things down and nothing brings them back on their own. If a

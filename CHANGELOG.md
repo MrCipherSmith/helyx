@@ -2,6 +2,76 @@
 
 ## Unreleased
 
+### fix: a project directory that matched by prefix, not by boundary
+
+`toContainerPath()` in `bot/commands/project-add.ts` decided whether a host
+path belonged inside `HOST_PROJECTS_DIR` or `HOST_HOME` with
+`hostPath.startsWith(dir)` — no separator, so `/home/altsay/bots-backup`
+matched `/home/altsay/bots` as if it were `/home/altsay/bots/backup`, and the
+container path came out aimed at the wrong tree rather than missing. Both
+checks now require the boundary itself — `hostPath === dir ||
+hostPath.startsWith(dir + sep)` — the pattern `request-guards.ts` already used
+for the same class of check.
+
+### fix: the answer that stayed in the status
+
+The operator's report, twice: the status showed part of an answer and
+Telegram never got it, so the only way to be answered was to ask again. Five
+parallel audits of the previous day and a half found not one cause but a
+chain, and the ones that mattered were all introduced by work meant to make
+the status better.
+
+The operator's message was landing inside a turn already running.
+`getBusyChats` in `channel/status.ts` exempted continuations, on the reasoning
+that a continuation is the tail of a step already reported and holding the
+next message behind it only trades one silence for another. What it did
+instead was hand that message to a session mid-turn: Claude Code folds it into
+the turn in flight, answers it in ordinary terminal text, and a turn that has
+already called `reply` rarely calls it twice. The answer then existed only in
+the status — which, since the transcript reader landed, renders the session's
+own prose and keeps it in the closing message. A continuation is busy again
+now; the wait it costs is bounded by the idle window that closes it.
+
+A status closed by a reply could come back and take the reply's company with
+it. `maybeMoveToBottom` in `channel/status.ts` ran after the await inside
+`editWithDrain` without checking whether the state had been closed meanwhile,
+and `noteReplySent` had just recorded a message id above the status — so the
+move fired anyway: a fresh status was sent and pinned, and the ✅ summary that
+had just replaced the old one was deleted as "the old status". Seven of one
+hundred and thirty-three moves in a single day ended that way.
+
+A channel could keep painting the status with its reply half dead. The
+hard-exit deadline in `channel/index.ts` was chained to the `.finally()` of
+graceful shutdown, whose two awaits are `markDisconnected()` and `sql.end()` —
+and the reason shutdown runs is usually that Postgres is unreachable. The
+deadline never armed, the poller stopped, and the MCP transport and every
+status timer kept running while `reply` died on its first query. It fired on
+all eight channels at once, on a restart of the stack.
+
+An oversized chunk lost the whole reply. `chunkMarkdown` in `utils/chunk.ts`
+emitted a block bigger than the budget on the theory that an oversized message
+is Telegram's problem to reject — Telegram rejects it, the send bails, and
+nothing is delivered; the model, told only "Telegram API error", restates the
+answer as terminal text where nobody sees it. Oversized fences are now carried
+across chunks, closed at the cut and re-opened with their info string. In the
+`reply` tool handler in `channel/tools.ts`, chunks after the first were sent
+with their result discarded, so a partly refused reply reported success; the
+pre-mark in `pending_replies` was never cleared on failure, so recovery
+skipped it forever; and an empty reply dereferenced `textChunks[0]!` and took
+the tool call down — all three fixed alongside it.
+
+The forwarded summary in `utils/turn-summary.ts` — the Stop-hook fallback for
+a turn that never called `reply` — was clamped to 3500 characters and sent as
+one silent message. It now goes out in as many messages as the answer takes,
+and is spoken like a reply of the same length.
+
+And the response guard's re-queue, in `channel/status.ts`, had never once
+worked. It re-inserted the operator's question with the original Telegram
+message id against `idx_queue_msgid_dedup`, the UNIQUE index on `(chat_id,
+message_id)`; every re-queue raised a duplicate key, was swallowed, and
+returned false — the operator got the red alert and never the question back.
+It now upserts with `ON CONFLICT (chat_id, message_id)`.
+
 ### fix: the turn that ended and the dialogue that did not
 
 A session that answers without calling `reply` has its answer forwarded by the

@@ -142,6 +142,7 @@ The importer runs Smart Reconciliation on each memory — duplicates are detecte
 | `forget` | Delete a memory by ID |
 | `list_memories` | List recent memories |
 | `search_project_context` | Semantic search over project work summaries and prior session context |
+| `scan_project_knowledge` | Scan a project directory and save structural knowledge (tech stack, architecture, entry points, setup) to long-term memory. Params: `project_path` (optional, defaults to the session's project), `force_rescan` (optional boolean, default `false` — archives existing project knowledge and rescans from scratch) |
 
 ---
 

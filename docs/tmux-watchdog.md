@@ -37,9 +37,23 @@ admin-daemon (host)
 
 **Only active sessions are inspected.** Sessions with `status != 'active'` or without a tmux window are skipped. This prevents polling idle projects.
 
+**Every poll of an active session's window writes a pane snapshot**, before any detector runs. `writePaneSnapshot()` takes the last meaningful lines of the captured pane (blank lines and pure box-drawing filtered out) and `UPDATE`s `sessions.pane_snapshot` / `pane_snapshot_at`. This is not itself an alert — it is how the live Telegram status message and the webapp Monitor tab show what the terminal is doing without either of them touching tmux directly.
+
 ---
 
 ## Detectors
+
+### 0. Development-channels startup prompt
+
+Trigger: `--dangerously-load-development-channels` warning text together with an `Enter to confirm` line, both visible on screen (no scroll-back — if it scrolled away, it was already confirmed).
+
+Checked across **all** bot tmux windows, not just ones with an `active` DB session — the session only becomes `active` after the prompt is confirmed, so gating this check on session status would deadlock a freshly-started window against itself. Run before the per-session detector loop, and again inside it for the window already resolved to a session.
+
+Action: silent, no Telegram message. `tmux send-keys "" Enter` auto-confirms it. `run-cli.sh` already tries to confirm this on the shell side; the watchdog is the fallback for when that shell-side watcher times out or races a window recreation (e.g. `proj_start`).
+
+Detection function: `detectDevChannelPrompt()` in `scripts/tmux-watchdog.ts`.
+
+---
 
 ### 1. Permission prompts
 
@@ -145,6 +159,14 @@ If `TELEGRAM_BOT_TOKEN` is missing:
 
 ---
 
+## Restart lease
+
+`admin-daemon` is also where `bounce`, `host_restart` and `full_restart` (`admin_commands` rows, driven from the same host process as the watchdog) claim a file-based lease before doing anything — `utils/restart-lease.ts`, `claimRestart()` in `scripts/admin-daemon.ts`. The lease is a file rather than a DB row because `/up` (`scripts/host-ingress.ts`) has to be able to check it when the whole stack, Postgres included, is down. It expires after 15 minutes; a taker that finds a lease older than that breaks it and says so in the log.
+
+`bun cli.ts bounce` run directly on the host — not through the "🔄 Bounce" button, which goes through `admin_commands` — does **not** take the lease. It bypasses `admin-daemon` entirely, so it is not excluded by, and does not exclude, a restart already running through the daemon.
+
+---
+
 ## DB schema additions
 
 **Migration v16** (`memory/db.ts`):
@@ -158,9 +180,10 @@ Nullable. Only set for watchdog-originated permission requests. Used by the `pol
 
 ## Tests
 
-`tests/unit/tmux-watchdog.test.ts` — 64 tests covering all pure detection functions:
+`tests/unit/tmux-watchdog.test.ts` — 55 tests covering all pure detection functions:
 
 - `stripAnsi` — ANSI escape stripping
+- `detectDevChannelPrompt` — dev-channel startup warning signal + confirm-prompt pairing
 - `detectPermissionPrompt` — signal detection, tool name extraction (3 formats), multi-prompt buffers
 - `detectSpinner` — spinner char variants, 10-line window
 - `detectEditor` — vim modes, nano chrome

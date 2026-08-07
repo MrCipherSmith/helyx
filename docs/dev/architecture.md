@@ -1,6 +1,6 @@
 # Helyx — Architecture
 
-**Version:** 1.47.0
+**Version:** 1.55.0
 
 ---
 
@@ -370,7 +370,7 @@ The Telegram Login Widget verification follows the official Telegram spec: the s
 - **Validation**: Zod schemas in `config.ts` (Docker-side) and `ChannelEnvSchema` in `channel/index.ts` (host-side). Both fail fast on startup if required vars are missing.
 - **Secrets**: environment variables only; `.env` file is loaded by `channel.ts` and `admin-daemon.ts` at startup, skipping keys already set in the shell environment.
 - **Per-project config**: `~/.claude/projects/<encoded-path>/settings.local.json` stores per-project auto-approve patterns. The Docker container mounts the host `~/.claude/` directory via `HOST_CLAUDE_CONFIG`.
-- **DB migrations**: `memory/db.ts` validates the migration registry for uniqueness and strictly ascending version order on every startup before applying pending migrations. Current schema version: 44.
+- **DB migrations**: `memory/db.ts` validates the migration registry for uniqueness and strictly ascending version order on every startup before applying pending migrations. Current schema version: 49.
 
 ### Error Recovery
 

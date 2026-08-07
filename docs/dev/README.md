@@ -283,7 +283,7 @@ Key environment variables. Full list and defaults: [onboarding.md](onboarding.md
 | Logging | Pino v10 — structured JSON to stdout |
 | TTS | kokoro-js v1.2 + Piper binary; Yandex / Groq / OpenAI as alternatives |
 | Containerization | Docker multi-stage build (`oven/bun:1`) + Docker Compose |
-| Testing | Bun test runner (14 unit tests) + Playwright E2E (api + dashboard) |
+| Testing | Bun test runner (109 unit test files, 1902 tests) + Playwright E2E (api + dashboard) |
 | AI SDKs | @anthropic-ai/sdk, Google AI, Ollama, OpenRouter |
 | Embeddings | Ollama `nomic-embed-text` (768-dim); pgvector HNSW cosine index |
 

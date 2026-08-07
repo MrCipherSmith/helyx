@@ -259,12 +259,12 @@ helyx/
 ├── dashboard/                # React + Vite admin SPA (sessions, memories, permissions)
 │   ├── src/                  # Main dashboard app (served at port 3847)
 │   └── webapp/               # Secondary Telegram Mini App SPA
-├── claude/                   # Claude Code CLI wrapper (spawn, prompt, stream)
+├── claude/                   # Multi-provider LLM API client (Anthropic/Google/OpenRouter/Ollama) + prompt composition
 ├── skills/                   # MCP skill definitions (Markdown)
 ├── cleanup/                  # Hourly maintenance jobs (log rotation, stale session cleanup)
 ├── prompts/                  # LLM prompt templates for skill curation/distillation
 ├── tests/
-│   ├── unit/                 # 14 Bun unit test files
+│   ├── unit/                 # 109 Bun unit test files
 │   └── e2e/                  # Playwright E2E (api + dashboard projects)
 ├── docs/                     # Requirements, roadmap, spec, issues
 ├── guides/                   # Architecture, MCP tools, voice, webapp, memory guides

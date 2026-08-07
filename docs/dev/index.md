@@ -28,9 +28,9 @@ Sections: [Overview](architecture.md#overview) · [System Components](architectu
 ---
 
 ### [modules.md](modules.md)
-Per-module developer reference. For each of the 10 major modules: purpose, entry point, key files with responsibilities, public API exports, environment variables, how to develop and test, and inter-module dependencies.
+Per-module developer reference. For each of the 11 major modules: purpose, entry point, key files with responsibilities, public API exports, environment variables, how to develop and test, and inter-module dependencies.
 
-Modules: [bot](modules.md#bot) · [channel](modules.md#channel) · [mcp](modules.md#mcp) · [sessions](modules.md#sessions) · [memory](modules.md#memory) · [services](modules.md#services) · [adapters](modules.md#adapters) · [utils](modules.md#utils) · [scripts](modules.md#scripts) · [dashboard](modules.md#dashboard)
+Modules: [bot](modules.md#bot) · [channel](modules.md#channel) · [mcp](modules.md#mcp) · [sessions](modules.md#sessions) · [memory](modules.md#memory) · [services](modules.md#services) · [adapters](modules.md#adapters) · [orchestrator](modules.md#orchestrator) · [utils](modules.md#utils) · [scripts](modules.md#scripts) · [dashboard](modules.md#dashboard)
 
 ---
 
@@ -38,8 +38,8 @@ Modules: [bot](modules.md#bot) · [channel](modules.md#channel) · [mcp](modules
 Complete API surface reference for all integration points.
 
 - **Part 1: Telegram Bot Commands** — all commands grouped by category (session, memory, projects, forum, monitoring, admin, model, codex, onboarding) with arguments and descriptions
-- **Part 2: MCP Tools — stdio channel adapter** — all 19 tools exposed by `channel.ts` with full parameter schemas; runs on host, delivers messages into Claude Code
-- **Part 3: MCP Tools — HTTP Docker server** — all 18 tools exposed by the `mcp/` server over StreamableHTTP/SSE; runs in Docker, receives tool calls from Claude Code; notes differences from the stdio adapter
+- **Part 2: MCP Tools — stdio channel adapter** — all 18 tools exposed by `channel.ts` with full parameter schemas; runs on host, delivers messages into Claude Code
+- **Part 3: MCP Tools — HTTP Docker server** — all 19 tools exposed by the `mcp/` server over StreamableHTTP/SSE; runs in Docker, receives tool calls from Claude Code; notes differences from the stdio adapter
 - **Part 4: Dashboard REST API** — all `/api/*` endpoints grouped by resource (auth, overview, sessions, logs, memories, projects, permissions, process health, git, SSE events, health check)
 - **Part 5: WebApp Mini App API** — Telegram Mini App authentication flow and WebApp-specific endpoints
 
@@ -48,7 +48,7 @@ Complete API surface reference for all integration points.
 ### [data-models.md](data-models.md)
 PostgreSQL schema reference. All 24+ tables with column definitions, types, constraints, indexes, which processes write and read each table, and the trigger that drives `LISTEN/NOTIFY`. Covers pgvector HNSW index configuration for semantic search. Includes migration framework documentation and instructions for adding new migrations.
 
-Schema domains: [Sessions & Routing](data-models.md#sessions--routing) · [Messages & Queue](data-models.md#messages--queue) · [Memory](data-models.md#memory) · [Skills Toolkit](data-models.md#skills-toolkit) · [Stats](data-models.md#stats) · [Config](data-models.md#config) · [Permissions](data-models.md#permissions) · [Running Migrations](data-models.md#running-migrations) · [pgvector Indexes](data-models.md#pgvector-indexes)
+Schema domains: [Sessions & Routing](data-models.md#sessions--routing) · [Messages & Queue](data-models.md#messages--queue) · [Memory](data-models.md#memory) · [Skills Toolkit](data-models.md#skills-toolkit) · [Stats](data-models.md#stats) · [Config](data-models.md#config) · [Orchestration](data-models.md#orchestration) · [Questions](data-models.md#questions) · [Permissions](data-models.md#permissions) · [Running Migrations](data-models.md#running-migrations) · [pgvector Indexes](data-models.md#pgvector-indexes)
 
 ---
 

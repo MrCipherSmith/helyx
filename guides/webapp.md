@@ -135,6 +135,20 @@ The app uses Telegram's built-in auth:
 
 ---
 
+## Whether the Mini App is actually there
+
+Two env flags have to agree, and nothing enforced that before v1.55.0. `ENABLE_DASHBOARD` is a runtime flag; `WITH_DASHBOARD` is a **build** argument that defaults to `false`, because the dashboard build stages take the image from ~256 MB to ~1 GB. A bot started with `ENABLE_DASHBOARD=true` but built with `WITH_DASHBOARD=false` (the default) used to show a plain `Not Found` in the Mini App — the route was fine, the files just were not in the image, and nothing said so.
+
+`utils/dashboard-readiness.ts` now checks both facts (`ENABLE_DASHBOARD` and whether `dashboard/webapp/dist` actually has files in it) together:
+
+- If the dashboard is disabled, this is silent — correct, and not worth a warning on every small deployment.
+- If it is enabled but `dashboard/webapp/dist` (or `dashboard/dist`) is empty, `GET /webapp/*` answers with **503** and a message naming both the missing flag and the fix: set `WITH_DASHBOARD=true` in `.env` and `docker compose up -d --build bot`. The same check runs once at startup and logs the same message at error level, so the mismatch shows up in `docker logs` even before anyone opens the Mini App.
+- The Telegram **Dev Hub** menu button itself is suppressed when the Mini App was not built — a button that opens `Not Found` is worse than no button, since the operator presses it more than once. If you enabled the dashboard but never see the Dev Hub button, this is why; check the bot's startup log for the `[dashboard]` line.
+
+An install that answers "yes" to the dashboard prompt now writes both `ENABLE_DASHBOARD` and `WITH_DASHBOARD` to `.env` together — previously only `ENABLE_DASHBOARD` was written, which is exactly the mismatch above.
+
+---
+
 ## Infrastructure
 
 - Built as a separate Vite + React app in `dashboard/webapp/`
