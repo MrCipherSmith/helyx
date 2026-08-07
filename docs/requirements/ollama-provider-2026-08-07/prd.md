@@ -1,6 +1,10 @@
 # A Local Model Claude Code Can Actually Talk To — PRD
 
-Version: 1.0.0
+Version: 1.1.0
+
+> v1.1.0 folds in the findings of [prd-review.md](prd-review.md): the model-list
+> route (§4.4), model-name resolution (§4.5), the enable gate (§5), and a
+> narrower AC-2.
 
 ## 1. Problem
 
@@ -145,6 +149,21 @@ answers as though the tool never ran.
 
 ### 4.4 The other routes
 
+- `GET /v1/models` — **not optional.** Registering the provider goes through
+  `/providers → ➕ Add → Custom`, and that flow asks the endpoint what models it
+  has (`bot/commands/providers.ts:176` → `fetchProviderModels()`,
+  `services/provider-service.ts:257-287`, which probes `{base}/v1/models` and
+  `{base}/models`). Without this route the add-flow falls back to the preset
+  list, which for `custom` is empty (`bot/providers/presets.ts:92`), and the
+  operator types model names by hand for the one provider whose model list the
+  host already knows. The proxy answers from Ollama's `/api/tags` in the shape
+  `parseModelsResponse()` accepts (`services/provider-service.ts:205-219`):
+
+  ```json
+  {"data": [{"id": "geekom-model-1", "display_name": "geekom-model-1"}]}
+  ```
+
+  Any other shape parses to `null` and is indistinguishable from being down.
 - `POST /v1/messages/count_tokens` — Claude Code calls it to size the context.
   Ollama has no tokeniser endpoint. The proxy answers with a character-based
   estimate and documents that it is an estimate. Answering 404 is worse: the
@@ -153,7 +172,25 @@ answers as though the tool never ran.
 - Anything else — an Anthropic-shaped 404 error body, so the message that
   reaches the terminal names the route.
 
-### 4.5 Errors
+### 4.5 Which model actually runs
+
+`resolveProviderEnv()` exports exactly one model name, `ANTHROPIC_MODEL`
+(`scripts/resolve-provider-env.ts:72`). Claude Code does not use it for
+everything: background work — titles, small classifications — goes to a
+small/fast model whose id the client picks itself. Those requests arrive naming
+a model this host has never pulled.
+
+So model resolution is deliberately loose: a request naming a model Ollama has
+is served with it; anything else is served with the configured default
+(`OLLAMA_PROXY_MODEL`, itself defaulting to `OLLAMA_CHAT_MODEL`). The
+substitution is logged once per distinct name — enough to notice, not enough to
+flood the log on every background call.
+
+Strict resolution would produce the worst failure available here: a session that
+mostly works, with parts of it failing for reasons that never reach the
+operator.
+
+### 4.6 Errors
 
 Every failure — Ollama down, model not pulled, malformed body — is returned as
 Anthropic's error envelope:
@@ -168,9 +205,15 @@ with nothing on screen saying why.
 
 ## 5. Lifecycle and visibility
 
-- Started from `cli.ts` beside `ensureAdminDaemon()`, same `pgrep` guard, log at
-  `/tmp/ollama-proxy.log`. It costs nothing when unused: it is an idle listener,
-  and no project is bound to it by default.
+- **Off unless asked for.** `OLLAMA_PROXY_ENABLED` gates the whole thing and
+  defaults to false. `ensureAdminDaemon()` runs on every `helyx up` and every
+  bounce (`cli.ts:1533`, `cli.ts:1581`); starting a second daemon there
+  unconditionally would give every host a new listener, a new `process_health`
+  row and a new thing that can be reported down, in exchange for nothing. The
+  previous attempt broke this machine by making a local experiment global — this
+  flow does not get to repeat the shape of that mistake in a smaller way.
+- When enabled, started from `cli.ts` beside `ensureAdminDaemon()`, same `pgrep`
+  guard, log at `/tmp/ollama-proxy.log`.
 - Heartbeats into `process_health` under the name `ollama-proxy`, so `/monitor`
   (`bot/commands/monitor.ts:34`) and the dashboard show it beside `admin-daemon`
   instead of an operator discovering it is down through a failed session.
@@ -184,9 +227,11 @@ with nothing on screen saying why.
 - **AC-1.** With no project bound to the local provider, `resolve-provider-env`
   prints nothing and a session launches exactly as before. Verified by the
   existing `tests/unit/resolve-provider-env.test.ts` staying green unmodified.
-- **AC-2.** No file under `~/.claude/` is read or written by any code added in
-  this flow. Verified by inspection of the diff and by a test asserting the
-  proxy module references no such path.
+- **AC-2.** No file added or modified by this flow reads or writes anything
+  under `~/.claude/`. Scoped to the diff on purpose: the pre-existing
+  `services/provider-service.ts:308` legitimately reads
+  `${HOST_CLAUDE_CONFIG}/.credentials.json`, and a repo-wide claim would be
+  false. Verified by inspection of the diff.
 - **AC-3.** A non-streaming `POST /v1/messages` carrying a system prompt, a
   two-turn history and one tool definition produces a valid Anthropic response
   body, and the corresponding Ollama request carries the system message, the
@@ -202,6 +247,14 @@ with nothing on screen saying why.
   cause, with a non-2xx status — not a hang and not an empty 200.
 - **AC-7.** `POST /v1/messages/count_tokens` returns a number for a
   well-formed body.
+- **AC-11.** `GET /v1/models` returns the host's Ollama models in a body that
+  `parseModelsResponse()` parses to a non-empty list — asserted against the real
+  function, not a copy of its expected shape.
+- **AC-12.** A request naming a model Ollama does not have is served with the
+  configured default rather than an error, and a request naming one it does have
+  uses that one.
+- **AC-13.** With `OLLAMA_PROXY_ENABLED` unset, `helyx up` starts no proxy
+  process and writes no `ollama-proxy` health row.
 - **AC-8.** The daemon writes a `process_health` row named `ollama-proxy`, and
   `/monitor` renders it.
 - **AC-9.** A port already in use makes the daemon exit non-zero with a message

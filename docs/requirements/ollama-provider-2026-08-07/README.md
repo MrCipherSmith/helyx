@@ -55,6 +55,7 @@ design already has that property, and nothing added here may take it away.
 |------|----------|
 | [README.md](README.md) | This file — purpose, status, established facts, the failed attempt |
 | [prd.md](prd.md) | Problem, the translation, the daemon, acceptance, risks |
+| [prd-review.md](prd-review.md) | The PRD checked against the code it cites — twelve citations verified, four findings folded back in |
 
 ## The proposal in one paragraph
 
