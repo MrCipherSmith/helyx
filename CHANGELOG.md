@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.55.1
 
 ### fix: a project directory that matched by prefix, not by boundary
 
@@ -116,6 +116,28 @@ which is the copy a long turn cannot leave behind.
 Composing that message is now `composeDelivery` — pure, and exported, because
 the order of its parts is the behaviour while the loop around it needs a
 database, a Telegram and a live MCP client to run.
+
+### docs: the pages that described a system that had moved on
+
+Every living document audited against the code, and the drift that mattered was
+not staleness but instruction a reader would act on: `guides/mcp-tools.md` gave
+`reply` and `update_status` camelCase parameters with an optional chat id when
+the schemas are snake_case and `chat_id` is required, and CLAUDE.md gave the
+`/reviewers` commands space-separated when they are underscore-separated. The
+voice pages still described Yandex-first synthesis reading the reply text
+aloud, two releases after the chain began with local Piper and the thing spoken
+became a separate recap. README was missing seventeen commands including
+`/now`; `docs/restart-problem.md` still said its own root cause was unfixed and
+presented as a proposal what had shipped in the commit that added the doc. The
+restart command map said nothing about the lease, or about `bun cli.ts bounce`
+being the one path that does not take it.
+
+Counts were re-derived from the code rather than from each other: 18 stdio MCP
+tools and 19 HTTP, schema v49, 1902 unit tests across 109 files, 55 in the
+watchdog suite. Two audit findings did not survive verification and were left
+alone — `Skills Toolkit — v1.35.0` names the release the toolkit shipped in,
+and `POST /api/sessions/disconnect` has a caller but no handler, so writing it
+down as an endpoint would have replaced one error with another.
 
 ## v1.55.0
 
