@@ -1,5 +1,54 @@
 # Changelog
 
+## Unreleased
+
+### fix: the change that survived the question and not the answer
+
+A permission request arrived as two messages. The first carried the file and
+the change, the second carried `🔐 Allow?` and the buttons — one thought split
+across a message boundary, and on a phone usually across a scroll. It is one
+message now, with the tool line and the change inside it, whenever the rendered
+HTML fits Telegram's 4096 characters. The split survives as the fallback,
+because Telegram does not truncate an oversized message, it refuses it, and a
+prompt that never arrives auto-denies ten minutes later.
+
+The answer was worse than the question. `handlePermissionCallback` rebuilt the
+edited message from `ctx.callbackQuery.message.text` — the message stripped of
+every entity — and sent it back with no `parse_mode`. A fenced diff was a fenced
+diff right up until the operator tapped, and then it was prose that happened to
+start with minus signs. The body is now stored as it was rendered
+(`permission_requests.rendered_body`, v50) and the answer concatenates it under
+a new header, so `✅ Allowed`, `✅ Always allowed`, `❌ Denied`, `⏰ Timeout` and
+`⚡ Resolved in terminal` all keep what they are about. A row written before
+this shipped has no stored body and falls back to the old plain-text edit rather
+than answering with an empty message.
+
+Two things were found on the way. Telegram keeps an inline keyboard when
+`reply_markup` is omitted from an edit — which the two-minute "still waiting"
+refresh relies on, and which left three live buttons under every already-
+answered request; the terminal edits now clear it explicitly. And the fallback
+was reachable with nothing to fall back to: it triggered on `previewContent`,
+while the message that overflowed could have been built from `descDiff`, so an
+escape-heavy change with no preview would have produced an oversized prompt and
+no preview to carry it.
+
+The prompt also stops naming the same file two ways in two consecutive
+messages — the tool line uses the last two path segments, which is what the
+preview header already did — and the three buttons are defined once instead of
+once here and once in the tmux watchdog.
+
+Shortening applies to paths and to nothing else, which review caught before this
+shipped. `buildDetail` puts the whole tool input in the target slot for every
+tool that is not Edit or Write, so the same shortener that turns
+`/home/altsay/bots/helyx/memory/db.ts` into `memory/db.ts` turned
+`$ rm -rf /var/log/app` into `log/app` — not a shorter way of saying the same
+thing, a different thing, and the thing the operator was about to approve. A
+Bash command under eighty characters has no change block either, so that
+mangled line was the whole prompt. The target is now shortened only for the
+tools whose target is a path, and clamped so the head alone always fits a
+message, which closes the last case where a prompt could be refused for length
+with nothing to split out of it.
+
 ## v1.55.2
 
 ### chore: the local model the host actually runs

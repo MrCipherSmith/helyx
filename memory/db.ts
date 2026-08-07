@@ -889,6 +889,23 @@ const migrations: Migration[] = [
       await tx`ALTER TABLE message_queue ADD COLUMN IF NOT EXISTS reply_context JSONB`;
     },
   },
+  {
+    version: 50,
+    name: "permission_requests.rendered_body — what the answer keeps",
+    up: async (tx) => {
+      // Answering a permission request replaces its header and keeps the rest.
+      // The rest used to be recovered from `ctx.callbackQuery.message.text`,
+      // which is the message stripped of every entity, and sent back with no
+      // parse_mode — so a fenced change survived the question and not the
+      // answer. Storing the body as it was rendered makes the edit a
+      // concatenation, and lets it carry HTML.
+      //
+      // Nullable on purpose: requests already pending when this ships have no
+      // body stored, and the tap handler falls back to the old behaviour for
+      // them rather than failing on a column that could not have been filled.
+      await tx`ALTER TABLE permission_requests ADD COLUMN IF NOT EXISTS rendered_body TEXT`;
+    },
+  },
 ];
 
 // --- Public API ---

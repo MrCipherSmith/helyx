@@ -8,6 +8,7 @@ import { setPendingTool, setPendingInput } from "./handlers.ts";
 import { enqueueToolCommand } from "./text-handler.ts";
 import { doSwitch } from "./commands/session.ts";
 import { permissionService } from "../services/permission-service.ts";
+import { renderAnswered, NO_KEYBOARD, type Outcome } from "../utils/permission-render.ts";
 import { approveSkill, rejectSkill } from "../utils/skill-distiller.ts";
 import { logger } from "../logger.ts";
 import { recordAnswer } from "../services/ask-question.ts";
@@ -295,13 +296,34 @@ async function handlePermissionCallback(ctx: Context): Promise<void> {
   await permissionService.transition(requestId, newStatus);
 
   const result = await sql`
-    UPDATE permission_requests SET response = ${dbAction} WHERE id = ${requestId} AND chat_id = ${chatId} RETURNING id, tool_name, session_id
+    UPDATE permission_requests SET response = ${dbAction} WHERE id = ${requestId} AND chat_id = ${chatId} RETURNING id, tool_name, session_id, rendered_body
   `;
 
   if (result.length > 0) {
+    // The body as it was rendered, kept so the answer is a concatenation rather
+    // than a parse. Reading it back off the message was the bug: `message.text`
+    // is the plain text with every entity stripped, so a fenced change survived
+    // the question and not the answer.
+    //
+    // A request that was already pending when this shipped has no stored body.
+    // It falls back to what it would have done before — plain text, no
+    // parse_mode — rather than answering with an empty message.
+    const storedBody: string | null = result[0].rendered_body ?? null;
     const originalText = ctx.callbackQuery?.message?.text ?? "";
     // Match both old (Russian) and new (English) header for backward compat
     const descPart = originalText.replace(/^🔐 (Allow\?|Разрешить\?)\n*/, "").trim();
+    const answered = (outcome: Outcome, toolName?: string): Promise<unknown> =>
+      storedBody
+        ? ctx.editMessageText(renderAnswered(outcome, storedBody, toolName), {
+            parse_mode: "HTML",
+            reply_markup: NO_KEYBOARD,
+          }).catch(() => {})
+        : ctx.editMessageText(renderAnswered(outcome, descPart, toolName), {
+            // No parse_mode: this text came back off the message as plain text
+            // and is not escaped. The keyboard still has to go — three live
+            // buttons under an answered request is the same defect either way.
+            reply_markup: NO_KEYBOARD,
+          }).catch(() => {});
 
     if (action === "always") {
       const toolName = result[0].tool_name;
@@ -347,13 +369,13 @@ async function handlePermissionCallback(ctx: Context): Promise<void> {
         }
       }
 
-      await ctx.editMessageText(`✅ Always allowed: ${toolName}\n\n${descPart}`).catch(() => {});
+      await answered("always", toolName);
       await ctx.answerCallbackQuery({ text: `Always: ${toolName}` }).catch(() => {});
     } else if (action === "allow") {
-      await ctx.editMessageText(`✅ Allowed\n\n${descPart}`).catch(() => {});
+      await answered("allow");
       await ctx.answerCallbackQuery({ text: "Allowed" }).catch(() => {});
     } else {
-      await ctx.editMessageText(`❌ Denied\n\n${descPart}`).catch(() => {});
+      await answered("deny");
       await ctx.answerCallbackQuery({ text: "Denied" }).catch(() => {});
     }
   } else {
