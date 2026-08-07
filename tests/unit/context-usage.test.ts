@@ -17,6 +17,7 @@ import {
   isKnownModel,
   newestContextTokens,
   usageRatio,
+  knownModelPrefixes,
   windowFor,
 } from "../../utils/context-usage.ts";
 
@@ -76,8 +77,44 @@ describe("reading the tail", () => {
 describe("the denominator", () => {
   test("knows a model by prefix, so a date suffix does not lose it", () => {
     expect(windowFor("claude-sonnet-4-20250514")).toBe(200_000);
-    expect(windowFor("claude-sonnet-4-5-20250929")).toBe(1_000_000);
+    expect(windowFor("claude-sonnet-4-5-20250929")).toBe(200_000);
     expect(isKnownModel("claude-sonnet-4-20250514")).toBe(true);
+  });
+
+  test("the models this deployment actually runs have their real window", () => {
+    // Not a formality: every project here is on one of the first two. Reading
+    // a 1M window as 200k overstates the ratio fivefold, and the 85% trigger
+    // then fires at a seventh of the real usage, on every session, forever.
+    expect(windowFor("claude-opus-5")).toBe(1_000_000);
+    expect(windowFor("claude-sonnet-5")).toBe(1_000_000);
+  });
+
+  test("a longer prefix wins over a shorter one that would swallow it", () => {
+    // The bug this table shipped with. `claude-opus-4` sat above
+    // `claude-opus-4-8` and matched first, so a 1M model got a 200k
+    // denominator — and nothing said so, because a wrong window is a wrong
+    // percentage, not an error.
+    expect(windowFor("claude-opus-4-8")).toBe(1_000_000);
+    expect(windowFor("claude-opus-4-7")).toBe(1_000_000);
+    expect(windowFor("claude-opus-4-6")).toBe(1_000_000);
+    expect(windowFor("claude-sonnet-4-6")).toBe(1_000_000);
+    // …and the shorter prefixes still resolve for the models that need them.
+    expect(windowFor("claude-opus-4-5")).toBe(200_000);
+    expect(windowFor("claude-opus-4-1-20250805")).toBe(200_000);
+    expect(windowFor("claude-haiku-4-5")).toBe(200_000);
+  });
+
+  test("no entry is shadowed by an earlier one", () => {
+    // Guards the ordering rule itself rather than the ids: a future addition
+    // placed above its own longer sibling reintroduces the same silent bug.
+    const prefixes = knownModelPrefixes();
+    for (let i = 0; i < prefixes.length; i++) {
+      for (let j = i + 1; j < prefixes.length; j++) {
+        expect(
+          prefixes[j]!.startsWith(prefixes[i]!) ? `${prefixes[j]} is shadowed by ${prefixes[i]}` : "ok",
+        ).toBe("ok");
+      }
+    }
   });
 
   test("an unknown model falls back to the documented default, not a guess", () => {

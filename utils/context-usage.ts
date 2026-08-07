@@ -53,15 +53,42 @@ export const DEFAULT_CONTEXT_THRESHOLD = 0.85;
  * Prefixes rather than exact ids: model names carry a date suffix that changes
  * without the window changing with it, and a table keyed on the full id is a
  * table that silently falls back to the default every time a model is bumped.
+ *
+ * ★ Order is load-bearing, and it is the trap this table already fell into.
+ * The scan takes the first prefix that matches, so a shorter prefix listed
+ * above a longer one swallows it: `claude-opus-4` above `claude-opus-4-8` gave
+ * a 1M-window model a 200k denominator. Longest prefix first, always, and the
+ * test asserts the specific ids rather than the prefixes for that reason.
+ *
+ * Anthropic windows are from the Claude API model reference, not from memory —
+ * the 4.x line is not uniform (Opus 4.6/4.7/4.8 and Sonnet 4.6 are 1M; Opus
+ * 4.5/4.1 and Sonnet 4.5 are 200k), which is exactly how the wrong ones got
+ * written down the first time.
  */
 const WINDOWS: Array<[prefix: string, window: number]> = [
+  // 1M-window Claude models. Every project in this deployment runs one of the
+  // first two, so an omission here is not theoretical: it understates the
+  // window fivefold and fires the trigger at a fifth of the real usage.
+  ["claude-fable-5", 1_000_000],
+  ["claude-mythos-5", 1_000_000],
+  ["claude-opus-5", 1_000_000],
+  ["claude-sonnet-5", 1_000_000],
+  ["claude-opus-4-8", 1_000_000],
+  ["claude-opus-4-7", 1_000_000],
+  ["claude-opus-4-6", 1_000_000],
+  ["claude-sonnet-4-6", 1_000_000],
+  // 200k Claude models. These must stay below their 1M siblings above.
+  ["claude-opus-4-5", 200_000],
   ["claude-opus-4-1", 200_000],
   ["claude-opus-4", 200_000],
-  ["claude-sonnet-4-5", 1_000_000],
+  ["claude-sonnet-4-5", 200_000],
   ["claude-sonnet-4", 200_000],
   ["claude-haiku-4", 200_000],
   ["claude-3-5", 200_000],
   ["claude-3-7", 200_000],
+  // Everything else the operator can register. A model absent here is not a
+  // failure: it takes the documented default, `isKnownModel()` reports that it
+  // did, and the loop logs the window it used.
   ["gpt-4.1", 1_000_000],
   ["gpt-4o", 128_000],
   ["o3", 200_000],
@@ -79,6 +106,18 @@ export function windowFor(model: string | null | undefined): number {
     if (id.startsWith(prefix)) return window;
   }
   return DEFAULT_CONTEXT_WINDOW;
+}
+
+/**
+ * The prefixes, in scan order.
+ *
+ * Exported so the ordering rule above can be asserted rather than trusted: a
+ * new entry placed above its own longer sibling silently gives that model the
+ * wrong denominator, and a wrong denominator is a wrong percentage, not an
+ * error anyone sees.
+ */
+export function knownModelPrefixes(): string[] {
+  return WINDOWS.map(([prefix]) => prefix);
 }
 
 /** Whether a model id is one the table knows, as opposed to defaulted. */
