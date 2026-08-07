@@ -9,3 +9,16 @@
 - 2026-08-07T15:29:18.254Z - task-done: T3: Add/adjust tests and make them pass
 - 2026-08-07T15:29:18.348Z - task-done: T5: Extract the shared permission keyboard
 - 2026-08-07T15:29:20.283Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/98
+- 2026-08-07T15:40:15.313Z - ac-confirmed: AC1
+- 2026-08-07T15:40:15.592Z - ac-confirmed: AC2
+- 2026-08-07T15:40:15.821Z - ac-confirmed: AC3
+- 2026-08-07T15:40:16.095Z - ac-confirmed: AC4
+- 2026-08-07T15:40:16.575Z - ac-confirmed: AC5
+- 2026-08-07T15:40:16.968Z - ac-confirmed: AC6
+- 2026-08-07T15:40:17.217Z - ac-confirmed: AC7
+- 2026-08-07T15:40:17.464Z - task-done: T4: Self-review and prepare draft PR
+- 2026-08-07T15:40:23.660Z - completing
+- 2026-08-07T15:40:25.557Z - completion-failed: pull-request: PR checks not green
+- 2026-08-07T15:41:36.058Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/98 (warning: PR is not a draft)
+- 2026-08-07T15:41:37.695Z - completing
+- 2026-08-07T15:41:43.877Z - done: all gates passed

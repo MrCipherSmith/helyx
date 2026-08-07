@@ -3,15 +3,37 @@
   "id": "053",
   "slug": "permission-prompt-one-message-and-format",
   "title": "Permission prompt: one message, and formatting that survives the tap",
-  "status": "implemented",
+  "status": "done",
   "createdAt": "2026-08-07T15:17:43.440Z",
-  "updatedAt": "2026-08-07T15:29:20.283Z",
+  "updatedAt": "2026-08-07T15:41:43.877Z",
   "source": {
     "type": "description",
     "ref": null
   },
   "acChecksum": "sha256:ed611be19c2b3a62a9561cb3b0cc30775ac1f6a03ac4f89ab941162f5fcd8839",
-  "acConfirmed": {},
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-07T15:40:15.313Z"
+    },
+    "AC2": {
+      "at": "2026-08-07T15:40:15.592Z"
+    },
+    "AC3": {
+      "at": "2026-08-07T15:40:15.821Z"
+    },
+    "AC4": {
+      "at": "2026-08-07T15:40:16.095Z"
+    },
+    "AC5": {
+      "at": "2026-08-07T15:40:16.575Z"
+    },
+    "AC6": {
+      "at": "2026-08-07T15:40:16.967Z"
+    },
+    "AC7": {
+      "at": "2026-08-07T15:40:17.217Z"
+    }
+  },
   "pr": {
     "url": "https://github.com/MrCipherSmith/helyx/pull/98"
   },
@@ -65,7 +87,7 @@
       "id": "T4",
       "title": "Self-review and prepare draft PR",
       "kind": "review",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -73,7 +95,8 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T5",
@@ -134,6 +157,69 @@
       "at": "2026-08-07T15:29:20.283Z",
       "event": "implemented",
       "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/98"
+    },
+    {
+      "at": "2026-08-07T15:40:15.313Z",
+      "event": "ac-confirmed",
+      "detail": "AC1"
+    },
+    {
+      "at": "2026-08-07T15:40:15.592Z",
+      "event": "ac-confirmed",
+      "detail": "AC2"
+    },
+    {
+      "at": "2026-08-07T15:40:15.821Z",
+      "event": "ac-confirmed",
+      "detail": "AC3"
+    },
+    {
+      "at": "2026-08-07T15:40:16.095Z",
+      "event": "ac-confirmed",
+      "detail": "AC4"
+    },
+    {
+      "at": "2026-08-07T15:40:16.575Z",
+      "event": "ac-confirmed",
+      "detail": "AC5"
+    },
+    {
+      "at": "2026-08-07T15:40:16.968Z",
+      "event": "ac-confirmed",
+      "detail": "AC6"
+    },
+    {
+      "at": "2026-08-07T15:40:17.217Z",
+      "event": "ac-confirmed",
+      "detail": "AC7"
+    },
+    {
+      "at": "2026-08-07T15:40:17.464Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-07T15:40:23.660Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-07T15:40:25.557Z",
+      "event": "completion-failed",
+      "detail": "pull-request: PR checks not green"
+    },
+    {
+      "at": "2026-08-07T15:41:36.058Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/98 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-08-07T15:41:37.695Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-07T15:41:43.877Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
   ]
 }
