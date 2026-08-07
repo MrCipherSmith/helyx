@@ -5,13 +5,54 @@
   "title": "Claude Code talks Anthropic, Ollama talks OpenAI — a local model nobody can select",
   "status": "implemented",
   "createdAt": "2026-08-07T18:31:56.079Z",
-  "updatedAt": "2026-08-07T18:48:43.359Z",
+  "updatedAt": "2026-08-07T18:53:00.731Z",
   "source": {
     "type": "description",
     "ref": null
   },
   "acChecksum": "sha256:d67cadc2c2030061018b873cbd532fc04f4985f3b261c3ca124af1cc11aafc6e",
-  "acConfirmed": {},
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-07T18:52:59.839Z",
+      "note": "tests/unit/anthropic-ollama.test.ts 'blast radius' asserts no added file references .claude/settings.json, ANTHROPIC_BASE_URL or apiKeyHelper"
+    },
+    "AC2": {
+      "at": "2026-08-07T18:52:59.929Z",
+      "note": "resolve-provider-env.test.ts unmodified and green; no existing provider file changed"
+    },
+    "AC3": {
+      "at": "2026-08-07T18:53:00.015Z",
+      "note": "ollama-proxy.test.ts 'a non-streaming turn is translated in both directions' asserts system message, function-form tool, num_ctx 40960"
+    },
+    "AC4": {
+      "at": "2026-08-07T18:53:00.105Z",
+      "note": "anthropic-ollama.test.ts streaming describe asserts full event order plus tool_use/end_turn stop_reason"
+    },
+    "AC5": {
+      "at": "2026-08-07T18:53:00.193Z",
+      "note": "'an unknown tool_use_id is refused, not dropped' + route-level 'an orphaned tool_result is refused with the id it named'"
+    },
+    "AC6": {
+      "at": "2026-08-07T18:53:00.283Z",
+      "note": "'when Ollama is not there' asserts non-2xx and a message naming the cause"
+    },
+    "AC7": {
+      "at": "2026-08-07T18:53:00.373Z",
+      "note": "/v1/models asserted against the real parseModelsResponse; count_tokens returns a number and estimated:true"
+    },
+    "AC8": {
+      "at": "2026-08-07T18:53:00.462Z",
+      "note": "'model resolution through the route' — unknown name falls back to configured default, known name used as given"
+    },
+    "AC9": {
+      "at": "2026-08-07T18:53:00.550Z",
+      "note": "'the enable gate' asserts the gate, loopback hostname, exit-on-bind-failure and the port default away from 3456"
+    },
+    "AC10": {
+      "at": "2026-08-07T18:53:00.642Z",
+      "note": "typecheck clean, lint 0 errors, bun test tests/unit/ 1977 pass 0 fail"
+    }
+  },
   "pr": {
     "url": "https://github.com/MrCipherSmith/helyx/pull/99"
   },
@@ -65,7 +106,7 @@
       "id": "T4",
       "title": "Self-review and prepare draft PR",
       "kind": "review",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -73,7 +114,8 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     }
   ],
   "history": [
@@ -109,6 +151,61 @@
       "at": "2026-08-07T18:48:43.359Z",
       "event": "implemented",
       "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/99"
+    },
+    {
+      "at": "2026-08-07T18:52:59.839Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: tests/unit/anthropic-ollama.test.ts 'blast radius' asserts no added file references .claude/settings.json, ANTHROPIC_BASE_URL or apiKeyHelper"
+    },
+    {
+      "at": "2026-08-07T18:52:59.929Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: resolve-provider-env.test.ts unmodified and green; no existing provider file changed"
+    },
+    {
+      "at": "2026-08-07T18:53:00.015Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: ollama-proxy.test.ts 'a non-streaming turn is translated in both directions' asserts system message, function-form tool, num_ctx 40960"
+    },
+    {
+      "at": "2026-08-07T18:53:00.105Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: anthropic-ollama.test.ts streaming describe asserts full event order plus tool_use/end_turn stop_reason"
+    },
+    {
+      "at": "2026-08-07T18:53:00.193Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: 'an unknown tool_use_id is refused, not dropped' + route-level 'an orphaned tool_result is refused with the id it named'"
+    },
+    {
+      "at": "2026-08-07T18:53:00.283Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: 'when Ollama is not there' asserts non-2xx and a message naming the cause"
+    },
+    {
+      "at": "2026-08-07T18:53:00.373Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: /v1/models asserted against the real parseModelsResponse; count_tokens returns a number and estimated:true"
+    },
+    {
+      "at": "2026-08-07T18:53:00.462Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: 'model resolution through the route' — unknown name falls back to configured default, known name used as given"
+    },
+    {
+      "at": "2026-08-07T18:53:00.550Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: 'the enable gate' asserts the gate, loopback hostname, exit-on-bind-failure and the port default away from 3456"
+    },
+    {
+      "at": "2026-08-07T18:53:00.642Z",
+      "event": "ac-confirmed",
+      "detail": "AC10: typecheck clean, lint 0 errors, bun test tests/unit/ 1977 pass 0 fail"
+    },
+    {
+      "at": "2026-08-07T18:53:00.731Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
     }
   ]
 }
