@@ -138,7 +138,15 @@ async function pickModel(requested: string | undefined): Promise<string> {
   const chosen = resolveModel(requested, models, fallback);
   if (requested && chosen !== requested && !substituted.has(requested)) {
     substituted.add(requested);
-    log(`model "${requested}" is not pulled here — serving it with "${chosen}"`);
+    // Resolving `geekom-model-1` to `geekom-model-1:latest` is the same model
+    // under its full name, and saying "not pulled here" about it would be a log
+    // line that reads as a problem when nothing happened.
+    const sameModel = chosen.split(":")[0] === requested.split(":")[0];
+    log(
+      sameModel
+        ? `model "${requested}" → "${chosen}"`
+        : `model "${requested}" is not pulled here — serving it with "${chosen}"`,
+    );
   }
   return chosen;
 }
