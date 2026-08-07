@@ -25,6 +25,7 @@ import { parseFlags, flagValue } from "./utils/cli-flags.ts";
 import { resolveMemoryMb, presetsThatFit } from "./utils/host-memory.ts";
 import { dashboardEnvLines } from "./utils/dashboard-readiness.ts";
 import { classifyCheckout, pruneStaleStopHooks } from "./utils/stop-hook.ts";
+import { ollamaProxyEnabled, ollamaProxyPort } from "./utils/ollama-proxy-settings.ts";
 
 // --- ANSI colors ---
 const c = {
@@ -1477,6 +1478,33 @@ async function ensureAdminDaemon(): Promise<void> {
   console.log(`  ${c.green("✓")} admin-daemon — started (log: ${logFile})`);
 }
 
+/**
+ * Start the Anthropic→Ollama proxy, if this host wants one.
+ *
+ * Gated rather than unconditional: `ensureAdminDaemon` runs on every start and
+ * every bounce, and a host with no project bound to the local model gains
+ * nothing from a second listener. Off is the default, and off means not one
+ * line of this runs.
+ */
+async function ensureOllamaProxy(): Promise<void> {
+  if (!ollamaProxyEnabled(process.env.OLLAMA_PROXY_ENABLED)) return;
+
+  const running = await run(["pgrep", "-f", "ollama-proxy.ts"], { silent: true });
+  if (running.ok) {
+    console.log(`  ${c.dim("·")} ollama-proxy — already running`);
+    return;
+  }
+  const logFile = "/tmp/ollama-proxy.log";
+  Bun.spawn(["bun", resolve(BOT_DIR, "scripts/ollama-proxy.ts")], {
+    stdout: Bun.file(logFile),
+    stderr: Bun.file(logFile),
+    stdin: "ignore",
+    cwd: BOT_DIR,
+  });
+  const port = ollamaProxyPort(process.env.OLLAMA_PROXY_PORT);
+  console.log(`  ${c.green("✓")} ollama-proxy — started on 127.0.0.1:${port} (log: ${logFile})`);
+}
+
 async function tmuxStart() {
   const exists = await run(["tmux", "has-session", "-t", TMUX_SESSION], { silent: true });
 
@@ -1531,6 +1559,7 @@ async function tmuxStart() {
       console.log(`\n  Attach: ${c.cyan(`tmux attach -t ${TMUX_SESSION}`)}`);
     }
     await ensureAdminDaemon();
+    await ensureOllamaProxy();
     return;
   }
 
@@ -1579,6 +1608,7 @@ async function tmuxStart() {
   }
 
   await ensureAdminDaemon();
+  await ensureOllamaProxy();
 
   if (process.argv.includes("--attach") || process.argv.includes("-a")) {
     const proc = Bun.spawn(["tmux", "attach", "-t", TMUX_SESSION], {

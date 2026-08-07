@@ -1,16 +1,16 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "055",
   "slug": "claude-code-talks-anthropic-ollama-talks",
   "title": "Claude Code talks Anthropic, Ollama talks OpenAI — a local model nobody can select",
-  "status": "initializing",
+  "status": "in-progress",
   "createdAt": "2026-08-07T18:31:56.079Z",
-  "updatedAt": "2026-08-07T18:31:56.079Z",
+  "updatedAt": "2026-08-07T18:46:44.874Z",
   "source": {
     "type": "description",
     "ref": null
   },
-  "acChecksum": null,
+  "acChecksum": "sha256:d67cadc2c2030061018b873cbd532fc04f4985f3b261c3ca124af1cc11aafc6e",
   "acConfirmed": {},
   "pr": {
     "url": null
@@ -20,31 +20,90 @@
       "id": "T1",
       "title": "Collect remaining context",
       "kind": "context",
-      "status": "todo"
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T2",
       "title": "Implement per plan",
       "kind": "implement",
-      "status": "todo"
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T3",
       "title": "Add/adjust tests and make them pass",
       "kind": "test",
-      "status": "todo"
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T4",
       "title": "Self-review and prepare draft PR",
       "kind": "review",
-      "status": "todo"
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
     }
   ],
   "history": [
     {
       "at": "2026-08-07T18:31:56.079Z",
       "event": "created"
+    },
+    {
+      "at": "2026-08-07T18:38:56.944Z",
+      "event": "frozen",
+      "detail": "10 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-07T18:38:59.800Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-07T18:39:05.090Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-07T18:46:44.787Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-07T18:46:44.874Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
     }
   ]
 }

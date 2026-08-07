@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+### feat: a local model Claude Code can actually talk to
+
+`/providers` could register any Anthropic-compatible backend, and four were —
+all of them cloud. The one model running on this machine could not be selected
+at all: Claude Code speaks the Anthropic Messages API and Ollama has no
+`/v1/messages` to point at, so the `custom` slot had no correct URL to give it.
+Pointing it at `localhost:11434` produced 404s, not a fallback.
+
+There is a translator now, in this repository. `scripts/ollama-proxy.ts` accepts
+Anthropic requests on `127.0.0.1` and speaks Ollama's `/api/chat` on the other
+side; `utils/anthropic-ollama.ts` is the mapping, kept free of I/O so both
+directions are asserted in tests rather than discovered in a session. It is
+registered as an ordinary row in `providers` and bound to a project like any
+other, so selecting it changes nothing outside that project's own launch.
+
+That last sentence is the whole design. The off-the-shelf routers configure the
+machine: one of them was tried here first, wrote `ANTHROPIC_BASE_URL` into the
+global `~/.claude/settings.json`, and stopped every Claude Code session on the
+host from starting — including the ones belonging to nobody's experiment.
+Nothing in this feature reads or writes Claude Code's own configuration, and a
+test asserts it.
+
+Three details that are silent when wrong, so each is pinned by a test:
+`options.num_ctx` is always sent, because Ollama does not fall back to the
+model's own context length and a truncated prompt reads as a model ignoring its
+rules; a turn containing a tool call reports `stop_reason: "tool_use"` whatever
+Ollama says about why generation stopped, because Claude Code ends its agent
+loop on anything else; and a `tool_result` naming an unknown `tool_use_id` is
+refused rather than dropped, because a dropped result is a model answering as
+though the tool never ran.
+
+Off by default (`OLLAMA_PROXY_ENABLED`), listening on `127.0.0.1:3458`,
+heartbeating into `process_health` so `/monitor` shows whether it is up. A model
+name this host never pulled — Claude Code picks its own for background work — is
+served with the configured default instead of failing, and says so once in the
+log.
+
+Specification: `docs/requirements/ollama-provider-2026-08-07/`.
+
 ### fix: the change that survived the question and not the answer
 
 A permission request arrived as two messages. The first carried the file and
