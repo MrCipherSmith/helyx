@@ -28,6 +28,8 @@ export interface EditedMessage {
   chatId: string;
   messageId: number;
   text: string;
+  /** What the edit passed alongside the text — `parse_mode`, `reply_markup`. */
+  extra?: Record<string, unknown>;
 }
 
 export interface DeletedMessage {
@@ -112,8 +114,11 @@ export async function installFakeTelegram(): Promise<{ telegram: FakeTelegram; r
       const result = telegram.sendResult;
       return typeof result === "function" ? result(text) : result;
     },
-    editTelegramMessage: async (_token: string, chatId: string, messageId: number, text: string) => {
-      telegram.edits.push({ chatId, messageId, text });
+    editTelegramMessage: async (_token: string, chatId: string, messageId: number, text: string, extra?: Record<string, unknown>) => {
+      // `extra` is recorded because clearing the keyboard is a decision the
+      // edit has to make explicitly — Telegram keeps the old markup when it is
+      // omitted — and a fixture that drops it cannot tell the two apart.
+      telegram.edits.push({ chatId, messageId, text, extra });
       const result = telegram.editResult;
       return typeof result === "function" ? result(text) : result;
     },

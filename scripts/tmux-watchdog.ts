@@ -29,6 +29,7 @@ import type postgres from "postgres";
 import { stripAnsi } from "../utils/terminal.ts";
 import { isPermissionPrompt, findPromptSignal, PERM_SIGNAL_RE, PERM_CHOICE_RE } from "../utils/permission-prompt.ts";
 import { escapeHtml } from "../utils/html.ts";
+import { permissionKeyboard } from "../utils/permission-message.ts";
 import { meaningfulPaneLines } from "../utils/pane-parse.ts";
 
 // ---------------------------------------------------------------------------
@@ -327,13 +328,7 @@ async function sendPermissionMessage(
     chat_id: Number(chatId),
     text,
     parse_mode: "HTML",
-    reply_markup: {
-      inline_keyboard: [[
-        { text: "✅ Yes",    callback_data: `perm:allow:${requestId}`  },
-        { text: "✅ Always", callback_data: `perm:always:${requestId}` },
-        { text: "❌ No",     callback_data: `perm:deny:${requestId}`   },
-      ]],
-    },
+    reply_markup: permissionKeyboard(requestId),
     ...forumExtra,
   });
   const msgId = (res.result as { message_id?: number } | undefined)?.message_id ?? null;

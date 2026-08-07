@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 2,
+  "id": "053",
+  "slug": "permission-prompt-one-message-and-format",
+  "title": "Permission prompt: one message, and formatting that survives the tap",
+  "status": "in-progress",
+  "createdAt": "2026-08-07T15:17:43.440Z",
+  "updatedAt": "2026-08-07T15:18:49.417Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:ed611be19c2b3a62a9561cb3b0cc30775ac1f6a03ac4f89ab941162f5fcd8839",
+  "acConfirmed": {},
+  "pr": {
+    "url": null
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T5",
+      "title": "Extract the shared permission keyboard",
+      "kind": "implement",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-07T15:17:43.440Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-07T15:18:44.370Z",
+      "event": "task-added",
+      "detail": "T5: Extract the shared permission keyboard"
+    },
+    {
+      "at": "2026-08-07T15:18:49.325Z",
+      "event": "frozen",
+      "detail": "7 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-07T15:18:49.417Z",
+      "event": "started"
+    }
+  ]
+}

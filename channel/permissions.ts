@@ -13,6 +13,15 @@ import type { StatusManager } from "./status.ts";
 import { sendTelegramMessage, deleteTelegramMessage, editTelegramMessage } from "./telegram.ts";
 import { channelLogger } from "../logger.ts";
 import { escapeHtml } from "../utils/html.ts";
+import {
+  fitsOneMessage,
+  permissionKeyboard,
+  renderAnswered,
+  renderPrompt,
+  renderPromptBody,
+  shortPath,
+  NO_KEYBOARD,
+} from "../utils/permission-message.ts";
 import { buildCorrectionPrompt, loadStateMatrix, validateMatrixArtifact, type StateMatrix } from "../orchestrator/matrix.ts";
 import { enqueueCorrection, getOrCreateRun, markRunStatus, recordValidationFailure } from "../orchestrator/store.ts";
 
@@ -248,31 +257,41 @@ export class PermissionHandler {
     // .metaproject/flows/005-*/journal.md.
     await this.status.updateStatus(chatId, shortDesc);
 
+    // One message when it fits. The change and the question it is asking about
+    // are one thought; they were two messages, and on a phone often two
+    // screens. The split below is what happens when one message would be
+    // refused — Telegram does not truncate an oversized message, it rejects it,
+    // and a prompt that never arrives is worse than a prompt in two parts.
+    const lang = toolName === "Edit" ? "diff" : "";
+    const change = previewContent || descDiff;
+    const body = renderPromptBody({ toolName, descMain, change, lang });
+    const oneMessage = fitsOneMessage(body);
+
+    // The fallback carries `change`, not `previewContent`: the two differ when
+    // the change came from `descDiff`, and a fallback that only knows about one
+    // of them sends an oversized prompt with nothing to fall back to — which
+    // Telegram refuses, and a refused prompt auto-denies.
     let previewMsgId: number | null = null;
-    if (previewContent) {
-      const lang = toolName === "Edit" ? "diff" : "";
-      const filePath = String(input?.file_path ?? input?.command ?? "").split("/").slice(-2).join("/");
+    if (!oneMessage && change) {
+      const filePath = shortPath(String(input?.file_path ?? input?.command ?? ""));
       const header = filePath ? `${filePath}:\n` : "";
       const result = await sendTelegramMessage(token, chatId,
-        `${escapeHtml(header)}<pre><code class="language-${lang}">${escapeHtml(previewContent)}</code></pre>`,
+        `${escapeHtml(header)}<pre><code class="language-${lang}">${escapeHtml(change)}</code></pre>`,
         { parse_mode: "HTML", ...forumExtra },
       );
       if (result.ok) previewMsgId = result.messageId;
     }
 
-    const showDiffInline = descDiff && !previewContent;
-    const msgText = showDiffInline
-      ? `🔐 Allow?\n\n${escapeHtml(descMain)}\n\n<pre><code class="language-diff">${escapeHtml(descDiff)}</code></pre>`
-      : `🔐 Allow?\n\n${escapeHtml(descMain)}`;
+    // The body the answer will keep. When the prompt had to be split, the
+    // change is already in a message of its own and repeating it here would
+    // arrive twice.
+    const storedBody = oneMessage
+      ? body
+      : renderPromptBody({ toolName, descMain, change: "", lang });
+    const msgText = renderPrompt(storedBody);
     const sendResult = await sendTelegramMessage(token, chatId, msgText, {
       parse_mode: "HTML",
-      reply_markup: {
-        inline_keyboard: [[
-          { text: "✅ Yes", callback_data: `perm:allow:${request_id}` },
-          { text: "✅ Always", callback_data: `perm:always:${request_id}` },
-          { text: "❌ No", callback_data: `perm:deny:${request_id}` },
-        ]],
-      },
+      reply_markup: permissionKeyboard(request_id),
       ...forumExtra,
     });
 
@@ -289,8 +308,8 @@ export class PermissionHandler {
 
     if (sendResult.messageId) {
       await this.ctx.sql`
-        INSERT INTO permission_requests (id, session_id, chat_id, tool_name, description, message_id)
-        VALUES (${request_id}, ${sessionId}, ${chatId}, ${toolName}, ${desc}, ${sendResult.messageId})
+        INSERT INTO permission_requests (id, session_id, chat_id, tool_name, description, message_id, rendered_body)
+        VALUES (${request_id}, ${sessionId}, ${chatId}, ${toolName}, ${desc}, ${sendResult.messageId}, ${storedBody})
         ON CONFLICT (id) DO NOTHING
       `;
     }
@@ -299,7 +318,7 @@ export class PermissionHandler {
     // default apply, so the ten minutes is written once. It used to be spelled
     // out at both ends, which made the default dead code and the two free to
     // drift apart.
-    await this.pollForResponse(request_id, chatId, token, previewMsgId, sendResult.messageId, msgText, desc, this.ctx.permissionTimeoutMs?.(), forumExtra);
+    await this.pollForResponse(request_id, chatId, token, previewMsgId, sendResult.messageId, msgText, storedBody, this.ctx.permissionTimeoutMs?.(), forumExtra);
   }
 
   private parseInput(params: any): Record<string, any> {
@@ -385,7 +404,7 @@ export class PermissionHandler {
     previewMsgId: number | null,
     telegramMsgId: number | null,
     originalMsgText: string,
-    desc: string,
+    body: string,
     timeoutMs = 600_000,
     _forumExtra: Record<string, unknown> = {},
   ): Promise<void> {
@@ -440,7 +459,10 @@ export class PermissionHandler {
           channelLogger.info({ requestId: request_id }, "permission resolved externally");
           if (previewMsgId) deleteTelegramMessage(token, chatId, previewMsgId);
           if (telegramMsgId) {
-            await editTelegramMessage(token, chatId, telegramMsgId, `⚡ Resolved in terminal\n\n${escapeHtml(desc)}`, { parse_mode: "HTML" });
+            await editTelegramMessage(token, chatId, telegramMsgId, renderAnswered("terminal", body), {
+              parse_mode: "HTML",
+              reply_markup: NO_KEYBOARD,
+            });
           }
           await this.status.updateStatus(chatId, "Processing...");
           resolved = true;
@@ -468,7 +490,10 @@ export class PermissionHandler {
         });
         if (previewMsgId) deleteTelegramMessage(token, chatId, previewMsgId);
         if (telegramMsgId) {
-          await editTelegramMessage(token, chatId, telegramMsgId, `⏰ Timeout\n\n${escapeHtml(desc)}`, { parse_mode: "HTML" });
+          await editTelegramMessage(token, chatId, telegramMsgId, renderAnswered("timeout", body), {
+            parse_mode: "HTML",
+            reply_markup: NO_KEYBOARD,
+          });
         }
         const sessionId = this.ctx.sessionId();
         if (sessionId) {
