@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.56.0
 
 ### feat: a local model Claude Code can actually talk to
 
