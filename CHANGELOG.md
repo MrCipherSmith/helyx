@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.55.2
 
 ### chore: the local model the host actually runs
 
