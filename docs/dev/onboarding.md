@@ -67,13 +67,13 @@ The wizard walks through 7 sections of questions, then automatically performs al
 - `Anthropic` — asks for API key; sets `CLAUDE_MODEL=claude-sonnet-4-20250514`.
 - `Google AI` — asks for API key and model (default: `gemma-4-31b-it`).
 - `OpenRouter` — asks for API key and model (default: `qwen/qwen3-235b-a22b:free`).
-- `Ollama` — asks for chat model name (default: `gemma4:e4b`); no API key required.
+- `Ollama` — asks for chat model name (default: `geekom-model-1`); no API key required.
 
 **3b. Ollama for embeddings and summarization**
 
 The wizard auto-detects Ollama at `localhost:11434`. If found, it offers to configure:
 - Embedding model (default: `nomic-embed-text`) — powers semantic memory search (`recall`).
-- Summarization model (default: `gemma4:e4b`) — used for session summaries and skill curation.
+- Summarization model (default: `geekom-model-1`) — used for session summaries and skill curation.
 
 If Ollama is not detected, memory is stored without embeddings (no semantic search, data is preserved).
 

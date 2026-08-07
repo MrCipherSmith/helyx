@@ -27,7 +27,7 @@ const EnvSchema = z.object({
 
   // Ollama
   OLLAMA_URL: z.string().default("http://localhost:11434"),
-  OLLAMA_CHAT_MODEL: z.string().default("gemma4:e4b"),
+  OLLAMA_CHAT_MODEL: z.string().default("geekom-model-1"),
   SUMMARIZE_MODEL: z.string().default(""), // if set, use local Ollama model for summarization
   EMBEDDING_MODEL: z.string().default("nomic-embed-text"),
 
