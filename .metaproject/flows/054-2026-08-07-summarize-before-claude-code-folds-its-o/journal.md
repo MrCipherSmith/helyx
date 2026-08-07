@@ -3,3 +3,16 @@
 - 2026-08-07T16:34:52.360Z - flow created
 - 2026-08-07T16:35:23.765Z - frozen: 9 criteria; checksum recorded
 - 2026-08-07T16:35:23.855Z - started
+- 2026-08-07T20:20:43.407Z - task-done: T1: Collect remaining context
+- 2026-08-07T20:20:43.494Z - task-done: T2: Implement per plan
+- 2026-08-07T20:20:43.581Z - task-done: T3: Add/adjust tests and make them pass
+- 2026-08-07T20:20:43.671Z - task-done: T4: Self-review and prepare draft PR
+- 2026-08-07T20:20:54.709Z - ac-confirmed: AC1: context-usage.test.ts: sums the three fields to 611571 on the real measured shape; null for an entry with no usage
+- 2026-08-07T20:20:54.798Z - ac-confirmed: AC2: windowFor covers the models in use (opus-5/sonnet-5 = 1M) and falls back to DEFAULT_CONTEXT_WINDOW; prefix shadowing asserted by knownModelPrefixes()
+- 2026-08-07T20:20:54.887Z - ac-confirmed: AC3: context-pressure.test.ts + decideCrossing: a busy session at the threshold returns reason=busy, summarize=false
+- 2026-08-07T20:20:54.981Z - ac-confirmed: AC4: high-water gate: a second tick at the same ratio returns already-summarized; growth past the mark is a new crossing
+- 2026-08-07T20:20:55.073Z - ac-confirmed: AC5: mcp/server.ts races summarizeBeforeCompact against PRE_COMPACT_TIMEOUT_MS and answers 200 in every branch including timeout
+- 2026-08-07T20:20:55.160Z - ac-confirmed: AC6: scripts/pre-compact-hook.sh exits 0 on every path, bot unreachable included
+- 2026-08-07T20:20:55.250Z - ac-confirmed: AC7: setupPreCompactHook in cli.ts registers and prunes stale entries like the Stop/PreToolUse installers
+- 2026-08-07T20:20:55.338Z - ac-confirmed: AC8: CONTEXT_SUMMARY_THRESHOLD via shared contextThreshold(); loop logs ratio together with the window it used
+- 2026-08-07T20:20:55.428Z - ac-confirmed: AC9: typecheck clean, lint 0 errors, bun test tests/unit/ 1960 pass 0 fail

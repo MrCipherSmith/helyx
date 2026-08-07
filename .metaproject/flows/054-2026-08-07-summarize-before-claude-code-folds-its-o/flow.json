@@ -5,13 +5,50 @@
   "title": "Summarize before Claude Code folds its own context",
   "status": "in-progress",
   "createdAt": "2026-08-07T16:34:52.360Z",
-  "updatedAt": "2026-08-07T16:35:23.855Z",
+  "updatedAt": "2026-08-07T20:20:55.428Z",
   "source": {
     "type": "description",
     "ref": null
   },
   "acChecksum": "sha256:1597079a3f5d2539bc783f6838011a9af5579899d4e2bef8845694d7ae3a91ce",
-  "acConfirmed": {},
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-07T20:20:54.709Z",
+      "note": "context-usage.test.ts: sums the three fields to 611571 on the real measured shape; null for an entry with no usage"
+    },
+    "AC2": {
+      "at": "2026-08-07T20:20:54.798Z",
+      "note": "windowFor covers the models in use (opus-5/sonnet-5 = 1M) and falls back to DEFAULT_CONTEXT_WINDOW; prefix shadowing asserted by knownModelPrefixes()"
+    },
+    "AC3": {
+      "at": "2026-08-07T20:20:54.887Z",
+      "note": "context-pressure.test.ts + decideCrossing: a busy session at the threshold returns reason=busy, summarize=false"
+    },
+    "AC4": {
+      "at": "2026-08-07T20:20:54.981Z",
+      "note": "high-water gate: a second tick at the same ratio returns already-summarized; growth past the mark is a new crossing"
+    },
+    "AC5": {
+      "at": "2026-08-07T20:20:55.073Z",
+      "note": "mcp/server.ts races summarizeBeforeCompact against PRE_COMPACT_TIMEOUT_MS and answers 200 in every branch including timeout"
+    },
+    "AC6": {
+      "at": "2026-08-07T20:20:55.160Z",
+      "note": "scripts/pre-compact-hook.sh exits 0 on every path, bot unreachable included"
+    },
+    "AC7": {
+      "at": "2026-08-07T20:20:55.250Z",
+      "note": "setupPreCompactHook in cli.ts registers and prunes stale entries like the Stop/PreToolUse installers"
+    },
+    "AC8": {
+      "at": "2026-08-07T20:20:55.338Z",
+      "note": "CONTEXT_SUMMARY_THRESHOLD via shared contextThreshold(); loop logs ratio together with the window it used"
+    },
+    "AC9": {
+      "at": "2026-08-07T20:20:55.428Z",
+      "note": "typecheck clean, lint 0 errors, bun test tests/unit/ 1960 pass 0 fail"
+    }
+  },
   "pr": {
     "url": null
   },
@@ -20,7 +57,7 @@
       "id": "T1",
       "title": "Collect remaining context",
       "kind": "context",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -28,13 +65,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T2",
       "title": "Implement per plan",
       "kind": "implement",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -42,13 +80,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T3",
       "title": "Add/adjust tests and make them pass",
       "kind": "test",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -56,13 +95,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T4",
       "title": "Self-review and prepare draft PR",
       "kind": "review",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -70,7 +110,8 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     }
   ],
   "history": [
@@ -86,6 +127,71 @@
     {
       "at": "2026-08-07T16:35:23.855Z",
       "event": "started"
+    },
+    {
+      "at": "2026-08-07T20:20:43.407Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-07T20:20:43.494Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-07T20:20:43.581Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-07T20:20:43.671Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-07T20:20:54.709Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: context-usage.test.ts: sums the three fields to 611571 on the real measured shape; null for an entry with no usage"
+    },
+    {
+      "at": "2026-08-07T20:20:54.798Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: windowFor covers the models in use (opus-5/sonnet-5 = 1M) and falls back to DEFAULT_CONTEXT_WINDOW; prefix shadowing asserted by knownModelPrefixes()"
+    },
+    {
+      "at": "2026-08-07T20:20:54.887Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: context-pressure.test.ts + decideCrossing: a busy session at the threshold returns reason=busy, summarize=false"
+    },
+    {
+      "at": "2026-08-07T20:20:54.981Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: high-water gate: a second tick at the same ratio returns already-summarized; growth past the mark is a new crossing"
+    },
+    {
+      "at": "2026-08-07T20:20:55.073Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: mcp/server.ts races summarizeBeforeCompact against PRE_COMPACT_TIMEOUT_MS and answers 200 in every branch including timeout"
+    },
+    {
+      "at": "2026-08-07T20:20:55.160Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: scripts/pre-compact-hook.sh exits 0 on every path, bot unreachable included"
+    },
+    {
+      "at": "2026-08-07T20:20:55.250Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: setupPreCompactHook in cli.ts registers and prunes stale entries like the Stop/PreToolUse installers"
+    },
+    {
+      "at": "2026-08-07T20:20:55.338Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: CONTEXT_SUMMARY_THRESHOLD via shared contextThreshold(); loop logs ratio together with the window it used"
+    },
+    {
+      "at": "2026-08-07T20:20:55.428Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: typecheck clean, lint 0 errors, bun test tests/unit/ 1960 pass 0 fail"
     }
   ]
 }
