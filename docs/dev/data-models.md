@@ -4,7 +4,7 @@
 
 Helyx uses **PostgreSQL 16** with the **pgvector** extension for similarity search on long-term memory embeddings. All schema changes are managed through a custom migration framework defined entirely in `memory/db.ts` — there is no separate ORM or migration tool. Every migration runs inside an explicit transaction, and a `schema_versions` table records which versions have been applied.
 
-The current schema version is **v46**. Version numbers jump from v22 to v39 — the Skills Toolkit migrations were originally numbered v23–v27 but were renumbered v39–v43 during a rebase (commit `fe5380e`). This is intentional and documented.
+The current schema version is **v49**. Version numbers jump from v22 to v39 — the Skills Toolkit migrations were originally numbered v23–v27 but were renumbered v39–v43 during a rebase (commit `fe5380e`). This is intentional and documented.
 
 The postgres.js library is used for all queries via tagged template literals. Raw SQL (`tx.unsafe()`) is restricted to DDL that requires dynamic interpolation (HNSW index creation, trigger DDL, dedup index with WHERE clauses).
 
@@ -167,7 +167,7 @@ Created in v1; extended by v7.
 
 #### `message_queue`
 
-Created in v1; extended by v11, v19.
+Created in v1; extended by v11, v19, v45, v49.
 
 | Column | Type | Constraints | Notes |
 |---|---|---|---|
@@ -181,6 +181,7 @@ Created in v1; extended by v11, v19.
 | `created_at` | `TIMESTAMPTZ` | NOT NULL DEFAULT now() | |
 | `attachments` | `JSONB` | nullable | Added v11; file attachments |
 | `forwarded_at` | `TIMESTAMPTZ` | nullable | Added v45; set when the supervisor force-delivers a stuck row, so a second sweep does not forward it again |
+| `reply_context` | `JSONB` | nullable | Added v49; the Telegram message the operator was pointing at with a native reply. A column of its own rather than a key inside `attachments`, which is already two different shapes (a file array from the media handlers, an object from the voice flag) — a reply is orthogonal to what the message carries, since a photo or a voice note can be a reply too. |
 
 **Indexes:** `(session_id, delivered, created_at)`, UNIQUE `(chat_id, message_id) WHERE message_id IS NOT NULL AND message_id NOT IN ('', 'tool')` (dedup, v19), and `(session_id, created_at) WHERE delivered = false AND forwarded_at IS NULL` (v45) — the partial index that makes the stuck-queue sweep cheap.
 
@@ -637,6 +638,33 @@ Created in v1; extended by v7, v10, v16.
 
 ---
 
+### Questions
+
+#### `question_requests`
+
+Created in v47; extended by v48. Carries Claude Code's own `AskUserQuestion` tool calls to Telegram — that tool draws its own selector in the terminal and is not a permission request, so nothing carried it out before this table existed. One row per tool call, not per question: the tool is answered as a whole, so answers are kept as an array indexed by question.
+
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| `id` | `TEXT` | PRIMARY KEY | |
+| `session_id` | `BIGINT` | nullable | |
+| `chat_id` | `TEXT` | NOT NULL | |
+| `project_path` | `TEXT` | nullable | |
+| `questions` | `JSONB` | NOT NULL | The questions asked, as given to the tool |
+| `answers` | `JSONB` | NOT NULL DEFAULT `'[]'` | Answers, indexed by question |
+| `message_ids` | `JSONB` | NOT NULL DEFAULT `'[]'` | Telegram message IDs of the poll/prompt messages sent |
+| `answered_at` | `TIMESTAMPTZ` | nullable | |
+| `expired_at` | `TIMESTAMPTZ` | nullable | Set when the hook stops waiting. A tap after this must be refused: the waiter is gone, Claude is back at its terminal selector, and telling the operator "sending" would be a lie |
+| `created_at` | `TIMESTAMPTZ` | NOT NULL DEFAULT now() | |
+| `awaiting_question` | `INT` | nullable | Added v48; index of the question currently waiting for a typed answer rather than one of the offered options — only questions with ready-made options reached Telegram before this column, so anything without one was declined whole and asked in the terminal only |
+
+**Index:** `idx_question_requests_open` — partial, on `session_id WHERE answered_at IS NULL AND expired_at IS NULL`. Lets the supervisor tell "waiting for the operator" from "hung", which used to be indistinguishable and was the false alarm that made an earlier outage visible.
+
+**Written by:** `POST /api/hooks/ask-question` (`mcp/server.ts`) on receipt of the hook call; Telegram poll/typed-answer handlers on response.
+**Read by:** `POST /api/hooks/ask-question`'s own long-poll (holds the request open until answered or expired); supervisor incident detection.
+
+---
+
 ## Running Migrations
 
 ### Bootstrap
@@ -652,7 +680,7 @@ On every process start, `migrate()` in `memory/db.ts` is called. It:
 ### Adding a migration
 
 1. Append a new entry to the `migrations` array in `memory/db.ts`.
-2. Assign the next sequential version number (currently: next would be **v44**).
+2. Assign the next sequential version number (currently: next would be **v50**).
 3. Write the `up` function. Use `tx` (typed template literal) for normal DML/DDL; use `tx.unsafe()` only when dynamic interpolation is required.
 4. Optionally add a `down` function for reversible changes.
 5. Restart the process — `migrate()` will pick up and apply the new migration.

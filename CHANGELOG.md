@@ -1,6 +1,143 @@
 # Changelog
 
-## Unreleased
+## v1.55.1
+
+### fix: a project directory that matched by prefix, not by boundary
+
+`toContainerPath()` in `bot/commands/project-add.ts` decided whether a host
+path belonged inside `HOST_PROJECTS_DIR` or `HOST_HOME` with
+`hostPath.startsWith(dir)` — no separator, so `/home/altsay/bots-backup`
+matched `/home/altsay/bots` as if it were `/home/altsay/bots/backup`, and the
+container path came out aimed at the wrong tree rather than missing. Both
+checks now require the boundary itself — `hostPath === dir ||
+hostPath.startsWith(dir + sep)` — the pattern `request-guards.ts` already used
+for the same class of check.
+
+### fix: the answer that stayed in the status
+
+The operator's report, twice: the status showed part of an answer and
+Telegram never got it, so the only way to be answered was to ask again. Five
+parallel audits of the previous day and a half found not one cause but a
+chain, and the ones that mattered were all introduced by work meant to make
+the status better.
+
+The operator's message was landing inside a turn already running.
+`getBusyChats` in `channel/status.ts` exempted continuations, on the reasoning
+that a continuation is the tail of a step already reported and holding the
+next message behind it only trades one silence for another. What it did
+instead was hand that message to a session mid-turn: Claude Code folds it into
+the turn in flight, answers it in ordinary terminal text, and a turn that has
+already called `reply` rarely calls it twice. The answer then existed only in
+the status — which, since the transcript reader landed, renders the session's
+own prose and keeps it in the closing message. A continuation is busy again
+now; the wait it costs is bounded by the idle window that closes it.
+
+A status closed by a reply could come back and take the reply's company with
+it. `maybeMoveToBottom` in `channel/status.ts` ran after the await inside
+`editWithDrain` without checking whether the state had been closed meanwhile,
+and `noteReplySent` had just recorded a message id above the status — so the
+move fired anyway: a fresh status was sent and pinned, and the ✅ summary that
+had just replaced the old one was deleted as "the old status". Seven of one
+hundred and thirty-three moves in a single day ended that way.
+
+A channel could keep painting the status with its reply half dead. The
+hard-exit deadline in `channel/index.ts` was chained to the `.finally()` of
+graceful shutdown, whose two awaits are `markDisconnected()` and `sql.end()` —
+and the reason shutdown runs is usually that Postgres is unreachable. The
+deadline never armed, the poller stopped, and the MCP transport and every
+status timer kept running while `reply` died on its first query. It fired on
+all eight channels at once, on a restart of the stack.
+
+An oversized chunk lost the whole reply. `chunkMarkdown` in `utils/chunk.ts`
+emitted a block bigger than the budget on the theory that an oversized message
+is Telegram's problem to reject — Telegram rejects it, the send bails, and
+nothing is delivered; the model, told only "Telegram API error", restates the
+answer as terminal text where nobody sees it. Oversized fences are now carried
+across chunks, closed at the cut and re-opened with their info string. In the
+`reply` tool handler in `channel/tools.ts`, chunks after the first were sent
+with their result discarded, so a partly refused reply reported success; the
+pre-mark in `pending_replies` was never cleared on failure, so recovery
+skipped it forever; and an empty reply dereferenced `textChunks[0]!` and took
+the tool call down — all three fixed alongside it.
+
+The forwarded summary in `utils/turn-summary.ts` — the Stop-hook fallback for
+a turn that never called `reply` — was clamped to 3500 characters and sent as
+one silent message. It now goes out in as many messages as the answer takes,
+and is spoken like a reply of the same length.
+
+And the response guard's re-queue, in `channel/status.ts`, had never once
+worked. It re-inserted the operator's question with the original Telegram
+message id against `idx_queue_msgid_dedup`, the UNIQUE index on `(chat_id,
+message_id)`; every re-queue raised a duplicate key, was swallowed, and
+returned false — the operator got the red alert and never the question back.
+It now upserts with `ON CONFLICT (chat_id, message_id)`.
+
+### fix: the turn that ended and the dialogue that did not
+
+A session that answers without calling `reply` has its answer forwarded by the
+Stop hook — "итог хода" — and that half worked. What did not was the closing:
+the status message stayed open, the chat stayed inside `getBusyChats`, and the
+poller holds messages for busy chats. The operator read the answer and then
+watched their next message sit in `message_queue` until the response guard
+happened to look at it, between five and ten minutes later.
+
+Measured on `arena`: message queued at 21:20:30, delivered at 21:23:15, and
+what delivered it was the guard's second firing, not anything that knew the
+turn was over.
+
+`deliverTurnSummary` now says so, through the only thing that reaches the
+channel process from inside the container: `pg_notify('turn_closed_<session>',
+'<chat>:<ms>')`. The channel listens for it beside the queue and closes that
+turn's status — guard disarmed, `active_status_messages` row gone, chat out of
+`getBusyChats`, and the poller woken in the same motion, so the waiting message
+goes out immediately.
+
+The timestamp is not decoration. The guard can beat the hook to the same turn:
+it unblocks the chat, the poller delivers, a new status opens — and a late
+close would tear down a turn that is only just starting. A status younger than
+the turn being closed is left alone.
+
+### feat: the reply rule, stated where every session can see it
+
+The rule the whole channel rests on — the operator reads what goes through the
+`reply` tool and nothing else — was written down nowhere. `arena` hung on that;
+its CLAUDE.md is about models. `vantage-frontend` (34 KB of project rules) and
+`vantage-backend` (10 KB) never mention the channel either, and neither does
+the global CLAUDE.md: they work because the model guesses right, which is not a
+mechanism. The tool's own description was "Send a message to a Telegram chat" —
+true, and no help to a session deciding whether printing the answer is enough.
+
+It is now stated in `channel/reply-rule.ts` and read from there on three
+different paths into the context: the MCP server's `instructions`, which the
+client puts in the system prompt before the session has read a single file; the
+`reply` tool's description; and a note in front of every delivered message,
+which is the copy a long turn cannot leave behind.
+
+Composing that message is now `composeDelivery` — pure, and exported, because
+the order of its parts is the behaviour while the loop around it needs a
+database, a Telegram and a live MCP client to run.
+
+### docs: the pages that described a system that had moved on
+
+Every living document audited against the code, and the drift that mattered was
+not staleness but instruction a reader would act on: `guides/mcp-tools.md` gave
+`reply` and `update_status` camelCase parameters with an optional chat id when
+the schemas are snake_case and `chat_id` is required, and CLAUDE.md gave the
+`/reviewers` commands space-separated when they are underscore-separated. The
+voice pages still described Yandex-first synthesis reading the reply text
+aloud, two releases after the chain began with local Piper and the thing spoken
+became a separate recap. README was missing seventeen commands including
+`/now`; `docs/restart-problem.md` still said its own root cause was unfixed and
+presented as a proposal what had shipped in the commit that added the doc. The
+restart command map said nothing about the lease, or about `bun cli.ts bounce`
+being the one path that does not take it.
+
+Counts were re-derived from the code rather than from each other: 18 stdio MCP
+tools and 19 HTTP, schema v49, 1902 unit tests across 109 files, 55 in the
+watchdog suite. Two audit findings did not survive verification and were left
+alone — `Skills Toolkit — v1.35.0` names the release the toolkit shipped in,
+and `POST /api/sessions/disconnect` has a caller but no handler, so writing it
+down as an endpoint would have replaced one error with another.
 
 ## v1.55.0
 

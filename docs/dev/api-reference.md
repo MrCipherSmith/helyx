@@ -477,6 +477,7 @@ State-changing requests (non-GET/HEAD) also enforce CSRF protection: the `Origin
 | `POST` | `/api/sessions/:id/summarize-work` | Trigger session work summarization. Runs in background; returns `{ ok, skipped }`. |
 | `POST` | `/api/summarize` | Trigger disconnect summarization. Body: `{ session_id, project_path? }`. Runs in background. |
 | `POST` | `/api/hooks/stop` | Claude Code Stop hook receiver. Body: `{ transcript_path, project_path }`. Extracts facts from transcript in background. |
+| `POST` | `/api/hooks/ask-question` | Claude Code `PreToolUse` hook for `AskUserQuestion`. Unlike the other hook endpoints, this one blocks: it sends the question to Telegram and holds the connection open until the operator answers or the hook's own 600s timeout elapses. Requires the `X-Helyx-Hook-Token` shared-secret header in addition to the local-network check — this endpoint opens a chat message and a 10-minute-held connection, which the local-network check alone was judged too wide to gate. Capped concurrency (`MAX_ASK_QUESTION_WAITERS`); over the cap, responds `204` and leaves the question to the terminal. |
 
 ### Logs
 

@@ -313,6 +313,13 @@ export interface TurnSummaryDeps {
   locate?: (path: string) => string | null;
   /** How the forwarded answer is spoken. Injected so a test hears it without a synthesiser. */
   speak?: (token: string, chatId: string | number, text: string, threadId?: number | null) => void;
+  /**
+   * When this turn ended. Injected for the same reason the response guard takes
+   * a `now`: the channel compares it against the age of the status it is about
+   * to close, and a test that cannot say what time it is can only describe the
+   * case where the two are the same instant.
+   */
+  now?: () => number;
 }
 
 export async function deliverTurnSummary(
@@ -372,6 +379,20 @@ export async function deliverTurnSummary(
   // was written as a fallback rather than as a way of answering.
   const speak = deps.speak ?? maybeAttachVoiceRaw;
   speak(deps.token, target.chatId, summary.spoken, (target.extra.message_thread_id as number) ?? null);
+
+  // The answer is out, so the turn is over — and the only thing that still
+  // says otherwise is the status message, which lives in the channel process
+  // on the host and cannot be reached from here except through Postgres.
+  //
+  // Sending the text was never the whole of the job. A status left open keeps
+  // the chat in `getBusyChats`, and the poller holds every message the
+  // operator sends next behind it until the response guard notices the queue
+  // — five to ten minutes later. That wait is what the operator sees as the
+  // dialogue hanging after an answer has already arrived.
+  const closedAt = (deps.now ?? Date.now)();
+  await deps.sql`
+    SELECT pg_notify(${`turn_closed_${target.sessionId}`}, ${`${target.chatId}:${closedAt}`})
+  `.catch(() => {});
 }
 
 /**

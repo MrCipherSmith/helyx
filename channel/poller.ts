@@ -11,6 +11,7 @@ import { setTelegramReaction } from "./telegram.ts";
 import { getProjectHistory } from "../memory/short-term.ts";
 import { sessionManager } from "../sessions/manager.ts";
 import { renderReplyContext, type ReplyContext } from "../utils/reply-context.ts";
+import { REPLY_RULE_NOTE } from "./reply-rule.ts";
 
 const DEADLINE_EXCEEDED = Symbol("deadline_exceeded");
 const CONTEXT_INJECT_LIMIT = Number(process.env.CONTEXT_INJECT_LIMIT ?? 15);
@@ -61,6 +62,61 @@ async function buildContextBlock(
     tier: "raw",
     messageCount: messages.length,
   };
+}
+
+/**
+ * What the session is actually handed, given one queued message.
+ *
+ * Order is the whole of it, and each position was paid for:
+ *
+ *  - the prior-session context first, because it is the ground everything
+ *    after it stands on;
+ *  - the reply rule next — the session reaches the operator through the
+ *    `reply` tool and through nothing else, and this is the copy of that rule
+ *    that arrives with every single message rather than once, in a system
+ *    prompt, before a long turn buried it;
+ *  - then the voice note, the skill hint and the quoted message, and last the
+ *    operator's own words: a reply reads as an answer to something, and the
+ *    something has to arrive first.
+ *
+ * Pure and exported because the order is the behaviour: the poller loop around
+ * it needs a database, a Telegram and a live MCP client to run, and none of
+ * those have an opinion about what goes in front of what.
+ */
+export function composeDelivery(parts: {
+  contextPrefix: string;
+  isVoice: boolean;
+  hint: string;
+  replyBlock: string;
+  content: string;
+}): string {
+  const ttsNote = parts.isVoice
+    ? "[Channel system: The user sent a voice message. ALWAYS send a voice reply regardless of length — it is sent automatically after reply, you do NOT need to do anything extra.]\n"
+    : "[Channel system: Replies ≥300 chars are automatically sent as a voice message after you call reply — you do NOT need to do anything extra, and you CAN send voice (automatically). Never claim you cannot.]\n";
+  return `${parts.contextPrefix}${REPLY_RULE_NOTE}${ttsNote}${parts.hint}${parts.replyBlock}${parts.content}`;
+}
+
+/**
+ * What the `turn_closed_*` payload means.
+ *
+ * `chat_id:milliseconds`, split from the right because a Telegram chat id is a
+ * number that may be negative but never contains a colon, while a malformed
+ * payload must not be read as a chat.
+ *
+ * Separate and exported so the parsing can be described without a database:
+ * everything past this point deletes a Telegram message.
+ */
+export function parseTurnClosed(payload: string | undefined | null): { chatId: string; turnEndedAt: number } | null {
+  const raw = (payload ?? "").trim();
+  const sep = raw.lastIndexOf(":");
+  if (sep <= 0) return null;
+  const chatId = raw.slice(0, sep);
+  // `Number("")` is zero, not NaN — an empty timestamp would otherwise arrive
+  // as the epoch, which every status is newer than.
+  const stamp = raw.slice(sep + 1);
+  const turnEndedAt = Number(stamp);
+  if (!chatId || !stamp || !Number.isFinite(turnEndedAt)) return null;
+  return { chatId, turnEndedAt };
 }
 
 /** Run a promise with a deadline. Resolves to DEADLINE_EXCEEDED and logs a warning if ms elapses first. */
@@ -139,6 +195,18 @@ export class MessageQueuePoller {
       await listenSql.listen(`message_queue_${sessionId}`, () => {
         if (this.waitTimer) { clearTimeout(this.waitTimer); this.waitTimer = null; }
         if (this.wakeResolve) { this.wakeResolve(); this.wakeResolve = null; }
+      });
+      // The other end of the Stop hook: a turn that answered without `reply`
+      // had its answer forwarded from the bot process, and this is how the
+      // status it left open gets closed. Without it the chat stays busy and
+      // everything the operator sends next waits for the response guard.
+      // `deleteStatusMessage` wakes this loop itself, so the deferred message
+      // goes out as soon as the status is gone.
+      await listenSql.listen(`turn_closed_${sessionId}`, (payload) => {
+        const closed = parseTurnClosed(payload);
+        if (!closed) return;
+        this.status.closeForForwardedTurn(closed.chatId, closed.turnEndedAt)
+          .catch((err) => channelLogger.warn({ err, sessionId }, "turn-summary: closing the status failed"));
       });
       channelLogger.info({ sessionId }, "LISTEN/NOTIFY active");
     } catch (err) {
@@ -257,10 +325,6 @@ export class MessageQueuePoller {
           const hint = this.skillEvaluator?.buildHint(row.content) ?? "";
           const isVoiceMsg = !!(row.attachments as Record<string, unknown> | null)?.isVoice;
           this.ctx.setForceVoice?.(isVoiceMsg);
-          // Always prepend TTS awareness note so Claude knows voice is automatic
-          const ttsNote = isVoiceMsg
-            ? "[Channel system: The user sent a voice message. ALWAYS send a voice reply regardless of length — it is sent automatically after reply, you do NOT need to do anything extra.]\n"
-            : "[Channel system: Replies ≥300 chars are automatically sent as a voice message after you call reply — you do NOT need to do anything extra, and you CAN send voice (automatically). Never claim you cannot.]\n";
 
           // Inject prior-session context into the first message delivered to a fresh session.
           // The key includes clientId so the guard resets on every new Claude Code process.
@@ -286,7 +350,13 @@ export class MessageQueuePoller {
           // reply reads as an answer to something, and the something has to
           // arrive first.
           const replyBlock = renderReplyContext(row.reply_context as ReplyContext | null);
-          const enrichedContent = `${contextPrefix}${ttsNote}${hint}${replyBlock}${row.content}`;
+          const enrichedContent = composeDelivery({
+            contextPrefix,
+            isVoice: isVoiceMsg,
+            hint,
+            replyBlock,
+            content: row.content,
+          });
           if (hint) channelLogger.debug({ hint: hint.trim() }, "skill hint injected");
           if (replyBlock) channelLogger.debug({ msgId: row.id }, "reply context injected");
 

@@ -18,6 +18,7 @@ import { PermissionHandler } from "./permissions.ts";
 import { MessageQueuePoller } from "./poller.ts";
 import { SkillEvaluator } from "./skill-evaluator.ts";
 import { registerTools } from "./tools.ts";
+import { CHANNEL_INSTRUCTIONS } from "./reply-rule.ts";
 import { channelLogger } from "../logger.ts";
 
 // --- Env ---
@@ -63,6 +64,10 @@ const mcp = new Server(
         "claude/channel/permission": {},
       },
     },
+    // The client puts this in the system prompt, so the rule is in context
+    // before the session has read a single file — including in projects whose
+    // CLAUDE.md has never heard of Telegram. See channel/reply-rule.ts.
+    instructions: CHANNEL_INSTRUCTIONS,
   },
 );
 

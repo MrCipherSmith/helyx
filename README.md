@@ -132,7 +132,7 @@ This bot is a full **[Model Context Protocol](https://modelcontextprotocol.io) s
 - **File Forwarding** — photos, documents, and videos forwarded to Claude via MCP with base64 (≤5 MB images) or file path; if sent without caption, bot asks what to do before forwarding
 - **Auto-Summarization** — idle conversations are summarized to long-term memory after 15 min
 
-### Skills Toolkit — `v1.35.0`
+### Skills Toolkit
 - **Inline Shell Expansion** — SKILL.md bodies can embed `` !`cmd` `` tokens that resolve to shell output at load time, eliminating one tool-call round-trip per dynamic dependency. Sandboxed: explicit env allowlist (no `process.env` inheritance — `` !`echo $DEEPSEEK_API_KEY` `` cannot leak secrets), 5 s timeout with SIGTERM → 500 ms grace → SIGKILL fallback, 4096-char output cap, concurrent pipe drain. Demo: `skills/git-state/SKILL.md`.
 - **Autonomous Skill Creator** — after a multi-step success, the agent can distill the workflow into a reusable SKILL.md via aux-LLM (DeepSeek default; Ollama / OpenRouter fallback). The proposed skill arrives in Telegram with a `[Save] / [Reject] / [Edit name…]` keyboard; on approval it's persisted to `agent_created_skills` in postgres and atomically materialized to `~/.claude/skills/agent-created/<name>/SKILL.md` for Claude Code's native loader.
 - **Skill Curator** — weekly cron (Sundays 03:00 UTC, configurable) reviews `agent_created_skills`: auto-pins frequently-used (use_count > 10, last 14 days), auto-archives stale (>90 days idle), queues consolidate/patch proposals for human approval (`[Approve] / [Skip]`, 24 h expiry). Aux-LLM is fully isolated — Anthropic prompt cache for the main session is never touched. Cost is logged per run in `aux_llm_invocations`.
@@ -253,21 +253,27 @@ This bot is a full **[Model Context Protocol](https://modelcontextprotocol.io) s
 
 ### Voice Replies (TTS)
 
-After every `reply` call, the bot automatically attaches a voice message if:
+The full reply always lands in Telegram as text, unchanged — code fences, tables and links intact. Voice is never a reading of that text; it's a separate spoken recap, written by a small aux LLM (`summarizeForSpeech` in `utils/reply-summary.ts`) and posted alongside the reply as its own collapsed blockquote. Recaps are generated when:
 
 1. The user sent a voice message (always — regardless of reply length)
-2. The reply text is ≥300 characters and not mostly code or diffs
+2. The reply carries ≥200 characters of *prose* — fenced code, inline code, table rows and bare URLs are stripped before counting, so a reply that's mostly diff with one sentence of explanation gets no recap
 
-**Provider chain (Russian):** Yandex SpeechKit → Piper (local) → Groq  
+A long recap is never cut for text — it's sent whole, in one collapsed quote — but its *audio* is split into several tracks of roughly 90 seconds each, on paragraph/sentence/word boundaries.
+
+`TTS_PROVIDER=auto` (the default) picks the chain by language and starts locally:
+
+**Provider chain (Russian):** Piper (local) → Yandex SpeechKit → Groq  
 **Provider chain (English):** Piper (local) → Kokoro-82M (local) → Groq
 
 | Provider | Set in `.env` | Notes |
 |---|---|---|
+| **Piper** | `PIPER_DIR`, `PIPER_MODEL_RU` / `PIPER_MODEL_EN` | First in `auto`; local offline TTS, no API key, no per-reply cost |
 | **Yandex SpeechKit** | `YANDEX_API_KEY`, `YANDEX_FOLDER_ID` | Best Russian quality; service account needs `ai.speechkit.tts` IAM role |
-| **Piper** | `PIPER_DIR` | Local offline TTS; binary + voice files in `PIPER_DIR` |
-| **Kokoro** | `KOKORO_VOICE`, `KOKORO_DTYPE` | Local offline TTS (English); ONNX, no API key |
+| **Kokoro** | `KOKORO_VOICE`, `KOKORO_DTYPE` | Local offline TTS (English fallback when Piper is unavailable); model bundled via `kokoro-js`, no API key |
 | **Groq** | `GROQ_API_KEY` | Cloud fallback; English-only (Orpheus); free tier: 3600 tokens/day |
-| **OpenAI TTS** | `OPENAI_API_KEY` | Good multilingual including Russian; not wired by default |
+| **OpenAI TTS** | `OPENAI_API_KEY` | Good multilingual including Russian; only used when pinned with `TTS_PROVIDER=openai` |
+
+See [Voice Conversations](guides/voice.md) for the full recap pipeline, speech normalization pass, and troubleshooting.
 
 ### Voice Transcription (ASR)
 
@@ -511,20 +517,41 @@ Connect:
 | `/menu` | All commands grouped by category — two-level inline panel (group → commands → tap to run) |
 | `/help` | Show available commands |
 | `/start` | Welcome message and quick help |
+| `/quickstart` | Condensed step-by-step setup guide (forum → projects → sync → supervisor) |
 | **Sessions** | |
 | `/sessions` | List all sessions (🟢 active / ⚪ inactive / 💀 terminated) |
 | `/switch [id]` | Switch session — shows project context briefing + last messages |
+| `/now` | Live status card for the active session — reads the transcript tail directly (no queueing, works even on a wedged session) and shows what it and its subagents are doing; button to ask the session itself |
 | `/session` | Current session info |
 | `/standalone` | Switch to standalone mode |
 | `/rename <id> <name>` | Rename a session |
 | `/remove <id>` | Delete session and all its data |
 | `/cleanup` | Remove terminated and orphaned sessions |
+| `/resume` | Inject the last saved session summary into the active session's message queue after a restart — pair with `/summarize` before restarting to save it |
 | **Projects** | |
 | `/projects` | List projects with status and Start/Stop buttons (launches tmux window via admin-daemon) |
 | `/project_add` | Add project to persistent registry, auto-creates forum topic |
+| `/project_facts [path]` | List long-term facts tagged `project` for a project (defaults to the active session's project) |
+| `/project_scan [path]` | Force a rescan of project structure into long-term memory knowledge facts |
+| `/providers` | List registered custom LLM providers/endpoints, add or remove them, pick a provider/model per project |
 | `/interrupt` | Interrupt the active Claude session — sends Escape to the bound project's tmux pane; in a forum topic interrupts that project, in DM interrupts the active session |
-| `/system` | System control panel — Start/Stop sessions, Bounce (full restart), Restart bot container, Kill channel MCP processes |
+| `/btw [question]` | Ask the active session what it's doing right now via the in-CLI `/btw` overlay, without derailing its current task — the host admin-daemon opens the overlay, captures the answer, and dismisses it |
+| **System** | |
+| `/system` | System control panel. Buttons are scoped to one half or the other: 🛑 Stop / ▶️ Start / 🔄 Bounce restart **sessions only** (tmux + `channel.ts`); 🐳 Restart bot rebuilds **only the bot container**; ⚡ Kill channels kills channel MCP subprocesses; 🚀 Поднять всё starts whatever is down without touching what's running; ♻️ Полный рестарт is the only button that reaches both halves (rebuild the bot container, then bounce sessions) — code shipped in the container does not reach an already-running session until its half is bounced |
+| `/restart_docker` | Typed equivalent of 🐳 Рестарт контейнеров — the container half only (`docker compose up -d` → restart) |
+| `/restart_host` | Typed equivalent of 🖥 Рестарт хоста — everything outside Docker (tmux sessions, Claude, `channel.ts`, admin-daemon); does not rebuild the bot container |
+| `/monitor` | Process health dashboard — admin-daemon, supervisor, Docker containers, tmux `bots` session — with inline restart buttons, sourced from `process_health` |
 | `/remote_control` | tmux bots status with Kill/Start/Refresh controls |
+| `/supervisor` | System status digest (active sessions, queue depth, process health, recent incidents) — the same view the supervisor topic posts on its own |
+| **Codex & Review** | |
+| `/codex_setup` | Authenticate the OpenAI Codex CLI via device flow (no terminal needed) |
+| `/codex_status` | Check Codex CLI login status |
+| `/codex_review [prompt]` | Run a Codex-powered review of the current branch; falls back to Claude's native review skill on Codex quota/auth failure |
+| `/reviewers` | List configured independent reviewers that run in parallel on a review request |
+| `/reviewers_status` | Check availability of each configured reviewer (Codex login, provider balance/probe) |
+| `/reviewers_add codex [model]` / `/reviewers_add provider <name\|id> <model>` | Add a reviewer |
+| `/reviewers_remove <id>` | Remove a reviewer by id |
+| `/reviewers_default` | Reset reviewers to the default set |
 | **Memory** | |
 | `/remember [text]` | Save to long-term memory (bound to session) |
 | `/recall [query]` | Semantic search through memory |
@@ -552,6 +579,7 @@ Connect:
 | **Forum** | |
 | `/forum_setup` | Configure forum supergroup — creates one topic per project + pins Dev Hub button, run in General topic |
 | `/forum_sync` | Re-sync topics — creates missing topics for new projects, re-pins Dev Hub button |
+| `/forum_clean` | Scan the forum and drop stale topic-id mappings for topics that no longer exist or are invalid; run `/forum_sync` afterward to recreate them |
 | `/forum_hub` | Send/re-send pinned Dev Hub WebApp button to General topic |
 | `/topic_rename <name>` | Rename current project topic (run from within a project topic) |
 | `/topic_close` | Close (pause) current project topic |
@@ -631,7 +659,7 @@ Adapters are registered at startup (`adapters/index.ts`). The `sessions/router.t
 
 ## MCP Tools
 
-Helyx exposes MCP tools via HTTP server (`port 3847`) and the stdio channel adapter. Key tools: `remember`, `recall`, `reply`, `update_status`, `list_sessions`, `search_project_context`.
+Helyx exposes MCP tools via HTTP server (`port 3847`) and the stdio channel adapter. Key tools: `remember`, `recall`, `reply`, `update_status`, `search_project_context`. `list_sessions` exists too, but only on the HTTP server — it manages sessions from outside one, so the channel adapter (which always runs inside a specific session) doesn't register it.
 
 See [MCP Tools Reference](guides/mcp-tools.md) for the full tool list with parameters and usage examples.
 
@@ -662,7 +690,7 @@ ollama pull nomic-embed-text
 | `TELEGRAM_BOT_TOKEN` | Yes | From [@BotFather](https://t.me/BotFather) |
 | `ALLOWED_USERS` | Yes* | Comma-separated Telegram user IDs. Required unless `ALLOW_ALL_USERS=true` |
 | `ALLOW_ALL_USERS` | No | Set to `true` to allow all users (no access control). Dangerous in production. |
-| `LOG_LEVEL` | No | Pino log level: `trace`, `debug`, `info`, `warn`, `error` (default: `info`) |
+| `LOG_LEVEL` | No | Pino log level: `trace`, `debug`, `info`, `warn`, `error` (default: `debug`) |
 | `ANTHROPIC_API_KEY` | No | Anthropic API (best quality standalone) |
 | `CLAUDE_MODEL` | No | Claude model for CLI sessions (default: `claude-sonnet-4-20250514`) |
 | `MAX_TOKENS` | No | Max tokens per response (default: `8192`) |

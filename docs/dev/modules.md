@@ -13,6 +13,7 @@ This document is a quick-reference for developers working on specific parts of t
 - [memory](#memory)
 - [services](#services)
 - [adapters](#adapters)
+- [orchestrator](#orchestrator)
 - [utils](#utils)
 - [scripts](#scripts)
 - [dashboard](#dashboard)
@@ -45,6 +46,26 @@ This document is a quick-reference for developers working on specific parts of t
 | `bot/commands/forum.ts` | `/forum_setup`, `/forum_sync`, `/forum_clean`, `/forum_hub`, `/topic_rename`, `/topic_close`, `/topic_reopen` |
 | `bot/commands/codex.ts` | `/codex_setup`, `/codex_status`, `/codex_review` |
 | `bot/commands/system.ts` | `/system` — admin-only start/stop/restart inline panel |
+| `bot/commands/add.ts` | `/add` — quick project registration shortcut |
+| `bot/commands/btw.ts` | `/btw` — asks the active Claude Code session "what are you doing right now?" via the transcript overlay |
+| `bot/commands/interrupt.ts` | `/interrupt` — sends Escape to the tmux pane via `admin_commands` |
+| `bot/commands/memory-export.ts` | `/memory_export`, `/memory_import` |
+| `bot/commands/menu.ts` | `/menu` — two-level inline command navigator, and its callback routing |
+| `bot/commands/model.ts` | `/model` + `set_model:` callbacks |
+| `bot/commands/monitor.ts` | `/monitor` — process/Docker health panel |
+| `bot/commands/now.ts` | `/now` — snapshot of what the active session is doing right now, from its transcript |
+| `bot/commands/prepare-restart.ts` | `/prepare_restart` — snapshots context in all active sessions before a redeploy |
+| `bot/commands/project-add.ts` | `/project_add` — registers a project, maps host↔container paths (`toContainerPath()`) |
+| `bot/commands/project-facts.ts` | `/project_facts` — shows and force-rescans scanned project-knowledge memories |
+| `bot/commands/projects.ts` | `/projects` + `proj:` callbacks — project registry list/start/stop |
+| `bot/commands/providers.ts` | `/providers` — register/list/remove Anthropic-compatible provider backends; per-project provider/model picker callbacks |
+| `bot/commands/quickstart.ts` | `/quickstart` — guided setup steps (forum supergroup, whitelist, first project) |
+| `bot/commands/remote-control.ts` | `/remote_control` + `rc:` callbacks |
+| `bot/commands/resume.ts` | `/resume` — restores the last session summary into the active Claude session |
+| `bot/commands/reviewers.ts` | `/reviewers` — manage the independent code reviewers (`add`, `remove`, `status`) |
+| `bot/commands/supervisor-actions.ts` | Supervisor-topic inline-button callbacks (`sup:restart_session`, `sup:ignore`, …) |
+| `bot/commands/tmux-actions.ts` | `tmux:ACTION:PROJECT` callbacks — Interrupt / Force close buttons from the watchdog |
+| `bot/commands/tmux-log.ts` | `/tmux_log` — tmux session lifecycle log viewer |
 
 ### Public API / Exports
 
@@ -104,7 +125,7 @@ For media/voice changes, edit `bot/media.ts` and restart the host `channel.ts` s
 | `channel/status.ts` | `StatusManager` — live Telegram status messages; spinner; response guard |
 | `channel/permissions.ts` | `PermissionHandler` — intercepts Claude's permission notifications; polls DB for user answer |
 | `channel/poller.ts` | `MessageQueuePoller` — LISTEN/NOTIFY + fallback polling; delivers messages to Claude Code |
-| `channel/tools.ts` | `registerTools()` — all 21 MCP tool handlers (reply, remember, recall, send_poll, propose_skill, …) |
+| `channel/tools.ts` | `registerTools()` — all 18 MCP tool handlers (reply, remember, recall, send_poll, propose_skill, …) |
 | `channel/skill-evaluator.ts` | `SkillEvaluator` — scores messages against `goodai-base/rules.json`; injects skill hints |
 | `channel/recovery.ts` | Startup recovery: stale status messages, stale voice messages, pending replies |
 | `channel/telegram.ts` | Leaf HTTP layer for Telegram API (sendMessage, editMessage, setReaction, sendPoll) |
@@ -299,6 +320,10 @@ None — `memory/` is the foundation layer. Other modules depend on it, not vice
 | `services/permission-service.ts` | `PermissionService` — permission lifecycle: pending→approved/rejected/expired |
 | `services/project-service.ts` | `ProjectService` — project registry; start/stop via `admin_commands` table |
 | `services/summarization-service.ts` | `SummarizationService` — idle timers, overflow check, force-summarize, onDisconnect |
+| `services/provider-service.ts` | `ProviderService` — operator-registered Anthropic-compatible backends (GLM, Kimi, DeepSeek, OpenRouter, custom); CRUD over the `providers` table, per-project provider/model selection |
+| `services/reviewer-service.ts` | `ReviewerService` — configured code-review providers (Codex, provider-model reviewers); CRUD, health checks, invoking a reviewer run |
+| `services/ask-question.ts` | Backing service for Claude Code's `AskUserQuestion` hook — `question_requests` lifecycle: create, poll for an answer, expire, format for Telegram (polls and typed answers) |
+| `services/review-artifacts.ts` | Persists and prunes code-review run output (`persistReviewRun`); the only place that writes review artifacts, so scheduled and manual runs both get pruning |
 
 ### Public API / Exports
 
@@ -362,6 +387,40 @@ To add a new CLI runtime (e.g., Codex): implement `CliAdapter`, register it in `
 
 ---
 
+## orchestrator
+
+**Purpose.** State Matrix validation gate for artifacts a session is about to hand back — replies and tool requests checked against a per-project rules file before they go out, with a bounded correct-and-retry loop when they fail.
+
+**Entry point.** `orchestrator/gate.ts` — `validateReplyGate()`, called from the `reply` tool path before a message is delivered.
+
+### Key Files
+
+| File | Responsibility |
+|---|---|
+| `orchestrator/gate.ts` | `validateReplyGate()` — loads the project's State Matrix, validates the artifact, and returns `allow` / `config_error` / `blocked` (with a correction prompt) / `exhausted` |
+| `orchestrator/matrix.ts` | `MatrixArtifact`, `StateMatrix` types; `loadStateMatrix()`, `validateMatrixArtifact()`, `buildCorrectionPrompt()` — the rules and the check itself |
+| `orchestrator/store.ts` | Persistence for `orchestration_runs` / `matrix_violations`: `getOrCreateRun()`, `markRunStatus()`, `recordValidationFailure()`, `enqueueCorrection()` |
+
+### Public API / Exports
+
+- `validateReplyGate({ sql, sessionId, chatId, projectPath, text }) → ReplyGateResult` — the single entry point; `mode: "disabled"` when the project has no State Matrix configured.
+- `loadStateMatrix(projectPath)`, `validateMatrixArtifact(matrix, artifact)` — usable independently for tool-request artifacts, not just replies.
+
+### Configuration
+
+No dedicated env vars. Behavior is entirely project-local, driven by whether a State Matrix config file is present for `projectPath`; absent means `mode: "disabled"` and every artifact passes.
+
+### How to Develop
+
+A run is scoped by `(session_id, chat_id, project_path, artifact_type)` and stays `validating` / `correcting` / `waiting_permission` until it resolves; `orchestration_runs` and `matrix_violations` are documented in [data-models.md](data-models.md#orchestration).
+
+### Dependencies on Other Modules
+
+- `memory/db.ts` — SQL client for `orchestration_runs` / `matrix_violations`
+- Called from the `reply` tool dispatch path in `channel/tools.ts` / `mcp/tools.ts`
+
+---
+
 ## utils
 
 **Purpose.** Cross-cutting utility library: TTS synthesis, ASR transcription, aux LLM client, Skills Toolkit runtime (distiller, curator, approval, preprocessor, handlers), API/transcription stats, tmux/output monitoring, and shared helpers.
@@ -389,8 +448,45 @@ To add a new CLI runtime (e.g., Codex): implement `CliAdapter`, register it in `
 | `utils/output-monitor.ts` | Fallback: file-based alternative to tmux-monitor (uses `script` capture files) |
 | `utils/stream-json-parser.ts` | Streaming JSONL parser for Claude Code stdout |
 | `utils/claude-usage.ts` | Parses Claude Code `.jsonl` session files for per-model token stats |
-| `utils/chunk.ts` | `chunkText()` — splits text at Telegram's 4096-char limit |
+| `utils/chunk.ts` | `chunkText()`, `chunkMarkdown()` — split text at Telegram's 4096-char limit; `chunkMarkdown` carries oversized code fences across chunks rather than dropping them |
 | `utils/html.ts` | HTML-escaping helpers for Telegram HTML-mode messages |
+| `utils/admin-format.ts` | Formats the numbers shown by `/status`/`/stats` and parses the arguments those commands accept |
+| `utils/ask-question.ts` | Formats `AskUserQuestion` questions/answers for Telegram (polls and typed-answer prompts); paired with `services/ask-question.ts` |
+| `utils/callback-route.ts` | Maps an inline-keyboard `callback_data` prefix to the handler it belongs to |
+| `utils/cli-config.ts` | Normalizes `sessions.cli_config` read from the DB — tolerates legacy/broken JSONB shapes |
+| `utils/cli-flags.ts` | Command-line flag parsing for the `helyx` CLI (`cli.ts`) |
+| `utils/cyrillize.ts` | Transliterates Latin script into Cyrillic spelling so the Russian TTS voice pronounces it correctly |
+| `utils/dashboard-readiness.ts` | `dashboardReadiness()`, `shouldOfferMiniApp()` — whether `ENABLE_DASHBOARD` and what was actually built (`WITH_DASHBOARD`) agree; drives the `/webapp` 503 and Mini App menu-button suppression |
+| `utils/duration.ts` | Parses the CLI duration argument shared by several commands (`30m`, `2h`, `1d`) |
+| `utils/error-stream.ts` | Classifies which of the bot's own error/log lines are worth forwarding to the operator |
+| `utils/files.ts` | Downloads Telegram files; maps host↔container download paths (`toHostPath()`) |
+| `utils/hold-counter.ts` | `HoldCounter` — reference-counted hold keyed by string, for signals two concurrent prompts can both be holding (e.g. the 💬 permission-waiting indicator) |
+| `utils/hook-token.ts` | Shared secret (`X-Helyx-Hook-Token`) between Claude Code hooks on the host and the bot in its container |
+| `utils/host-memory.ts` | Reads how much RAM the host can actually give a model; picks which local Ollama presets fit |
+| `utils/llm-output.ts` | Cleans up raw model output — `stripReasoning()` strips `<think>`-style reasoning blocks |
+| `utils/llm-stream.ts` | Shared streaming-response plumbing for `claude/client.ts`: SSE line reading, OpenAI/Ollama chunk parsing, retry/backoff, provider selection |
+| `utils/media-attachment.ts` | Decides whether a photo travels to Claude inlined as base64 or as a path, by size (`IMAGE_INLINE_MAX_BYTES`) |
+| `utils/memory-triage.ts` | Decides what is worth remembering and what is allowed to TTL-expire |
+| `utils/now-render.ts` | Renders the `/now` "what is happening" card |
+| `utils/pane-parse.ts` | Turns Claude Code's terminal output into a status block; vocabulary shared with `transcript-events.ts` |
+| `utils/permission-prompt.ts` | Canonical shape of a Claude Code permission dialog, shared by `channel/permissions.ts` and `scripts/tmux-watchdog.ts` |
+| `utils/reply-context.ts` | Captures/reads the Telegram message a native reply pointed to (`message_queue.reply_context`, migration v49) |
+| `utils/reply-summary.ts` | Builds the spoken voice recap of a reply (`proseOf()`, `shouldSummarize()`) |
+| `utils/request-guards.ts` | Checks between an untrusted HTTP request and the filesystem/shell/identity it is allowed to touch, e.g. `containsPath()` (boundary-correct path containment, not a prefix test) |
+| `utils/requeue.ts` | Puts a Claude question back on the queue after a turn ended without an answer — the response guard's re-queue path |
+| `utils/restart-lease.ts` | File-based one-restart-at-a-time lease for `bounce`/`host_restart`/`full_restart`/`/up` (`LEASE_EXPIRY_MS` = 15 min) |
+| `utils/session-snapshot.ts` | Answers what a session is doing without asking it, from `pane_snapshot` and transcript state |
+| `utils/skill-format.ts` | Shared SKILL.md file-format parsing/serialization |
+| `utils/status-continuation.ts` | Decides whether a live status message should still represent the in-flight turn, or belongs to one already closed |
+| `utils/status-format.ts` | What the live status message shows while Claude works (spinner, elapsed time, current tool) |
+| `utils/status-render.ts` | Renders the status message body: the terminal-output section (expandable blockquote, `<pre>` pane) and the running-totals line |
+| `utils/stop-hook.ts` | Registers/unregisters helyx's Stop hook in Claude Code's global settings |
+| `utils/subagent-transcripts.ts` | Where a subagent writes its transcript, and what to call it |
+| `utils/supervisor-callbacks.ts` | The `sup:` inline-button protocol used by supervisor Telegram alerts |
+| `utils/supervisor-status.ts` | Decides what the supervisor's 5-minute status broadcast says |
+| `utils/terminal.ts` | Reads raw terminal output — shared low-level capture helper under the tmux/output monitors |
+| `utils/turn-summary.ts` | Composes and delivers "the turn is over": `deliverTurnSummary()`, `pg_notify('turn_closed_<session>', …)` |
+| `utils/typing.ts` | Sends Telegram's "typing" chat action repeatedly (resent every 4s) until stopped |
 
 ### Public API / Exports
 
