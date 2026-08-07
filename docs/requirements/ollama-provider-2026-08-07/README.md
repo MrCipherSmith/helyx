@@ -57,6 +57,7 @@ design already has that property, and nothing added here may take it away.
 | [prd.md](prd.md) | Problem, the translation, the daemon, acceptance, risks |
 | [prd-review.md](prd-review.md) | The PRD checked against the code it cites — twelve citations verified, four findings folded back in |
 | [code-review.md](code-review.md) | Review of the implementation — five defects, four of them silent, all fixed on the branch |
+| [field-trial.md](field-trial.md) | The measured run on real hardware — the translation works, the CPU does not carry it, with the numbers |
 
 ## The proposal in one paragraph
 

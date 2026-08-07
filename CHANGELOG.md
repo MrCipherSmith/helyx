@@ -39,6 +39,15 @@ name this host never pulled — Claude Code picks its own for background work �
 served with the configured default instead of failing, and says so once in the
 log.
 
+Measured on this host before shipping, and the result is worth stating plainly:
+the translation works and the CPU does not carry it. Claude Code's prompt —
+system prompt, tool definitions, MCP tools, injected session context — comes to
+about 41 000 tokens against this model's 40 960-token window, and Ollama reads
+it at 19 tokens/second. The client times out and retries long before an answer
+exists. So the flag stays off, and what is preserved here is the work: on a host
+with a GPU this becomes a one-line change against a translation that is already
+tested. Numbers in `field-trial.md`.
+
 Specification: `docs/requirements/ollama-provider-2026-08-07/`.
 
 ### fix: the change that survived the question and not the answer
