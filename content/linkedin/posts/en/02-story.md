@@ -2,7 +2,9 @@
 
 **Tone:** first person, quiet, no hype. The strongest option for reach — people
 read stories and skip feature lists.
-**Suggested image:** `assets/en/03-telegram.png`.
+**Suggested images:** a three-frame carousel — `assets/en/06-projects.png`,
+then `assets/en/03-telegram.png`, then `assets/en/05-control.png`. See the
+README for why that order.
 **Length:** ~210 words.
 
 ---

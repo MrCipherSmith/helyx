@@ -1,0 +1,118 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="_base.css"><style>
+  /* The opening line of the story post — eleven projects, one chat — as the
+     forum list it actually is. One topic per project, each with its own live
+     session, so the "switch by scrolling" claim is visible rather than stated. */
+  body { padding:0; background:#17212b; display:block; }
+  .wrap { width:1200px; height:630px; padding:14px 190px; display:flex; flex-direction:column; overflow:hidden; }
+
+  .tbar { display:flex; align-items:center; gap:11px; padding-bottom:9px; border-bottom:1px solid #101921; margin-bottom:3px; }
+  .av { width:36px; height:36px; border-radius:50%; background:#3d5a80; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:600; color:#cfe0f5; }
+  .tname { font-size:16px; font-weight:600; color:#fff; }
+  .tsub { font-size:12px; color:#6d7f8f; }
+
+  .row { display:flex; align-items:center; gap:11px; padding:9px 4px; border-bottom:1px solid #1c2836; }
+  .row:last-child { border-bottom:none; }
+  .ic { width:30px; height:30px; border-radius:8px; flex:none; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:600; color:#0d1117; }
+  .body { flex:1; min-width:0; }
+  .top { display:flex; align-items:baseline; gap:8px; }
+  .nm { font-size:13.4px; font-weight:600; color:#e9edf0; }
+  .st { font-size:10.5px; padding:1px 6px; border-radius:20px; background:#1d3a29; color:#7ee787; }
+  .st.idle { background:#2a2f36; color:#8b949e; }
+  .prev { font-size:12px; color:#7b8b99; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px; }
+  .right { text-align:right; flex:none; }
+  .tm { font-size:10.5px; color:#6d7f8f; }
+  .badge { display:inline-block; margin-top:3px; min-width:19px; padding:1px 6px; border-radius:20px; background:#5aa0e0; color:#17212b; font-size:10.5px; font-weight:600; text-align:center; }
+</style></head><body>
+  <div class="wrap">
+    <div class="tbar">
+      <div class="av">H</div>
+      <div>
+        <div class="tname">Helyx</div>
+        <div class="tsub"><span data-lang="en">11 projects &middot; one session each &middot; 6 working right now</span><span data-lang="ru">11 проектов &middot; по сессии на каждый &middot; 6 работают прямо сейчас</span></div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="ic" style="background:#7ee787">he</div>
+      <div class="body"><div class="top"><span class="nm">helyx</span><span class="st">active</span></div>
+        <div class="prev"><span data-lang="en">🔧 47 tools · 12 files — writing the migration note into CHANGELOG.md</span><span data-lang="ru">🔧 47 tools · 12 files — пишу запись о миграции в CHANGELOG.md</span></div></div>
+      <div class="right"><div class="tm">14:09</div><div class="badge">3</div></div>
+    </div>
+
+    <div class="row">
+      <div class="ic" style="background:#79c0ff">ke</div>
+      <div class="body"><div class="top"><span class="nm">keryx</span><span class="st">active</span></div>
+        <div class="prev"><span data-lang="en">The rg wrapper choked on unescaped parens — escaping them at the boundary</span><span data-lang="ru">Обёртка над rg спотыкалась о неэкранированные скобки — экранирую на границе</span></div></div>
+      <div class="right"><div class="tm">14:02</div></div>
+    </div>
+
+    <div class="row">
+      <div class="ic" style="background:#bc8cff">ar</div>
+      <div class="body"><div class="top"><span class="nm">arena</span><span class="st">active</span></div>
+        <div class="prev"><span data-lang="en">🎤 voice message · 0:26</span><span data-lang="ru">🎤 голосовое · 0:26</span></div></div>
+      <div class="right"><div class="tm">13:58</div><div class="badge">1</div></div>
+    </div>
+
+    <div class="row">
+      <div class="ic" style="background:#ffa657">vf</div>
+      <div class="body"><div class="top"><span class="nm">vantage-frontend</span><span class="st">active</span></div>
+        <div class="prev"><span data-lang="en">🔐 Allow? — Edit · src/store/session.ts</span><span data-lang="ru">🔐 Allow? — Edit · src/store/session.ts</span></div></div>
+      <div class="right"><div class="tm">13:51</div><div class="badge">1</div></div>
+    </div>
+
+    <div class="row">
+      <div class="ic" style="background:#ff9492">vb</div>
+      <div class="body"><div class="top"><span class="nm">vantage-backend</span><span class="st">active</span></div>
+        <div class="prev"><span data-lang="en">All 214 tests green after the DTO change</span><span data-lang="ru">Все 214 тестов зелёные после правки DTO</span></div></div>
+      <div class="right"><div class="tm">13:44</div></div>
+    </div>
+
+    <div class="row">
+      <div class="ic" style="background:#7ee787">go</div>
+      <div class="body"><div class="top"><span class="nm">goodai</span><span class="st">active</span></div>
+        <div class="prev"><span data-lang="en">🔊 Recap — the router now picks the provider per project</span><span data-lang="ru">🔊 Пересказ — роутер теперь выбирает провайдера по проекту</span></div></div>
+      <div class="right"><div class="tm">13:30</div></div>
+    </div>
+
+    <div class="row">
+      <div class="ic" style="background:#79c0ff">gb</div>
+      <div class="body"><div class="top"><span class="nm">goodai-base</span><span class="st idle">idle</span></div>
+        <div class="prev"><span data-lang="en">🧠 Recalled: the review profile lives in rules/core, not in the skill</span><span data-lang="ru">🧠 Вспомнил: профиль ревью лежит в rules/core, а не в скилле</span></div></div>
+      <div class="right"><div class="tm">12:47</div></div>
+    </div>
+
+    <div class="row">
+      <div class="ic" style="background:#bc8cff">cb</div>
+      <div class="body"><div class="top"><span class="nm">carlson-bot</span><span class="st idle">idle</span></div>
+        <div class="prev"><span data-lang="en">Collector finished — 38 items, 4 duplicates dropped</span><span data-lang="ru">Сборщик закончил — 38 материалов, 4 дубля отброшено</span></div></div>
+      <div class="right"><div class="tm">11:12</div></div>
+    </div>
+
+    <div class="row">
+      <div class="ic" style="background:#ffa657">kv</div>
+      <div class="body"><div class="top"><span class="nm">kesha-voice-kit</span><span class="st idle">idle</span></div>
+        <div class="prev"><span data-lang="en">Piper voice swapped — Russian model now default</span><span data-lang="ru">Голос Piper заменён — русская модель теперь по умолчанию</span></div></div>
+      <div class="right"><div class="tm">10:05</div></div>
+    </div>
+
+    <div class="row">
+      <div class="ic" style="background:#8b949e">de</div>
+      <div class="body"><div class="top"><span class="nm">deprecated</span><span class="st idle">idle</span></div>
+        <div class="prev"><span data-lang="en">Shadow container still up — decide whether to keep it</span><span data-lang="ru">Теневой контейнер ещё поднят — решить, оставлять ли</span></div></div>
+      <div class="right"><div class="tm">09:20</div></div>
+    </div>
+
+    <div class="row">
+      <div class="ic" style="background:#79c0ff">al</div>
+      <div class="body"><div class="top"><span class="nm">altsay</span><span class="st idle">idle</span></div>
+        <div class="prev"><span data-lang="en">Nothing pending</span><span data-lang="ru">Ничего не ждёт</span></div></div>
+      <div class="right"><div class="tm">08:41</div></div>
+    </div>
+  </div>
+
+<script>
+  var lang = new URLSearchParams(location.search).get("lang") === "ru" ? "ru" : "en";
+  document.querySelectorAll("[data-lang='" + lang + "']").forEach(function (el) { el.style.display = "inline"; });
+</script>
+</body></html>
