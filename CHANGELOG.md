@@ -37,6 +37,18 @@ messages — the tool line uses the last two path segments, which is what the
 preview header already did — and the three buttons are defined once instead of
 once here and once in the tmux watchdog.
 
+Shortening applies to paths and to nothing else, which review caught before this
+shipped. `buildDetail` puts the whole tool input in the target slot for every
+tool that is not Edit or Write, so the same shortener that turns
+`/home/altsay/bots/helyx/memory/db.ts` into `memory/db.ts` turned
+`$ rm -rf /var/log/app` into `log/app` — not a shorter way of saying the same
+thing, a different thing, and the thing the operator was about to approve. A
+Bash command under eighty characters has no change block either, so that
+mangled line was the whole prompt. The target is now shortened only for the
+tools whose target is a path, and clamped so the head alone always fits a
+message, which closes the last case where a prompt could be refused for length
+with nothing to split out of it.
+
 ## v1.55.2
 
 ### chore: the local model the host actually runs

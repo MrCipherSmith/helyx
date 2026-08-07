@@ -56,10 +56,35 @@ export function permissionKeyboard(requestId: string): {
  * The prompt used to carry the absolute path while the preview message directly
  * above it carried these two, so the same file was named two ways in two
  * consecutive messages.
+ *
+ * Only ever called on something already known to be a path. Applied to
+ * anything else it does not shorten, it hides: `$ rm -rf /var/log/app` comes
+ * back as `log/app`, which is not a shorter way of saying the same thing, it is
+ * a different thing, and it is the thing the operator is about to approve.
  */
 export function shortPath(path: string): string {
   return path.split("/").filter(Boolean).slice(-2).join("/");
 }
+
+/**
+ * The tools whose target is a filesystem path, and only those.
+ *
+ * `buildDetail` puts the whole tool input in the target slot for everything
+ * else — the command line for Bash, the pattern for Grep, the JSON for an MCP
+ * tool. None of those are paths, and shortening them removes exactly the part
+ * the operator needs to see.
+ */
+const PATH_TOOLS = new Set(["Edit", "Write", "Read", "NotebookEdit"]);
+
+/**
+ * How much of the target the head may carry.
+ *
+ * Bounded so the head alone always fits a Telegram message. A change block can
+ * be split into a message of its own when it overflows; the head cannot,
+ * because it is the message. A prompt is only ever refused for being too long
+ * when nothing in it was clampable, and this makes that set empty.
+ */
+export const TARGET_BUDGET_CHARS = 1200;
 
 export interface PromptParts {
   /** `Edit`, `Bash`, `Write`, … */
@@ -79,9 +104,10 @@ export interface PromptParts {
  * the answer replaces that header.
  */
 export function renderPromptBody(parts: PromptParts): string {
-  const target = targetOf(parts.descMain);
+  const raw = targetOf(parts.descMain);
+  const target = clamp(PATH_TOOLS.has(parts.toolName) ? shortPath(raw) : raw, TARGET_BUDGET_CHARS);
   const head = target
-    ? `<b>${escapeHtml(parts.toolName)}</b> · <code>${escapeHtml(shortPath(target))}</code>`
+    ? `<b>${escapeHtml(parts.toolName)}</b> · <code>${escapeHtml(target)}</code>`
     : `<b>${escapeHtml(parts.toolName)}</b>`;
   if (!parts.change.trim()) return head;
   const lang = parts.lang ?? "";
@@ -100,6 +126,11 @@ export function renderPromptBody(parts: PromptParts): string {
 function targetOf(descMain: string): string {
   const nl = descMain.indexOf("\n");
   return nl === -1 ? "" : descMain.slice(nl + 1).trim();
+}
+
+/** Cut to a budget, saying so when it cuts. */
+function clamp(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
 }
 
 /** The full message, header included. */
@@ -132,7 +163,7 @@ export type Outcome = "allow" | "always" | "deny" | "timeout" | "terminal";
 export function renderAnswered(outcome: Outcome, body: string, toolName?: string): string {
   const header =
     outcome === "allow" ? "✅ Allowed"
-    : outcome === "always" ? `✅ Always allowed: ${toolName ?? ""}`.trim()
+    : outcome === "always" ? `✅ Always allowed: ${escapeHtml(toolName ?? "")}`.trim()
     : outcome === "deny" ? "❌ Denied"
     : outcome === "timeout" ? "⏰ Timeout"
     : "⚡ Resolved in terminal";

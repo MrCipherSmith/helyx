@@ -15,7 +15,7 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { PermissionHandler } from "../../channel/permissions.ts";
 import { makePermissionWorld } from "../fixtures/fake-permission-ctx.ts";
 import { installFakeTelegram, type FakeTelegram } from "../fixtures/fake-telegram.ts";
-import { TELEGRAM_MESSAGE_MAX } from "../../utils/permission-message.ts";
+import { TELEGRAM_MESSAGE_MAX } from "../../utils/permission-render.ts";
 
 const CHAT_ID = "555";
 const REQUEST_ID = "req-1";
@@ -86,9 +86,19 @@ describe("an ordinary edit", () => {
 
   test("stores the body it rendered, so the answer can keep it", async () => {
     const world = answeredWorld();
-    await run(world, editParams("a", "b"));
+    await run(world, editParams("DROP TABLE message_queue", "ALTER TABLE message_queue"));
 
-    expect(world.db.count("INSERT INTO permission_requests")).toBe(1);
+    // The value, not the fact that a query ran. A count passes just as happily
+    // when the column is filled with the wrong string, or with nothing.
+    const [insert] = world.db.matching("INSERT INTO permission_requests");
+    expect(insert).toBeDefined();
+    const stored = insert!.values.find(
+      (v): v is string => typeof v === "string" && v.includes("<pre><code"),
+    );
+    expect(stored).toBeDefined();
+    expect(stored).toContain("DROP TABLE message_queue");
+    expect(stored).toContain("memory/db.ts");
+    expect(stored).not.toContain("🔐 Allow?");
   });
 });
 

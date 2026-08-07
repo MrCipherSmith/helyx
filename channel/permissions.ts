@@ -21,7 +21,8 @@ import {
   renderPromptBody,
   shortPath,
   NO_KEYBOARD,
-} from "../utils/permission-message.ts";
+  TELEGRAM_MESSAGE_MAX,
+} from "../utils/permission-render.ts";
 import { buildCorrectionPrompt, loadStateMatrix, validateMatrixArtifact, type StateMatrix } from "../orchestrator/matrix.ts";
 import { enqueueCorrection, getOrCreateRun, markRunStatus, recordValidationFailure } from "../orchestrator/store.ts";
 
@@ -473,8 +474,19 @@ export class PermissionHandler {
         // Keyboard is preserved (not passed in editMessageText → Telegram keeps it).
         if (telegramMsgId && Date.now() - lastEditAt >= REMINDER_INTERVAL_MS) {
           const elapsedMin = Math.round((Date.now() - startTime) / 60_000);
-          const updatedText = `${originalMsgText}\n\n<i>⏳ Waiting ${elapsedMin}m…</i>`;
-          await editTelegramMessage(token, chatId, telegramMsgId, updatedText, { parse_mode: "HTML" });
+          // Budgeted against the same limit the prompt was measured by. The
+          // prompt may legitimately be exactly 4096 characters — `fitsOneMessage`
+          // allows the boundary — and appending to it would push the edit over,
+          // where Telegram refuses it and the result is not checked. The
+          // reminder would simply stop appearing, on precisely the longest
+          // prompts, with nothing said.
+          const suffix = `\n\n<i>⏳ Waiting ${elapsedMin}m…</i>`;
+          const room = TELEGRAM_MESSAGE_MAX - suffix.length;
+          const updatedText = `${originalMsgText.slice(0, room)}${suffix}`;
+          const edit = await editTelegramMessage(token, chatId, telegramMsgId, updatedText, { parse_mode: "HTML" });
+          if (!edit.ok) {
+            channelLogger.warn({ requestId: request_id, error: edit.errorBody }, "waiting reminder edit refused");
+          }
           lastEditAt = Date.now();
         }
 

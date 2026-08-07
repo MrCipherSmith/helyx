@@ -8,7 +8,7 @@ import { setPendingTool, setPendingInput } from "./handlers.ts";
 import { enqueueToolCommand } from "./text-handler.ts";
 import { doSwitch } from "./commands/session.ts";
 import { permissionService } from "../services/permission-service.ts";
-import { renderAnswered, NO_KEYBOARD, type Outcome } from "../utils/permission-message.ts";
+import { renderAnswered, NO_KEYBOARD, type Outcome } from "../utils/permission-render.ts";
 import { approveSkill, rejectSkill } from "../utils/skill-distiller.ts";
 import { logger } from "../logger.ts";
 import { recordAnswer } from "../services/ask-question.ts";
@@ -318,7 +318,12 @@ async function handlePermissionCallback(ctx: Context): Promise<void> {
             parse_mode: "HTML",
             reply_markup: NO_KEYBOARD,
           }).catch(() => {})
-        : ctx.editMessageText(renderAnswered(outcome, descPart, toolName)).catch(() => {});
+        : ctx.editMessageText(renderAnswered(outcome, descPart, toolName), {
+            // No parse_mode: this text came back off the message as plain text
+            // and is not escaped. The keyboard still has to go — three live
+            // buttons under an answered request is the same defect either way.
+            reply_markup: NO_KEYBOARD,
+          }).catch(() => {});
 
     if (action === "always") {
       const toolName = result[0].tool_name;

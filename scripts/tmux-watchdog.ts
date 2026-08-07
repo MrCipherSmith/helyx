@@ -29,7 +29,7 @@ import type postgres from "postgres";
 import { stripAnsi } from "../utils/terminal.ts";
 import { isPermissionPrompt, findPromptSignal, PERM_SIGNAL_RE, PERM_CHOICE_RE } from "../utils/permission-prompt.ts";
 import { escapeHtml } from "../utils/html.ts";
-import { permissionKeyboard } from "../utils/permission-message.ts";
+import { permissionKeyboard, PROMPT_HEADER } from "../utils/permission-render.ts";
 import { meaningfulPaneLines } from "../utils/pane-parse.ts";
 
 // ---------------------------------------------------------------------------
@@ -321,7 +321,7 @@ async function sendPermissionMessage(
   forumExtra: Record<string, unknown>,
 ): Promise<{ ok: boolean; messageId: number | null }> {
   const text =
-    `🔐 Allow? (terminal)\n\n` +
+    `${PROMPT_HEADER} (terminal)\n\n` +
     `<b>${escapeHtml(toolName)}</b>\n` +
     `<i>${escapeHtml(description.slice(0, 300))}</i>`;
   const res = await telegramPost(token, "sendMessage", {
