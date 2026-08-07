@@ -33,7 +33,8 @@ import { ErrorWindow } from "../utils/error-stream.ts";
 import { getReviewerStatuses, type ReviewerStatus } from "../services/reviewer-service.ts";
 import { persistReviewRun, scheduledReviewDecision, type ScheduledReviewState } from "../services/review-artifacts.ts";
 import { runReviewers, gitReviewDiff } from "../services/reviewer-service.ts";
-import { TranscriptTail } from "../utils/transcript-locate.ts";
+import { TranscriptTail, resolveTranscript, claudeConfigRoot } from "../utils/transcript-locate.ts";
+import { decideCrossing, newestContextTokens, DEFAULT_CONTEXT_THRESHOLD } from "../utils/context-usage.ts";
 import { isRequeued, markRequeued } from "../utils/requeue.ts";
 import { paneLines, hasActiveSpinner, escapeHtml } from "../utils/terminal.ts";
 import { stripReasoning } from "../utils/llm-output.ts";
@@ -808,6 +809,113 @@ export async function updateProcessHealth(sql: postgres.Sql): Promise<void> {
         SET status = 'running', detail = EXCLUDED.detail, updated_at = NOW()
     `;
   } catch { /* non-blocking */ }
+}
+
+// --- Context pressure: summarize before Claude Code folds its own context ---
+
+/**
+ * How full a window has to be before the session is worth summarising.
+ *
+ * Not 98%, and the reasons are in `utils/context-usage.ts`: summarising needs
+ * room to happen, Claude Code folds ahead of the hard limit so a trigger above
+ * that point never fires, and the number lags by a turn.
+ */
+const CONTEXT_THRESHOLD = Math.min(0.99, Math.max(0.5,
+  Number(process.env.CONTEXT_SUMMARY_THRESHOLD) || DEFAULT_CONTEXT_THRESHOLD));
+
+/** Highest ratio already summarised, per session. Once per crossing, not per tick. */
+const contextHighWater = new Map<number, number>();
+
+/** Reading the tail of a transcript, and summarising — the two things a test cannot do for real. */
+export interface ContextPressureDeps {
+  /** The newest context measurement for this project, or null when unknown. */
+  readContext: (projectPath: string) => Promise<number | null>;
+  /** What to run when the threshold is crossed. */
+  summarize: (sessionId: number, chatId: string) => Promise<unknown>;
+}
+
+/** How much of the transcript's end is read to find the newest usage. */
+const CONTEXT_TAIL_BYTES = 256 * 1024;
+
+/**
+ * The newest context measurement for a project, from its transcript.
+ *
+ * Separated from the loop because it is the only part that touches a disk, and
+ * the loop's decisions are worth testing without one.
+ */
+export async function readSessionContext(projectPath: string): Promise<number | null> {
+  const path = await resolveTranscript(projectPath, claudeConfigRoot()).catch(() => null);
+  if (!path) return null;
+  const size = await Bun.file(path).size;
+  const tail = TranscriptTail.at(path, Math.max(0, size - CONTEXT_TAIL_BYTES));
+  const lines = await tail.read().catch(() => [] as string[]);
+  return newestContextTokens(lines);
+}
+
+/** Exposed so a test can reset between cases; the loop itself never clears it. */
+export function resetContextHighWater(): void {
+  contextHighWater.clear();
+}
+
+/**
+ * Summarise the sessions that are about to lose the material worth summarising.
+ *
+ * Idle is read from `active_status_messages`: a row exists for exactly as long
+ * as a turn is being reported, so its absence is the session being between
+ * turns. A session at the threshold mid-turn is left for the next tick rather
+ * than interrupted — the fold is close, not immediate, and cutting into a turn
+ * to talk about it would be its own defect.
+ */
+export async function checkContextPressure(sql: postgres.Sql, deps: ContextPressureDeps): Promise<void> {
+  const rows = await sql`
+    SELECT
+      s.id            AS session_id,
+      s.project_path,
+      -- Per project, not per session: /providers sets the model on the
+      -- projects row. NULL means whatever Claude defaults to, and the window
+      -- table falls back to its documented default for that.
+      p.model AS model,
+      (asm.chat_id IS NOT NULL) AS busy,
+      (SELECT cs.chat_id FROM chat_sessions cs WHERE cs.active_session_id = s.id LIMIT 1) AS chat_id
+    FROM sessions s
+    LEFT JOIN projects p ON p.path = s.project_path
+    LEFT JOIN active_status_messages asm ON asm.session_id = s.id
+    WHERE s.status = 'active' AND s.id != 0 AND s.project_path IS NOT NULL
+  `.catch(() => [] as any[]);
+
+  for (const row of rows as any[]) {
+    const sessionId = Number(row.session_id);
+    const chatId = row.chat_id ? String(row.chat_id) : null;
+    if (!chatId) continue;
+
+    const tokens = await deps.readContext(String(row.project_path)).catch(() => null);
+    const decision = decideCrossing({
+      contextTokens: tokens,
+      model: row.model ?? null,
+      threshold: CONTEXT_THRESHOLD,
+      idle: !row.busy,
+      highWaterRatio: contextHighWater.get(sessionId) ?? 0,
+    });
+
+    // Logged with the window it used. A wrong denominator makes the ratio
+    // meaningless, and the only way that is visible rather than silent is if
+    // both numbers appear together.
+    if (decision.reason !== "no-usage" && decision.reason !== "below-threshold") {
+      console.log(
+        `[context] session=${sessionId} ratio=${decision.ratio.toFixed(3)} window=${decision.window} ${decision.reason}`,
+      );
+    }
+
+    if (!decision.summarize) continue;
+
+    contextHighWater.set(sessionId, decision.ratio);
+    try {
+      await deps.summarize(sessionId, chatId);
+      console.log(`[context] session=${sessionId} summarized at ${(decision.ratio * 100).toFixed(1)}%`);
+    } catch (err: any) {
+      console.error(`[context] session=${sessionId} summarize failed: ${err?.message}`);
+    }
+  }
 }
 
 // --- Idle session auto-compact ---
@@ -1792,6 +1900,7 @@ export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
   let voiceCheckRunning      = false;
   let broadcastRunning       = false;
   let idleCheckRunning       = false;
+  let contextCheckRunning    = false;
   let unansweredCheckRunning = false;
 
   // Loop 1: Session heartbeat — every 60s
@@ -1843,6 +1952,20 @@ export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
     checkIdleSessions(sql).catch(() => {}).finally(() => { idleCheckRunning = false; });
   }, 30 * 60_000);
   idleTimer.unref?.();
+
+  // Loop 5b: Context pressure — every 2 min.
+  //
+  // Faster than the idle loop because it is racing something. A window fills
+  // over minutes, and half an hour between looks is most of the time it takes.
+  const contextTimer = setInterval(() => {
+    if (contextCheckRunning) return;
+    contextCheckRunning = true;
+    checkContextPressure(sql, {
+      readContext: readSessionContext,
+      summarize: (sessionId, chatId) => forceSummarize(sessionId, chatId),
+    }).catch(() => {}).finally(() => { contextCheckRunning = false; });
+  }, 2 * 60_000);
+  contextTimer.unref?.();
 
   // Loop 6: Gemma health analyst — every 10 min
   let gemmaHealthRunning = false;

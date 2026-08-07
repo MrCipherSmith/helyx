@@ -125,6 +125,36 @@ export async function forceSummarize(
 }
 
 /**
+ * Summarize because Claude Code is about to fold its own context.
+ *
+ * Addressed by project path rather than session id: the caller is a hook, and a
+ * hook knows the working directory it fired in and nothing about Helyx's
+ * session table. Resolving it here keeps that lookup in one place instead of
+ * in a shell script.
+ *
+ * Every chat bound to the session gets a summary, for the same reason
+ * `summarizeOnDisconnect` does: a session can be open in more than one, and the
+ * one that is about to lose its context is not necessarily the one that was
+ * asked last.
+ */
+export async function summarizeBeforeCompact(projectPath: string): Promise<number> {
+  const rows = await sql`
+    SELECT s.id AS session_id, cs.chat_id
+    FROM sessions s
+    JOIN chat_sessions cs ON cs.active_session_id = s.id
+    WHERE s.project_path = ${projectPath} AND s.status = 'active' AND s.id != 0
+  `.catch(() => [] as any[]);
+
+  let summarized = 0;
+  for (const row of rows as any[]) {
+    const written = await trySummarize(Number(row.session_id), String(row.chat_id), "manual", projectPath)
+      .catch(() => null);
+    if (written) summarized++;
+  }
+  return summarized;
+}
+
+/**
  * Summarize on session disconnect — saves context before session dies.
  */
 export async function summarizeOnDisconnect(
