@@ -1,0 +1,81 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="_base.css"><style>
+  h1 { font-size:34px; margin-bottom:6px; }
+  .sub { font-size:16px; margin-bottom:30px; }
+  .grid { flex:1; display:grid; grid-template-columns:1fr 1fr 1fr; grid-template-rows:1fr 1fr; gap:16px; }
+  .card { padding:20px 22px; display:flex; flex-direction:column; }
+  .n { font-size:12px; font-family:ui-monospace,Menlo,monospace; color:#4a5563; margin-bottom:10px; letter-spacing:1px; }
+  .ttl { font-size:19px; font-weight:600; margin-bottom:9px; line-height:1.25; }
+  .txt { font-size:13.5px; color:#8b949e; line-height:1.6; }
+  .txt b { color:#adbac7; font-weight:600; }
+  .foot { margin-top:26px; font-size:13.5px; color:#6e7681; }
+  .foot .u { color:#79c0ff; font-family:ui-monospace,Menlo,monospace; }
+</style></head><body>
+  <h1><span data-lang="en">What makes it different</span><span data-lang="ru">Чем он отличается</span></h1>
+  <div class="sub">
+    <span data-lang="en">Not a chat wrapper. The session keeps running when you close the app.</span>
+    <span data-lang="ru">Это не обёртка над чатом. Сессия продолжает работать, когда ты закрываешь приложение.</span>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="n">01</div>
+      <div class="ttl"><span data-lang="en">Persistent sessions</span><span data-lang="ru">Сессии живут дальше</span></div>
+      <div class="txt">
+        <span data-lang="en">Every project gets a real Claude Code session in tmux. Close Telegram, come back in an hour — <b>it is still where you left it</b>.</span>
+        <span data-lang="ru">У каждого проекта настоящая сессия Claude Code в tmux. Закрой Telegram, вернись через час — <b>всё там же, где оставил</b>.</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="n">02</div>
+      <div class="ttl"><span data-lang="en">A topic per project</span><span data-lang="ru">Топик на проект</span></div>
+      <div class="txt">
+        <span data-lang="en">Telegram forum topics map to projects one-to-one. Context never bleeds between them, and <b>you switch by scrolling</b>.</span>
+        <span data-lang="ru">Топики форума соответствуют проектам один к одному. Контекст не перетекает между ними, а <b>переключение — это скролл</b>.</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="n">03</div>
+      <div class="ttl"><span data-lang="en">Memory that outlives the session</span><span data-lang="ru">Память переживает сессию</span></div>
+      <div class="txt">
+        <span data-lang="en">Decisions, constraints and gotchas go into pgvector and come back by meaning — so <b>the next session already knows</b>.</span>
+        <span data-lang="ru">Решения, ограничения и грабли уходят в pgvector и возвращаются по смыслу — <b>следующая сессия уже в курсе</b>.</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="n">04</div>
+      <div class="ttl"><span data-lang="en">Voice both ways</span><span data-lang="ru">Голос в обе стороны</span></div>
+      <div class="txt">
+        <span data-lang="en">Talk to it walking. It answers in text and <b>speaks a short recap back</b> — local TTS, no per-reply cost.</span>
+        <span data-lang="ru">Говори на ходу. Отвечает текстом и <b>наговаривает короткий пересказ</b> — локальный синтез, без оплаты за каждый ответ.</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="n">05</div>
+      <div class="ttl"><span data-lang="en">You see the work, live</span><span data-lang="ru">Работа видна в реальном времени</span></div>
+      <div class="txt">
+        <span data-lang="en">A status message updates as the agent reads, edits and runs tests. <b>Approve or deny tool calls</b> from the phone.</span>
+        <span data-lang="ru">Статус обновляется, пока агент читает, правит и гоняет тесты. <b>Разрешай или запрещай вызовы инструментов</b> прямо с телефона.</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="n">06</div>
+      <div class="ttl"><span data-lang="en">Reviews from several models</span><span data-lang="ru">Ревью от нескольких моделей</span></div>
+      <div class="txt">
+        <span data-lang="en">One request fans out to independent reviewers in parallel — Codex and other providers — and <b>you read all verdicts</b>.</span>
+        <span data-lang="ru">Один запрос расходится по независимым ревьюерам параллельно — Codex и другие провайдеры — и <b>ты читаешь все вердикты</b>.</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <span data-lang="en">Self-hosted &middot; Bun + Postgres + pgvector &middot; MCP over stdio and HTTP &middot; </span>
+    <span data-lang="ru">Self-hosted &middot; Bun + Postgres + pgvector &middot; MCP через stdio и HTTP &middot; </span>
+    <span class="u">github.com/MrCipherSmith/helyx</span>
+  </div>
+
+<script>
+  var lang = new URLSearchParams(location.search).get("lang") === "ru" ? "ru" : "en";
+  document.querySelectorAll("[data-lang='" + lang + "']").forEach(function (el) { el.style.display = "inline"; });
+</script>
+</body></html>

@@ -1,0 +1,112 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="_base.css"><style>
+  .head { display:flex; align-items:baseline; gap:14px; margin-bottom:6px; }
+  .ver { font-size:15px; color:#7d8590; font-family:ui-monospace,Menlo,monospace; }
+  .sub { margin-bottom:34px; }
+  .flow { flex:1; display:flex; align-items:center; }
+  .col { flex:1; display:flex; flex-direction:column; gap:12px; }
+  .ttl { font-size:17px; font-weight:600; margin-bottom:8px; display:flex; align-items:center; gap:8px; }
+  .dot { width:8px; height:8px; border-radius:50%; background:#3fb950; flex:none; }
+  .dot.b { background:#58a6ff; } .dot.p { background:#bc8cff; }
+  .li { font-size:13.5px; color:#8b949e; line-height:1.65; }
+  .mono { color:#79c0ff; font-size:12.5px; }
+  .arrow { flex:none; width:78px; text-align:center; color:#4a5563; }
+  .arrow .g { font-size:26px; line-height:1; color:#586374; }
+  .arrow .l { margin-top:6px; font-size:11.5px; letter-spacing:0.3px; }
+  .foot { margin-top:30px; display:flex; gap:28px; font-size:13px; color:#6e7681; }
+  .foot b { color:#adbac7; font-weight:600; }
+</style></head><body>
+  <div class="head">
+    <h1>Helyx</h1><span class="ver">v1.55.2</span>
+  </div>
+  <div class="sub">
+    <span data-lang="en">Run Claude Code on every project you own — from your phone.</span>
+    <span data-lang="ru">Claude Code на всех твоих проектах — с телефона.</span>
+  </div>
+
+  <div class="flow">
+    <div class="col">
+      <div class="card accent">
+        <div class="ttl"><span class="dot b"></span>Telegram</div>
+        <div class="li">
+          <span data-lang="en">One forum topic per project.<br>Text or voice — both work.</span>
+          <span data-lang="ru">Один топик форума на проект.<br>Текстом или голосом — как удобно.</span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="ttl"><span class="dot b"></span>
+          <span data-lang="en">Voice in, voice out</span>
+          <span data-lang="ru">Голос туда и обратно</span>
+        </div>
+        <div class="li">
+          <span data-lang="en">Whisper in. A spoken recap back,<br>synthesized locally.</span>
+          <span data-lang="ru">Whisper на входе. Голосовой<br>пересказ обратно, локально.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow"><div class="g">&#8652;</div><div class="l">
+      <span data-lang="en">queue</span><span data-lang="ru">очередь</span>
+    </div></div>
+
+    <div class="col">
+      <div class="card accent">
+        <div class="ttl"><span class="dot p"></span>Helyx</div>
+        <div class="li">
+          <span data-lang="en">Postgres message queue,<br>MCP server, session router.</span>
+          <span data-lang="ru">Очередь в Postgres,<br>MCP-сервер, роутер сессий.</span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="ttl"><span class="dot p"></span>
+          <span data-lang="en">Long-term memory</span>
+          <span data-lang="ru">Долгая память</span>
+        </div>
+        <div class="li">
+          <span data-lang="en">pgvector. What a project decided<br>survives the session that decided it.</span>
+          <span data-lang="ru">pgvector. Решение проекта живёт<br>дольше сессии, которая его приняла.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow"><div class="g">&#8652;</div><div class="l">stdio MCP</div></div>
+
+    <div class="col">
+      <div class="card accent">
+        <div class="ttl"><span class="dot"></span>
+          <span data-lang="en">Claude Code sessions</span>
+          <span data-lang="ru">Сессии Claude Code</span>
+        </div>
+        <div class="li">
+          <span data-lang="en">One tmux window per project,<br>all of them live at once.</span>
+          <span data-lang="ru">Одно окно tmux на проект,<br>все живут одновременно.</span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="ttl"><span class="dot"></span>
+          <span data-lang="en">Your machine</span>
+          <span data-lang="ru">Твоя машина</span>
+        </div>
+        <div class="li">
+          <span class="mono">helyx</span> &middot; <span class="mono">keryx</span> &middot; <span class="mono">arena</span> &middot; <span class="mono">vantage</span><br>
+          <span data-lang="en">Nothing leaves the host.</span>
+          <span data-lang="ru">Ничего не покидает хост.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <span><b>11</b> <span data-lang="en">projects in one chat</span><span data-lang="ru">проектов в одном чате</span></span>
+    <span><b>18 + 19</b> <span data-lang="en">MCP tools</span><span data-lang="ru">MCP-инструментов</span></span>
+    <span><b>1902</b> <span data-lang="en">unit tests</span><span data-lang="ru">юнит-тестов</span></span>
+    <span><b><span data-lang="en">Self-hosted</span><span data-lang="ru">Self-hosted</span></b> — <span data-lang="en">your keys, your box</span><span data-lang="ru">твои ключи, твоё железо</span></span>
+  </div>
+
+<script>
+  var lang = new URLSearchParams(location.search).get("lang") === "ru" ? "ru" : "en";
+  document.querySelectorAll("[data-lang='" + lang + "']").forEach(function (el) {
+    el.style.display = el.tagName === "SPAN" ? "inline" : "block";
+  });
+</script>
+</body></html>

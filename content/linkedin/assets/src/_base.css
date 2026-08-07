@@ -1,0 +1,41 @@
+/* Shared styling for every Helyx promo card.
+ *
+ * Rendered at 1200x630 — LinkedIn's link-preview and single-image ratio.
+ * Screenshotted at device scale 2, so the exported PNG is 2400x1260 and stays
+ * sharp when LinkedIn re-encodes it.
+ *
+ * Language is switched by `?lang=ru` on the file:// URL: every localisable
+ * string lives in the page twice, marked `data-lang`, and the script at the
+ * bottom of each page hides the half that was not asked for. One file per
+ * concept rather than one per language, so a wording change cannot land in
+ * English and be forgotten in Russian.
+ */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  width: 1200px;
+  height: 630px;
+  background: #0d1117;
+  color: #e6edf3;
+  font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  padding: 44px 52px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+h1 { font-size: 36px; font-weight: 650; letter-spacing: -0.5px; }
+.sub { font-size: 17px; color: #9198a1; }
+
+.card {
+  background: #161b22;
+  border: 1px solid #2a313c;
+  border-radius: 12px;
+  padding: 18px 20px;
+}
+.card.accent { border-color: #3d5a80; background: #131a24; }
+
+.mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+
+[data-lang] { display: none; }

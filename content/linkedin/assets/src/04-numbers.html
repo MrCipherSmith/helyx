@@ -1,0 +1,72 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="_base.css"><style>
+  h1 { font-size:34px; margin-bottom:6px; }
+  .sub { font-size:16px; margin-bottom:32px; }
+  .row { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:20px; }
+  .stat { background:#161b22; border:1px solid #2a313c; border-radius:12px; padding:18px 20px; }
+  .num { font-size:34px; font-weight:650; letter-spacing:-1px; color:#79c0ff; line-height:1; margin-bottom:8px; }
+  .lbl { font-size:12.5px; color:#8b949e; line-height:1.5; }
+  .stack { flex:1; display:flex; gap:16px; }
+  .half { flex:1; background:#131a24; border:1px solid #3d5a80; border-radius:12px; padding:20px 22px; }
+  .ht { font-size:16px; font-weight:600; margin-bottom:12px; }
+  .li { font-size:13px; color:#8b949e; line-height:1.85; }
+  .li .k { color:#c9d1d9; font-family:ui-monospace,Menlo,monospace; font-size:12.2px; }
+  .foot { margin-top:24px; font-size:13px; color:#6e7681; }
+  .foot .u { color:#79c0ff; font-family:ui-monospace,Menlo,monospace; }
+</style></head><body>
+  <h1><span data-lang="en">Built to be run, not demoed</span><span data-lang="ru">Сделан, чтобы работать, а не показываться</span></h1>
+  <div class="sub">
+    <span data-lang="en">Numbers from the repository at v1.55.2, not from a pitch deck.</span>
+    <span data-lang="ru">Цифры из репозитория на v1.55.2, а не из презентации.</span>
+  </div>
+
+  <div class="row">
+    <div class="stat">
+      <div class="num">1902</div>
+      <div class="lbl"><span data-lang="en">unit tests across 109 files, green</span><span data-lang="ru">юнит-тестов в 109 файлах, все зелёные</span></div>
+    </div>
+    <div class="stat">
+      <div class="num">37</div>
+      <div class="lbl"><span data-lang="en">MCP tools — 18 over stdio, 19 over HTTP</span><span data-lang="ru">MCP-инструментов — 18 по stdio, 19 по HTTP</span></div>
+    </div>
+    <div class="stat">
+      <div class="num">62</div>
+      <div class="lbl"><span data-lang="en">Telegram commands, all documented</span><span data-lang="ru">команд Telegram, все задокументированы</span></div>
+    </div>
+    <div class="stat">
+      <div class="num">49</div>
+      <div class="lbl"><span data-lang="en">schema migrations, forward-only</span><span data-lang="ru">миграций схемы, только вперёд</span></div>
+    </div>
+  </div>
+
+  <div class="stack">
+    <div class="half">
+      <div class="ht"><span data-lang="en">The stack</span><span data-lang="ru">Стек</span></div>
+      <div class="li">
+        <span class="k">Bun</span> + TypeScript &mdash; <span data-lang="en">runtime and tests</span><span data-lang="ru">рантайм и тесты</span><br>
+        <span class="k">Postgres + pgvector</span> &mdash; <span data-lang="en">queue and semantic memory</span><span data-lang="ru">очередь и семантическая память</span><br>
+        <span class="k">grammY</span> &mdash; <span data-lang="en">Telegram, forum topics</span><span data-lang="ru">Telegram, топики форума</span><br>
+        <span class="k">MCP</span> &mdash; <span data-lang="en">stdio to sessions, HTTP to clients</span><span data-lang="ru">stdio к сессиям, HTTP к клиентам</span><br>
+        <span class="k">tmux</span> &mdash; <span data-lang="en">one window per project</span><span data-lang="ru">одно окно на проект</span><br>
+        <span class="k">Piper / Kokoro</span> &mdash; <span data-lang="en">local speech, no API key</span><span data-lang="ru">локальная речь, без ключей</span>
+      </div>
+    </div>
+    <div class="half">
+      <div class="ht"><span data-lang="en">What that buys you</span><span data-lang="ru">Что это даёт</span></div>
+      <div class="li">
+        <span data-lang="en">Sessions that survive a bot restart<br>Answers that survive a lost connection<br>Memory that survives the session<br>Reviews from several models at once<br>A dashboard as a Telegram Mini App<br>Your keys and your code on your own box</span>
+        <span data-lang="ru">Сессии переживают рестарт бота<br>Ответы переживают потерю связи<br>Память переживает сессию<br>Ревью от нескольких моделей сразу<br>Дашборд как Telegram Mini App<br>Твои ключи и код — на твоём железе</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <span data-lang="en">Open source &middot; </span><span data-lang="ru">Открытый код &middot; </span>
+    <span class="u">github.com/MrCipherSmith/helyx</span>
+  </div>
+
+<script>
+  var lang = new URLSearchParams(location.search).get("lang") === "ru" ? "ru" : "en";
+  document.querySelectorAll("[data-lang='" + lang + "']").forEach(function (el) { el.style.display = "inline"; });
+</script>
+</body></html>
