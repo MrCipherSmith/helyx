@@ -56,3 +56,17 @@ graphify-out/
 .metaproject/data/security/artifacts/latest.json
 .metaproject/reports/
 # keryx:end
+
+# A .metaproject created outside the repository root
+#
+# Every pattern in the keryx block above is anchored to the root, so a
+# `.metaproject` that keryx scaffolds anywhere else — because a command ran with
+# its working directory inside a subfolder — matches none of them. That has
+# already put two HMAC keys into this repository: one inside a flow package on
+# 2026-08-04, one under content/ on 2026-08-07. Both keys were rotated.
+#
+# These patterns are unanchored on purpose and live outside the managed block so
+# `keryx update` cannot drop them.
+**/.metaproject/data/**/raw/
+**/.metaproject/data/**/storage/
+**/.metaproject/runtime/
