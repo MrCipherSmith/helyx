@@ -1,95 +1,86 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><link rel="stylesheet" href="_base.css"><style>
-  /* The topic, full bleed and nothing else. The words belong to the post that
-     carries the image; repeating them here reads as saying it twice.
-     The message structure follows utils/status-render.ts and channel/tools.ts:
-     status header, subagent line, expandable quote, stats line, and the recap
-     as a collapsed quote under the answer. */
-  body { padding:0; background:#17212b; display:block; }
-  .wrap { width:1200px; height:630px; padding:18px 200px; display:flex; flex-direction:column; gap:7px; overflow:hidden; }
-
-  .tbar { display:flex; align-items:center; gap:11px; padding-bottom:10px; border-bottom:1px solid #101921; margin-bottom:2px; }
-  .av { width:34px; height:34px; border-radius:50%; background:#3d5a80; display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:600; color:#cfe0f5; }
-  .tname { font-size:15.5px; font-weight:600; color:#fff; }
-  .tsub { font-size:12px; color:#6d7f8f; }
-
-  .msg { max-width:88%; border-radius:12px; padding:9px 12px; font-size:13px; line-height:1.5; color:#e9edf0; }
-  .in  { background:#182533; align-self:flex-start; border-bottom-left-radius:4px; }
-  .out { background:#2b5278; align-self:flex-end; border-bottom-right-radius:4px; }
-  .meta { font-size:10px; color:#6d7f8f; margin-top:4px; text-align:right; }
-  .out .meta { color:#8fb0d0; }
-
-  .voice { display:flex; align-items:center; gap:9px; }
-  .play { width:28px; height:28px; border-radius:50%; background:#5aa0e0; color:#17212b; display:flex; align-items:center; justify-content:center; font-size:12px; flex:none; }
-  .wave { display:flex; align-items:center; gap:2px; height:20px; }
-  .wave i { width:2px; background:#7fb3e3; border-radius:1px; display:block; }
-  .dur { font-size:11px; color:#8fb0d0; }
-
-  .status { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11.6px; line-height:1.58; }
+<html><head><meta charset="utf-8">
+<link rel="stylesheet" href="_base.css"><link rel="stylesheet" href="_phone.css"><style>
+  /* One topic, mid-turn. Message structure follows utils/status-render.ts and
+     channel/tools.ts: status header, subagent line, expandable quote, stats
+     line, and the recap as a collapsed quote under the answer. */
+  .status { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:9.6px; line-height:1.5; }
   .status .it { font-style:italic; color:#a8bccd; }
   .status .ag { color:#c9a0ff; }
   .status .sm { color:#8fd0a0; }
-  .quote { border-left:2px solid #5aa0e0; padding:4px 0 4px 9px; margin:5px 0; color:#9fb3c4; font-size:11.2px; line-height:1.55; }
+  .quote { border-left:2px solid #5aa0e0; padding:3px 0 3px 7px; margin:4px 0; color:#9fb3c4; font-size:9.4px; line-height:1.5; }
   .quote .more { color:#5aa0e0; }
   .stats { color:#6d7f8f; }
-  .pre { background:#0f1720; border-radius:6px; padding:6px 9px; margin:5px 0; color:#8ba3b8; font-size:10.8px; line-height:1.45; white-space:pre; }
-  .recap { border-left:2px solid #5aa0e0; padding:5px 0 5px 9px; color:#b9c8d6; font-size:12.4px; line-height:1.5; }
+  .pre { background:#0f1720; border-radius:5px; padding:5px 7px; margin:4px 0; color:#8ba3b8; font-size:9px; line-height:1.4; white-space:pre; }
+  .recap { border-left:2px solid #5aa0e0; padding:4px 0 4px 7px; color:#b9c8d6; font-size:10.8px; line-height:1.45; }
 </style></head><body>
-  <div class="wrap">
-    <div class="tbar">
-      <div class="av">H</div>
-      <div>
-        <div class="tname">helyx</div>
-        <div class="tsub"><span data-lang="en">project topic &middot; session active</span><span data-lang="ru">топик проекта &middot; сессия активна</span></div>
-      </div>
+  <div class="phone">
+    <div class="sbar">
+      <span>17:07 &#128263;</span>
+      <span class="r">&#9601;&#9603;&#9605; &#8226; <span class="batt">84</span></span>
     </div>
 
-    <div class="msg out">
-      <div class="voice">
-        <div class="play">&#9654;</div>
-        <div class="wave">
-          <i style="height:6px"></i><i style="height:11px"></i><i style="height:17px"></i><i style="height:9px"></i><i style="height:14px"></i><i style="height:20px"></i><i style="height:8px"></i><i style="height:13px"></i><i style="height:18px"></i><i style="height:7px"></i><i style="height:12px"></i><i style="height:16px"></i><i style="height:9px"></i><i style="height:5px"></i><i style="height:11px"></i><i style="height:15px"></i><i style="height:8px"></i><i style="height:6px"></i><i style="height:13px"></i><i style="height:10px"></i>
+    <div class="hdr">
+      <div class="circ">&#8249;</div>
+      <div class="ava">he</div>
+      <div class="hname"><b>helyx</b><span data-lang="en">session active</span><span data-lang="ru">сессия активна</span></div>
+      <div class="circ">&#8943;</div>
+    </div>
+
+    <div class="thread">
+      <div class="msg out">
+        <div class="voice">
+          <div class="play">&#9654;</div>
+          <div class="wave">
+            <i style="height:5px"></i><i style="height:9px"></i><i style="height:14px"></i><i style="height:7px"></i><i style="height:11px"></i><i style="height:16px"></i><i style="height:6px"></i><i style="height:10px"></i><i style="height:15px"></i><i style="height:5px"></i><i style="height:9px"></i><i style="height:13px"></i><i style="height:7px"></i><i style="height:4px"></i><i style="height:9px"></i><i style="height:12px"></i><i style="height:6px"></i><i style="height:5px"></i>
+          </div>
+          <div class="dur">0:14</div>
         </div>
-        <div class="dur">0:14</div>
+        <div class="meta">11:42</div>
       </div>
-      <div class="meta">11:42</div>
-    </div>
 
-    <div class="msg in status">
-      <div>&#9203; <span class="it">2m 14s</span> &#128296;</div>
-      <div class="ag">&#129513; <span data-lang="en">3 subagents: review:logic &middot; review:security &middot; verify:auth</span><span data-lang="ru">3 агента: review:logic &middot; review:security &middot; verify:auth</span></div>
-      <div class="sm">&#9656; <span data-lang="en">Checking how an expired token is handled</span><span data-lang="ru">Проверяю обработку истёкшего токена</span></div>
-      <div class="quote">
-        <span data-lang="en">Read utils/session.ts &middot; 340 lines<br>Edit utils/session.ts &middot; +12 &minus;4</span>
-        <span data-lang="ru">Прочитал utils/session.ts &middot; 340 строк<br>Правка utils/session.ts &middot; +12 &minus;4</span>
-        <br><span class="more"><span data-lang="en">show more</span><span data-lang="ru">показать ещё</span></span>
-      </div>
-      <div class="pre">bun test tests/unit/session.test.ts
+      <div class="msg in status">
+        <div>&#9203; <span class="it">2m 14s</span> &#128296;</div>
+        <div class="ag">&#129513; <span data-lang="en">3 subagents: review:logic &middot; verify:auth</span><span data-lang="ru">3 агента: review:logic &middot; verify:auth</span></div>
+        <div class="sm">&#9656; <span data-lang="en">Checking how an expired token is handled</span><span data-lang="ru">Проверяю обработку истёкшего токена</span></div>
+        <div class="quote">
+          <span data-lang="en">Read utils/session.ts &middot; 340 lines<br>Edit utils/session.ts &middot; +12 &minus;4</span>
+          <span data-lang="ru">Прочитал utils/session.ts &middot; 340 строк<br>Правка utils/session.ts &middot; +12 &minus;4</span>
+          <br><span class="more"><span data-lang="en">show more</span><span data-lang="ru">показать ещё</span></span>
+        </div>
+        <div class="pre">bun test session.test.ts
  24 pass  0 fail  [412ms]</div>
-      <div class="stats">&#128295; 47 tools &middot; 12 files</div>
-      <div class="meta">11:44</div>
-    </div>
-
-    <div class="msg in">
-      <span data-lang="en">An expired token is refreshed once, and only once — the retry is not wrapped in a loop. If the refresh itself fails, the request is rejected instead of retried, so a dead session cannot spin.</span>
-      <span data-lang="ru">Истёкший токен обновляется один раз и только один — повтор не завёрнут в цикл. Если само обновление падает, запрос отклоняется, а не повторяется, поэтому мёртвая сессия не может закрутиться.</span>
-      <div class="meta">11:44</div>
-    </div>
-
-    <div class="msg in">
-      <div class="recap">&#128266; <span data-lang="en">The expired token gets refreshed a single time. If that refresh fails, the request is rejected rather than retried, which stops a dead session from looping.</span><span data-lang="ru">Истёкший токен обновляется один раз. Если обновление не удалось, запрос отклоняется, а не повторяется — так мёртвая сессия не уходит в цикл.</span></div>
-      <div class="meta">11:44</div>
-    </div>
-
-    <div class="msg in">
-      <div class="voice">
-        <div class="play">&#9654;</div>
-        <div class="wave">
-          <i style="height:9px"></i><i style="height:15px"></i><i style="height:7px"></i><i style="height:18px"></i><i style="height:12px"></i><i style="height:6px"></i><i style="height:16px"></i><i style="height:10px"></i><i style="height:14px"></i><i style="height:19px"></i><i style="height:8px"></i><i style="height:13px"></i><i style="height:5px"></i><i style="height:17px"></i><i style="height:11px"></i><i style="height:7px"></i><i style="height:15px"></i><i style="height:9px"></i><i style="height:12px"></i><i style="height:6px"></i>
-        </div>
-        <div class="dur">0:21</div>
+        <div class="stats">&#128295; 47 tools &middot; 12 files</div>
+        <div class="meta">11:44</div>
       </div>
-      <div class="meta">11:44</div>
+
+      <div class="msg in">
+        <span data-lang="en">An expired token is refreshed once, and only once — the retry is not wrapped in a loop. If that refresh fails, the request is rejected instead.</span>
+        <span data-lang="ru">Истёкший токен обновляется один раз и только один — повтор не завёрнут в цикл. Если обновление падает, запрос отклоняется.</span>
+        <div class="meta">11:44</div>
+      </div>
+
+      <div class="msg in">
+        <div class="recap">&#128266; <span data-lang="en">The expired token gets refreshed a single time. If that refresh fails, the request is rejected rather than retried.</span><span data-lang="ru">Истёкший токен обновляется один раз. Если обновление не удалось, запрос отклоняется, а не повторяется.</span></div>
+        <div class="meta">11:44</div>
+      </div>
+
+      <div class="msg in">
+        <div class="voice">
+          <div class="play">&#9654;</div>
+          <div class="wave">
+            <i style="height:7px"></i><i style="height:12px"></i><i style="height:5px"></i><i style="height:15px"></i><i style="height:9px"></i><i style="height:4px"></i><i style="height:13px"></i><i style="height:8px"></i><i style="height:11px"></i><i style="height:16px"></i><i style="height:6px"></i><i style="height:10px"></i><i style="height:4px"></i><i style="height:14px"></i><i style="height:9px"></i><i style="height:5px"></i><i style="height:12px"></i><i style="height:7px"></i>
+          </div>
+          <div class="dur">0:21</div>
+        </div>
+        <div class="meta">11:44</div>
+      </div>
+    </div>
+
+    <div class="bar">
+      <span>&#128206;</span>
+      <span class="ph"><span data-lang="en">Message</span><span data-lang="ru">Сообщение</span></span>
+      <span>&#127908;</span>
     </div>
   </div>
 

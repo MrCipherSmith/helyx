@@ -62,6 +62,18 @@ attention as a post, and the fourth frame is where they stop swiping.
 words belong to the post the image ships with, and saying them twice reads as a
 slideshow of the caption. They are the interface and nothing else.
 
+All three are the **same phone**: same status bar, same header, same green `he`
+avatar, and the app chrome a real screenshot would have — the composer bar on
+the two conversation frames, the tab bar on the list. They used to differ, and a
+carousel where one frame has chrome and the next does not makes a reader ask
+which of them are screenshots. That is the wrong question to provoke.
+
+The frames are also checked against each other: a header that says the session
+is active is not shown above a session that is idle, and no frame carries an
+error state. `deprecated` is a real topic name and stays, but its last message is
+routine — a red "Claude has not answered" line reads as a bug report to anyone
+who does not know the topic is a graveyard.
+
 ### These three are mockups
 
 `03-telegram`, `05-control` and `06-projects` are **drawn, not captured**. The

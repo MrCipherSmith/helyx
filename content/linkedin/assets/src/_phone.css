@@ -1,0 +1,44 @@
+/* The phone the three Telegram frames share.
+ *
+ * They used to differ: one carried the OS status bar and the app chrome, two
+ * were bare message columns. In one carousel that reads as "some of these are
+ * screenshots and some are not", which is the wrong question to make a reader
+ * ask. Same device, same chrome, same avatar on every frame.
+ */
+
+body { padding: 0; background: #0d1117; display: flex; align-items: center; justify-content: center; }
+
+.phone {
+  width: 296px; height: 614px; background: #000; border-radius: 26px;
+  border: 1px solid #23272e; overflow: hidden; display: flex; flex-direction: column;
+  font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+.sbar { display: flex; justify-content: space-between; align-items: center; padding: 7px 16px 3px; font-size: 11px; color: #fff; font-weight: 600; }
+.sbar .r { display: flex; align-items: center; gap: 4px; font-weight: 500; color: #e6edf3; }
+.batt { border: 1px solid #6a7480; border-radius: 3px; padding: 0 3px; font-size: 8.5px; }
+
+.hdr { display: flex; align-items: center; gap: 9px; padding: 4px 11px 8px; border-bottom: 1px solid #14171b; }
+.circ { width: 25px; height: 25px; border-radius: 50%; background: #1c1f24; color: #c9d1d9; display: flex; align-items: center; justify-content: center; font-size: 13px; flex: none; }
+/* The one helyx avatar. Green circle, lowercase "he", on every frame. */
+.ava { width: 30px; height: 30px; border-radius: 50%; background: #7ee787; color: #08090b; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex: none; }
+.hname { flex: 1; min-width: 0; }
+.hname b { display: block; font-size: 13.5px; color: #fff; }
+.hname span { font-size: 10px; color: #7d8590; }
+
+.thread { flex: 1; display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; overflow: hidden; }
+
+.msg { max-width: 90%; border-radius: 11px; padding: 7px 9px; font-size: 11.4px; line-height: 1.45; color: #e9edf0; }
+.in { background: #182533; align-self: flex-start; border-bottom-left-radius: 4px; }
+.out { background: #2b5278; align-self: flex-end; border-bottom-right-radius: 4px; }
+.meta { font-size: 8.5px; color: #6d7f8f; margin-top: 3px; text-align: right; }
+.out .meta { color: #8fb0d0; }
+
+.voice { display: flex; align-items: center; gap: 7px; }
+.play { width: 22px; height: 22px; border-radius: 50%; background: #5aa0e0; color: #17212b; display: flex; align-items: center; justify-content: center; font-size: 9px; flex: none; }
+.wave { display: flex; align-items: center; gap: 1.5px; height: 16px; }
+.wave i { width: 1.5px; background: #7fb3e3; border-radius: 1px; display: block; }
+.dur { font-size: 9px; color: #8fb0d0; }
+
+.bar { display: flex; align-items: center; gap: 9px; padding: 7px 12px 10px; border-top: 1px solid #14171b; color: #6d7f8f; font-size: 11.5px; }
+.bar .ph { flex: 1; }
