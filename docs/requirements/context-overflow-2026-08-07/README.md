@@ -27,6 +27,7 @@ that the interception point exists and that the number is measurable.
 |------|----------|
 | [README.md](README.md) | This file — purpose, status, established facts |
 | [prd.md](prd.md) | Problem, measurement, the three layers, acceptance, risks |
+| [code-review.md](code-review.md) | Review of the implementation — four silent defects in the denominator and its configuration, all fixed |
 
 ## The proposal in one paragraph
 

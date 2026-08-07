@@ -34,7 +34,7 @@ import { getReviewerStatuses, type ReviewerStatus } from "../services/reviewer-s
 import { persistReviewRun, scheduledReviewDecision, type ScheduledReviewState } from "../services/review-artifacts.ts";
 import { runReviewers, gitReviewDiff } from "../services/reviewer-service.ts";
 import { TranscriptTail, resolveTranscript, claudeConfigRoot } from "../utils/transcript-locate.ts";
-import { decideCrossing, newestContextTokens, DEFAULT_CONTEXT_THRESHOLD } from "../utils/context-usage.ts";
+import { decideCrossing, newestContextTokens, contextThreshold } from "../utils/context-usage.ts";
 import { isRequeued, markRequeued } from "../utils/requeue.ts";
 import { paneLines, hasActiveSpinner, escapeHtml } from "../utils/terminal.ts";
 import { stripReasoning } from "../utils/llm-output.ts";
@@ -820,8 +820,7 @@ export async function updateProcessHealth(sql: postgres.Sql): Promise<void> {
  * room to happen, Claude Code folds ahead of the hard limit so a trigger above
  * that point never fires, and the number lags by a turn.
  */
-const CONTEXT_THRESHOLD = Math.min(0.99, Math.max(0.5,
-  Number(process.env.CONTEXT_SUMMARY_THRESHOLD) || DEFAULT_CONTEXT_THRESHOLD));
+const CONTEXT_THRESHOLD = contextThreshold(process.env.CONTEXT_SUMMARY_THRESHOLD);
 
 /** Highest ratio already summarised, per session. Once per crossing, not per tick. */
 const contextHighWater = new Map<number, number>();

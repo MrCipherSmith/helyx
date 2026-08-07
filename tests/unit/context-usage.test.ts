@@ -10,6 +10,7 @@
 
 import { describe, test, expect } from "bun:test";
 import {
+  contextThreshold,
   contextTokens,
   decideCrossing,
   DEFAULT_CONTEXT_THRESHOLD,
@@ -188,5 +189,27 @@ describe("whether this tick summarises", () => {
     // summarise and Claude Code has usually folded already.
     expect(DEFAULT_CONTEXT_THRESHOLD).toBeLessThan(0.95);
     expect(decideCrossing({ ...base, contextTokens: 180_000 }).summarize).toBe(true);
+  });
+});
+
+describe("the threshold, read once for two processes", () => {
+  test("an absent or unparseable value is the documented default", () => {
+    for (const raw of [undefined, null, "", "  ", "abc"]) {
+      expect(contextThreshold(raw)).toBe(DEFAULT_CONTEXT_THRESHOLD);
+    }
+  });
+
+  test("an out-of-range value clamps rather than taking a process down", () => {
+    // config.ts used to validate this range and exit(1) on a miss, while the
+    // supervisor clamped. The same operator typo took the bot container down
+    // and left the supervisor running at 0.5 — one setting, two behaviours.
+    expect(contextThreshold("0.1")).toBe(0.5);
+    expect(contextThreshold("1.5")).toBe(0.99);
+    expect(contextThreshold(-3)).toBe(DEFAULT_CONTEXT_THRESHOLD);
+  });
+
+  test("a value in range is used as given", () => {
+    expect(contextThreshold("0.7")).toBeCloseTo(0.7, 5);
+    expect(contextThreshold(0.92)).toBeCloseTo(0.92, 5);
   });
 });

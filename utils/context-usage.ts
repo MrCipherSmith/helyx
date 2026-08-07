@@ -47,6 +47,29 @@ export const DEFAULT_CONTEXT_WINDOW = 200_000;
  */
 export const DEFAULT_CONTEXT_THRESHOLD = 0.85;
 
+/** The range a threshold has to be in to mean anything. */
+const MIN_THRESHOLD = 0.5;
+const MAX_THRESHOLD = 0.99;
+
+/**
+ * Read the threshold from a raw env value.
+ *
+ * One definition because there are two readers, and they had disagreed:
+ * `config.ts` validated the range and `scripts/supervisor.ts` clamped it. That
+ * is not a stylistic difference — an out-of-range value took the bot container
+ * down at startup while the supervisor quietly carried on at 0.5, so the same
+ * typo produced an outage in one process and a shrug in the other.
+ *
+ * Clamping is the right half of that pair to keep: the value is an operator
+ * preference, not a correctness invariant, and refusing to start over one
+ * helps nobody.
+ */
+export function contextThreshold(raw: string | number | undefined | null): number {
+  const parsed = typeof raw === "number" ? raw : Number.parseFloat((raw ?? "").toString().trim());
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_CONTEXT_THRESHOLD;
+  return Math.min(MAX_THRESHOLD, Math.max(MIN_THRESHOLD, parsed));
+}
+
 /**
  * Known windows, by the prefix of the model id.
  *

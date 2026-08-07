@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DEFAULT_CONTEXT_THRESHOLD } from "./utils/context-usage.ts";
+import { contextThreshold } from "./utils/context-usage.ts";
 
 const EnvSchema = z.object({
   // Telegram
@@ -33,7 +33,10 @@ const EnvSchema = z.object({
   // Fraction of the context window at which a session is summarized before
   // Claude Code folds it. Not 0.98: summarizing needs room, and Claude Code
   // compacts ahead of the hard limit, so a threshold above that never fires.
-  CONTEXT_SUMMARY_THRESHOLD: z.coerce.number().min(0.5).max(0.99).default(DEFAULT_CONTEXT_THRESHOLD),
+  // Clamped, not validated: an out-of-range value is an operator typo, and
+  // exiting the process over one is a worse outcome than using the nearest
+  // sane number. See contextThreshold() — the supervisor reads it too.
+  CONTEXT_SUMMARY_THRESHOLD: z.string().default("").transform(contextThreshold),
   EMBEDDING_MODEL: z.string().default("nomic-embed-text"),
 
   // PostgreSQL
