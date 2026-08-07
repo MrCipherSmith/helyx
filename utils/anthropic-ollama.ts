@@ -248,7 +248,11 @@ export function toOllamaRequest(req: AnthropicRequest, opts: TranslateOptions): 
               `tool_result references unknown tool_use_id "${b.tool_use_id}"`,
             );
           }
-          toolResults.push({ role: "tool", content: renderToolResultContent(b.content) });
+          // Anthropic marks a failed tool with a flag; Ollama's tool message has
+          // no such field, and a failure whose text does not happen to say so
+          // reads to the model as a tool that succeeded and returned that.
+          const rendered = renderToolResultContent(b.content);
+          toolResults.push({ role: "tool", content: b.is_error ? `Error: ${rendered}` : rendered });
           break;
         }
 

@@ -10,9 +10,9 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { installFakeFetch, type FakeFetch } from "../fixtures/fake-fetch.ts";
-import { route } from "../../scripts/ollama-proxy.ts";
+import { route, resetModelCaches } from "../../scripts/ollama-proxy.ts";
 import { parseModelsResponse } from "../../services/provider-service.ts";
-import { ollamaProxyEnabled, ollamaProxyPort, DEFAULT_OLLAMA_PROXY_PORT } from "../../utils/ollama-proxy-settings.ts";
+import { ollamaProxyEnabled, ollamaProxyPort, hostReachableOllamaUrl, DEFAULT_OLLAMA_PROXY_PORT } from "../../utils/ollama-proxy-settings.ts";
 import { CONFIG } from "../../config.ts";
 
 let http: FakeFetch;
@@ -30,6 +30,9 @@ function post(path: string, body: unknown): Request {
 }
 
 beforeEach(() => {
+  // The model caches are module state with a TTL. Left in place, one test's
+  // model list answers the next one's questions.
+  resetModelCaches();
   ({ http, restore } = installFakeFetch());
   http.program("/api/tags", { json: TAGS });
   http.program("/api/show", { json: SHOW });
@@ -211,6 +214,21 @@ describe("the enable gate", () => {
     expect(ollamaProxyPort("nonsense")).toBe(DEFAULT_OLLAMA_PROXY_PORT);
     expect(ollamaProxyPort("70000")).toBe(DEFAULT_OLLAMA_PROXY_PORT);
     expect(ollamaProxyPort("3999")).toBe(3999);
+  });
+
+  test("a container-only Ollama hostname is rewritten for the host-side proxy", () => {
+    // OLLAMA_URL is written for the bot, which runs in Docker: .env.example
+    // ships http://ollama:11434 and compose overrides it to
+    // host.docker.internal. Neither resolves on the host, where this proxy runs.
+    expect(hostReachableOllamaUrl("http://ollama:11434")).toBe("http://127.0.0.1:11434");
+    expect(hostReachableOllamaUrl("http://host.docker.internal:11434")).toBe("http://127.0.0.1:11434");
+  });
+
+  test("a real remote Ollama is left exactly as configured", () => {
+    expect(hostReachableOllamaUrl("http://localhost:11434")).toBe("http://localhost:11434");
+    expect(hostReachableOllamaUrl("https://ollama.example.com")).toBe("https://ollama.example.com");
+    expect(hostReachableOllamaUrl("http://192.168.1.5:11434/")).toBe("http://192.168.1.5:11434");
+    expect(hostReachableOllamaUrl(undefined)).toBe("http://localhost:11434");
   });
 
   test("cli.ts starts the proxy only behind the gate, and never binds beyond loopback", async () => {

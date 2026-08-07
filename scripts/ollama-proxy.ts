@@ -21,6 +21,7 @@
  */
 
 import { CONFIG } from "../config.ts";
+import { hostReachableOllamaUrl } from "../utils/ollama-proxy-settings.ts";
 import {
   AnthropicStream,
   TranslationError,
@@ -38,20 +39,48 @@ import {
 
 const HOST = "127.0.0.1";
 const HEARTBEAT_MS = 30_000;
+/**
+ * How long the model list is trusted.
+ *
+ * It is read to decide which model a request runs on, so it is read on every
+ * request — and an extra round trip in front of every turn is a cost paid for
+ * an answer that changes only when someone runs `ollama pull`. Short enough
+ * that a freshly pulled model appears without a restart.
+ */
+const TAGS_TTL_MS = 30_000;
 const JSON_HEADERS = { "content-type": "application/json" };
 
 /** Context lengths, per model. One `/api/show` per model, then never again. */
 const ctxCache = new Map<string, number>();
 /** Model names already reported as substituted, so a background call logs once. */
 const substituted = new Set<string>();
+let tagsCache: { at: number; models: string[] } | null = null;
 
 function log(msg: string): void {
   console.log(`[ollama-proxy] ${msg}`);
 }
 
+/**
+ * Drop everything remembered about the models.
+ *
+ * For tests. The caches are module state with a time-based TTL, so a test that
+ * programs a different set of models would otherwise be answered from the
+ * previous test's — passing or failing for a reason that has nothing to do with
+ * what it asserts.
+ */
+export function resetModelCaches(): void {
+  ctxCache.clear();
+  substituted.clear();
+  tagsCache = null;
+}
+
+/** Where Ollama is, as this host-side process can reach it. See the helper. */
+function ollamaBase(): string {
+  return hostReachableOllamaUrl(CONFIG.OLLAMA_URL);
+}
+
 async function ollamaFetch(path: string, init?: RequestInit): Promise<Response> {
-  const base = CONFIG.OLLAMA_URL.replace(/\/+$/, "");
-  return fetch(`${base}${path}`, init);
+  return fetch(`${ollamaBase()}${path}`, init);
 }
 
 /**
@@ -87,13 +116,18 @@ export async function contextLengthFor(model: string): Promise<number> {
 }
 
 async function availableModels(): Promise<string[]> {
+  if (tagsCache && Date.now() - tagsCache.at < TAGS_TTL_MS) return tagsCache.models;
   try {
     const res = await ollamaFetch("/api/tags");
-    if (!res.ok) return [];
+    if (!res.ok) return tagsCache?.models ?? [];
     const body = (await res.json()) as { models?: { name?: string; model?: string }[] };
-    return (body.models ?? []).map((m) => m.model ?? m.name ?? "").filter(Boolean);
+    const models = (body.models ?? []).map((m) => m.model ?? m.name ?? "").filter(Boolean);
+    tagsCache = { at: Date.now(), models };
+    return models;
   } catch {
-    return [];
+    // A momentarily unreachable Ollama should not change which model a request
+    // resolves to — the request itself is about to report the outage anyway.
+    return tagsCache?.models ?? [];
   }
 }
 
@@ -168,7 +202,7 @@ async function handleMessages(req: Request): Promise<Response> {
     return fail(
       new TranslationError(
         "api_error",
-        `cannot reach Ollama at ${CONFIG.OLLAMA_URL}: ${err instanceof Error ? err.message : String(err)}`,
+        `cannot reach Ollama at ${ollamaBase()}: ${err instanceof Error ? err.message : String(err)}`,
         502,
       ),
     );
@@ -189,6 +223,11 @@ async function handleMessages(req: Request): Promise<Response> {
 
   const translator = new AnthropicStream(model);
   const encoder = new TextEncoder();
+  // One decoder for the whole stream, not one per chunk. A decoder holds the
+  // tail of a multi-byte character that landed on a chunk boundary, and a fresh
+  // one per read drops it — which is invisible in English and mangles the first
+  // Cyrillic word that happens to straddle a TCP packet.
+  const decoder = new TextDecoder();
   const reader = upstream.body?.getReader();
 
   const sse = new ReadableStream<Uint8Array>({
@@ -203,7 +242,7 @@ async function handleMessages(req: Request): Promise<Response> {
         while (reader) {
           const { done, value } = await reader.read();
           if (done) break;
-          pending += new TextDecoder().decode(value, { stream: true });
+          pending += decoder.decode(value, { stream: true });
           const lastBreak = pending.lastIndexOf("\n");
           if (lastBreak === -1) continue;
           const ready = pending.slice(0, lastBreak);
@@ -233,6 +272,17 @@ async function handleMessages(req: Request): Promise<Response> {
         controller.close();
       }
     },
+    /**
+     * The operator pressing escape has to reach the model.
+     *
+     * Without this the generation carries on to the end of its prediction with
+     * nobody reading it — and on a CPU that is minutes of the machine's only
+     * inference slot, held for a turn that was abandoned.
+     */
+    cancel(reason) {
+      log(`client went away mid-stream${reason ? `: ${reason}` : ""}`);
+      void reader?.cancel().catch(() => {});
+    },
   });
 
   return new Response(sse, {
@@ -254,7 +304,7 @@ async function handleCountTokens(req: Request): Promise<Response> {
 
 async function handleModels(): Promise<Response> {
   const res = await ollamaFetch("/api/tags").catch(() => null);
-  if (!res?.ok) return fail(new TranslationError("api_error", `cannot reach Ollama at ${CONFIG.OLLAMA_URL}`, 502));
+  if (!res?.ok) return fail(new TranslationError("api_error", `cannot reach Ollama at ${ollamaBase()}`, 502));
   return Response.json(toModelsResponse((await res.json()) as Parameters<typeof toModelsResponse>[0]));
 }
 
@@ -301,7 +351,7 @@ if (import.meta.main) {
     process.exit(1);
   }
 
-  log(`listening on http://${HOST}:${port} → ${CONFIG.OLLAMA_URL}`);
+  log(`listening on http://${HOST}:${port} → ${ollamaBase()}`);
   await heartbeat(startedAt, port);
   setInterval(() => void heartbeat(startedAt, port), HEARTBEAT_MS);
 }

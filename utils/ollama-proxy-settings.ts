@@ -32,3 +32,36 @@ export function ollamaProxyPort(raw: string | undefined): number {
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) return DEFAULT_OLLAMA_PROXY_PORT;
   return parsed;
 }
+
+/** Hostnames that only exist inside a container, and what they mean outside one. */
+const CONTAINER_ONLY_HOSTS = ["ollama", "host.docker.internal"];
+
+/**
+ * `OLLAMA_URL` as a host-side process can actually reach it.
+ *
+ * `OLLAMA_URL` is written for the bot, which runs in Docker: `.env.example`
+ * ships `http://ollama:11434` and docker-compose overrides it to
+ * `http://host.docker.internal:11434`. Neither name resolves on the host, and
+ * this proxy is host-side by necessity — Claude Code runs in tmux there and
+ * Ollama listens on the host's own port.
+ *
+ * So a correct `.env` for the bot is a broken one for the proxy, and the
+ * failure would be a connection error per request rather than anything naming
+ * the cause. Container-only names are rewritten to loopback; everything else —
+ * including a real remote Ollama — is left exactly as configured.
+ */
+export function hostReachableOllamaUrl(raw: string | undefined): string {
+  const value = (raw ?? "").trim() || "http://localhost:11434";
+  try {
+    const url = new URL(value);
+    if (CONTAINER_ONLY_HOSTS.includes(url.hostname)) {
+      url.hostname = "127.0.0.1";
+      return url.toString().replace(/\/+$/, "");
+    }
+    return value.replace(/\/+$/, "");
+  } catch {
+    // Not a URL at all. Returning it unchanged lets the request fail with the
+    // configured value in the message, which is more useful than a guess.
+    return value;
+  }
+}

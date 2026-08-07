@@ -139,6 +139,24 @@ describe("tool_use and tool_result round trip", () => {
     expect(body.messages.at(-1)?.content).toBe("file body");
   });
 
+  test("a failed tool is marked, because Ollama has no is_error", () => {
+    const body = toOllamaRequest(
+      {
+        messages: [
+          { role: "assistant", content: [{ type: "tool_use", id: "toolu_e", name: "Bash", input: {} }] },
+          {
+            role: "user",
+            content: [{ type: "tool_result", tool_use_id: "toolu_e", content: "permission denied", is_error: true }],
+          },
+        ],
+      },
+      OPTS,
+    );
+    // Without the marker the model reads a failure as a successful call that
+    // returned that string.
+    expect(body.messages.at(-1)?.content).toBe("Error: permission denied");
+  });
+
   test("an unknown tool_use_id is refused, not dropped", () => {
     // Ollama pairs by position. A result we cannot place would otherwise vanish,
     // and the model answers as though the tool never ran — the worst outcome

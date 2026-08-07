@@ -3,9 +3,9 @@
   "id": "055",
   "slug": "claude-code-talks-anthropic-ollama-talks",
   "title": "Claude Code talks Anthropic, Ollama talks OpenAI — a local model nobody can select",
-  "status": "in-progress",
+  "status": "implemented",
   "createdAt": "2026-08-07T18:31:56.079Z",
-  "updatedAt": "2026-08-07T18:46:44.874Z",
+  "updatedAt": "2026-08-07T18:48:43.359Z",
   "source": {
     "type": "description",
     "ref": null
@@ -13,7 +13,7 @@
   "acChecksum": "sha256:d67cadc2c2030061018b873cbd532fc04f4985f3b261c3ca124af1cc11aafc6e",
   "acConfirmed": {},
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/99"
   },
   "tasks": [
     {
@@ -104,6 +104,11 @@
       "at": "2026-08-07T18:46:44.874Z",
       "event": "task-done",
       "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-07T18:48:43.359Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/99"
     }
   ]
 }
