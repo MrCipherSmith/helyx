@@ -5,7 +5,7 @@
   "title": "An unknown reviewer kind fails as itself, not as a provider",
   "status": "implemented",
   "createdAt": "2026-08-08T09:47:50.755Z",
-  "updatedAt": "2026-08-08T09:52:39.710Z",
+  "updatedAt": "2026-08-08T09:57:19.129Z",
   "source": {
     "type": "description",
     "ref": null
@@ -90,7 +90,7 @@
       "id": "T4",
       "title": "Self-review and prepare draft PR",
       "kind": "review",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -98,7 +98,8 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     }
   ],
   "history": [
@@ -164,6 +165,11 @@
       "at": "2026-08-08T09:52:39.710Z",
       "event": "implemented",
       "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/104 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-08-08T09:57:19.129Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
     }
   ]
 }
