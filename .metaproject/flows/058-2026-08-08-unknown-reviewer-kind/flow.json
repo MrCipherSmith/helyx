@@ -1,0 +1,175 @@
+{
+  "schemaVersion": 2,
+  "id": "058",
+  "slug": "unknown-reviewer-kind",
+  "title": "An unknown reviewer kind fails as itself, not as a provider",
+  "status": "implemented",
+  "createdAt": "2026-08-08T09:47:50.755Z",
+  "updatedAt": "2026-08-08T09:57:19.129Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:5b281de43e6c75d60b528de1905a83f107a9ab3753afdffd1d35bfad0e7927b0",
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-08T09:52:07.978Z",
+      "note": "typecheck 0 errors; lint 0 errors (240 pre-existing warnings)"
+    },
+    "AC2": {
+      "at": "2026-08-08T09:52:08.065Z",
+      "note": "tests/unit/reviewer-unknown-kind.test.ts; suite 2111 pass / 0 fail"
+    },
+    "AC3": {
+      "at": "2026-08-08T09:52:08.152Z",
+      "note": "runOne switch: codex/claude/provider explicit, default -> unhandledKind; asserted error is 'unknown reviewer kind: mystery', not 'unknown provider'"
+    },
+    "AC4": {
+      "at": "2026-08-08T09:52:08.239Z",
+      "note": "unknownKindStatus: available false, probed true, detail names the kind"
+    },
+    "AC5": {
+      "at": "2026-08-08T09:52:08.328Z",
+      "note": "callProviderReview with getProvider -> null still returns label provider#404 / 'unknown provider'"
+    },
+    "AC6": {
+      "at": "2026-08-08T09:52:08.415Z",
+      "note": "adding a 4th kind 'gemini' produced TS2345 at reviewer-service.ts:1159; reverted"
+    }
+  },
+  "pr": {
+    "url": "https://github.com/MrCipherSmith/helyx/pull/104"
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-08T09:47:50.755Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-08T09:51:58.709Z",
+      "event": "frozen",
+      "detail": "6 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-08T09:51:58.876Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-08T09:52:07.715Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-08T09:52:07.802Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-08T09:52:07.888Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-08T09:52:07.978Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: typecheck 0 errors; lint 0 errors (240 pre-existing warnings)"
+    },
+    {
+      "at": "2026-08-08T09:52:08.065Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: tests/unit/reviewer-unknown-kind.test.ts; suite 2111 pass / 0 fail"
+    },
+    {
+      "at": "2026-08-08T09:52:08.152Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: runOne switch: codex/claude/provider explicit, default -> unhandledKind; asserted error is 'unknown reviewer kind: mystery', not 'unknown provider'"
+    },
+    {
+      "at": "2026-08-08T09:52:08.239Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: unknownKindStatus: available false, probed true, detail names the kind"
+    },
+    {
+      "at": "2026-08-08T09:52:08.328Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: callProviderReview with getProvider -> null still returns label provider#404 / 'unknown provider'"
+    },
+    {
+      "at": "2026-08-08T09:52:08.415Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: adding a 4th kind 'gemini' produced TS2345 at reviewer-service.ts:1159; reverted"
+    },
+    {
+      "at": "2026-08-08T09:52:39.710Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/104 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-08-08T09:57:19.129Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    }
+  ]
+}

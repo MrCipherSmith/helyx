@@ -1084,6 +1084,61 @@ async function runAllowingDifference(argv: string[]): Promise<string> {
 }
 
 /**
+ * What a reviewer this build does not understand is called.
+ *
+ * The set of reviewers is JSON in `bot_config`, written by one build and read by
+ * whichever build is running, so a kind the running code has never heard of is
+ * an ordinary consequence of a rollback — not a corruption. It happened: a
+ * checkout from before flow #056 read a stored `kind: "claude"`, fell through to
+ * the provider path, looked up `providers.id = undefined` and announced
+ * `unknown provider`. The provider table was fine. Say which kind, and the
+ * operator stops looking for a broken provider row that does not exist.
+ */
+export function unknownKindDetail(kind: string): string {
+  return `unknown reviewer kind: ${kind}`;
+}
+
+/**
+ * The `/reviewers_status` row for a reviewer no branch claimed.
+ *
+ * `probed: true` is deliberate. The field exists to stop a green tick meaning
+ * "nobody asked" — but this one was asked and the answer is definite: nothing in
+ * this build can run it. That is knowledge, not an absence of it.
+ *
+ * Takes the kind as `never` for the same reason `unhandledKind` does: the status
+ * path would otherwise keep answering "unknown reviewer kind: gemini" for a
+ * reviewer that runs perfectly well, one release after `runOne` was taught the
+ * new kind. Both paths break the build together or neither is worth much.
+ */
+export function unknownKindStatus(kind: never, reviewer: Reviewer): ReviewerStatus {
+  return {
+    id: reviewer.id,
+    label: reviewer.id,
+    model: reviewer.model,
+    available: false,
+    probed: true,
+    detail: unknownKindDetail(String(kind)),
+  };
+}
+
+/**
+ * The report for a reviewer no branch claimed.
+ *
+ * `kind: never` is the point: it is the compiler's proof that every known kind
+ * was handled before the call, and it breaks the build the moment one is added
+ * without being wired up.
+ */
+export function unhandledKind(kind: never, reviewer: Reviewer): ReviewerReport {
+  return {
+    reviewerId: reviewer.id,
+    label: reviewer.id,
+    model: reviewer.model,
+    ok: false,
+    error: unknownKindDetail(String(kind)),
+  };
+}
+
+/**
  * How much diff this reviewer's transport can carry.
  *
  * The 100 KB figure is about argv, not about the model: a CLI reviewer receives
@@ -1096,9 +1151,18 @@ export function budgetFor(reviewer: Reviewer): number {
 }
 
 async function runOne(reviewer: Reviewer, prompt: string): Promise<ReviewerReport> {
-  if (reviewer.kind === "codex") return callCodexReview(reviewer, prompt);
-  if (reviewer.kind === "claude") return callClaudeReview(reviewer, prompt);
-  return callProviderReview(reviewer, prompt);
+  switch (reviewer.kind) {
+    case "codex":
+      return callCodexReview(reviewer, prompt);
+    case "claude":
+      return callClaudeReview(reviewer, prompt);
+    case "provider":
+      return callProviderReview(reviewer, prompt);
+    default:
+      // `reviewer.kind` is `never` here, so a fourth ReviewerKind added without
+      // a case above fails to compile rather than falling through.
+      return unhandledKind(reviewer.kind, reviewer);
+  }
 }
 
 /**
@@ -1257,6 +1321,15 @@ export async function getReviewerStatuses(): Promise<ReviewerStatus[]> {
         probed: Boolean(last),
         detail: last ? (last.ok ? "последний прогон: ок" : (last.error ?? "последний прогон не удался")) : "не проверялся",
       });
+      continue;
+    }
+
+    // Not a provider reviewer and not one of the branches above: this build does
+    // not know the kind. Said plainly here for the same reason `runOne` says it —
+    // the alternative is a provider lookup for something that was never a
+    // provider, and a status line blaming the providers table.
+    if (r.kind !== "provider") {
+      out.push(unknownKindStatus(r.kind, r));
       continue;
     }
 
