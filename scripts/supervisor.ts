@@ -1501,8 +1501,23 @@ export function formatSnapshotForGemma(snap: SystemSnapshot): string {
   return lines.join("\n");
 }
 
-/** Exported for the tests, which drive it against a stubbed endpoint rather than Ollama. */
-export async function callGemmaForHealth(snapshot: string): Promise<{ ok: boolean; digest: string }> {
+/**
+ * Exported for the tests, which drive it against a stubbed endpoint rather than Ollama.
+ *
+ * `asked` is the third state, and it was the missing one. Every failure here
+ * returns a healthy verdict on purpose — the loop is scheduled with a swallowed
+ * catch, and a throw would quietly stop the analyst — but "looked and found
+ * nothing" and "never got an answer" were the same value, so an analyst that
+ * could not run at all reported the system healthy.
+ *
+ * Not hypothetical on this host: the check runs every 10 minutes against
+ * Ollama's 5-minute keep_alive, so it is normally cold, and a cold load of the
+ * model measures 17.2s against this call's 15s ceiling. A short "OK" fits when
+ * warm; a digest that actually has something to report does not. So the analyst
+ * timed out precisely on the runs where it had found a problem. Raised in review,
+ * off the measurements taken for flow #060.
+ */
+export async function callGemmaForHealth(snapshot: string): Promise<{ ok: boolean; digest: string; asked: boolean }> {
   const model = process.env.SUMMARIZE_MODEL || process.env.OLLAMA_CHAT_MODEL || "geekom-model-1";
   const system = "Ты — аналитик здоровья системы Helyx. Прочитай снапшот состояния. Если всё в норме — ответь только словом OK. Если есть проблемы — кратко опиши их в 2–5 пунктах на русском. Не рассуждай, не задавай вопросы, только факты об обнаруженных проблемах.";
 
@@ -1522,13 +1537,16 @@ export async function callGemmaForHealth(snapshot: string): Promise<{ ok: boolea
       }),
       signal: AbortSignal.timeout(15_000),
     });
-    if (!res.ok) return { ok: true, digest: "" };
+    if (!res.ok) return { ok: true, digest: "", asked: false };
     const data = await res.json() as { message?: { content?: string } };
     const text = stripReasoning(data.message?.content ?? "");
-    if (!text || text.toUpperCase().startsWith("OK")) return { ok: true, digest: "" };
-    return { ok: false, digest: text };
+    // An empty body is not an answer either: the model was reached but said
+    // nothing, which tells us as little as not reaching it.
+    if (!text) return { ok: true, digest: "", asked: false };
+    if (text.toUpperCase().startsWith("OK")) return { ok: true, digest: "", asked: true };
+    return { ok: false, digest: text, asked: true };
   } catch {
-    return { ok: true, digest: "" }; // Ollama unavailable — skip silently
+    return { ok: true, digest: "", asked: false }; // Ollama unavailable — no verdict
   }
 }
 
@@ -1547,14 +1565,22 @@ export async function checkGemmaHealth(sql: postgres.Sql, runShell: RunShell): P
   const result = await callGemmaForHealth(snapshotText);
   const elapsed = Date.now() - t0;
 
-  // Update process_health regardless of result
-  const healthStatus = result.ok ? "ok" : "degraded";
+  // Update process_health regardless of result. "unknown" is not "ok": an
+  // analyst that never answered has not cleared the system, and a row that says
+  // so is the only way a permanently timing-out check is visible as anything
+  // other than health.
+  const healthStatus = !result.asked ? "unknown" : result.ok ? "ok" : "degraded";
   sql`
     INSERT INTO process_health (name, status, detail, updated_at)
-    VALUES ('gemma-health', ${healthStatus}, ${sql.json({ elapsed_ms: elapsed })}, NOW())
+    VALUES ('gemma-health', ${healthStatus}, ${sql.json({ elapsed_ms: elapsed, asked: result.asked })}, NOW())
     ON CONFLICT (name) DO UPDATE
       SET status = EXCLUDED.status, detail = EXCLUDED.detail, updated_at = NOW()
   `.catch(() => {});
+
+  if (!result.asked) {
+    console.warn(`[gemma-health] no verdict — model unreachable or silent (${elapsed}ms)`);
+    return;
+  }
 
   if (result.ok) {
     console.log(`[gemma-health] OK (${elapsed}ms)`);

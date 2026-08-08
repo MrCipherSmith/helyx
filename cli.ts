@@ -651,9 +651,11 @@ async function setup() {
     // Empty in `minimal`: no embedding model means semantic memory search is
     // off, which is the intended trade for an API-only deployment.
     `EMBEDDING_MODEL=${ollamaEmbeddingModel}`,
-    // The commented-out suggestion names a model this host has. It used to name
-    // qwen3:1.7b, which was never installed here — a hint that only works after a
-    // download the reader was never told to make.
+    // The commented-out suggestion matches the default the rest of the tree
+    // already uses — `config.ts`, `.env.example` and the `heavy` preset all say
+    // geekom-model-1. It used to say qwen3:1.7b, which agreed with none of them.
+    // (Both are names local to whichever host runs the wizard; the point is that
+    // the four places now name the same one.) Raised in review.
     ...(summarizeModel ? [`SUMMARIZE_MODEL=${summarizeModel}`] : [`# SUMMARIZE_MODEL=geekom-model-1`]),
     "",
     "# Voice transcription",

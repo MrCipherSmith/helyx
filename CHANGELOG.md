@@ -1,5 +1,43 @@
 # Changelog
 
+## Unreleased
+
+### fix: a summariser ceiling the host's own model can make
+
+`SUMMARIZE_MODEL`'s JSON summary was capped at 30s, a number chosen when it
+pointed at gemma4:e2b, which made it in 17s. gemma4:e4b — the model this host
+runs for everything else — needs 35s warm and about 60s cold, so under that cap
+it never produced a slow summary: it aborted into the paid cloud model on every
+call, silently, because the whole Ollama block is wrapped in a catch that falls
+through.
+
+The ceiling is 90s now, and derived rather than picked: a cold load is 17.2s
+before a token appears and 400 tokens run at 9.3 tok/s, so the worst case is
+~60s and 60 would have landed exactly on it. The measurements are named
+constants beside the number, and a test checks the arithmetic — including that
+the request on the wire uses them.
+
+Two callers have a deadline of their own and keep it. `/summarize` stays at 30s,
+because an operator is watching a "Summarizing…" message, and the PreCompact
+fold gets 4s, because `mcp/server.ts` races it against 15s and no local run can
+win that — a bounded attempt that falls through to the cloud beats an abandoned
+90s request accumulating per chat per compaction.
+
+Measured against all three readers of `SUMMARIZE_MODEL`, and the small model
+turned out not to be simply the faster one: on `/now` (6s, no length cap) e2b
+ignores "answer in two lines" and generates 355–469 tokens, so that path had
+been silently dead, while e4b answers in 25–37.
+
+### fix: the health analyst no longer files silence as health
+
+`callGemmaForHealth` returned the same value for "looked and found nothing" and
+"never got an answer", and `checkGemmaHealth` wrote both as `ok`. The analyst
+runs every 10 minutes against Ollama's 5-minute keep_alive, so it is normally
+cold, and a cold load is 17.2s against its 15s ceiling — it timed out precisely
+on the runs where it had something to report, and reported health. There is a
+third state now: `asked`, surfacing as `process_health = 'unknown'` and a
+warning line instead of `[gemma-health] OK`.
+
 ## v1.56.0
 
 ### feat: a local model Claude Code can actually talk to

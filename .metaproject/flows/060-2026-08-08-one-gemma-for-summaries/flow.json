@@ -3,9 +3,9 @@
   "id": "060",
   "slug": "one-gemma-for-summaries",
   "title": "One Gemma: the summarizer timeout fits the bigger model",
-  "status": "in-progress",
+  "status": "implemented",
   "createdAt": "2026-08-08T12:07:10.495Z",
-  "updatedAt": "2026-08-08T12:10:44.242Z",
+  "updatedAt": "2026-08-08T12:11:30.993Z",
   "source": {
     "type": "description",
     "ref": null
@@ -42,7 +42,7 @@
     }
   },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/106"
   },
   "tasks": [
     {
@@ -168,6 +168,11 @@
       "at": "2026-08-08T12:10:44.242Z",
       "event": "ac-confirmed",
       "detail": "AC7: the CONFIG.SUMMARIZE_MODEL guard and the cloud fallback below it are untouched"
+    },
+    {
+      "at": "2026-08-08T12:11:30.993Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/106 (warning: PR is not a draft)"
     }
   ]
 }

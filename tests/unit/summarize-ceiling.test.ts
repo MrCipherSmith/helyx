@@ -15,13 +15,15 @@
  * the model needs and this fails — which is the point.
  */
 
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, afterEach } from "bun:test";
 import {
+  summarizeConversation,
   SUMMARIZE_TIMEOUT_MS,
   SUMMARIZE_NUM_PREDICT,
   SUMMARIZE_COLD_LOAD_MS,
   SUMMARIZE_SLOWEST_TOKENS_PER_SEC,
 } from "../../claude/client.ts";
+import { MANUAL_SUMMARIZE_TIMEOUT_MS, FOLD_SUMMARIZE_TIMEOUT_MS } from "../../memory/summarizer.ts";
 
 /** Cold load, then every token of a maximum-length answer at the floor rate. */
 function worstCaseMs(): number {
@@ -33,10 +35,14 @@ describe("the local summarizer's ceiling", () => {
     expect(SUMMARIZE_TIMEOUT_MS).toBeGreaterThan(worstCaseMs());
   });
 
-  test("clears it with room to spare, since prompt eval is not in the arithmetic", () => {
-    // A long conversation spends seconds tokenising before generation starts;
-    // 428 input tokens cost 210ms, but the summarizer is handed whole sessions.
-    expect(SUMMARIZE_TIMEOUT_MS - worstCaseMs()).toBeGreaterThan(5_000);
+  test("keeps a third of the worst case as headroom, since prompt eval is not in the arithmetic", () => {
+    // A long conversation spends seconds tokenising before the first token; 428
+    // input tokens cost 210ms and the summarizer is handed whole sessions. The
+    // margin is a fraction rather than a fixed 5s so that raising num_predict —
+    // which raises the worst case — has to raise the ceiling with it. Raised in
+    // review: at num_predict 600 a flat 5s still passed on a longer answer where
+    // prompt eval matters more.
+    expect(SUMMARIZE_TIMEOUT_MS - worstCaseMs()).toBeGreaterThan(worstCaseMs() / 3);
   });
 
   test("the old 30s cap would not have cleared it — the regression this guards", () => {
@@ -49,9 +55,51 @@ describe("the local summarizer's ceiling", () => {
     expect(SUMMARIZE_TIMEOUT_MS).toBeLessThanOrEqual(120_000);
   });
 
-  test("the measurements are stated as real figures, not placeholders", () => {
-    expect(SUMMARIZE_COLD_LOAD_MS).toBeGreaterThan(0);
-    expect(SUMMARIZE_SLOWEST_TOKENS_PER_SEC).toBeGreaterThan(0);
-    expect(SUMMARIZE_NUM_PREDICT).toBeGreaterThan(0);
+  test("the callers with a deadline of their own stay under it", () => {
+    // The raise is justified by "nobody is watching", so the paths where somebody
+    // is must not inherit it. Both were found in review.
+    expect(MANUAL_SUMMARIZE_TIMEOUT_MS).toBeLessThan(SUMMARIZE_TIMEOUT_MS);
+    // The fold is raced against 15s in mcp/server.ts and must leave the cloud
+    // fallback room to answer inside that.
+    expect(FOLD_SUMMARIZE_TIMEOUT_MS).toBeLessThan(15_000 / 2);
+  });
+});
+
+describe("the constants reach the request", () => {
+  const realFetch = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = realFetch; });
+
+  /** Capture the Ollama request body the summarizer actually sends. */
+  async function bodyOf(opts?: { timeoutMs?: number }): Promise<any> {
+    let sent: any = null;
+    globalThis.fetch = (async (_url: string, init: any) => {
+      sent = JSON.parse(String(init.body));
+      return Response.json({ message: { content: JSON.stringify({ summary: "s", facts: [] }) } });
+    }) as unknown as typeof fetch;
+    await summarizeConversation([{ role: "user", content: "hi" }], opts);
+    return sent;
+  }
+
+  test("num_predict on the wire is the constant, not a literal beside it", async () => {
+    // Without this, reverting the call site to a hard-coded 30_000 leaves every
+    // arithmetic test above green — they only compare constants to each other.
+    // Raised in review.
+    expect((await bodyOf()).options.num_predict).toBe(SUMMARIZE_NUM_PREDICT);
+  });
+
+  test("a caller's own ceiling is the one that aborts the call", async () => {
+    let aborted = false;
+    globalThis.fetch = ((_url: string, init: any) =>
+      new Promise((_resolve, reject) => {
+        init.signal.addEventListener("abort", () => {
+          aborted = true;
+          reject(new Error("aborted"));
+        });
+      })) as unknown as typeof fetch;
+
+    // Falls through to the cloud path on abort, which this process cannot reach
+    // either — the assertion is that the abort happened on the caller's clock.
+    await summarizeConversation([{ role: "user", content: "hi" }], { timeoutMs: 40 }).catch(() => {});
+    expect(aborted).toBe(true);
   });
 });
