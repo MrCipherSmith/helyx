@@ -58,3 +58,4 @@ Splitting `SUMMARIZE_MODEL` into fast and thorough slots is not done here.
   loses two lines — and genuinely latency-bound, unlike the health digest.
 - The cold-start hole itself: nothing keeps the model resident between calls.
   A `keep_alive` policy is the real fix and is its own change.
+- 2026-08-08T12:23:57.918Z - task-done: T4: Self-review and prepare draft PR

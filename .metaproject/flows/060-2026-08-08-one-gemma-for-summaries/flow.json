@@ -5,7 +5,7 @@
   "title": "One Gemma: the summarizer timeout fits the bigger model",
   "status": "implemented",
   "createdAt": "2026-08-08T12:07:10.495Z",
-  "updatedAt": "2026-08-08T12:11:30.993Z",
+  "updatedAt": "2026-08-08T12:23:57.918Z",
   "source": {
     "type": "description",
     "ref": null
@@ -94,7 +94,7 @@
       "id": "T4",
       "title": "Self-review and prepare draft PR",
       "kind": "review",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -102,7 +102,8 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     }
   ],
   "history": [
@@ -173,6 +174,11 @@
       "at": "2026-08-08T12:11:30.993Z",
       "event": "implemented",
       "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/106 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-08-08T12:23:57.918Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
     }
   ]
 }
