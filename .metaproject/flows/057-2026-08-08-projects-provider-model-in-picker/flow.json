@@ -1,0 +1,175 @@
+{
+  "schemaVersion": 2,
+  "id": "057",
+  "slug": "projects-provider-model-in-picker",
+  "title": "/projects — show provider under Stop and current model under the gear",
+  "status": "implemented",
+  "createdAt": "2026-08-08T08:57:37.609Z",
+  "updatedAt": "2026-08-08T09:27:49.189Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:f1e57bc14465193c23b7471d60fb9c8b6fe5ffff9f75a9b0abf21fb8fb43f082",
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-08T09:25:00.718Z",
+      "note": "bun run typecheck exits 0"
+    },
+    "AC2": {
+      "at": "2026-08-08T09:25:00.807Z",
+      "note": "tests/unit/projects-render.test.ts: action row + info row asserted; full suite 1941 pass"
+    },
+    "AC3": {
+      "at": "2026-08-08T09:25:00.894Z",
+      "note": "info row = provider name / current model; defaults to Claude / default"
+    },
+    "AC4": {
+      "at": "2026-08-08T09:25:00.983Z",
+      "note": "text lines carry no · Provider/model annotation (asserted)"
+    },
+    "AC5": {
+      "at": "2026-08-08T09:25:01.071Z",
+      "note": "pminf:<id> answers via answerCallbackQuery, changes no state"
+    },
+    "AC6": {
+      "at": "2026-08-08T09:25:01.159Z",
+      "note": "both sites call renderProjectsMessage; rerenderProjects shared"
+    }
+  },
+  "pr": {
+    "url": "https://github.com/MrCipherSmith/helyx/pull/103"
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-08T08:57:37.609Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-08T09:00:18.476Z",
+      "event": "frozen",
+      "detail": "6 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-08T09:00:18.563Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-08T09:24:49.374Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-08T09:24:49.462Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-08T09:24:49.549Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-08T09:25:00.718Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: bun run typecheck exits 0"
+    },
+    {
+      "at": "2026-08-08T09:25:00.807Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: tests/unit/projects-render.test.ts: action row + info row asserted; full suite 1941 pass"
+    },
+    {
+      "at": "2026-08-08T09:25:00.894Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: info row = provider name / current model; defaults to Claude / default"
+    },
+    {
+      "at": "2026-08-08T09:25:00.983Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: text lines carry no · Provider/model annotation (asserted)"
+    },
+    {
+      "at": "2026-08-08T09:25:01.071Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: pminf:<id> answers via answerCallbackQuery, changes no state"
+    },
+    {
+      "at": "2026-08-08T09:25:01.159Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: both sites call renderProjectsMessage; rerenderProjects shared"
+    },
+    {
+      "at": "2026-08-08T09:25:45.975Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/103"
+    },
+    {
+      "at": "2026-08-08T09:27:49.189Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    }
+  ]
+}
