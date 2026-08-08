@@ -5,13 +5,68 @@
   "title": "A session that hit its limit is not a session that hung",
   "status": "in-progress",
   "createdAt": "2026-08-08T18:02:09.973Z",
-  "updatedAt": "2026-08-08T19:33:45.955Z",
+  "updatedAt": "2026-08-08T20:03:18.621Z",
   "source": {
     "type": "description",
     "ref": null
   },
   "acChecksum": "sha256:cfd9496079d7bbd83c11fda0bb77e6a6bdbceab0baef6411769ef6f21203d041",
-  "acConfirmed": {},
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-08T20:03:16.380Z"
+    },
+    "AC2": {
+      "at": "2026-08-08T20:03:16.487Z"
+    },
+    "AC3": {
+      "at": "2026-08-08T20:03:16.595Z"
+    },
+    "AC4": {
+      "at": "2026-08-08T20:03:16.701Z"
+    },
+    "AC5": {
+      "at": "2026-08-08T20:03:16.811Z"
+    },
+    "AC6": {
+      "at": "2026-08-08T20:03:16.917Z"
+    },
+    "AC7": {
+      "at": "2026-08-08T20:03:17.023Z"
+    },
+    "AC8": {
+      "at": "2026-08-08T20:03:17.131Z"
+    },
+    "AC9": {
+      "at": "2026-08-08T20:03:17.233Z"
+    },
+    "AC10": {
+      "at": "2026-08-08T20:03:17.339Z"
+    },
+    "AC11": {
+      "at": "2026-08-08T20:03:17.444Z"
+    },
+    "AC12": {
+      "at": "2026-08-08T20:03:17.551Z"
+    },
+    "AC13": {
+      "at": "2026-08-08T20:03:17.657Z"
+    },
+    "AC14": {
+      "at": "2026-08-08T20:03:17.767Z"
+    },
+    "AC15": {
+      "at": "2026-08-08T20:03:17.875Z"
+    },
+    "AC16": {
+      "at": "2026-08-08T20:03:17.981Z"
+    },
+    "AC17": {
+      "at": "2026-08-08T20:03:18.088Z"
+    },
+    "AC18": {
+      "at": "2026-08-08T20:03:18.195Z"
+    }
+  },
   "pr": {
     "url": null
   },
@@ -65,7 +120,7 @@
       "id": "T4",
       "title": "Self-review and prepare draft PR",
       "kind": "review",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -73,7 +128,8 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     }
   ],
   "history": [
@@ -209,6 +265,116 @@
       "at": "2026-08-08T19:33:45.955Z",
       "event": "ac-updated",
       "detail": "reconcile two collisions the implementer flagged: AC4 vs AC3 (the hang loop stands down, it does not send a second alert) and AC8 vs AC16 (no action on the session; deferring delivery is not action on the session)"
+    },
+    {
+      "at": "2026-08-08T20:03:16.380Z",
+      "event": "ac-confirmed",
+      "detail": "AC1"
+    },
+    {
+      "at": "2026-08-08T20:03:16.487Z",
+      "event": "ac-confirmed",
+      "detail": "AC2"
+    },
+    {
+      "at": "2026-08-08T20:03:16.595Z",
+      "event": "ac-confirmed",
+      "detail": "AC3"
+    },
+    {
+      "at": "2026-08-08T20:03:16.702Z",
+      "event": "ac-confirmed",
+      "detail": "AC4"
+    },
+    {
+      "at": "2026-08-08T20:03:16.811Z",
+      "event": "ac-confirmed",
+      "detail": "AC5"
+    },
+    {
+      "at": "2026-08-08T20:03:16.917Z",
+      "event": "ac-confirmed",
+      "detail": "AC6"
+    },
+    {
+      "at": "2026-08-08T20:03:17.023Z",
+      "event": "ac-confirmed",
+      "detail": "AC7"
+    },
+    {
+      "at": "2026-08-08T20:03:17.131Z",
+      "event": "ac-confirmed",
+      "detail": "AC8"
+    },
+    {
+      "at": "2026-08-08T20:03:17.233Z",
+      "event": "ac-confirmed",
+      "detail": "AC9"
+    },
+    {
+      "at": "2026-08-08T20:03:17.339Z",
+      "event": "ac-confirmed",
+      "detail": "AC10"
+    },
+    {
+      "at": "2026-08-08T20:03:17.444Z",
+      "event": "ac-confirmed",
+      "detail": "AC11"
+    },
+    {
+      "at": "2026-08-08T20:03:17.551Z",
+      "event": "ac-confirmed",
+      "detail": "AC12"
+    },
+    {
+      "at": "2026-08-08T20:03:17.657Z",
+      "event": "ac-confirmed",
+      "detail": "AC13"
+    },
+    {
+      "at": "2026-08-08T20:03:17.767Z",
+      "event": "ac-confirmed",
+      "detail": "AC14"
+    },
+    {
+      "at": "2026-08-08T20:03:17.875Z",
+      "event": "ac-confirmed",
+      "detail": "AC15"
+    },
+    {
+      "at": "2026-08-08T20:03:17.981Z",
+      "event": "ac-confirmed",
+      "detail": "AC16"
+    },
+    {
+      "at": "2026-08-08T20:03:18.088Z",
+      "event": "ac-confirmed",
+      "detail": "AC17"
+    },
+    {
+      "at": "2026-08-08T20:03:18.195Z",
+      "event": "ac-confirmed",
+      "detail": "AC18"
+    },
+    {
+      "at": "2026-08-08T20:03:18.300Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-08T20:03:18.407Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-08T20:03:18.515Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-08T20:03:18.621Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
     }
   ]
 }

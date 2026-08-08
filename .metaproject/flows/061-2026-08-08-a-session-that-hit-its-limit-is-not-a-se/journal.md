@@ -27,3 +27,25 @@
 - 2026-08-08T19:00:35.010Z - task-done: T2: Implement per plan
 - 2026-08-08T19:00:35.119Z - task-done: T3: Add/adjust tests and make them pass
 - 2026-08-08T19:33:45.955Z - ac-updated: reconcile two collisions the implementer flagged: AC4 vs AC3 (the hang loop stands down, it does not send a second alert) and AC8 vs AC16 (no action on the session; deferring delivery is not action on the session)
+- 2026-08-08T20:03:16.380Z - ac-confirmed: AC1
+- 2026-08-08T20:03:16.487Z - ac-confirmed: AC2
+- 2026-08-08T20:03:16.595Z - ac-confirmed: AC3
+- 2026-08-08T20:03:16.702Z - ac-confirmed: AC4
+- 2026-08-08T20:03:16.811Z - ac-confirmed: AC5
+- 2026-08-08T20:03:16.917Z - ac-confirmed: AC6
+- 2026-08-08T20:03:17.023Z - ac-confirmed: AC7
+- 2026-08-08T20:03:17.131Z - ac-confirmed: AC8
+- 2026-08-08T20:03:17.233Z - ac-confirmed: AC9
+- 2026-08-08T20:03:17.339Z - ac-confirmed: AC10
+- 2026-08-08T20:03:17.444Z - ac-confirmed: AC11
+- 2026-08-08T20:03:17.551Z - ac-confirmed: AC12
+- 2026-08-08T20:03:17.657Z - ac-confirmed: AC13
+- 2026-08-08T20:03:17.767Z - ac-confirmed: AC14
+- 2026-08-08T20:03:17.875Z - ac-confirmed: AC15
+- 2026-08-08T20:03:17.981Z - ac-confirmed: AC16
+- 2026-08-08T20:03:18.088Z - ac-confirmed: AC17
+- 2026-08-08T20:03:18.195Z - ac-confirmed: AC18
+- 2026-08-08T20:03:18.300Z - task-done: T1: Collect remaining context
+- 2026-08-08T20:03:18.407Z - task-done: T2: Implement per plan
+- 2026-08-08T20:03:18.515Z - task-done: T3: Add/adjust tests and make them pass
+- 2026-08-08T20:03:18.621Z - task-done: T4: Self-review and prepare draft PR
