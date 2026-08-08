@@ -503,6 +503,9 @@ describe("and the channel is what takes it off again", () => {
     text: "You've hit your session limit · resets 5:30pm (UTC)",
     resetsAtUtcMinutes: 17 * 60 + 30,
     uuid: "err-1",
+    // See the identical factory above: `at` is required, and the fixture
+    // states the absence of a date rather than omitting the field.
+    at: null as number | null,
     ...overrides,
   });
 
