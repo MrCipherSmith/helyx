@@ -14,7 +14,7 @@
  */
 
 import { describe, test, expect } from "bun:test";
-import { renderProjectsMessage, type ProjectListItem } from "../../bot/commands/projects.ts";
+import { renderProjectsMessage, configLabels, type ProjectListItem } from "../../bot/commands/projects.ts";
 import type { ProviderSelection } from "../../services/project-service.ts";
 
 function project(over: Partial<ProjectListItem> = {}): ProjectListItem {
@@ -85,7 +85,9 @@ describe("renderProjectsMessage", () => {
       new Map([[3, "start"]]),
     );
 
-    expect(rows(keyboard)).toEqual([]);
+    // Refresh is there because something is pending — but no controls for the
+    // project itself, and no info row claiming a config it may be about to change.
+    expect(rows(keyboard)).toEqual([[["🔄 Refresh", "proj:refresh"]]]);
     expect(text).toContain("⏳▶️ helyx");
   });
 
@@ -102,6 +104,46 @@ describe("renderProjectsMessage", () => {
     expect(text).not.toContain("glm-5.2");
   });
 
+  test("the fresh view offers Start All only when more than one project is stopped", () => {
+    const two = [project({ id: 1, name: "a" }), project({ id: 2, name: "b" })];
+    const one = [project({ id: 1, name: "a" }), project({ id: 2, name: "b", session_status: "active" })];
+
+    const withAll = rows(renderProjectsMessage(two, new Map(), new Map(), "fresh").keyboard);
+    const withoutAll = rows(renderProjectsMessage(one, new Map(), new Map(), "fresh").keyboard);
+
+    expect(withAll.at(-1)).toEqual([["▶️ Start All", "proj:start_all"]]);
+    expect(withoutAll.flat().map(([label]) => label)).not.toContain("▶️ Start All");
+  });
+
+  test("the fresh view offers Refresh only while something is pending", () => {
+    const projects = [project({ id: 1 }), project({ id: 2, name: "b" })];
+
+    const idle = rows(renderProjectsMessage(projects, new Map(), new Map(), "fresh").keyboard);
+    const busy = rows(
+      renderProjectsMessage(projects, new Map(), new Map([[2, "start"]]), "fresh").keyboard,
+    );
+
+    expect(idle.flat().map(([label]) => label)).not.toContain("🔄 Refresh");
+    expect(busy.at(-1)).toEqual([["🔄 Refresh", "proj:refresh"]]);
+  });
+
+  test("the in-place re-render always offers Refresh and never Start All", () => {
+    const two = [project({ id: 1, name: "a" }), project({ id: 2, name: "b" })];
+    const got = rows(renderProjectsMessage(two, new Map(), new Map(), "rerender").keyboard);
+
+    expect(got.at(-1)).toEqual([["🔄 Refresh", "proj:refresh"]]);
+    expect(got.flat().map(([label]) => label)).not.toContain("▶️ Start All");
+  });
+
+  test("every project pending leaves Refresh as the only row", () => {
+    const got = rows(
+      renderProjectsMessage([project({ id: 1 })], new Map(), new Map([[1, "stop"]]), "rerender")
+        .keyboard,
+    );
+
+    expect(got).toEqual([[["🔄 Refresh", "proj:refresh"]]]);
+  });
+
   test("several projects keep their rows paired, in order", () => {
     const { keyboard } = renderProjectsMessage(
       [
@@ -116,5 +158,22 @@ describe("renderProjectsMessage", () => {
     expect(got.length).toBe(4);
     expect(got[1]).toEqual([["GLM (Z.ai)", "pminf:1"], ["glm-5.2", "pminf:1"]]);
     expect(got[3]).toEqual([["Claude", "pminf:2"], ["default", "pminf:2"]]);
+  });
+});
+
+describe("configLabels", () => {
+  test("a missing selection reads as stock Claude", () => {
+    expect(configLabels(undefined)).toEqual({ provider: "Claude", model: "default" });
+  });
+
+  test("blank columns fall back rather than render an empty button", () => {
+    // Telegram rejects the whole message over one empty label, not just the button.
+    expect(configLabels({ providerId: 7, providerName: "   ", model: "" }))
+      .toEqual({ provider: "Claude", model: "default" });
+  });
+
+  test("real values pass through untrimmed of meaning", () => {
+    expect(configLabels({ providerId: 7, providerName: "GLM (Z.ai)", model: "glm-5.2" }))
+      .toEqual({ provider: "GLM (Z.ai)", model: "glm-5.2" });
   });
 });

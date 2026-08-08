@@ -43,6 +43,21 @@ async function getSelections(ids: number[]): Promise<Map<number, ProviderSelecti
 export type ProjectListItem = { id: number; name: string; path: string; session_status: string | null };
 
 /**
+ * The two labels a project's info row carries, never empty.
+ *
+ * Telegram refuses a button with empty text, and refuses the whole message with
+ * it — one blank label would cost the operator the entire list, not one button.
+ * `projects.model` is free-form TEXT and resolve-provider-env already guards
+ * against a blank one, so trim-to-default rather than null-coalesce.
+ */
+export function configLabels(cfg: ProviderSelection | undefined): { provider: string; model: string } {
+  return {
+    provider: cfg?.providerName?.trim() || "Claude",
+    model: cfg?.model?.trim() || "default",
+  };
+}
+
+/**
  * Build the /projects message body — text lines and the per-project keyboard
  * rows. Both render sites (the initial reply and the post-action re-render) call
  * this, so the per-project layout lives in exactly one place.
@@ -55,14 +70,22 @@ export type ProjectListItem = { id: number; name: string; path: string; session_
  *
  * Provider and model used to repeat inside the text line ("· Provider/model");
  * they now live only in the info-row buttons, so that annotation is gone. The
- * info buttons are display-only: a `pminf:<id>` callback answers with the full
- * config and changes no state. A pending project shows its pending marker but no
- * controls — its settled state is unknown until the command completes.
+ * info buttons are display-only: a `pminf:<id>` callback names the project and
+ * its config and changes no state. A pending project shows its pending marker
+ * but no controls — its settled state is unknown until the command completes.
+ *
+ * The trailing rows are the only thing the two sites ever disagreed about, so
+ * they are a parameter rather than a second copy of the loop. `fresh` is the
+ * reply to /projects: Start All when more than one project is stopped, Refresh
+ * while anything is pending. `rerender` is the in-place edit after an action,
+ * which always offers Refresh (something is pending by definition) and never
+ * Start All.
  */
 export function renderProjectsMessage(
   projects: ProjectListItem[],
   selections: Map<number, ProviderSelection>,
   pending: Map<number, "start" | "stop">,
+  variant: "fresh" | "rerender" = "fresh",
 ): { text: string; keyboard: InlineKeyboard } {
   const lines: string[] = ["Projects:\n"];
   const keyboard = new InlineKeyboard();
@@ -81,10 +104,16 @@ export function renderProjectsMessage(
       .text("⚙️", `pmchg:${p.id}:prov`)
       .row();
 
-    const cfg = selections.get(p.id);
-    const providerLabel = cfg?.providerName ?? "Claude";
-    const modelLabel = cfg?.model ?? "default";
-    keyboard.text(providerLabel, `pminf:${p.id}`).text(modelLabel, `pminf:${p.id}`).row();
+    const { provider, model } = configLabels(selections.get(p.id));
+    keyboard.text(provider, `pminf:${p.id}`).text(model, `pminf:${p.id}`).row();
+  }
+
+  if (variant === "rerender") {
+    keyboard.text("🔄 Refresh", "proj:refresh").row();
+  } else {
+    const stopped = projects.filter((p) => p.session_status !== "active" && !pending.has(p.id));
+    if (stopped.length > 1) keyboard.text("▶️ Start All", "proj:start_all").row();
+    if (pending.size > 0) keyboard.text("🔄 Refresh", "proj:refresh").row();
   }
 
   return { text: lines.join("\n"), keyboard };
@@ -101,8 +130,7 @@ export function renderProjectsMessage(
 async function rerenderProjects(ctx: Context): Promise<void> {
   const [projects, pending] = await Promise.all([projectService.list(), getPendingActions()]);
   const selections = await getSelections(projects.map((p) => p.id));
-  const { text, keyboard } = renderProjectsMessage(projects, selections, pending);
-  keyboard.text("🔄 Refresh", "proj:refresh").row();
+  const { text, keyboard } = renderProjectsMessage(projects, selections, pending, "rerender");
   await ctx.editMessageText(text, { reply_markup: keyboard }).catch(async (err: any) => {
     // Ignore "message is not modified" — content unchanged, nothing to do
     if (err?.description?.includes("not modified") || err?.message?.includes("not modified")) return;
@@ -124,13 +152,7 @@ export async function handleProjects(ctx: Context): Promise<void> {
   }
 
   const selections = await getSelections(projects.map((p) => p.id));
-  const { text, keyboard } = renderProjectsMessage(projects, selections, pending);
-
-  // Trailing rows are view-specific: Start All only on the fresh view when more
-  // than one project is stopped; Refresh only while something is pending.
-  const stopped = projects.filter((p) => p.session_status !== "active" && !pending.has(p.id));
-  if (stopped.length > 1) keyboard.text("▶️ Start All", "proj:start_all").row();
-  if (pending.size > 0) keyboard.text("🔄 Refresh", "proj:refresh").row();
+  const { text, keyboard } = renderProjectsMessage(projects, selections, pending, "fresh");
 
   await replyInThread(ctx, text, { reply_markup: keyboard });
 }
@@ -141,17 +163,26 @@ export async function handleProjectCallback(ctx: Context): Promise<void> {
 
   // pminf:<projectId> — display-only: answer with the project's current config,
   // no state change. The provider/model buttons under each action read as status.
+  //
+  // The absence of a row means the project is gone, not that it is on stock
+  // Claude: an old /projects message outlives a `/project-remove`, and answering
+  // "Claude / default" would describe a project that no longer exists. Only a
+  // row with null columns is a default configuration.
   if (parts[0] === "pminf") {
     const id = Number(parts[1]);
     if (!id) {
       await ctx.answerCallbackQuery({ text: "Unknown project" });
       return;
     }
-    const selections = await getSelections([id]);
-    const cfg = selections.get(id);
-    const provider = cfg?.providerName ?? "Claude";
-    const model = cfg?.model ?? "default";
-    await ctx.answerCallbackQuery({ text: `${provider} / ${model}` });
+    const [project, selections] = await Promise.all([projectService.get(id), getSelections([id])]);
+    if (!project || !selections.has(id)) {
+      await ctx.answerCallbackQuery({ text: "Project not found" });
+      return;
+    }
+    const { provider, model } = configLabels(selections.get(id));
+    // Names the project: with several on screen the toast is otherwise
+    // ambiguous, and it repeats the two labels the operator just tapped.
+    await ctx.answerCallbackQuery({ text: `${project.name}: ${provider} / ${model} — ⚙️ to change` });
     return;
   }
 
