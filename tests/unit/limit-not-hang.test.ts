@@ -323,7 +323,6 @@ describe("nothing is acted on automatically", () => {
 });
 
 describe("the channel is what writes the marker", () => {
-  const CHAT = "-1005550009";
   const cleanups: (() => void)[] = [];
   afterEach(() => {
     for (const c of cleanups.splice(0)) c();
