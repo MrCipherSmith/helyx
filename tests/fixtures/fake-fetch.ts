@@ -39,6 +39,21 @@ export interface FetchResponse {
   json?: unknown;
   /** Sent as-is. Ignored when `json` is present. */
   text?: string;
+  /**
+   * The body delivered in pieces, one `reader.read()` per entry.
+   *
+   * `json` and `text` arrive whole, and a whole body is the one shape a
+   * streaming reader never has to cope with: every line is complete, every
+   * character is complete, and code that mishandles a boundary passes anyway.
+   * The two boundary bugs that matter here are both invisible without this —
+   * a chunk that ends mid-line, and a chunk that ends mid-UTF-8-sequence, the
+   * second of which is impossible to hit in English and mangles the first
+   * Cyrillic word that straddles a packet.
+   *
+   * Strings are encoded whole; split a multi-byte character by passing the
+   * bytes yourself. Takes precedence over `json` and `text`.
+   */
+  chunks?: (string | Uint8Array)[];
   headers?: Record<string, string>;
 }
 
@@ -181,8 +196,10 @@ export class FakeFetch {
     const nth = program.hits++;
     const spec = typeof program.respond === "function" ? program.respond(request, nth) : program.respond;
     const headers = { ...(spec.headers ?? {}) };
-    let body: string | null = null;
-    if (spec.json !== undefined) {
+    let body: string | ReadableStream<Uint8Array> | null = null;
+    if (spec.chunks !== undefined) {
+      body = streamOf(spec.chunks);
+    } else if (spec.json !== undefined) {
       body = JSON.stringify(spec.json);
       headers["content-type"] ??= "application/json";
     } else if (spec.text !== undefined) {
@@ -190,6 +207,18 @@ export class FakeFetch {
     }
     return new Response(body, { status: spec.status ?? 200, headers });
   }) as unknown as typeof fetch;
+}
+
+/** One enqueue per programmed piece, so each becomes its own `read()`. */
+function streamOf(chunks: (string | Uint8Array)[]): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  const parts = chunks.map((c) => (typeof c === "string" ? encoder.encode(c) : c));
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const part of parts) controller.enqueue(part);
+      controller.close();
+    },
+  });
 }
 
 function hits(match: string | RegExp, url: string): boolean {

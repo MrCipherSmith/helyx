@@ -202,6 +202,42 @@ describe("/v1/messages", () => {
     expect(text).toContain('"stop_reason":"tool_use"');
   });
 
+  test("a body arriving in pieces is reassembled, mid-line and mid-character", async () => {
+    // The fixture used to hand the whole body over in one read, which is the
+    // one shape a streaming reader never has to cope with: every line whole,
+    // every character whole. Both boundary bugs this code guards against are
+    // invisible that way — the remainder kept after the last newline, and the
+    // single TextDecoder that holds the tail of a multi-byte character across
+    // reads. The second only ever shows up in a language that has any: a fresh
+    // decoder per read drops the tail and the first Cyrillic word straddling a
+    // packet comes out as replacement characters.
+    const ndjson =
+      JSON.stringify({ message: { content: "Привет" } }) +
+      "\n" +
+      JSON.stringify({ message: { content: ", мир" } }) +
+      "\n" +
+      JSON.stringify({ done: true, done_reason: "stop", prompt_eval_count: 12, eval_count: 3 }) +
+      "\n";
+
+    const bytes = new TextEncoder().encode(ndjson);
+    // The first byte of "П" is 0xD0; cutting one byte past it lands inside the
+    // character and inside the line — both boundaries at once.
+    const midChar = bytes.indexOf(0xd0) + 1;
+    const midLine = bytes.length - 12;
+    expect(midChar).toBeGreaterThan(0);
+    expect(midLine).toBeGreaterThan(midChar);
+    http.program("/api/chat", {
+      chunks: [bytes.slice(0, midChar), bytes.slice(midChar, midLine), bytes.slice(midLine)],
+    });
+
+    const res = await route(post("/v1/messages", { stream: true, messages: [{ role: "user", content: "привет" }] }));
+    const text = await res.text();
+    const deltas = [...text.matchAll(/"text_delta","text":("(?:[^"\\]|\\.)*")/g)].map((m) => JSON.parse(m[1]));
+    expect(deltas.join("")).toBe("Привет, мир");
+    expect(text).not.toContain("�");
+    expect(usageOf(text)).toEqual({ input_tokens: 12, output_tokens: 3 });
+  });
+
   test("a request body that is not JSON is an invalid_request_error", async () => {
     const res = await route(
       new Request("http://127.0.0.1:3458/v1/messages", { method: "POST", body: "not json" }),
