@@ -766,10 +766,23 @@ const spawnClaude: SpawnClaude = async (argv, env) => {
   }
 };
 
+/**
+ * Whether the CLI exists here, as an argument rather than as a fact.
+ *
+ * It was `Bun.which("claude")` inline, and that reached past the `spawn` seam:
+ * on a machine without the CLI — CI, and the bot image — the four tests that
+ * inject a fake spawn never got to use it, because the function had already
+ * decided the world was empty. A test that supplies the world should not be
+ * overruled by the real one. Caught by CI, which is exactly the machine the
+ * check was added for.
+ */
+export type WhichClaude = () => string | null;
+
 export async function callClaudeReview(
   reviewer: Reviewer,
   prompt: string,
   spawn: SpawnClaude = spawnClaude,
+  which: WhichClaude = () => Bun.which("claude"),
 ): Promise<ReviewerReport> {
   const model = reviewer.model || CLAUDE_DEFAULT_MODEL;
   const fail = (error: string): ReviewerReport => ({ reviewerId: reviewer.id, label: "Claude", model, ok: false, error });
@@ -779,7 +792,7 @@ export async function callClaudeReview(
   // this reviewer for every caller — so a Telegram-triggered review would spawn
   // a process that can only fail. The report is the same either way; this skips
   // the spawn.
-  if (!Bun.which("claude")) {
+  if (!which()) {
     return fail("unavailable: the claude CLI is not installed in this environment (host-only reviewer)");
   }
   try {

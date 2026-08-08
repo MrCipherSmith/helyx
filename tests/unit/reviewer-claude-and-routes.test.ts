@@ -39,6 +39,16 @@ import { installFakeFetch, type FakeFetch } from "../fixtures/fake-fetch.ts";
 
 const CLAUDE: Reviewer = { id: "claude", kind: "claude", model: "claude-opus-5", enabled: true };
 
+/**
+ * The CLI is present, said as an argument.
+ *
+ * Without it these tests pass on the developer's machine and fail on CI and in
+ * the bot image — the two environments the presence check exists for. That is
+ * what happened: four of them went red on the first CI run after the check was
+ * added inline.
+ */
+const HAVE_CLI = () => "/usr/local/bin/claude";
+
 /** A spawn that answers with fixed output and records argv and environment. */
 function fakeSpawn(result: { stdout?: string; stderr?: string; exitCode?: number }) {
   const calls: Array<{ argv: string[]; env: NodeJS.ProcessEnv }> = [];
@@ -211,7 +221,7 @@ describe("callClaudeReview", () => {
     const before = process.env.CHANNEL_SOURCE;
     process.env.CHANNEL_SOURCE = "remote";
     try {
-      const report = await callClaudeReview(CLAUDE, "the diff", spawn);
+      const report = await callClaudeReview(CLAUDE, "the diff", spawn, HAVE_CLI);
       expect(report.ok).toBe(true);
       expect(report.content).toBe("a review");
       expect(report.label).toBe("Claude");
@@ -224,7 +234,7 @@ describe("callClaudeReview", () => {
 
   test("the prompt reaches the CLI, behind the directive", async () => {
     const { spawn, calls } = fakeSpawn({ stdout: "a review" });
-    await callClaudeReview(CLAUDE, "the diff with the bug in it", spawn);
+    await callClaudeReview(CLAUDE, "the diff with the bug in it", spawn, HAVE_CLI);
     expect(calls[0].argv.at(-1)).toContain("the diff with the bug in it");
     // CLAUDE.md tells any agent asked for a review to run scripts/review.ts —
     // which is what called this. Without the directive the reviewer convenes
@@ -234,14 +244,14 @@ describe("callClaudeReview", () => {
 
   test("a failure is a report, not a throw", async () => {
     const { spawn } = fakeSpawn({ stdout: "Not logged in · Please run /login", exitCode: 1 });
-    const report = await callClaudeReview(CLAUDE, "the diff", spawn);
+    const report = await callClaudeReview(CLAUDE, "the diff", spawn, HAVE_CLI);
     expect(report.ok).toBe(false);
     expect(report.error).toContain("auth");
   });
 
   test("falls back to a model rather than spawning with an empty one", async () => {
     const { spawn, calls } = fakeSpawn({ stdout: "ok" });
-    await callClaudeReview({ ...CLAUDE, model: "" }, "d", spawn);
+    await callClaudeReview({ ...CLAUDE, model: "" }, "d", spawn, HAVE_CLI);
     expect(calls[0].argv[calls[0].argv.indexOf("--model") + 1]).toBe(CLAUDE_DEFAULT_MODEL);
   });
 });
@@ -472,5 +482,18 @@ describe("callProviderReview reading order", () => {
     );
     expect(report.error).toBe("limit/balance");
     expect(report.error).not.toContain("unmapped vendor");
+  });
+});
+
+describe("callClaudeReview where the CLI is absent", () => {
+  test("says so plainly and never spawns", async () => {
+    // The bot image installs git, curl and ca-certificates and no CLIs, and
+    // defaultReviewers enables this reviewer for every caller — so a
+    // Telegram-triggered review reaches this branch.
+    const { spawn, calls } = fakeSpawn({ stdout: "should never run" });
+    const report = await callClaudeReview(CLAUDE, "the diff", spawn, () => null);
+    expect(report.ok).toBe(false);
+    expect(report.error).toContain("host-only reviewer");
+    expect(calls).toHaveLength(0);
   });
 });
