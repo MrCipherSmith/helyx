@@ -30,9 +30,22 @@ import { shouldReopen, shouldClose, shouldMove, CONTINUATION_IDLE_MS } from "../
 import { escapeHtml } from "../utils/html.ts";
 import { isRequeued, markRequeued } from "../utils/requeue.ts";
 import { hasOpenQuestion } from "../services/ask-question.ts";
+import { endFold } from "../services/fold-marker.ts";
+import { droppedSpan } from "../utils/transcript-locate.ts";
+import type { CompactBoundary } from "../utils/context-usage.ts";
+import { remember } from "../memory/long-term.ts";
 
 /** How much of a captured file path the completion notice may carry. */
 const FILE_LABEL_CHARS = 80;
+
+/**
+ * How many folds this process remembers having captured.
+ *
+ * The bound is not about memory — it is one uuid per fold and a long session
+ * takes a handful — but about a map that would otherwise grow for the life of
+ * the channel. Sixty-four folds is more than any session observed has taken.
+ */
+const REMEMBERED_FOLDS = 64;
 
 export interface StatusContext {
   sql: postgres.Sql;
@@ -116,6 +129,26 @@ interface StatusExtras {
   idleMs?: number;
   /** Subagents running right now. */
   agents?: readonly string[];
+}
+
+/**
+ * The one line of ours in front of a dropped span.
+ *
+ * The span below it is raw transcript, so a reader — a future session recalling
+ * this — needs to be told what it is looking at and, above all, whether it is
+ * all of it. The truncation is stated in words rather than left to the
+ * `truncated` tag because whoever reads the content may never see the tags.
+ */
+function foldHeader(boundary: CompactBoundary, span: { records: number; truncated: boolean }): string {
+  const facts = [`${span.records} records`];
+  if (boundary.droppedTokens !== null) facts.push(`≈${boundary.droppedTokens} tokens`);
+  if (boundary.durationMs !== null) facts.push(`fold took ${boundary.durationMs} ms`);
+  const line =
+    `Transcript dropped by a ${boundary.trigger ?? "unknown"} context compaction` +
+    ` at ${new Date().toISOString()}: ${facts.join(", ")}`;
+  return span.truncated
+    ? `${line}. TRUNCATED to the byte budget — the records nearest the fold are kept, the oldest are gone.`
+    : `${line}. Complete.`;
 }
 
 function formatStatusText(stage: string, elapsed: string, tokens: string, paneSnapshot?: string | null, spinnerIcon?: string, extras?: StatusExtras): string {
@@ -202,6 +235,37 @@ export class StatusManager {
    * the orphan Telegram message instead of late-registering it in activeStatus.
    */
   private pendingSendGenerations = new Map<string, number>();
+  /**
+   * Folds already written to long-term memory, by the boundary's own `tailUuid`.
+   *
+   * `tailUuid` identifies the `compact_boundary` record itself, so it is the one
+   * value in the metadata that names *this* fold and nothing else — `headUuid`
+   * names the first record kept, and two folds of an empty span would share a
+   * `preTokens`. Without a key, a poll that re-read the boundary would embed the
+   * same two megabytes again, and an embedding call is the most expensive thing
+   * this class can do.
+   *
+   * In process, and it does not need to be more than that. The tail attaches at
+   * the end of the file (`TranscriptTail.atEnd`), so a channel that restarts
+   * never re-reads a boundary it has already passed: what a restart loses is the
+   * fold itself, not the record of having captured it — the case the plan names
+   * as "not every fold is ours to see". The one path that re-reads from zero is
+   * `reresolve`, and that is a different transcript whose boundaries genuinely
+   * have not been captured, which is why the key includes the path.
+   */
+  private readonly capturedFolds = new Set<string>();
+  /**
+   * The newest boundary seen in each transcript, which is where the next fold's
+   * dropped span begins.
+   *
+   * Null until this process has seen one. The first fold after a channel restart
+   * therefore starts its span at the top of the file rather than at the previous
+   * boundary — bounded by `DROPPED_SPAN_BUDGET_BYTES`, which keeps the records
+   * nearest the fold, so what the span gains is old material rather than wrong
+   * material. The alternative was a second read of a multi-megabyte file to
+   * re-find a boundary already gone past.
+   */
+  private readonly lastFoldTail = new Map<string, string>();
   private readonly TYPING_TIMEOUT_MS = 30_000;
   private readonly RESPONSE_GUARD_MS = 5 * 60_000; // 5 min
   /**
@@ -1420,6 +1484,104 @@ export class StatusManager {
     }
   }
 
+  /**
+   * A fold has happened: store what it dropped, and close the fold marker.
+   *
+   * This is the reaction the flow exists for. Claude Code does not destroy the
+   * material it compacts — the transcript under
+   * `~/.claude/projects/<slug>/<uuid>.jsonl` only grows — it names it: the span
+   * from the previous boundary up to `preservedSegment.headUuid` is exactly what
+   * left the model's head and stayed on disk. Nothing in this repository read
+   * that record before flow 059; the tail walked past it every two seconds.
+   *
+   * Stored raw, without the aux model. A summary of what was lost is a second
+   * and lossier artefact, and whether to make one can be decided later — the span
+   * itself cannot be recovered later, which is the asymmetry the whole decision
+   * turns on. `DROPPED_SPAN_BUDGET_BYTES` bounds it and `truncated` says so in
+   * what is stored, because a cut span filed as a whole one is a lie told to the
+   * session that reads it back.
+   *
+   * Public for the reason `runResponseGuard` is: the only other way in is to have
+   * a real session fold, which takes two minutes and a million tokens.
+   */
+  async captureFold(boundary: CompactBoundary, transcriptPath: string): Promise<void> {
+    const sessionId = this.ctx.sessionId();
+    // Closed first and unconditionally. The marker's whole purpose is to say
+    // "this silence is a fold", and the fold is over whether or not the span
+    // below can be read — a marker left open would suppress the hung-session
+    // alarm until its grace window expired.
+    if (sessionId !== null) {
+      await endFold(this.ctx.sql, sessionId, boundary.durationMs).catch((err) => {
+        channelLogger.warn({ err, sessionId }, "fold: could not clear the marker");
+      });
+    }
+
+    // `tailUuid` names the boundary; `headUuid` is where the span stops. A
+    // boundary missing either is one this cannot place, and a span attributed to
+    // the wrong fold is worse than no span — see `droppedSpan`.
+    if (!boundary.tailUuid || !boundary.headUuid) {
+      channelLogger.warn({ transcriptPath, boundary }, "fold: boundary without the uuids to place it");
+      return;
+    }
+
+    const key = `${transcriptPath}#${boundary.tailUuid}`;
+    if (this.capturedFolds.has(key)) return;
+    this.capturedFolds.add(key);
+    if (this.capturedFolds.size > REMEMBERED_FOLDS) {
+      const oldest = this.capturedFolds.values().next().value;
+      if (oldest !== undefined) this.capturedFolds.delete(oldest);
+    }
+
+    const previousTail = this.lastFoldTail.get(transcriptPath) ?? null;
+    this.lastFoldTail.set(transcriptPath, boundary.tailUuid);
+
+    try {
+      const span = await droppedSpan(transcriptPath, boundary.headUuid, previousTail);
+      if (!span || span.records === 0) {
+        channelLogger.info({ transcriptPath, records: span?.records ?? null }, "fold: nothing to store");
+        return;
+      }
+
+      const saved = await remember({
+        source: "cli",
+        sessionId,
+        projectPath: this.ctx.projectPath ?? null,
+        type: "transcript",
+        content: `${foldHeader(boundary, span)}\n\n${span.text}`,
+        // The columns carry the project and the session because that is what
+        // they are for and what `recall` filters on; the tags carry the
+        // boundary's own numbers, which nothing else in the schema has a place
+        // for and which are the difference between "a fold happened" and "this
+        // fold dropped 986233 tokens over two minutes".
+        tags: [
+          "transcript",
+          "compact-boundary",
+          `trigger:${boundary.trigger ?? "unknown"}`,
+          `dropped-tokens:${boundary.droppedTokens ?? "unknown"}`,
+          `duration-ms:${boundary.durationMs ?? "unknown"}`,
+          `records:${span.records}`,
+          `tail:${boundary.tailUuid}`,
+          ...(span.truncated ? ["truncated"] : []),
+        ],
+      });
+      channelLogger.info(
+        {
+          memoryId: saved.id,
+          sessionId,
+          records: span.records,
+          truncated: span.truncated,
+          droppedTokens: boundary.droppedTokens,
+          durationMs: boundary.durationMs,
+        },
+        "fold: dropped span stored in long-term memory",
+      );
+    } catch (err) {
+      // The span is still in the file, which is the whole premise of this flow.
+      // A failed embedding call costs this fold's record, not the session.
+      channelLogger.warn({ err, transcriptPath }, "fold: could not store the dropped span");
+    }
+  }
+
   async startProgressMonitorForChat(chatId: string): Promise<void> {
     this.stopProgressMonitorForChat(chatId);
     const key = this.stateKey(chatId);
@@ -1437,7 +1599,16 @@ export class StatusManager {
     // poll landed. The two below stay wired for a project with no transcript —
     // nothing mounted at the config root, or a CLI started some other way.
     if (this.ctx.projectPath) {
-      const transcript = await startTranscriptMonitor(this.ctx.projectPath, onStatus);
+      const transcript = await startTranscriptMonitor(this.ctx.projectPath, onStatus, {
+        // The fold is one more kind of line the tail already receives. Nothing
+        // new watches anything: `utils/transcript-monitor.ts` reads the file and
+        // this decides what a boundary in it is worth.
+        onCompactBoundary: (boundary, path) => {
+          void this.captureFold(boundary, path).catch((err) => {
+            channelLogger.warn({ err, path }, "fold: capture failed");
+          });
+        },
+      });
       if (transcript) {
         this.activeMonitors.set(key, transcript);
         channelLogger.info({ projectPath: this.ctx.projectPath }, "transcript monitor started");

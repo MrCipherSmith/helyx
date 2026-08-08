@@ -14,7 +14,20 @@ export interface Memory {
   sessionId?: number | null;
   projectPath?: string | null;
   chatId?: string | null;
-  type: "fact" | "summary" | "decision" | "note" | "project_context";
+  /**
+   * `transcript` is the raw record of what a fold dropped, stored unsummarised.
+   *
+   * Every other type here is prose a model wrote. This one is the transcript
+   * itself — the span between two uuids that left the session's head and stayed
+   * on disk — and it is stored raw on purpose: a summary of what was lost is a
+   * second, lossier artefact, and the choice of whether to make one can be made
+   * later, while the span itself cannot be recovered later. See
+   * `channel/status.ts`'s fold capture and flow 059's plan.
+   *
+   * It is also the only type that can be megabytes, which is why
+   * `MEMORY_TTL_TRANSCRIPT_DAYS` exists and is the shortest of the five.
+   */
+  type: "fact" | "summary" | "decision" | "note" | "project_context" | "transcript";
   content: string;
   tags?: string[];
   createdAt?: Date;

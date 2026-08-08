@@ -78,6 +78,13 @@ const EnvSchema = z.object({
   MEMORY_TTL_DECISION_DAYS: z.coerce.number().int().min(0).default(180),
   MEMORY_TTL_NOTE_DAYS: z.coerce.number().int().min(0).default(30),
   MEMORY_TTL_PROJECT_CONTEXT_DAYS: z.coerce.number().int().min(0).default(180),
+  // Fourteen days, the shortest of the six, because a `transcript` row is the
+  // only one that carries raw transcript rather than a sentence about it — up to
+  // the 2 MB `DROPPED_SPAN_BUDGET_BYTES` allows, once per fold, and a long
+  // session folds every couple of hours. Without an entry here `memoryTTL` in
+  // `cleanup/jobs.ts` iterates the types it knows and simply never sees this
+  // one, so the rows would accumulate for the life of the database.
+  MEMORY_TTL_TRANSCRIPT_DAYS: z.coerce.number().int().min(0).default(14),
 
   // Voice transcription
   GROQ_API_KEY: z.string().default(""),
@@ -222,6 +229,7 @@ export const CONFIG = {
     decision: env.MEMORY_TTL_DECISION_DAYS,
     note: env.MEMORY_TTL_NOTE_DAYS,
     project_context: env.MEMORY_TTL_PROJECT_CONTEXT_DAYS,
+    transcript: env.MEMORY_TTL_TRANSCRIPT_DAYS,
   },
 
   // Voice transcription

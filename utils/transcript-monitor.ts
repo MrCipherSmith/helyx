@@ -20,6 +20,7 @@
 
 import { resolveTranscript, TranscriptTail, parseEntry, claudeConfigRoot } from "./transcript-locate.ts";
 import { renderEntry, outputTokens, renderTokenLine } from "./transcript-events.ts";
+import { compactBoundaries, type CompactBoundary } from "./context-usage.ts";
 import { findSubagents, selectAgents, markLines, MAX_TRACKED_AGENTS, type FileAccess, type SubagentFile } from "./subagent-transcripts.ts";
 import { readdir, stat, readFile } from "fs/promises";
 
@@ -129,6 +130,21 @@ export interface TranscriptSessionOptions {
    * attribute yesterday's work to this turn.
    */
   subagentsSince?: number;
+  /**
+   * Claude Code has just folded its context, and said what it dropped.
+   *
+   * A callback rather than work done here, and that division is the point. This
+   * module reads files; what a fold is *worth* — a span pulled out by uuid, an
+   * embedding call, a status message that stops looking like silence — belongs
+   * to `channel/status.ts`, which already receives everything else this poll
+   * finds. A reader that also wrote to Postgres would be two modules sharing a
+   * name.
+   *
+   * Called once per boundary in the lines a single poll read, in file order, and
+   * only for the session's own transcript: a subagent's fold is its own context
+   * and not what the operator's session forgot.
+   */
+  onCompactBoundary?: (boundary: CompactBoundary, transcriptPath: string) => void;
 }
 
 /**
@@ -246,6 +262,25 @@ export class TranscriptSession {
     return out;
   }
 
+  /**
+   * Tell the caller about any fold in the lines just read.
+   *
+   * Nothing is thrown out of here. The tail's read position has already moved
+   * past these lines by the time this runs, so an exception would lose them —
+   * the same reasoning `pollAgents` carries, and the same belt: a callback that
+   * writes to Postgres has more ways to fail than this module has to recover.
+   */
+  private announceBoundaries(lines: readonly string[]): void {
+    const notify = this.options.onCompactBoundary;
+    const path = this.tail?.path;
+    if (!notify || !path || lines.length === 0) return;
+    try {
+      for (const boundary of compactBoundaries(lines)) notify(boundary, path);
+    } catch {
+      /* the caller's problem to log; losing this poll's lines is not the price */
+    }
+  }
+
   /** The transcript currently being read, or null before the first resolve. */
   get path(): string | null {
     return this.tail?.path ?? null;
@@ -286,6 +321,7 @@ export class TranscriptSession {
     if (!this.tail && !(await this.attach())) return null;
 
     const lines = await this.tail!.read();
+    this.announceBoundaries(lines);
     // Asked every poll, including the ones where the parent said nothing —
     // which is precisely what a fan-out looks like from here.
     const fromAgents = await this.pollAgents();
