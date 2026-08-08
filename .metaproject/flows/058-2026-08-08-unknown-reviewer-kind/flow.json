@@ -3,9 +3,9 @@
   "id": "058",
   "slug": "unknown-reviewer-kind",
   "title": "An unknown reviewer kind fails as itself, not as a provider",
-  "status": "implemented",
+  "status": "done",
   "createdAt": "2026-08-08T09:47:50.755Z",
-  "updatedAt": "2026-08-08T09:57:19.129Z",
+  "updatedAt": "2026-08-08T09:58:45.183Z",
   "source": {
     "type": "description",
     "ref": null
@@ -170,6 +170,20 @@
       "at": "2026-08-08T09:57:19.129Z",
       "event": "task-done",
       "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-08T09:58:45.177Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-08T09:58:45.183Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
-  ]
+  ],
+  "merged": {
+    "commit": "41406c61679e329218daffaa3720729e9ddc8162",
+    "ref": "origin/main",
+    "at": "2026-08-08T09:58:45.183Z"
+  }
 }

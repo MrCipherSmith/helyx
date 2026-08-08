@@ -36,3 +36,5 @@ Two known gaps, recorded rather than fixed:
 - AC4's frozen wording names `reviewerAvailability`; the function is
   `getReviewerStatuses`. Wording drift at freeze time, no effect on the code.
 - 2026-08-08T09:57:19.129Z - task-done: T4: Self-review and prepare draft PR
+- 2026-08-08T09:58:45.177Z - completing
+- 2026-08-08T09:58:45.183Z - done: all gates passed
