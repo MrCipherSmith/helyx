@@ -31,7 +31,7 @@ import { escapeHtml } from "../utils/html.ts";
 import { isRequeued, markRequeued } from "../utils/requeue.ts";
 import { hasOpenQuestion } from "../services/ask-question.ts";
 import { sessionFold, endFold, readFoldMarker, foldFromMarker, type ActiveFold } from "../services/fold-marker.ts";
-import { startLimit, resolveResetAt } from "../services/limit-marker.ts";
+import { startLimit, endLimit, resolveResetAt } from "../services/limit-marker.ts";
 import { droppedSpan } from "../utils/transcript-locate.ts";
 import { isLimitKind, type CompactBoundary, type ApiErrorEvent } from "../utils/context-usage.ts";
 import { remember } from "../memory/long-term.ts";
@@ -305,6 +305,26 @@ export class StatusManager {
    * a little late, and a limit dropped is a session called hung.
    */
   private readonly capturedApiErrors = new Set<string>();
+  /**
+   * When this channel last wrote a limit marker, or null when it has not.
+   *
+   * The gate on `noteSessionAnswered`, and it is what keeps that path free. A
+   * real answer arrives in the transcript every few seconds for as long as a
+   * session is working; asking the database each time whether a limit needs
+   * clearing would be a query per turn to answer a question whose answer is
+   * "no" for weeks at a stretch. This is the cheap, in-memory "there is
+   * something to clear".
+   *
+   * In process, and deliberately not the whole fix. A marker written before a
+   * restart is not visible here at all — that one is cleared by
+   * `sessions/manager.ts` when the session re-registers, which is the only
+   * moment anything knows the process is new. The two halves cover different
+   * failures: this one covers a session that starts answering again without
+   * being restarted (a provider switched under it, or an account that recovered
+   * before the stated time), the other covers a marker inherited across a
+   * bounce.
+   */
+  private limitedSince: number | null = null;
   private readonly TYPING_TIMEOUT_MS = 30_000;
   private readonly RESPONSE_GUARD_MS = 5 * 60_000; // 5 min
   /**
@@ -1777,8 +1797,50 @@ export class StatusManager {
     }).catch((err) => {
       channelLogger.warn({ err, sessionId }, "limit: could not write the marker");
     });
+    this.limitedSince = startedAt;
 
     channelLogger.warn({ sessionId, kind: error.kind, resetsAt, text: error.text }, "session is under an API limit");
+  }
+
+  /**
+   * The session answered, so whatever limit it was under is over.
+   *
+   * The other end of `noteApiError`, and the thing flow 061 shipped without.
+   * `startLimit` had no counterpart: the marker came off only when its own
+   * expiry arrived, and that expiry is the reset time the *error text* stated —
+   * a claim about the account, not about this session.
+   *
+   * The failure that closes, and it is silent from end to end: a weekly limit at
+   * 09:00 says `resets 2pm`. The operator switches the project's provider and
+   * the session answers again at 09:10. Nothing tells the marker, so the poller
+   * holds every queued message until 14:00 and the hung-session and stuck-queue
+   * detectors stay muted for the whole five hours — with no second alert,
+   * because the one alert this flow sends is sent once per event.
+   *
+   * `answeredAt` is the transcript entry's own timestamp, and the comparison
+   * against the marker's `startedAt` is what makes it safe to act on: an answer
+   * written *before* the error is the turn that failed, not the recovery from
+   * it, and both instants now come from the same file rather than one from a
+   * file and one from a clock.
+   *
+   * Public for `noteApiError`'s reason: the only other way in is to have a real
+   * session hit a real limit and then come back from it.
+   */
+  async noteSessionAnswered(answeredAt: number): Promise<void> {
+    const since = this.limitedSince;
+    if (since === null || answeredAt <= since) return;
+    // Cleared before the write, not after: a write that fails must not leave
+    // this armed to retry on every answer for the rest of the session's life.
+    // One lost clearing costs the marker its own expiry, which is where it was
+    // before this existed.
+    this.limitedSince = null;
+
+    const sessionId = this.ctx.sessionId();
+    if (sessionId === null) return;
+    await endLimit(this.ctx.sql, sessionId).catch((err) => {
+      channelLogger.warn({ err, sessionId }, "limit: could not clear the marker");
+    });
+    channelLogger.info({ sessionId, answeredAt }, "session answered again; limit marker cleared");
   }
 
   async startProgressMonitorForChat(chatId: string): Promise<void> {
@@ -1814,6 +1876,16 @@ export class StatusManager {
         onApiError: (error, path) => {
           void this.noteApiError(error, path).catch((err) => {
             channelLogger.warn({ err, path }, "limit: could not record the error");
+          });
+        },
+        // And the answer that says the limit is over is one more line still.
+        // The same tail and the same poll: a session under a limit produces no
+        // real assistant entry at all, so the first one after the marker was
+        // written is the session saying it can answer again — which nothing
+        // else in either process is in a position to observe.
+        onAnswer: (answeredAt) => {
+          void this.noteSessionAnswered(answeredAt).catch((err) => {
+            channelLogger.warn({ err }, "limit: could not clear the marker");
           });
         },
       });

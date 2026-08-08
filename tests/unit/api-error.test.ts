@@ -19,6 +19,7 @@ import {
   apiErrors,
   newestContextTokens,
   newestOutputTokens,
+  newestAnswerAt,
 } from "../../utils/context-usage.ts";
 
 /** The envelope as the CLI writes it, trimmed to what the parser reads. */
@@ -188,6 +189,56 @@ describe("the zeros a synthetic entry carries", () => {
   test("a transcript that is only an error measures nothing, rather than zero", () => {
     expect(newestContextTokens([errorLine])).toBeNull();
     expect(newestOutputTokens([errorLine])).toBeNull();
+  });
+});
+
+describe("newestAnswerAt — the evidence a limit is over", () => {
+  const at = "2026-08-08T09:10:00.000Z";
+
+  const real = (timestamp: string | null) =>
+    JSON.stringify({
+      type: "assistant",
+      uuid: "real-1",
+      ...(timestamp ? { timestamp } : {}),
+      message: { model: "claude-opus-5", content: [], usage: { input_tokens: 12, output_tokens: 4 } },
+    });
+  const synthetic = (timestamp: string) =>
+    JSON.stringify({
+      type: "assistant",
+      isApiErrorMessage: true,
+      uuid: "err-1",
+      timestamp,
+      message: {
+        model: "<synthetic>",
+        content: "You've hit your session limit · resets 5:30pm (UTC)",
+        usage: { input_tokens: 0, output_tokens: 0 },
+      },
+    });
+
+  test("a real answer is dated by the transcript, not by the reader", () => {
+    expect(newestAnswerAt([real(at)])).toBe(Date.parse(at));
+  });
+
+  test("the error entry the CLI manufactured is not an answer", () => {
+    // Its usage block is zeros because no call was made. Read as an answer it
+    // would clear the very marker it caused.
+    expect(newestAnswerAt([synthetic(at)])).toBeNull();
+  });
+
+  test("an entry with no usage is not an answer either", () => {
+    const toolResult = JSON.stringify({ type: "user", timestamp: at, message: { content: "42 lines" } });
+    expect(newestAnswerAt([toolResult])).toBeNull();
+  });
+
+  test("the newest one wins, the file being read forwards", () => {
+    const later = "2026-08-08T09:12:00.000Z";
+    expect(newestAnswerAt([real(at), real(later)])).toBe(Date.parse(later));
+  });
+
+  test("an answer the CLI wrote without a timestamp cannot be placed, so it is skipped", () => {
+    // Dating it to now would be the guess this function exists to stop making.
+    expect(newestAnswerAt([real(at), real(null)])).toBe(Date.parse(at));
+    expect(newestAnswerAt([real(null)])).toBeNull();
   });
 });
 

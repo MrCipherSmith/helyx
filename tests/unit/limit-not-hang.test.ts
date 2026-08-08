@@ -407,3 +407,112 @@ describe("the channel is what writes the marker", () => {
     expect(db.count("UPDATE sessions SET metadata")).toBe(0);
   });
 });
+
+describe("and the channel is what takes it off again", () => {
+  const cleanups: (() => void)[] = [];
+  afterEach(() => {
+    for (const c of cleanups.splice(0)) c();
+  });
+
+  async function channel(sessionId: number | null = 7) {
+    const { restore } = await installFakeTelegram();
+    cleanups.push(restore);
+    const db = new FakeSql();
+    const { StatusManager } = await import("../../channel/status.ts");
+    const status = new StatusManager({
+      sql: db.sql as unknown as StatusContext["sql"],
+      sessionId: () => sessionId,
+      sessionName: () => "helyx",
+      projectName: "helyx",
+      token: () => "fake-token",
+    });
+    return { status, db };
+  }
+
+  const error = (overrides: Record<string, unknown> = {}) => ({
+    kind: "session-limit" as const,
+    text: "You've hit your session limit · resets 5:30pm (UTC)",
+    resetsAtUtcMinutes: 17 * 60 + 30,
+    uuid: "err-1",
+    ...overrides,
+  });
+
+  test("an answer after the limit clears the marker", async () => {
+    // The failure this closes runs for five hours and says nothing. A weekly
+    // limit at 09:00 states `resets 2pm`; the operator switches the project's
+    // provider and the session answers again at 09:10. Nothing told the marker,
+    // so the poller held every queued message until 14:00 and both watchdogs
+    // stayed muted — with no second alert, because the alert is sent once per
+    // event.
+    const { status, db } = await channel();
+    await status.noteApiError(error(), "/p.jsonl");
+    db.clear();
+
+    await status.noteSessionAnswered(Date.now() + 60_000);
+
+    const [update] = db.matching("UPDATE sessions SET metadata");
+    expect(update).toBeDefined();
+    expect(update!.text).toContain("- 'limit'");
+    expect(update!.values).toEqual([7]);
+  });
+
+  test("an answer written before the error is the turn that failed, not the recovery", async () => {
+    // Both instants come out of the same file now, so they are comparable —
+    // and the lines of one poll can carry the answer that preceded the error.
+    const { status, db } = await channel();
+    await status.noteApiError(error(), "/p.jsonl");
+    db.clear();
+
+    await status.noteSessionAnswered(Date.now() - 10_000);
+
+    expect(db.count("UPDATE sessions SET metadata")).toBe(0);
+  });
+
+  test("a session that never hit a limit is not asked about on every answer", async () => {
+    // A real answer arrives every few seconds for as long as a session works.
+    // A query per one of them, to answer "no" for weeks at a stretch, is the
+    // cost this gate exists to avoid.
+    const { status, db } = await channel();
+
+    for (let i = 0; i < 20; i++) await status.noteSessionAnswered(Date.now() + i * 1_000);
+
+    expect(db.count("UPDATE sessions")).toBe(0);
+  });
+
+  test("and it is cleared once, not on every answer after it", async () => {
+    const { status, db } = await channel();
+    await status.noteApiError(error(), "/p.jsonl");
+    db.clear();
+
+    await status.noteSessionAnswered(Date.now() + 60_000);
+    await status.noteSessionAnswered(Date.now() + 120_000);
+    await status.noteSessionAnswered(Date.now() + 180_000);
+
+    expect(db.count("UPDATE sessions SET metadata")).toBe(1);
+  });
+});
+
+describe("a marker does not survive the restart the operator reaches for", () => {
+  test("remote registration drops the limit key and keeps the fold", async () => {
+    // `sessions/manager.ts` is the one statement in a position to say the
+    // marker is gone: every project session is a remote session, so this
+    // conflict branch is what `bun cli.ts bounce` and the restart button both
+    // run through. It left `metadata` untouched, so a session restarted at
+    // 09:10 under a marker reading `resets 2pm` came back able to answer and
+    // was held by the poller until 14:00.
+    //
+    // Read out of the source for `migrations-apply.test.ts`'s reason: the
+    // statement takes its `sql` from a module import, so no fixture can stand
+    // in front of it, and the property is entirely in the text.
+    const source = await Bun.file("sessions/manager.ts").text();
+    const conflict = source.slice(source.indexOf("ON CONFLICT (project_id) WHERE source = 'remote'"));
+    const clause = conflict.slice(0, conflict.indexOf("RETURNING"));
+
+    expect(clause).toContain("- 'limit'");
+    // The fold marker has to keep working beside it: `lastDurationMs` is how
+    // the next fold's grace window is sized, and a fold's own `startedAt`
+    // expires in four and a half minutes rather than five hours.
+    expect(clause).not.toContain("- 'fold'");
+    expect(clause).not.toMatch(/metadata\s*=\s*'\{\}'/);
+  });
+});

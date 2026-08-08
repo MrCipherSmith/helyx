@@ -325,6 +325,76 @@ describe("LineBuffer", () => {
   });
 });
 
+describe("the answer the poll already reads", () => {
+  /** A real answer, dated as Claude Code dates it. */
+  const answer = (timestamp: string) => ({
+    type: "assistant",
+    cwd: PROJECT,
+    timestamp,
+    message: { model: "claude-opus-5", content: [{ type: "text", text: "back" }], usage: { input_tokens: 9, output_tokens: 2 } },
+  });
+
+  test("it reaches the callback with the transcript's own timestamp", async () => {
+    // The limit marker had no way off: its expiry is the reset time the error
+    // text stated, which is a claim about the account and not about this
+    // session. An answer is the session saying it can answer again, and it is
+    // one more kind of line this poll is already reading.
+    const at = "2026-08-08T09:10:00.000Z";
+    const path = writeTranscript("slug", "a.jsonl", PROJECT, [answer(at)]);
+    const seen: Array<{ at: number; path: string }> = [];
+    const session = new TranscriptSession(PROJECT, {
+      root,
+      fromStart: true,
+      onAnswer: (answeredAt, transcriptPath) => seen.push({ at: answeredAt, path: transcriptPath }),
+    });
+
+    await session.poll();
+
+    expect(seen).toEqual([{ at: Date.parse(at), path }]);
+  });
+
+  test("one poll says it once, however many answers it read", async () => {
+    // The caller turns this into a database write, and only the newest decides
+    // anything.
+    const path = writeTranscript("slug", "a.jsonl", PROJECT, [
+      answer("2026-08-08T09:10:00.000Z"),
+      answer("2026-08-08T09:11:00.000Z"),
+    ]);
+    expect(path).toContain("a.jsonl");
+    const seen: number[] = [];
+    const session = new TranscriptSession(PROJECT, { root, fromStart: true, onAnswer: (at) => seen.push(at) });
+
+    await session.poll();
+
+    expect(seen).toEqual([Date.parse("2026-08-08T09:11:00.000Z")]);
+  });
+
+  test("a turn with no usage in it says nothing", async () => {
+    writeTranscript("slug", "a.jsonl", PROJECT, [
+      { type: "user", cwd: PROJECT, timestamp: "2026-08-08T09:10:00.000Z", message: { content: "hello" } },
+    ]);
+    let calls = 0;
+    const session = new TranscriptSession(PROJECT, { root, fromStart: true, onAnswer: () => { calls++; } });
+
+    await session.poll();
+
+    expect(calls).toBe(0);
+  });
+
+  test("a callback that throws does not cost the poll its lines", async () => {
+    // The tail's read position has already moved by the time this runs — the
+    // same belt `onCompactBoundary` and `onApiError` wear, for the same reason.
+    writeTranscript("slug", "a.jsonl", PROJECT, [answer("2026-08-08T09:10:00.000Z")]);
+    const session = new TranscriptSession(PROJECT, {
+      root,
+      fromStart: true,
+      onAnswer: () => { throw new Error("postgres is gone"); },
+    });
+
+    expect(await session.poll()).not.toBeNull();
+  });
+});
+
 describe("TranscriptSession", () => {
   test("nothing to attach to", async () => {
     const session = new TranscriptSession(PROJECT, { root });

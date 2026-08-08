@@ -15,6 +15,7 @@ import {
   resolveResetAt,
   sessionLimit,
   startLimit,
+  endLimit,
   limitedSessions,
   limitLabel,
   resetLabel,
@@ -154,6 +155,22 @@ describe("what crosses the process boundary", () => {
       "err-1",
       11,
     ]);
+  });
+
+  test("clearing it removes the key and leaves the fold alone", async () => {
+    // `startLimit` shipped without a counterpart, so the marker came off only
+    // when its own expiry arrived — and that expiry is the reset time the error
+    // text stated, which is a claim about the account rather than about this
+    // session. The key is removed rather than emptied so `limitedSessions`,
+    // which narrows on `metadata ? 'limit'`, stops returning the session at all.
+    const db = new FakeSql();
+    await endLimit(db.sql as never, 11);
+
+    const [update] = db.matching("UPDATE sessions SET metadata");
+    expect(update).toBeDefined();
+    expect(update!.text).toContain("- 'limit'");
+    expect(update!.text).not.toContain("'fold'");
+    expect(update!.values).toEqual([11]);
   });
 
   test("the reader asks one row and answers with the live limit", async () => {

@@ -201,6 +201,55 @@ export function contextTokens(entry: TranscriptEntry | null | undefined): number
 }
 
 /**
+ * When Claude Code says this entry happened, in epoch milliseconds, or null.
+ *
+ * Every transcript line carries a `timestamp` written by the CLI at the moment
+ * it appended the line. That is a different instant from when this process read
+ * it, and the difference is the whole reason this exists: a transcript is a file
+ * that can be re-read from the beginning — `TranscriptSession.reresolve` does
+ * exactly that when it attaches to a new one — so "now" is a lie about any line
+ * that is not brand new.
+ */
+export function entryTimestamp(entry: TranscriptEntry | null | undefined): number | null {
+  const raw = entry?.timestamp;
+  if (typeof raw !== "string") return null;
+  const at = Date.parse(raw);
+  return Number.isNaN(at) ? null : at;
+}
+
+/**
+ * When the newest real answer in these lines was written, or null.
+ *
+ * "Real" is what `contextTokens` already means by returning a number: an entry
+ * the model actually answered, carrying usage, and not one of the synthetic
+ * error entries the CLI manufactures with a `usage` block of zeros. A session
+ * that produced one of those is a session the API is talking to.
+ *
+ * Which is the evidence a limit is over. The marker cannot expire on its own
+ * before its stated reset time, and that time is a claim about the account
+ * rather than about this session — an operator who switches provider makes it
+ * wrong by five hours. An answer makes it wrong observably, in the same file
+ * the limit was read out of.
+ *
+ * Backwards, and one answer per batch rather than one per entry: the caller
+ * turns this into a database write, and the newest is the only one that decides
+ * anything.
+ */
+export function newestAnswerAt(lines: readonly string[]): number | null {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const entry = parseEntry(lines[i]!);
+    if (contextTokens(entry) === null) continue;
+    // An answer the CLI wrote without a timestamp cannot be placed in time, and
+    // an unplaceable answer is not evidence about a marker written at a stated
+    // instant. Skipped rather than dated to now, which would be the same guess
+    // this function exists to stop making.
+    const at = entryTimestamp(entry);
+    if (at !== null) return at;
+  }
+  return null;
+}
+
+/**
  * The newest context measurement in these lines, or null.
  *
  * Scanned backwards, because the answer is the most recent one and most lines

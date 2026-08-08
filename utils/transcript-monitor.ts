@@ -20,7 +20,7 @@
 
 import { resolveTranscript, TranscriptTail, parseEntry, claudeConfigRoot } from "./transcript-locate.ts";
 import { renderEntry, outputTokens, renderTokenLine } from "./transcript-events.ts";
-import { compactBoundaries, apiErrors, type CompactBoundary, type ApiErrorEvent } from "./context-usage.ts";
+import { compactBoundaries, apiErrors, newestAnswerAt, type CompactBoundary, type ApiErrorEvent } from "./context-usage.ts";
 import { findSubagents, selectAgents, markLines, MAX_TRACKED_AGENTS, type FileAccess, type SubagentFile } from "./subagent-transcripts.ts";
 import { readdir, stat, readFile } from "fs/promises";
 
@@ -159,6 +159,22 @@ export interface TranscriptSessionOptions {
    * inside the parent's turn; the parent will report it as its own.
    */
   onApiError?: (error: ApiErrorEvent, transcriptPath: string) => void;
+  /**
+   * The session answered: the API is talking to it again.
+   *
+   * The mirror of `onApiError`, and it exists because the limit marker that one
+   * writes had no way back off. Its expiry is the reset time the error text
+   * stated, which is a claim about the account — an operator who switches
+   * provider makes it wrong by hours, and the marker goes on holding the queue
+   * and muting the watchdogs for all of them.
+   *
+   * Called at most once per poll, with the transcript's own timestamp for the
+   * newest real answer in the lines just read. Once per poll rather than once
+   * per entry because the caller turns it into a database write and only the
+   * newest decides anything; the entry's timestamp rather than the read time
+   * for `noteApiError`'s reason — a transcript can be replayed from the start.
+   */
+  onAnswer?: (answeredAt: number, transcriptPath: string) => void;
 }
 
 /**
@@ -314,6 +330,27 @@ export class TranscriptSession {
     }
   }
 
+  /**
+   * Tell the caller the session answered, if anything in these lines did.
+   *
+   * Third walk over the same lines, and separate from the two above for their
+   * reason: the callbacks are independent and a throw out of any of them must
+   * not cost the others their lines. Same belt, same measured cause — the
+   * tail's read position has already moved past these lines by the time this
+   * runs.
+   */
+  private announceAnswer(lines: readonly string[]): void {
+    const notify = this.options.onAnswer;
+    const path = this.tail?.path;
+    if (!notify || !path || lines.length === 0) return;
+    try {
+      const at = newestAnswerAt(lines);
+      if (at !== null) notify(at, path);
+    } catch {
+      /* the caller's problem to log; losing this poll's lines is not the price */
+    }
+  }
+
   /** The transcript currently being read, or null before the first resolve. */
   get path(): string | null {
     return this.tail?.path ?? null;
@@ -356,6 +393,7 @@ export class TranscriptSession {
     const lines = await this.tail!.read();
     this.announceBoundaries(lines);
     this.announceApiErrors(lines);
+    this.announceAnswer(lines);
     // Asked every poll, including the ones where the parent said nothing —
     // which is precisely what a fan-out looks like from here.
     const fromAgents = await this.pollAgents();

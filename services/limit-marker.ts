@@ -230,6 +230,39 @@ export async function startLimit(sql: postgres.Sql, sessionId: number, marker: L
 }
 
 /**
+ * The limit is over: the session just answered.
+ *
+ * Raised in review, and the half that was missing. `fold-marker.ts` has an
+ * `endFold` called the moment the `compact_boundary` record arrives; this had
+ * only `startLimit`, so nothing but the marker's own expiry ever took it back —
+ * and that expiry is the *stated* reset time, which is a claim about the account
+ * and not about this session.
+ *
+ * The failure that closes: a weekly limit at 09:00 says `resets 2pm`. The
+ * operator does the sensible thing and switches the project's provider, so the
+ * session can answer again at 09:10 — and the marker, which knows nothing about
+ * providers, holds the queue until 14:00 while the hung-session and stuck-queue
+ * detectors stay muted. Five hours of messages sitting invisible with no second
+ * alert, because the one alert this flow sends is sent once per event.
+ *
+ * The key is removed rather than emptied, unlike `endFold` — which keeps `fold`
+ * alive to carry `lastDurationMs` into the next fold's grace window. A limit has
+ * no equivalent to carry, and `limitedSessions` narrows on `metadata ? 'limit'`,
+ * so removing the key also takes the session out of the supervisor's scan
+ * instead of leaving it to be read and discarded once a minute for ever.
+ *
+ * The `-` operator touches that one key: a session folding and limited at once
+ * keeps its fold, which is the property `startLimit` is built around too.
+ */
+export async function endLimit(sql: postgres.Sql, sessionId: number): Promise<void> {
+  await sql`
+    UPDATE sessions
+    SET metadata = COALESCE(metadata, '{}'::jsonb) - 'limit'
+    WHERE id = ${sessionId}
+  `;
+}
+
+/**
  * How often the poller re-asks whether its session is under a limit.
  *
  * The poller's loop runs every couple of seconds and its whole job is to be
@@ -307,9 +340,10 @@ export interface LimitedSession {
  *
  * `metadata ? 'limit'` narrows in the database rather than here: the alternative
  * is reading every active session's metadata once a minute to find the nought or
- * one of them that has ever hit a limit. The key is only ever added, never
- * removed — a session that hit a limit last week still has it — so the marker's
- * own expiry does the rest of the filtering, in `limitFromMarker`.
+ * one of them that has ever hit a limit. The key is removed by `endLimit` and by
+ * remote registration, but neither is guaranteed to have run — a marker written
+ * by a CLI that then died is nobody's to clear — so the marker's own expiry does
+ * the rest of the filtering, in `limitFromMarker`.
  */
 export async function limitedSessions(
   sql: postgres.Sql,
