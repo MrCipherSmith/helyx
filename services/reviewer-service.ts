@@ -101,6 +101,9 @@ export const REVIEW_MAX_TOKENS = 32_000;
  */
 export const REVIEW_MAX_TOKENS_FALLBACK = 4_096;
 
+/** The model the Claude CLI reviewer runs on when none is configured. */
+export const CLAUDE_DEFAULT_MODEL = "claude-opus-5";
+
 /** An error body that reads like the model rejecting the size of the ask. */
 export function isBudgetRejection(body: string): boolean {
   return /max_tokens|max tokens|maximum context|context length|too large|output limit/i.test(body);
@@ -224,13 +227,19 @@ export function normalizeProviderBaseUrl(baseUrl: string): string {
  * Keyed by host so a stored URL that differs in path or trailing slash still
  * matches, and falling back to the old behaviour for a vendor nobody has taught
  * this map about — a guess is still better than refusing to call.
+ *
+ * A `Map`, not an object literal: indexed by a host read out of a database row,
+ * a plain object answers `constructor` and `__proto__` with something truthy
+ * and non-string, producing a garbage URL flagged `known: true` — the one case
+ * where the "this was a guess" flag would be actively lying.
  */
-const OPENAI_ROUTE_BY_HOST: Record<string, string> = {
-  "openrouter.ai": "/api/v1/chat/completions",
-  "api.z.ai": "/api/paas/v4/chat/completions",
-  "api.moonshot.ai": "/v1/chat/completions",
-  "api.deepseek.com": "/chat/completions",
-};
+const OPENAI_ROUTE_BY_HOST = new Map<string, string>([
+  ["openrouter.ai", "/api/v1/chat/completions"],
+  ["api.z.ai", "/api/paas/v4/chat/completions"],
+  ["api.moonshot.ai", "/v1/chat/completions"],
+  ["api.moonshot.cn", "/v1/chat/completions"],
+  ["api.deepseek.com", "/chat/completions"],
+]);
 
 /**
  * The full URL to POST a review to, and whether it came from the map.
@@ -247,7 +256,7 @@ export function openAiRouteFor(baseUrl: string): { url: string; known: boolean }
     // Not a URL at all. The fallback below produces the same string the
     // previous code did, so a malformed row fails the way it used to.
   }
-  const mapped = OPENAI_ROUTE_BY_HOST[host];
+  const mapped = OPENAI_ROUTE_BY_HOST.get(host);
   if (mapped) {
     const origin = new URL(baseUrl).origin;
     return { url: `${origin}${mapped}`, known: true };
@@ -505,9 +514,27 @@ export async function callCodexReview(
  * — an empty file is not an empty object, and the reviewer would have failed
  * before it was asked anything, the way the Codex reviewer did for months.
  *
- * `--permission-mode plan` keeps a reviewer to reading. It is asked for an
- * opinion about a diff, and this is the one reviewer that runs with the
- * operator's own credentials on the operator's own machine.
+ * `--settings '{}'` drops the user-level settings, and with them the hooks the
+ * operator has installed for their own work. A reviewer is not doing the
+ * operator's work.
+ *
+ * There is deliberately **no** `--permission-mode plan` here. It was the
+ * obvious way to say "this one only reads", and the first review run through
+ * this code path reported what it actually does: plan mode injects Claude
+ * Code's own plan workflow into the system prompt — write a plan file, launch
+ * Explore subagents, end the turn with `ExitPlanMode` or `AskUserQuestion` —
+ * which contradicts every clause of `CLAUDE_DIRECTIVE` below. A reviewer that
+ * complied would answer with a plan-approval request, exit 0 with non-empty
+ * stdout, and be filed as a successful review. That is precisely the failure
+ * `CODEX_DIRECTIVE` exists to prevent, arriving through the flag meant to make
+ * the reviewer safer. Writes are denied explicitly instead.
+ *
+ * Known and not fixed here: the *project* `.claude/settings.json` still
+ * applies, so this repository's `keryx security check-input` hook runs on the
+ * review prompt. It degrades the prompt rather than breaking the run — the
+ * review that found the plan-mode defect was produced with that hook firing —
+ * but it is a channel from the host configuration into the reviewer, and it is
+ * open.
  */
 export const CLAUDE_EMPTY_MCP_CONFIG = '{"mcpServers":{}}';
 
@@ -515,13 +542,21 @@ export function claudeArgv(model: string, prompt: string): string[] {
   return [
     "claude",
     "-p",
+    // Variadic, and placed before the flags that take one value each: given
+    // last, it swallows the prompt as further tool names. Measured — the CLI
+    // answered "Permission deny rule \"single\" matches no known tool" and then
+    // refused to run for want of a prompt.
+    "--disallowed-tools",
+    "Edit",
+    "Write",
+    "NotebookEdit",
     "--model",
     model,
     "--strict-mcp-config",
     "--mcp-config",
     CLAUDE_EMPTY_MCP_CONFIG,
-    "--permission-mode",
-    "plan",
+    "--settings",
+    "{}",
     prompt,
   ];
 }
@@ -547,6 +582,13 @@ export function claudeArgv(model: string, prompt: string): string[] {
  * still working, the parent's next tool call never returned, and three operator
  * messages sat in a queue for 22 minutes routed `mode:"disconnected"`. A
  * reviewer runs on every review, so this would not have been a one-off.
+ *
+ * `CLAUDE_CONFIG_DIR` and the `CLAUDE_CODE_*` family — a settings file can
+ * carry `env.ANTHROPIC_BASE_URL` of its own, which is how `claude-code-router`
+ * hijacked every session on this machine once already. Stripping the variables
+ * while leaving a pointer to a config that re-sets them would route the
+ * "independent" review back through the third-party provider *and still label
+ * the report Claude*, which is the one failure this list exists to prevent.
  */
 export const CLAUDE_STRIPPED_ENV = [
   "ANTHROPIC_BASE_URL",
@@ -554,12 +596,22 @@ export const CLAUDE_STRIPPED_ENV = [
   "ANTHROPIC_API_KEY",
   "ANTHROPIC_MODEL",
   "CHANNEL_SOURCE",
+  "CLAUDE_CONFIG_DIR",
+  "CLAUDECODE",
 ] as const;
 
-/** The environment for the reviewer CLI: the caller's, minus the above. */
+/**
+ * The environment for the reviewer CLI: the caller's, minus the above.
+ *
+ * The `CLAUDE_CODE_*` prefix is swept rather than listed: the list would be a
+ * table, and this repository has been bitten by tables that fell behind.
+ */
 export function claudeEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...base, FORCE_COLOR: "0" };
   for (const key of CLAUDE_STRIPPED_ENV) delete env[key];
+  for (const key of Object.keys(env)) {
+    if (key.startsWith("CLAUDE_CODE_")) delete env[key];
+  }
   return env;
 }
 
@@ -598,10 +650,13 @@ export function classifyClaudeFailure(exitCode: number, stdout: string, stderr: 
   // reviewer's opinion, and counted by `pickMode` as a reason not to fall back
   // to reviewing the change ourselves.
   //
-  // Bounded by length so it stays a refusal and not a filter on reviews: the
-  // whole of that message is under a line, while a review that discusses
-  // authentication is not.
-  if (out.length < 200 && /not logged in|please run \/login|invalid api key/i.test(out)) {
+  // Bounded by length *and* anchored to the start, so it stays a refusal and
+  // not a filter on reviews. Unanchored it was a filter: a terse reviewer
+  // writing "The invalid api key path is unhandled." is 38 characters, matches,
+  // and would be discarded as an auth failure — and the diff under review
+  // contains the CLI's own refusal text four times, which is exactly the sort
+  // of string a reviewer quotes back.
+  if (out.length < 200 && /^(not logged in|please run \/login|invalid api key)/i.test(out)) {
     return "auth: the Claude CLI is not logged in for this environment";
   }
 
@@ -657,8 +712,6 @@ const spawnClaude: SpawnClaude = async (argv, env) => {
   }
 };
 
-export const CLAUDE_DEFAULT_MODEL = "claude-opus-5";
-
 export async function callClaudeReview(
   reviewer: Reviewer,
   prompt: string,
@@ -674,7 +727,17 @@ export async function callClaudeReview(
     if (failure) return fail(failure);
     return { reviewerId: reviewer.id, label: "Claude", model, ok: true, content: out };
   } catch (err) {
-    return fail(String(err).slice(0, 200));
+    const text = String(err);
+    // The bot image installs git, curl and ca-certificates and no CLIs, so a
+    // review triggered from Telegram rather than from the host reaches this.
+    // Said plainly, because "ENOENT" in a reviewer report reads as a bug in the
+    // reviewer rather than as "this reviewer does not exist in here". The
+    // subscription login lives in the operator's home directory, so the fix is
+    // not to add the binary to the image.
+    if (/ENOENT|not found|No such file/i.test(text)) {
+      return fail("unavailable: the claude CLI is not installed in this environment (host-only reviewer)");
+    }
+    return fail(text.slice(0, 200));
   }
 }
 
@@ -690,13 +753,25 @@ export async function callProviderReview(
   const prov = await getProvider(reviewer.providerId ?? -1);
   if (!prov) return { reviewerId: reviewer.id, label: `provider#${reviewer.providerId}`, model: reviewer.model, ok: false, error: "unknown provider" };
   const label = prov.name;
-  const fail = (error: string): ReviewerReport => ({ reviewerId: reviewer.id, label, model: reviewer.model, ok: false, error });
 
   // The route the vendor actually has, rather than one derived by chopping a
   // suffix off the Anthropic URL. `known` travels to the failure message: when
   // the fallback answered, the operator needs to know it was a guess.
   const route = openAiRouteFor(prov.base_url);
-  const where = (error: string): string => (route.known ? error : `${error} (unmapped vendor ${prov.base_url})`);
+
+  // The vendor hint is applied in `fail` rather than at the call sites that
+  // seemed to need it. Raised in review, and correctly: it had been put on
+  // `http <status>` only, while a wrong fallback route is at least as likely to
+  // return an HTML error page (`invalid json`) or refuse the connection
+  // (`network: …`) — the two messages that give the next reader nothing at all
+  // to go on.
+  const fail = (error: string): ReviewerReport => ({
+    reviewerId: reviewer.id,
+    label,
+    model: reviewer.model,
+    ok: false,
+    error: route.known ? error : `${error} (unmapped vendor ${prov.base_url})`,
+  });
 
   const ask = async (maxTokens: number): Promise<{ status: number; body: string } | string> => {
     let res: Response;
@@ -749,7 +824,7 @@ export async function callProviderReview(
 
   const body = answer.body;
   if (answer.status < 200 || answer.status >= 300) {
-    return isProviderLimitError(answer.status, body) ? fail("limit/balance") : fail(where(`http ${answer.status}`));
+    return isProviderLimitError(answer.status, body) ? fail("limit/balance") : fail(`http ${answer.status}`);
   }
   // A 2xx carrying an error envelope. Checked before the body is read for
   // content, because the content of such a body is absent by construction and
@@ -758,7 +833,13 @@ export async function callProviderReview(
   // reviewer that read as broken rather than as misrouted.
   const announced = providerErrorInBody(body);
   if (announced) {
-    return isProviderLimitError(answer.status, announced) ? fail("limit/balance") : fail(where(announced));
+    // Classified against the whole body, displayed from `announced`. The
+    // machine-readable half of an OpenAI error envelope lives in siblings of
+    // `message` — `"type":"insufficient_quota"`, `"code":"billing_hard_limit_reached"`
+    // — so classifying the extracted sentence alone reports a spent quota as a
+    // generic error, and `failureHidesFromProbe` then leaves the reviewer
+    // marked available.
+    return isProviderLimitError(answer.status, body) ? fail("limit/balance") : fail(announced);
   }
   try {
     const data = JSON.parse(body) as {
@@ -1071,12 +1152,20 @@ export async function getReviewerStatuses(): Promise<ReviewerStatus[]> {
       // from. `claude --version` would prove the binary exists and nothing
       // about the login, which is precisely the green tick this file's
       // `probed` field was added to stop telling.
+      //
+      // Because there is no probe, a failed last run is the *only* evidence
+      // there is, and it decides. The Codex branch above may keep a reviewer
+      // green through a transient failure because a live probe disagrees with
+      // it; here nothing disagrees with it. Raised in review: the borrowed
+      // expression left `available: true` next to a detail line reading
+      // "последний прогон не удался" — the green tick meaning "nobody asked"
+      // that `probed` was added to abolish.
       const last = lastRun.get(r.id);
       out.push({
         id: r.id,
         label: "Claude",
         model: r.model,
-        available: !last || last.ok || !failureHidesFromProbe(last.error),
+        available: last ? last.ok : true,
         probed: Boolean(last),
         detail: last ? (last.ok ? "последний прогон: ок" : (last.error ?? "последний прогон не удался")) : "не проверялся",
       });

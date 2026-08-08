@@ -99,8 +99,11 @@ export async function handleReviewersAdd(ctx: Context): Promise<void> {
     return;
   }
 
+  // Underscored, because that is what this handler parses. The printed form
+  // used the spaced one, so an operator who typed back what they were shown
+  // landed on this same usage text.
   await ctx.reply(
-    "Usage:\n  /reviewers add codex [model]\n  /reviewers add claude [model]\n  /reviewers add provider <name|id> <model>",
+    "Usage:\n  /reviewers_add codex [model]\n  /reviewers_add claude [model]\n  /reviewers_add provider <name|id> <model>",
   );
 }
 

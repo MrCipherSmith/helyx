@@ -71,7 +71,31 @@ describe("claudeArgv", () => {
   });
 
   test("a reviewer is not given permission to change anything", () => {
-    expect(claudeArgv("m", "p")[claudeArgv("m", "p").indexOf("--permission-mode") + 1]).toBe("plan");
+    const argv = claudeArgv("m", "p");
+    expect(argv).toContain("--disallowed-tools");
+    for (const tool of ["Edit", "Write", "NotebookEdit"]) expect(argv).toContain(tool);
+  });
+
+  test("plan mode is not used — it would replace the review with a plan", () => {
+    // Measured through this very code path: plan mode injects Claude Code's
+    // plan workflow (write a plan file, launch Explore agents, end with
+    // ExitPlanMode) and contradicts every clause of CLAUDE_DIRECTIVE. The
+    // answer would be a plan-approval request filed as a successful review.
+    expect(claudeArgv("m", "p")).not.toContain("plan");
+  });
+
+  test("the variadic tool list does not swallow the prompt", () => {
+    // The CLI takes --disallowed-tools variadically: given last, it reads the
+    // prompt's words as tool names and then refuses to run for want of a
+    // prompt. So it comes before the flags that take one value each.
+    const argv = claudeArgv("m", "the prompt");
+    expect(argv.at(-1)).toBe("the prompt");
+    expect(argv.indexOf("--disallowed-tools")).toBeLessThan(argv.indexOf("--model"));
+  });
+
+  test("the operator's own hooks and settings are not loaded", () => {
+    const argv = claudeArgv("m", "p");
+    expect(JSON.parse(argv[argv.indexOf("--settings") + 1])).toEqual({});
   });
 });
 
@@ -102,6 +126,17 @@ describe("claudeEnv", () => {
     expect(env.ANTHROPIC_API_KEY).toBeUndefined();
     expect(env.ANTHROPIC_MODEL).toBeUndefined();
     expect(env.HOME).toBe("/home/altsay");
+  });
+
+  test("clears the pointers that could re-set what was just cleared", () => {
+    // A settings file can carry env.ANTHROPIC_BASE_URL of its own — this is how
+    // claude-code-router hijacked every session on this machine once. Stripping
+    // the variables and leaving the pointer routes the "independent" review
+    // back through the third-party provider, still labelled Claude.
+    const env = claudeEnv({ CLAUDE_CONFIG_DIR: "/somewhere", CLAUDE_CODE_ENTRYPOINT: "cli", CLAUDECODE: "1" });
+    expect(env.CLAUDE_CONFIG_DIR).toBeUndefined();
+    expect(env.CLAUDE_CODE_ENTRYPOINT).toBeUndefined();
+    expect(env.CLAUDECODE).toBeUndefined();
   });
 
   test("does not mutate the environment it was given", () => {
@@ -140,6 +175,13 @@ describe("classifyClaudeFailure", () => {
 
   test("exit 0 with nothing said is not silently a success", () => {
     expect(classifyClaudeFailure(0, "", "")).toBe("empty output");
+  });
+
+  test("a short review that merely mentions an api key is not eaten", () => {
+    // 38 characters, and under the unanchored guard it was discarded as an auth
+    // failure and never reached the operator. The diff under review contains
+    // the CLI's refusal text four times; reviewers quote what they cite.
+    expect(classifyClaudeFailure(0, "The invalid api key path is unhandled.", "")).toBeNull();
   });
 });
 
@@ -213,6 +255,18 @@ describe("openAiRouteFor", () => {
     expect(route.url).toBe("https://api.example.com/chat/completions");
     expect(route.known).toBe(false);
   });
+
+  test("a host that names an Object.prototype member is not a known route", () => {
+    // A plain object indexed by a host read from a database row answers
+    // `constructor` with something truthy and non-string, producing a garbage
+    // URL flagged `known: true` — the one case where the "this was a guess"
+    // flag would be actively lying.
+    for (const host of ["constructor", "__proto__", "toString", "valueOf"]) {
+      const route = openAiRouteFor(`https://${host}/anthropic`);
+      expect(route.known).toBe(false);
+      expect(route.url).toBe(`https://${host}/chat/completions`);
+    }
+  });
 });
 
 describe("providerErrorInBody", () => {
@@ -239,6 +293,12 @@ describe("providerErrorInBody", () => {
 
   test("a body that is not JSON is not an error message", () => {
     expect(providerErrorInBody("<html>502 Bad Gateway</html>")).toBeNull();
+  });
+
+  test("a null error field announces nothing", () => {
+    // Correct today by falsiness alone, which is the sort of thing that stops
+    // being true when someone adds an `"error" in obj` check.
+    expect(providerErrorInBody(JSON.stringify({ error: null, choices: [] }))).toBeNull();
   });
 });
 
@@ -288,6 +348,23 @@ describe("callProviderReview against the routes as they really are", () => {
 
   test("a 200 announcing no balance is still a balance problem", async () => {
     http.program(/chat\/completions/, { json: { error: { message: "Insufficient balance" } } });
+    const report = await callProviderReview(GLM, "review", http.fetch, provider());
+    expect(report.error).toBe("limit/balance");
+  });
+
+  test("a spent quota is recognised from the envelope, not only from its prose", async () => {
+    // The machine-readable half lives in siblings of `message`. Classifying the
+    // extracted sentence alone reported this as a generic error, which then
+    // failed `failureHidesFromProbe` too and left the reviewer marked green.
+    http.program(/chat\/completions/, {
+      json: {
+        error: {
+          type: "insufficient_quota",
+          code: "billing_hard_limit_reached",
+          message: "You exceeded your current plan.",
+        },
+      },
+    });
     const report = await callProviderReview(GLM, "review", http.fetch, provider());
     expect(report.error).toBe("limit/balance");
   });
