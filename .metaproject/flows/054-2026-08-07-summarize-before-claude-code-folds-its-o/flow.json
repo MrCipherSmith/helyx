@@ -3,9 +3,9 @@
   "id": "054",
   "slug": "summarize-before-claude-code-folds-its-o",
   "title": "Summarize before Claude Code folds its own context",
-  "status": "in-progress",
+  "status": "implemented",
   "createdAt": "2026-08-07T16:34:52.360Z",
-  "updatedAt": "2026-08-07T20:20:55.428Z",
+  "updatedAt": "2026-08-07T20:21:39.321Z",
   "source": {
     "type": "description",
     "ref": null
@@ -50,7 +50,7 @@
     }
   },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/100"
   },
   "tasks": [
     {
@@ -192,6 +192,11 @@
       "at": "2026-08-07T20:20:55.428Z",
       "event": "ac-confirmed",
       "detail": "AC9: typecheck clean, lint 0 errors, bun test tests/unit/ 1960 pass 0 fail"
+    },
+    {
+      "at": "2026-08-07T20:21:39.321Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/100 (warning: PR is not a draft)"
     }
   ]
 }

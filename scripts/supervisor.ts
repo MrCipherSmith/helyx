@@ -34,7 +34,12 @@ import { getReviewerStatuses, type ReviewerStatus } from "../services/reviewer-s
 import { persistReviewRun, scheduledReviewDecision, type ScheduledReviewState } from "../services/review-artifacts.ts";
 import { runReviewers, gitReviewDiff } from "../services/reviewer-service.ts";
 import { TranscriptTail, resolveTranscript, claudeConfigRoot } from "../utils/transcript-locate.ts";
-import { decideCrossing, newestContextTokens, contextThreshold } from "../utils/context-usage.ts";
+import {
+  decideCrossing,
+  newestContextTokens,
+  newestContextReport,
+  contextThreshold,
+} from "../utils/context-usage.ts";
 import { isRequeued, markRequeued } from "../utils/requeue.ts";
 import { paneLines, hasActiveSpinner, escapeHtml } from "../utils/terminal.ts";
 import { stripReasoning } from "../utils/llm-output.ts";
@@ -825,12 +830,58 @@ const CONTEXT_THRESHOLD = contextThreshold(process.env.CONTEXT_SUMMARY_THRESHOLD
 /** Highest ratio already summarised, per session. Once per crossing, not per tick. */
 const contextHighWater = new Map<number, number>();
 
+/**
+ * Windows Claude Code has told us, per session.
+ *
+ * A window does not change while a session runs, so this is asked once and
+ * kept. It is the difference between a percentage and a guess for every
+ * provider the table cannot cover — GLM, Kimi, anything arriving through
+ * OpenRouter tomorrow.
+ */
+const contextWindowBySession = new Map<number, number>();
+
+/** Sessions already asked for a window, so a silent `/context` is not retyped every tick. */
+const contextAskedAt = new Map<number, number>();
+
+/** How long to wait before asking a session for its window again. */
+const CONTEXT_ASK_COOLDOWN_MS = 30 * 60 * 1000;
+
+/**
+ * Whether the supervisor may type into a session to take the fold for itself.
+ *
+ * Off by default, and deliberately: this writes into a live pane the operator
+ * may be looking at, and `/compact` replaces the session's own context. Both
+ * are the right thing at the right moment and an ambush at any other one, so
+ * the moment is gated — idle only — and the whole behaviour is opt-in.
+ */
+export function autoCompactEnabled(): boolean {
+  return ["1", "true", "yes", "on"].includes((process.env.CONTEXT_AUTO_COMPACT ?? "").trim().toLowerCase());
+}
+
 /** Reading the tail of a transcript, and summarising — the two things a test cannot do for real. */
 export interface ContextPressureDeps {
   /** The newest context measurement for this project, or null when unknown. */
-  readContext: (projectPath: string) => Promise<number | null>;
+  readContext: (projectPath: string) => Promise<ContextReading>;
   /** What to run when the threshold is crossed. */
   summarize: (sessionId: number, chatId: string) => Promise<unknown>;
+  /**
+   * Type into a session's tmux window, or absent to do neither of the two
+   * things that need it.
+   *
+   * This is how `/context` and `/compact` are reached: they are interactive
+   * commands, and typing into a pane is how `scripts/tmux-watchdog.ts` already
+   * answers permission prompts. Optional because a supervisor without a shell
+   * still does the useful half — measuring and summarising.
+   */
+  sendKeys?: (project: string, keys: string) => Promise<void>;
+}
+
+/** What one look at a transcript tail found. */
+export interface ContextReading {
+  /** Newest `message.usage` total, or null when the transcript has none yet. */
+  tokens: number | null;
+  /** Window as Claude Code last reported it via `/context`, or null. */
+  window: number | null;
 }
 
 /** How much of the transcript's end is read to find the newest usage. */
@@ -842,18 +893,40 @@ const CONTEXT_TAIL_BYTES = 256 * 1024;
  * Separated from the loop because it is the only part that touches a disk, and
  * the loop's decisions are worth testing without one.
  */
-export async function readSessionContext(projectPath: string): Promise<number | null> {
+export async function readSessionContext(projectPath: string): Promise<ContextReading> {
   const path = await resolveTranscript(projectPath, claudeConfigRoot()).catch(() => null);
-  if (!path) return null;
+  if (!path) return { tokens: null, window: null };
   const size = await Bun.file(path).size;
   const tail = TranscriptTail.at(path, Math.max(0, size - CONTEXT_TAIL_BYTES));
   const lines = await tail.read().catch(() => [] as string[]);
-  return newestContextTokens(lines);
+  // Both come from the same read. The usage total is on every assistant entry;
+  // the `/context` report is there only if the command has been run, which is
+  // why the window is remembered once found rather than looked up each tick.
+  return { tokens: newestContextTokens(lines), window: newestContextReport(lines)?.window ?? null };
+}
+
+/**
+ * Type a command into a session's tmux window.
+ *
+ * The window name is the project name inside the `bots` session — the same
+ * address `checkHungSessions` captures a pane by, and the same mechanism
+ * `scripts/tmux-watchdog.ts` uses to answer permission prompts.
+ *
+ * The name is checked against a strict pattern before it reaches a shell:
+ * it arrives from a database column, and everything after it is a command
+ * line. The keys are a fixed string at every call site, never operator input.
+ */
+export async function typeIntoSession(runShell: RunShell, project: string, keys: string): Promise<void> {
+  if (!/^[A-Za-z0-9_.-]+$/.test(project)) throw new Error(`refusing to type into window "${project}"`);
+  if (!/^\/[a-z]+$/.test(keys)) throw new Error(`refusing to type "${keys}"`);
+  await runShell(`tmux send-keys -t "bots:${project}" "${keys}" Enter`);
 }
 
 /** Exposed so a test can reset between cases; the loop itself never clears it. */
 export function resetContextHighWater(): void {
   contextHighWater.clear();
+  contextWindowBySession.clear();
+  contextAskedAt.clear();
 }
 
 /**
@@ -869,6 +942,7 @@ export async function checkContextPressure(sql: postgres.Sql, deps: ContextPress
   const rows = await sql`
     SELECT
       s.id            AS session_id,
+      s.project       AS project,
       s.project_path,
       -- Per project, not per session: /providers sets the model on the
       -- projects row. NULL means whatever Claude defaults to, and the window
@@ -884,17 +958,45 @@ export async function checkContextPressure(sql: postgres.Sql, deps: ContextPress
 
   for (const row of rows as any[]) {
     const sessionId = Number(row.session_id);
+    // The tmux window is named after the project — the same name
+    // checkHungSessions captures a pane by.
+    const project = String(row.project ?? "");
     const chatId = row.chat_id ? String(row.chat_id) : null;
     if (!chatId) continue;
 
-    const tokens = await deps.readContext(String(row.project_path)).catch(() => null);
+    const reading = await deps
+      .readContext(String(row.project_path))
+      .catch(() => ({ tokens: null, window: null }) as ContextReading);
+
+    // A window, once reported, is kept: it does not change while the session
+    // runs, and re-reading it every tick would be a lookup for an answer we
+    // already have.
+    if (reading.window) contextWindowBySession.set(sessionId, reading.window);
+    const learnedWindow = contextWindowBySession.get(sessionId) ?? null;
+
     const decision = decideCrossing({
-      contextTokens: tokens,
+      contextTokens: reading.tokens,
       model: row.model ?? null,
+      learnedWindow,
       threshold: CONTEXT_THRESHOLD,
       idle: !row.busy,
       highWaterRatio: contextHighWater.get(sessionId) ?? 0,
     });
+
+    // Ask the session what its window is, rather than inferring it from a
+    // table that cannot know what GLM or Kimi answer to. Only while idle —
+    // typing into a pane mid-turn corrupts whatever is being composed there —
+    // and only once in a while, because an unanswered ask must not become a
+    // command retyped every tick.
+    if (autoCompactEnabled() && deps.sendKeys && !learnedWindow && !row.busy) {
+      const askedAt = contextAskedAt.get(sessionId) ?? 0;
+      if (Date.now() - askedAt > CONTEXT_ASK_COOLDOWN_MS) {
+        contextAskedAt.set(sessionId, Date.now());
+        await deps.sendKeys(project, "/context").catch((err: any) =>
+          console.error(`[context] session=${sessionId} could not ask for the window: ${err?.message}`),
+        );
+      }
+    }
 
     // Logged with the window it used. A wrong denominator makes the ratio
     // meaningless, and the only way that is visible rather than silent is if
@@ -913,6 +1015,23 @@ export async function checkContextPressure(sql: postgres.Sql, deps: ContextPress
       console.log(`[context] session=${sessionId} summarized at ${(decision.ratio * 100).toFixed(1)}%`);
     } catch (err: any) {
       console.error(`[context] session=${sessionId} summarize failed: ${err?.message}`);
+      // The fold is only worth taking once the summary exists. Compacting after
+      // a failed summarise would discard exactly the material this whole loop
+      // runs to preserve.
+      continue;
+    }
+
+    // Take the fold. Claude Code will do this on its own eventually, and its
+    // moment is whenever the window fills — mid-turn, mid-thought, with the
+    // operator watching a status message that stops moving. This one happens
+    // between turns, immediately after the summary is safely written.
+    if (autoCompactEnabled() && deps.sendKeys) {
+      try {
+        await deps.sendKeys(project, "/compact");
+        console.log(`[context] session=${sessionId} compacted at ${(decision.ratio * 100).toFixed(1)}%`);
+      } catch (err: any) {
+        console.error(`[context] session=${sessionId} compact failed: ${err?.message}`);
+      }
     }
   }
 }
@@ -1962,6 +2081,7 @@ export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
     checkContextPressure(sql, {
       readContext: readSessionContext,
       summarize: (sessionId, chatId) => forceSummarize(sessionId, chatId),
+      sendKeys: runShell ? (project, keys) => typeIntoSession(runShell, project, keys) : undefined,
     }).catch(() => {}).finally(() => { contextCheckRunning = false; });
   }, 2 * 60_000);
   contextTimer.unref?.();

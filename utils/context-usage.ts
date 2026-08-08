@@ -190,6 +190,98 @@ export function newestContextTokens(lines: readonly string[]): number | null {
   return null;
 }
 
+// ─── Asking Claude Code for the window instead of guessing it ────────────────
+
+/**
+ * What `/context` reported.
+ *
+ * The window table above exists only because we did not know the denominator.
+ * Claude Code does: it gets the window from the API for whichever model and
+ * provider the session actually runs on, and `/context` prints it. That output
+ * is written into the transcript as an ordinary entry, so it is readable
+ * without scraping a pane.
+ */
+export interface ContextReport {
+  /** As Claude Code names it, suffix and all — `claude-opus-5[1m]`. */
+  model: string;
+  used: number;
+  window: number;
+}
+
+/** `1m` → 1_000_000, `45.2k` → 45_200, `0` → 0. */
+function parseTokenCount(raw: string): number | null {
+  const m = /^([\d.,]+)\s*([km])?$/i.exec(raw.trim());
+  if (!m) return null;
+  const n = Number.parseFloat(m[1]!.replace(/,/g, ""));
+  if (!Number.isFinite(n) || n < 0) return null;
+  const unit = m[2]?.toLowerCase();
+  return Math.round(n * (unit === "m" ? 1_000_000 : unit === "k" ? 1_000 : 1));
+}
+
+/**
+ * Read a `/context` report out of a transcript entry.
+ *
+ * The shape, verified against a real invocation rather than assumed:
+ *
+ *     ## Context Usage
+ *
+ *     **Model:** claude-opus-5[1m]
+ *     **Tokens:** 0 / 1m (0%)
+ *
+ * Returns null for anything that is not one of these, because most transcript
+ * entries are not, and a partial parse would be worse than none: this value
+ * overrides the table, so a wrong read here is a wrong denominator everywhere.
+ */
+export function parseContextReport(content: unknown): ContextReport | null {
+  if (typeof content !== "string" || !content.includes("Context Usage")) return null;
+
+  const model = /\*\*Model:\*\*\s*(\S+)/.exec(content)?.[1];
+  const tokens = /\*\*Tokens:\*\*\s*([\d.,]+\s*[km]?)\s*\/\s*([\d.,]+\s*[km]?)/i.exec(content);
+  if (!model || !tokens) return null;
+
+  const used = parseTokenCount(tokens[1]!);
+  const window = parseTokenCount(tokens[2]!);
+  // A zero window is not a window. Guarding here rather than at the call site
+  // because a zero denominator would make `usageRatio` return 0 forever, which
+  // reads as "there is plenty of room" rather than as a failure to measure.
+  if (used === null || window === null || window <= 0) return null;
+
+  return { model, used, window };
+}
+
+/**
+ * The newest `/context` report in these lines, or null.
+ *
+ * Backwards for the same reason as `newestContextTokens`: the answer is the
+ * most recent one, and most lines are not it.
+ */
+export function newestContextReport(lines: readonly string[]): ContextReport | null {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    let entry: unknown;
+    try {
+      entry = JSON.parse(lines[i]!);
+    } catch {
+      continue;
+    }
+    const report = parseContextReport((entry as { message?: { content?: unknown } })?.message?.content);
+    if (report) return report;
+  }
+  return null;
+}
+
+/**
+ * The window to divide by, best source first.
+ *
+ * A window Claude Code told us beats anything this file can infer — it is the
+ * real number for the real model, including the providers the table will never
+ * cover. The table is the fallback for a session that has not been asked yet,
+ * and the default is the fallback for that.
+ */
+export function resolveWindow(learned: number | null | undefined, model: string | null | undefined): number {
+  if (typeof learned === "number" && learned > 0) return learned;
+  return windowFor(model);
+}
+
 /** How full, as a fraction. Clamped at 1 — a window can be exceeded on paper. */
 export function usageRatio(contextTokens: number, window: number): number {
   if (!(window > 0)) return 0;
@@ -213,6 +305,12 @@ export interface CrossingInput {
   contextTokens: number | null;
   /** The model this session runs on, for the window. */
   model: string | null | undefined;
+  /**
+   * A window Claude Code itself reported for this session, if it has been
+   * asked. Beats the table: it is the real number for the real model, and it
+   * covers the providers no table here will ever keep up with.
+   */
+  learnedWindow?: number | null;
   /** Fraction at or above which the session is worth summarising. */
   threshold: number;
   /** Whether the session is between turns. A busy session is left alone. */
@@ -235,7 +333,7 @@ export interface CrossingInput {
  * threshold is under it whether or not it is working.
  */
 export function decideCrossing(input: CrossingInput): CrossingDecision {
-  const window = windowFor(input.model);
+  const window = resolveWindow(input.learnedWindow, input.model);
   if (input.contextTokens === null) {
     return { summarize: false, ratio: 0, window, reason: "no-usage" };
   }

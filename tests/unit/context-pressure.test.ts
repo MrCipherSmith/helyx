@@ -9,7 +9,7 @@
  */
 
 import { describe, test, expect, beforeEach } from "bun:test";
-import { checkContextPressure, resetContextHighWater } from "../../scripts/supervisor.ts";
+import { checkContextPressure, resetContextHighWater, typeIntoSession } from "../../scripts/supervisor.ts";
 import { FakeSql } from "../fixtures/fake-sql.ts";
 
 const SESSIONS_QUERY = "SELECT s.id";
@@ -20,6 +20,7 @@ function world(options: { busy?: boolean; model?: string | null } = {}) {
   db.program(SESSIONS_QUERY, {
     rows: [{
       session_id: 7,
+      project: "proj",
       project_path: "/home/u/proj",
       model: options.model === undefined ? "claude-sonnet-4-20250514" : options.model,
       busy: options.busy ?? false,
@@ -35,7 +36,7 @@ function spy(contextTokens: number | null) {
   return {
     summarized,
     deps: {
-      readContext: async () => contextTokens,
+      readContext: async () => ({ tokens: contextTokens, window: null }),
       summarize: async (sessionId: number, chatId: string) => {
         summarized.push({ sessionId, chatId });
       },
@@ -134,7 +135,7 @@ describe("what the loop tolerates", () => {
     });
     const seen: number[] = [];
     const deps = {
-      readContext: async () => 190_000,
+      readContext: async () => ({ tokens: 190_000, window: null }),
       summarize: async (sessionId: number) => {
         seen.push(sessionId);
         if (sessionId === 7) throw new Error("aux model refused");
@@ -155,5 +156,101 @@ describe("what the loop tolerates", () => {
     });
 
     expect(summarized).toEqual([]);
+  });
+});
+
+describe("taking the fold instead of waiting for it", () => {
+  /** A world plus a pane that records everything typed into it. */
+  function withPane(contextTokens: number | null, window: number | null = null) {
+    const typed: Array<{ project: string; keys: string }> = [];
+    const summarized: number[] = [];
+    return {
+      typed,
+      summarized,
+      deps: {
+        readContext: async () => ({ tokens: contextTokens, window }),
+        summarize: async (sessionId: number) => { summarized.push(sessionId); },
+        sendKeys: async (project: string, keys: string) => { typed.push({ project, keys }); },
+      },
+    };
+  }
+
+  beforeEach(() => {
+    resetContextHighWater();
+    delete process.env.CONTEXT_AUTO_COMPACT;
+  });
+
+  test("types nothing at all while the flag is off", async () => {
+    // The default. It writes into a live pane the operator may be looking at,
+    // so it is opt-in and stays that way until someone says otherwise.
+    const s = withPane(190_000);
+    await checkContextPressure(world().sql as never, s.deps);
+    expect(s.summarized).toEqual([7]);
+    expect(s.typed).toEqual([]);
+  });
+
+  test("compacts right after the summary is written, not before", async () => {
+    process.env.CONTEXT_AUTO_COMPACT = "true";
+    const s = withPane(190_000, 200_000);
+    await checkContextPressure(world().sql as never, s.deps);
+    expect(s.summarized).toEqual([7]);
+    expect(s.typed).toEqual([{ project: "proj", keys: "/compact" }]);
+  });
+
+  test("a failed summary means no fold", async () => {
+    // Compacting after a failed summarise would discard exactly the material
+    // the loop exists to preserve.
+    process.env.CONTEXT_AUTO_COMPACT = "true";
+    const typed: Array<{ project: string; keys: string }> = [];
+    await checkContextPressure(world().sql as never, {
+      readContext: async () => ({ tokens: 190_000, window: 200_000 }),
+      summarize: async () => { throw new Error("summariser down"); },
+      sendKeys: async (project: string, keys: string) => { typed.push({ project, keys }); },
+    });
+    expect(typed).toEqual([]);
+  });
+
+  test("asks an unknown session for its window, once", async () => {
+    process.env.CONTEXT_AUTO_COMPACT = "true";
+    const s = withPane(1000, null); // below the threshold; only the ask should happen
+    await checkContextPressure(world().sql as never, s.deps);
+    await checkContextPressure(world().sql as never, s.deps);
+    expect(s.typed).toEqual([{ project: "proj", keys: "/context" }]);
+    expect(s.summarized).toEqual([]);
+  });
+
+  test("does not ask a session that already reported its window", async () => {
+    process.env.CONTEXT_AUTO_COMPACT = "true";
+    const s = withPane(1000, 1_000_000);
+    await checkContextPressure(world().sql as never, s.deps);
+    expect(s.typed).toEqual([]);
+  });
+
+  test("never types into a busy session", async () => {
+    // Mid-turn the pane is composing something; typing into it corrupts that.
+    process.env.CONTEXT_AUTO_COMPACT = "true";
+    const s = withPane(1000, null);
+    await checkContextPressure(world({ busy: true }).sql as never, s.deps);
+    expect(s.typed).toEqual([]);
+  });
+});
+
+describe("what may be typed into a pane", () => {
+  test("a project name that is not a plain window name is refused", async () => {
+    // It arrives from a database column and everything after it is a command line.
+    const calls: string[] = [];
+    const shell = async (cmd: string) => { calls.push(cmd); return { ok: true, output: "" }; };
+    for (const bad of ['proj"; rm -rf /', "proj; touch x", "$(whoami)", "a b"]) {
+      await expect(typeIntoSession(shell as any, bad, "/compact")).rejects.toThrow(/refusing/);
+    }
+    expect(calls).toEqual([]);
+  });
+
+  test("only a bare slash command may be typed", async () => {
+    const calls: string[] = [];
+    const shell = async (cmd: string) => { calls.push(cmd); return { ok: true, output: "" }; };
+    await expect(typeIntoSession(shell as any, "proj", "rm -rf /")).rejects.toThrow(/refusing/);
+    await typeIntoSession(shell as any, "proj", "/compact");
+    expect(calls).toEqual(['tmux send-keys -t "bots:proj" "/compact" Enter']);
   });
 });

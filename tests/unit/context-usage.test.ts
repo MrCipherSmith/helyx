@@ -16,6 +16,9 @@ import {
   DEFAULT_CONTEXT_THRESHOLD,
   DEFAULT_CONTEXT_WINDOW,
   isKnownModel,
+  newestContextReport,
+  parseContextReport,
+  resolveWindow,
   newestContextTokens,
   usageRatio,
   knownModelPrefixes,
@@ -211,5 +214,73 @@ describe("the threshold, read once for two processes", () => {
   test("a value in range is used as given", () => {
     expect(contextThreshold("0.7")).toBeCloseTo(0.7, 5);
     expect(contextThreshold(0.92)).toBeCloseTo(0.92, 5);
+  });
+});
+
+describe("asking Claude Code for the window", () => {
+  /** The shape of a real `/context` entry, taken from an actual invocation. */
+  const REPORT = [
+    "## Context Usage",
+    "",
+    "**Model:** claude-opus-5[1m]  ",
+    "**Tokens:** 0 / 1m (0%)",
+    "",
+    "### MCP Tools",
+    "| Tool | Server | Tokens |",
+  ].join("\n");
+
+  test("reads the model, the used tokens and the window", () => {
+    expect(parseContextReport(REPORT)).toEqual({ model: "claude-opus-5[1m]", used: 0, window: 1_000_000 });
+  });
+
+  test("understands the units Claude Code prints", () => {
+    const at = (used: string, win: string) =>
+      parseContextReport(`## Context Usage\n**Model:** m\n**Tokens:** ${used} / ${win} (1%)`);
+    expect(at("45.2k", "200k")).toEqual({ model: "m", used: 45_200, window: 200_000 });
+    expect(at("1,500", "128k")).toEqual({ model: "m", used: 1_500, window: 128_000 });
+    expect(at("3m", "1m")).toEqual({ model: "m", used: 3_000_000, window: 1_000_000 });
+  });
+
+  test("anything that is not a report is null, not a partial read", () => {
+    // This value overrides the table, so a half-parse is a wrong denominator
+    // everywhere rather than a missing one in one place.
+    expect(parseContextReport("## Context Usage\n(no numbers here)")).toBeNull();
+    expect(parseContextReport("an ordinary assistant message")).toBeNull();
+    expect(parseContextReport({ not: "a string" })).toBeNull();
+    expect(parseContextReport("## Context Usage\n**Model:** m\n**Tokens:** 5 / 0 (0%)")).toBeNull();
+  });
+
+  test("finds the newest report in a transcript tail", () => {
+    const line = (content: string) => JSON.stringify({ type: "user", message: { content } });
+    const lines = [
+      line("## Context Usage\n**Model:** old\n**Tokens:** 1k / 200k (1%)"),
+      line("something else"),
+      line("## Context Usage\n**Model:** new\n**Tokens:** 2k / 1m (1%)"),
+      "{ not json",
+    ];
+    expect(newestContextReport(lines)?.window).toBe(1_000_000);
+    expect(newestContextReport([line("nothing")])).toBeNull();
+  });
+
+  test("a learned window beats the table, and its absence falls back to it", () => {
+    expect(resolveWindow(1_000_000, "glm-5.2")).toBe(1_000_000);
+    expect(resolveWindow(null, "claude-opus-5")).toBe(1_000_000);
+    expect(resolveWindow(0, "some-unknown-model")).toBe(DEFAULT_CONTEXT_WINDOW);
+  });
+
+  test("the crossing decision divides by the learned window when there is one", () => {
+    // The point of the whole mechanism: a model the table has never heard of
+    // still gets a true percentage.
+    const d = decideCrossing({
+      contextTokens: 900_000,
+      model: "glm-5.2",
+      learnedWindow: 1_000_000,
+      threshold: DEFAULT_CONTEXT_THRESHOLD,
+      idle: true,
+      highWaterRatio: 0,
+    });
+    expect(d.window).toBe(1_000_000);
+    expect(d.ratio).toBeCloseTo(0.9, 5);
+    expect(d.summarize).toBe(true);
   });
 });
