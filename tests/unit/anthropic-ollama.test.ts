@@ -123,6 +123,33 @@ describe("tool_use and tool_result round trip", () => {
     expect(body.messages[2].content).toBe("a.ts\nb.ts");
   });
 
+  test("a result sent alongside user text still answers the call before it", () => {
+    // What Claude Code sends when the operator types while a tool is running:
+    // one user message whose content is [tool_result, text]. Ollama pairs a
+    // result with its call by position, so emitting the text first wedged a
+    // user turn between the call and its answer and moved every result after
+    // it one slot out of place. Nothing raises — the model just reads the
+    // wrong reply against the wrong call.
+    const body = toOllamaRequest(
+      {
+        messages: [
+          { role: "assistant", content: [{ type: "tool_use", id: "toolu_5", name: "Bash", input: { cmd: "ls" } }] },
+          {
+            role: "user",
+            content: [
+              { type: "tool_result", tool_use_id: "toolu_5", content: "a.ts" },
+              { type: "text", text: "actually, stop" },
+            ],
+          },
+        ],
+      },
+      OPTS,
+    );
+    expect(body.messages.map((m) => m.role)).toEqual(["assistant", "tool", "user"]);
+    expect(body.messages[1].content).toBe("a.ts");
+    expect(body.messages[2].content).toBe("actually, stop");
+  });
+
   test("block-form tool_result content is rendered, not stringified as JSON", () => {
     const body = toOllamaRequest(
       {

@@ -266,14 +266,23 @@ export function toOllamaRequest(req: AnthropicRequest, opts: TranslateOptions): 
       }
     }
 
-    // A turn's tool results are their own messages and must precede nothing:
-    // they answer the assistant turn before them.
+    // The results go first, and this order is not cosmetic. They answer the
+    // assistant turn immediately before this one, and Ollama pairs a result
+    // with its call by position — so anything placed between the two shifts
+    // every result after it by one slot.
+    //
+    // Claude Code sends exactly the message that exposes this: type while a
+    // tool is still running and the next request carries one user message whose
+    // content is `[tool_result, text]`. Emitting the text-bearing message first
+    // turned that into `assistant(tool_calls) → user(text) → tool(result)`, a
+    // user turn wedged between a call and its answer. Nothing raises; the model
+    // simply reads the wrong reply against the wrong call.
+    messages.push(...toolResults);
     if (texts.length || toolCalls.length) {
       const entry: OllamaMessage = { role: msg.role, content: texts.join("\n\n") };
       if (toolCalls.length) entry.tool_calls = toolCalls;
       messages.push(entry);
     }
-    messages.push(...toolResults);
   }
 
   const options: Record<string, unknown> = { num_ctx: opts.numCtx };
