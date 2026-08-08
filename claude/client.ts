@@ -459,6 +459,34 @@ export function normalizeSummaryResult(parsed: unknown): { summary: string; fact
   };
 }
 
+/**
+ * How long a summary may take, and how long it may be.
+ *
+ * These two are one decision, so they live together. `num_predict` is the length
+ * a summary needs; the ceiling is what that length costs on the model the host
+ * actually runs, and the cost is measured rather than guessed.
+ *
+ * Measured 2026-08-08 on gemma4:e4b (`geekom-model-1`), CPU-only, 27 GB box:
+ * a cold load takes 17.2s before a token appears, and generation runs at
+ * 9.3–12 tok/s. So 400 tokens from cold is roughly 17 + 43 = 60s, and a 60s
+ * ceiling would land exactly on it. The old ceiling was 30s, which the smaller
+ * gemma4:e2b made in 17s and e4b missed at 35s — a miss is not a slow summary,
+ * it is an abort into the paid cloud model below, every single time.
+ *
+ * Shortening the answer instead was the alternative and is worse: a truncated
+ * reply fails `JSON.parse` and falls through to the same cloud model, so it buys
+ * nothing and loses the summary. Seconds are cheap here — this runs from
+ * `memory/summarizer.ts` after a session ends, with nobody waiting on a screen.
+ * The latency-sensitive readers of `SUMMARIZE_MODEL` (`/now` at 6s, the health
+ * digest at 15s) are deliberately not raised to match.
+ */
+export const SUMMARIZE_NUM_PREDICT = 400;
+export const SUMMARIZE_TIMEOUT_MS = 90_000;
+
+/** The measurements the ceiling above is derived from, kept so a test can check the arithmetic. */
+export const SUMMARIZE_COLD_LOAD_MS = 17_200;
+export const SUMMARIZE_SLOWEST_TOKENS_PER_SEC = 9.3;
+
 export async function summarizeConversation(
   messages: { role: string; content: string }[],
 ): Promise<{ summary: string; facts: string[] }> {
@@ -492,9 +520,9 @@ ${formatted}`;
           ],
           stream: false,
           format: "json",
-          options: { num_predict: 400, temperature: 0.2 },
+          options: { num_predict: SUMMARIZE_NUM_PREDICT, temperature: 0.2 },
         }),
-        signal: AbortSignal.timeout(30_000),
+        signal: AbortSignal.timeout(SUMMARIZE_TIMEOUT_MS),
       });
       if (res.ok) {
         const data = (await res.json()) as any;

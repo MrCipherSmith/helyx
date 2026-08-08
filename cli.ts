@@ -651,7 +651,10 @@ async function setup() {
     // Empty in `minimal`: no embedding model means semantic memory search is
     // off, which is the intended trade for an API-only deployment.
     `EMBEDDING_MODEL=${ollamaEmbeddingModel}`,
-    ...(summarizeModel ? [`SUMMARIZE_MODEL=${summarizeModel}`] : [`# SUMMARIZE_MODEL=qwen3:1.7b`]),
+    // The commented-out suggestion names a model this host has. It used to name
+    // qwen3:1.7b, which was never installed here — a hint that only works after a
+    // download the reader was never told to make.
+    ...(summarizeModel ? [`SUMMARIZE_MODEL=${summarizeModel}`] : [`# SUMMARIZE_MODEL=geekom-model-1`]),
     "",
     "# Voice transcription",
     `GROQ_API_KEY=${groqKey}`,
