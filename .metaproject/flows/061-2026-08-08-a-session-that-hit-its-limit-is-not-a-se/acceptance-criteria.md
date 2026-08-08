@@ -25,3 +25,6 @@ Rules:
 - AC13: The pulse costs no new polling — it is assembled from the transcript reads and session rows the existing loops already perform.
 - AC14: The supervisor's session list names the provider and the model each active session is running on, beside the state it already shows.
 - AC15: A session whose project has no provider or model recorded says so as the default it actually uses, not as a blank or a dash — the line is there to answer "what is this session running on", and an empty answer is the one case where it fails.
+- AC16: While a session is under a limit, queued messages for it are held rather than delivered, by the same deferral the poller already applies to a chat that is mid-turn.
+- AC17: When the limit's reset time passes, the held messages are delivered without anyone typing anything — a session that was waiting resumes on its own.
+- AC18: A message held for a limit is not counted as a stuck queue, so the operator is told "waiting for the limit to lift at 5:30pm", never "the queue is stuck" or "the session is hung".

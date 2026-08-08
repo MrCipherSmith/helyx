@@ -5,12 +5,12 @@
   "title": "A session that hit its limit is not a session that hung",
   "status": "in-progress",
   "createdAt": "2026-08-08T18:02:09.973Z",
-  "updatedAt": "2026-08-08T18:17:51.486Z",
+  "updatedAt": "2026-08-08T18:36:26.975Z",
   "source": {
     "type": "description",
     "ref": null
   },
-  "acChecksum": "sha256:9754d1fd72fb50121fd2c2dcf4180f58e89f15d22508617deba2a83079820642",
+  "acChecksum": "sha256:2f5d3eba118c7dadd379d2dbaeaae635572f53b23e8f851a0a74cb61717a23cb",
   "acConfirmed": {},
   "pr": {
     "url": null
@@ -96,6 +96,11 @@
       "at": "2026-08-08T18:17:51.486Z",
       "event": "ac-updated",
       "detail": "operator: the supervisor session list should name the provider and model of each active session"
+    },
+    {
+      "at": "2026-08-08T18:36:26.975Z",
+      "event": "ac-updated",
+      "detail": "operator: sessions should wake by themselves once the limit resets; the queue and the poller's deferral already exist, only the reset time was missing"
     }
   ]
 }

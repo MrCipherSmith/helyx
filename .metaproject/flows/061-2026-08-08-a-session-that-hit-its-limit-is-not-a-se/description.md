@@ -72,6 +72,23 @@ context-pressure loop already computes exactly that for every active session
 every two minutes. `sessions` carries `connected_at`, `last_active` and a pane
 snapshot. Nothing assembles them into a line anyone sees.
 
+### And nothing wakes a session when the limit lifts
+
+There is no mechanism for it, and the absence costs more than the missing
+feature. Nobody knows a session is limited, so the poller delivers into it
+anyway; the session fails again; the stuck-queue detector fires at five
+minutes; the hung-session detector then offers a restart that cannot help. That
+loop repeats until the limit lifts on its own.
+
+Three of the four pieces already exist. `message_queue` holds an undelivered
+message indefinitely, so the work is queued rather than lost. `channel/poller.ts`
+already defers delivery for a chat with an open status, so "hold this one back"
+is a mechanism that ships — its condition is "mid-turn", not "limited".
+`scripts/admin-daemon.ts` runs the curator on a schedule, so "do this at a
+stated time" is solved here too.
+
+The missing piece is the reset time, which is the thing this flow extracts.
+
 ## Expected Outcome
 
 - A limit event in a session's transcript is reported to the supervisor topic,
@@ -81,6 +98,8 @@ snapshot. Nothing assembles them into a line anyone sees.
 - A session worked on from the pane can be found hung, like any other.
 - The other API errors in that stream — overload, a prompt too long, a lost
   connection — are distinguishable from each other and from silence.
+- A session under a limit holds its queued work and resumes on its own when the
+  limit lifts, without the operator typing anything.
 - A working session reports a pulse the operator can read: tokens in and out,
   how long it has been at it, how full its context is, and what it is doing —
   so that "still thinking" is visible as such, before any alarm has to guess.

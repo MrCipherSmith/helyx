@@ -72,6 +72,16 @@ visible without changing what "stale" means for the ones already covered.
     the default rather than on nothing, so it renders as that default and not
     as a blank.
 
+11. Holding. The poller's existing deferral is a list of chats to skip; a
+    limited session joins it on the same terms. Nothing new polls, and the
+    stuck-queue detector learns the same distinction, so a held message is
+    reported as waiting rather than as stuck.
+12. Releasing. The marker already carries the reset time, and step 5 already
+    expires it. Release is what happens when it expires — the chat leaves the
+    skip list and the queue drains the way it always does. Deliberately not a
+    new timer per session: the loop that expires the marker runs anyway, and a
+    session waiting an extra tick past its reset is not a defect.
+
 ## Risks
 
 - **Widening the hung query is the dangerous step.** Every session becomes a
@@ -86,6 +96,12 @@ visible without changing what "stale" means for the ones already covered.
 - A limit marker that outlives its reset would suppress hang detection exactly
   when the session is genuinely stuck. It expires on the stated time, and when
   the time is missing it expires on a bound.
+- **Holding delivery is the one step here that can lose work.** A message held
+  and never released is worse than one delivered into a failing session, because
+  the failure is at least visible. So the release has to be driven by the same
+  expiry that already exists rather than by a second clock, and a marker whose
+  reset time never arrives has to expire on the bound — the alternative is a
+  queue that quietly stops.
 - The session list is read at a glance during an incident. Two more fields per
   line is two more things to read when the reader is in a hurry, so they earn
   their place only if they are short — a provider name and a model id, not a
