@@ -12,3 +12,5 @@
 - 2026-08-08T09:25:00.983Z - ac-confirmed: AC4: text lines carry no · Provider/model annotation (asserted)
 - 2026-08-08T09:25:01.071Z - ac-confirmed: AC5: pminf:<id> answers via answerCallbackQuery, changes no state
 - 2026-08-08T09:25:01.159Z - ac-confirmed: AC6: both sites call renderProjectsMessage; rerenderProjects shared
+- 2026-08-08T09:25:45.975Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/103
+- 2026-08-08T09:27:49.189Z - task-done: T4: Self-review and prepare draft PR
