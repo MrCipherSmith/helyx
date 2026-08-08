@@ -30,7 +30,14 @@ export interface LimitMarker {
   kind: ApiErrorKind;
   /** The message as Claude Code wrote it, for the alert to quote. */
   text: string;
-  /** When the channel saw the error, in epoch milliseconds. */
+  /**
+   * When the error line was written, in epoch milliseconds.
+   *
+   * The transcript entry's own timestamp, not when the channel read it. A
+   * transcript can be replayed from offset 0 — `TranscriptSession.reresolve`
+   * does exactly that — and read time would date yesterday's limit to now. See
+   * `noteApiError`.
+   */
   startedAt: number;
   /**
    * When the limit lifts, in epoch milliseconds, or null when the text said no
@@ -207,10 +214,11 @@ export async function sessionLimit(
  * Fire-and-forget at the call site: a marker that failed to write costs one
  * alert that says "hung" where it should have said "limited", not a session.
  *
- * `startedAt` comes from the caller's `Date.now()` rather than from `now()` in
- * SQL, for `startFold`'s reason — both processes run on the same host, and
- * comparing two values produced by the same kind of clock is the only way the
- * arithmetic in `limitFromMarker` means anything.
+ * `startedAt` comes from the caller rather than from `now()` in SQL, for
+ * `startFold`'s reason — both processes run on the same host, and comparing two
+ * values produced by the same kind of clock is the only way the arithmetic in
+ * `limitFromMarker` means anything. The caller takes it from the transcript
+ * entry rather than from its own clock; see `LimitMarker.startedAt`.
  */
 export async function startLimit(sql: postgres.Sql, sessionId: number, marker: LimitMarker): Promise<void> {
   await sql`

@@ -31,7 +31,7 @@ import { escapeHtml } from "../utils/html.ts";
 import { isRequeued, markRequeued } from "../utils/requeue.ts";
 import { hasOpenQuestion } from "../services/ask-question.ts";
 import { sessionFold, endFold, readFoldMarker, foldFromMarker, type ActiveFold } from "../services/fold-marker.ts";
-import { startLimit, endLimit, resolveResetAt } from "../services/limit-marker.ts";
+import { startLimit, endLimit, resolveResetAt, limitFromMarker } from "../services/limit-marker.ts";
 import { droppedSpan } from "../utils/transcript-locate.ts";
 import { isLimitKind, type CompactBoundary, type ApiErrorEvent } from "../utils/context-usage.ts";
 import { remember } from "../memory/long-term.ts";
@@ -1782,19 +1782,42 @@ export class StatusManager {
       return;
     }
 
-    const startedAt = Date.now();
+    const now = Date.now();
+    // The line's own time, not the time it was read. This used to be
+    // `Date.now()`, and the difference is a live limit minted out of history:
+    // `TranscriptSession.reresolve` attaches to a different transcript at
+    // offset 0 and replays the whole file, so yesterday's "resets 5:30pm" is
+    // read today as new — and `resolveResetAt` resolves a stated time of day to
+    // its *next* occurrence, which puts the reset at 17:30 this afternoon. The
+    // session is healthy and its queue is held for the rest of the day.
+    //
+    // Clamped to now rather than trusted outright. A timestamp in the future is
+    // a clock disagreeing with itself, and `limitFromMarker` reads a start in
+    // the future as no limit at all — which would drop a real one. An entry
+    // with no timestamp falls back to the read time, which is what this always
+    // did and is right for the case it covers: a line written just now.
+    const startedAt = Math.min(error.at ?? now, now);
     // The parser returns UTC minutes since midnight and no date, deliberately —
-    // resolving "5:30pm" to an instant needs a clock, and this is the process
-    // holding one at the moment the line was read.
+    // resolving "5:30pm" to an instant needs a clock, and the instant it has to
+    // be resolved against is when the line was *written*.
     const resetsAt = resolveResetAt(error.resetsAtUtcMinutes, startedAt);
 
-    await startLimit(this.ctx.sql, sessionId, {
-      kind: error.kind,
-      text: error.text,
-      startedAt,
-      resetsAt,
-      uuid: error.uuid,
-    }).catch((err) => {
+    const marker = { kind: error.kind, text: error.text, startedAt, resetsAt, uuid: error.uuid };
+
+    // An error already older than the marker it would write is not news. This
+    // is the same bound the supervisor and the poller read the marker through,
+    // asked one step earlier: a marker that `limitFromMarker` would discard on
+    // sight has nothing to say and should not be written at all, because
+    // writing it costs a row and an alert for a limit that lifted yesterday.
+    if (!limitFromMarker(marker, now)) {
+      channelLogger.info(
+        { sessionId, kind: error.kind, startedAt, resetsAt },
+        "limit: a replayed historical error, already expired; not marked",
+      );
+      return;
+    }
+
+    await startLimit(this.ctx.sql, sessionId, marker).catch((err) => {
       channelLogger.warn({ err, sessionId }, "limit: could not write the marker");
     });
     this.limitedSince = startedAt;

@@ -398,6 +398,68 @@ describe("the channel is what writes the marker", () => {
     expect(db.count("UPDATE sessions SET metadata")).toBe(0);
   });
 
+  test("the marker is dated by the transcript, not by the read", async () => {
+    // `startedAt` used to be `Date.now()` — when the line was read. It is what
+    // every expiry decision is measured from and what "resets 5:30pm" is
+    // resolved against, and a transcript is a file that gets replayed from the
+    // beginning.
+    const { status, db } = await channel();
+    const wroteAt = Date.now() - 20 * 60_000;
+
+    await status.noteApiError(error({ at: wroteAt }), "/p.jsonl");
+
+    const [, , startedAt] = db.matching("UPDATE sessions SET metadata")[0]!.values as [string, string, number];
+    expect(startedAt).toBe(wroteAt);
+  });
+
+  test("a replayed historical error mints no limit at all", async () => {
+    // The failure: `reresolve` attaches to a different transcript at offset 0
+    // and replays the whole file, so a transcript carrying yesterday's "You've
+    // hit your session limit · resets 5:30pm (UTC)" was read as new. Dated to
+    // the read, `resolveResetAt` resolves the stated time of day to its *next*
+    // occurrence — so a healthy session got a marker holding its queue and
+    // muting both watchdogs until 17:30 this afternoon.
+    //
+    // `capturedApiErrors` cannot help: it is per-process and per-path.
+    //
+    // Twenty-six hours back rather than a fixed date, so the case holds
+    // whenever this runs: the next occurrence of any stated time of day after
+    // an instant that long ago is at most two hours ago.
+    const { status, db } = await channel();
+
+    await status.noteApiError(error({ at: Date.now() - 26 * HOUR }), "/p.jsonl");
+
+    expect(db.count("UPDATE sessions SET metadata")).toBe(0);
+  });
+
+  test("an error from a minute ago is not history, and is marked", async () => {
+    // The guard is the marker's own expiry asked one step early, so it has to
+    // let through exactly what the marker would have believed.
+    const { status, db } = await channel();
+
+    await status.noteApiError(error({ at: Date.now() - 60_000 }), "/p.jsonl");
+
+    expect(db.count("UPDATE sessions SET metadata")).toBe(1);
+  });
+
+  test("a timestamp in the future is a disagreeing clock, not a marker to drop", async () => {
+    // `limitFromMarker` reads a start in the future as no limit at all, so an
+    // unclamped one would discard a real limit rather than a stale one.
+    const { status, db } = await channel();
+
+    await status.noteApiError(error({ at: Date.now() + 6 * HOUR }), "/p.jsonl");
+
+    expect(db.count("UPDATE sessions SET metadata")).toBe(1);
+  });
+
+  test("a line with no timestamp falls back to the read, as it always did", async () => {
+    const { status, db } = await channel();
+
+    await status.noteApiError(error({ at: null }), "/p.jsonl");
+
+    expect(db.count("UPDATE sessions SET metadata")).toBe(1);
+  });
+
   test("a limit with no session to mark is logged, not thrown on", async () => {
     // A `claude` started by hand outside the fleet hits limits like any other.
     const { status, db } = await channel(null);

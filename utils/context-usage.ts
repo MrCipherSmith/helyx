@@ -690,6 +690,26 @@ export function isLimitKind(kind: ApiErrorKind): boolean {
  */
 export interface ApiErrorEvent extends ApiError {
   uuid: string | null;
+  /**
+   * When Claude Code wrote the line, in epoch milliseconds, or null.
+   *
+   * Not when this process read it, and the distinction is what stops a
+   * historical error from minting a live limit. `TranscriptSession.reresolve`
+   * attaches to a different transcript at offset 0 and replays the whole file,
+   * so a transcript containing yesterday's "You've hit your session limit ·
+   * resets 5:30pm (UTC)" is read today as a brand-new event — and
+   * `resolveResetAt` resolves a stated time of day to its *next* occurrence, so
+   * yesterday's error dated to now produces a marker holding the queue and
+   * muting both watchdogs until 17:30 this afternoon. On a healthy session.
+   *
+   * `capturedApiErrors` cannot help: it is per-process and per-path, and the
+   * replay arrives on a path this process has not read before, in a channel
+   * that may itself be new.
+   *
+   * Null when the entry carries no timestamp. The caller decides what to do
+   * with that rather than this inventing one — see `noteApiError`.
+   */
+  at: number | null;
 }
 
 /**
@@ -712,7 +732,11 @@ export function apiErrors(lines: readonly string[]): ApiErrorEvent[] {
     const error = parseApiError(entry);
     if (!error) continue;
     const uuid = (entry as Record<string, unknown>).uuid;
-    out.push({ ...error, uuid: typeof uuid === "string" && uuid ? uuid : null });
+    out.push({
+      ...error,
+      uuid: typeof uuid === "string" && uuid ? uuid : null,
+      at: entryTimestamp(entry as TranscriptEntry),
+    });
   }
   return out;
 }

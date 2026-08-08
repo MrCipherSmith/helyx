@@ -149,6 +149,21 @@ describe("apiErrors — reading them out of a poll's worth of lines", () => {
     expect(found?.kind).toBe("prompt-too-long");
     expect(found?.uuid).toBeNull();
   });
+
+  test("the line's own timestamp travels with it, because read time is a lie", () => {
+    // `reresolve` attaches to a different transcript at offset 0 and replays
+    // the whole file, so a line the caller is reading now may have been written
+    // yesterday — and the caller resolves "resets 5:30pm" against whichever
+    // instant it is handed.
+    const at = "2026-08-07T17:00:00.000Z";
+    const line = JSON.stringify({ ...entry("You've hit your session limit · resets 5:30pm (UTC)"), uuid: "u", timestamp: at });
+
+    expect(apiErrors([line])[0]?.at).toBe(Date.parse(at));
+  });
+
+  test("a line with no timestamp says so rather than guessing one", () => {
+    expect(apiErrors([JSON.stringify(entry("Prompt is too long"))])[0]?.at).toBeNull();
+  });
 });
 
 describe("the zeros a synthetic entry carries", () => {
