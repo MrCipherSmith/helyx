@@ -12,7 +12,14 @@
  */
 
 import { describe, test, expect } from "bun:test";
-import { parseApiError, parseResetTime, isLimitKind } from "../../utils/context-usage.ts";
+import {
+  parseApiError,
+  parseResetTime,
+  isLimitKind,
+  apiErrors,
+  newestContextTokens,
+  newestOutputTokens,
+} from "../../utils/context-usage.ts";
 
 /** The envelope as the CLI writes it, trimmed to what the parser reads. */
 const entry = (text: string, extra: Record<string, unknown> = {}) => ({
@@ -107,6 +114,80 @@ describe("parseResetTime", () => {
     expect(parseResetTime("resets 25:00 (UTC)")).toBeNull();
     expect(parseResetTime("resets 5:99pm (UTC)")).toBeNull();
     expect(parseResetTime("no reset here")).toBeNull();
+  });
+});
+
+describe("apiErrors — reading them out of a poll's worth of lines", () => {
+  /** A line as the tail hands it over, with the uuid Claude Code writes on every entry. */
+  const line = (uuid: string, text: string) =>
+    JSON.stringify({ ...entry(text), uuid, message: { model: "<synthetic>", content: text } });
+
+  test("the uuid travels with the error, because it is what stops a second alert", () => {
+    const [found] = apiErrors([line("abc-123", "You've hit your session limit · resets 5:30pm (UTC)")]);
+    expect(found?.uuid).toBe("abc-123");
+    expect(found?.kind).toBe("session-limit");
+  });
+
+  test("two errors in one poll are both reported, oldest first", () => {
+    const found = apiErrors([
+      line("one", "API Error: 529 Overloaded"),
+      JSON.stringify({ type: "assistant", message: { content: "ordinary work" } }),
+      line("two", "You've hit your weekly limit · resets 2pm (UTC)"),
+    ]);
+    expect(found.map((e) => e.kind)).toEqual(["overloaded", "weekly-limit"]);
+  });
+
+  test("an unparseable line is skipped, not thrown on", () => {
+    // The first line of a tail is usually a fragment — the read starts near a
+    // byte offset, not at a record boundary.
+    expect(apiErrors(['{"type":"assis', ""])).toEqual([]);
+  });
+
+  test("an error with no uuid is still reported", () => {
+    const [found] = apiErrors([JSON.stringify(entry("Prompt is too long"))]);
+    expect(found?.kind).toBe("prompt-too-long");
+    expect(found?.uuid).toBeNull();
+  });
+});
+
+describe("the zeros a synthetic entry carries", () => {
+  /** What the CLI writes: no call was made, so every counter is zero. */
+  const errorLine = JSON.stringify({
+    type: "assistant",
+    isApiErrorMessage: true,
+    uuid: "err-1",
+    message: {
+      model: "<synthetic>",
+      content: "You've hit your session limit · resets 5:30pm (UTC)",
+      usage: { input_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 0 },
+    },
+  });
+  const realLine = JSON.stringify({
+    type: "assistant",
+    uuid: "real-1",
+    message: {
+      model: "claude-opus-5",
+      content: [],
+      usage: { input_tokens: 2, cache_read_input_tokens: 610_456, cache_creation_input_tokens: 1_113, output_tokens: 421 },
+    },
+  });
+
+  test("the newest context reading skips it", () => {
+    // The error is by definition the newest entry in a session that just hit
+    // its limit. Read as a measurement it says 0 tokens — so the pressure loop
+    // would report a nearly full window as empty, release its high-water mark
+    // and log `below-threshold`. Confidently wrong beats absent, and this is
+    // the confidently-wrong one.
+    expect(newestContextTokens([realLine, errorLine])).toBe(611_571);
+  });
+
+  test("and so does the newest output reading", () => {
+    expect(newestOutputTokens([realLine, errorLine])).toBe(421);
+  });
+
+  test("a transcript that is only an error measures nothing, rather than zero", () => {
+    expect(newestContextTokens([errorLine])).toBeNull();
+    expect(newestOutputTokens([errorLine])).toBeNull();
   });
 });
 

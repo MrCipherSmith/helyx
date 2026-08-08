@@ -27,6 +27,7 @@
  */
 
 import { parseEntry, type TranscriptEntry } from "./transcript-locate.ts";
+import { outputTokens } from "./transcript-events.ts";
 
 /**
  * The window assumed for a model nobody told us about.
@@ -151,6 +152,30 @@ export function isKnownModel(model: string | null | undefined): boolean {
 }
 
 /**
+ * An entry the CLI manufactured rather than received.
+ *
+ * Claude Code writes its API errors into the transcript as assistant entries —
+ * `isApiErrorMessage: true`, `model: "<synthetic>"` — and gives them a `usage`
+ * block of zeros, because no call was made and there is nothing to report. That
+ * block is indistinguishable from a real one to anything that only asks whether
+ * `usage` is there.
+ *
+ * Which is a measurement bug, not a cosmetic one. `newestContextTokens` scans
+ * backwards for the newest entry carrying usage, and a limit error is by
+ * definition the newest entry in a session that just hit its limit: the
+ * context-pressure loop would read that session as sitting at 0 tokens, release
+ * its high-water mark and log `no-usage`/`below-threshold` for a window that is
+ * in fact nearly full. The reading is not merely absent, it is confidently
+ * wrong, which is the worse of the two.
+ *
+ * Recognised by the flag, for the reason `parseApiError` uses it: the model
+ * string is corroboration and another program's to change.
+ */
+export function isSyntheticApiError(entry: TranscriptEntry | null | undefined): boolean {
+  return (entry as Record<string, unknown> | null | undefined)?.isApiErrorMessage === true;
+}
+
+/**
  * The context this entry was answered with, or null.
  *
  * Null is an ordinary answer: a user entry, a tool result, a summary line —
@@ -159,6 +184,7 @@ export function isKnownModel(model: string | null | undefined): boolean {
  * rather than the newest entry.
  */
 export function contextTokens(entry: TranscriptEntry | null | undefined): number | null {
+  if (isSyntheticApiError(entry)) return null;
   const usage = entry?.message?.usage;
   if (!usage || typeof usage !== "object") return null;
   const fields = ["input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"];
@@ -185,6 +211,24 @@ export function contextTokens(entry: TranscriptEntry | null | undefined): number
 export function newestContextTokens(lines: readonly string[]): number | null {
   for (let i = lines.length - 1; i >= 0; i--) {
     const tokens = contextTokens(parseEntry(lines[i]!));
+    if (tokens !== null) return tokens;
+  }
+  return null;
+}
+
+/**
+ * What the newest completed turn produced, or null.
+ *
+ * The other half of the pair `newestContextTokens` gives: that one is what went
+ * in, this one is what came back. Backwards for the same reason, and skipping
+ * synthetic entries for the same reason — an error entry's `output_tokens: 0`
+ * is not a turn that answered with nothing, it is a turn that never happened.
+ */
+export function newestOutputTokens(lines: readonly string[]): number | null {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const entry = parseEntry(lines[i]!);
+    if (isSyntheticApiError(entry)) continue;
+    const tokens = outputTokens(entry);
     if (tokens !== null) return tokens;
   }
   return null;
@@ -578,4 +622,48 @@ export function parseApiError(entry: unknown): ApiError | null {
 /** Whether this kind means "the account is out of allowance", not "the call failed". */
 export function isLimitKind(kind: ApiErrorKind): boolean {
   return kind === "session-limit" || kind === "weekly-limit";
+}
+
+/**
+ * An API error, plus the identity of the line it was written on.
+ *
+ * `uuid` is this flow's `tailUuid`. Flow 059 needed a name for one boundary so
+ * that re-reading the file did not capture the same fold twice; the same
+ * problem arrives here from two directions at once — the tail re-reads lines
+ * after a re-resolve, and the supervisor re-reads the marker every sixty
+ * seconds — and the answer is the same: every transcript entry carries a `uuid`
+ * written by Claude Code, and two reads of one error agree on it while two
+ * errors never do.
+ *
+ * Null when the entry has none. An error that cannot be named is still
+ * reported; it just cannot be deduplicated, and the caller says what it does
+ * about that rather than this pretending the case does not exist.
+ */
+export interface ApiErrorEvent extends ApiError {
+  uuid: string | null;
+}
+
+/**
+ * Every API error in these lines, oldest first.
+ *
+ * Plural and forward, for `compactBoundaries`' reason: a poll that catches two
+ * errors owes the caller both. In practice they arrive one at a time — a limit
+ * ends the turn — but a retried request that fails twice writes two lines, and
+ * dropping either would mean the alert names the wrong one.
+ */
+export function apiErrors(lines: readonly string[]): ApiErrorEvent[] {
+  const out: ApiErrorEvent[] = [];
+  for (const line of lines) {
+    let entry: unknown;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const error = parseApiError(entry);
+    if (!error) continue;
+    const uuid = (entry as Record<string, unknown>).uuid;
+    out.push({ ...error, uuid: typeof uuid === "string" && uuid ? uuid : null });
+  }
+  return out;
 }
