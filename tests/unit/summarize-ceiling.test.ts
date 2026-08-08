@@ -15,7 +15,8 @@
  * the model needs and this fails — which is the point.
  */
 
-import { describe, test, expect, afterEach } from "bun:test";
+import { describe, test, expect, afterEach, beforeEach } from "bun:test";
+import { CONFIG } from "../../config.ts";
 import {
   summarizeConversation,
   SUMMARIZE_TIMEOUT_MS,
@@ -67,7 +68,27 @@ describe("the local summarizer's ceiling", () => {
 
 describe("the constants reach the request", () => {
   const realFetch = globalThis.fetch;
-  afterEach(() => { globalThis.fetch = realFetch; });
+  // CONFIG binds at import, so the Ollama branch is chosen by the machine's
+  // environment unless a test says otherwise — which is why these two passed
+  // locally and failed in CI, where SUMMARIZE_MODEL is empty and the function
+  // goes straight to the cloud path. Same approach as summary-normalize.test.ts:
+  // `as const` on CONFIG is compile-time only, the fields are writable.
+  const mutable = CONFIG as unknown as Record<string, unknown>;
+  let previousModel: unknown;
+  let previousUrl: unknown;
+
+  beforeEach(() => {
+    previousModel = mutable.SUMMARIZE_MODEL;
+    previousUrl = mutable.OLLAMA_URL;
+    mutable.SUMMARIZE_MODEL = "test-summarizer";
+    mutable.OLLAMA_URL = "http://ollama.test";
+  });
+
+  afterEach(() => {
+    mutable.SUMMARIZE_MODEL = previousModel;
+    mutable.OLLAMA_URL = previousUrl;
+    globalThis.fetch = realFetch;
+  });
 
   /** Capture the Ollama request body the summarizer actually sends. */
   async function bodyOf(opts?: { timeoutMs?: number }): Promise<any> {
@@ -89,17 +110,22 @@ describe("the constants reach the request", () => {
 
   test("a caller's own ceiling is the one that aborts the call", async () => {
     let aborted = false;
-    globalThis.fetch = ((_url: string, init: any) =>
-      new Promise((_resolve, reject) => {
+    let call = 0;
+    globalThis.fetch = ((_url: string, init: any) => {
+      // Only the first call is the local summariser. The abort sends the
+      // function on to the cloud path, which must fail immediately rather than
+      // hang on this same stub — 400 is not retried, so the fallthrough is fast.
+      if (++call > 1) return Promise.resolve(new Response("no", { status: 400 }));
+      return new Promise((_resolve, reject) => {
         init.signal.addEventListener("abort", () => {
           aborted = true;
           reject(new Error("aborted"));
         });
-      })) as unknown as typeof fetch;
+      });
+    }) as unknown as typeof fetch;
 
-    // Falls through to the cloud path on abort, which this process cannot reach
-    // either — the assertion is that the abort happened on the caller's clock.
     await summarizeConversation([{ role: "user", content: "hi" }], { timeoutMs: 40 }).catch(() => {});
+
     expect(aborted).toBe(true);
   });
 });
