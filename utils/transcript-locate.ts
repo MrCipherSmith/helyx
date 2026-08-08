@@ -287,6 +287,62 @@ export class TranscriptTail {
     return new TranscriptTail(path, Math.max(0, offset));
   }
 
+  /**
+   * Start near a byte offset, at the first record that begins after it.
+   *
+   * `at()` requires an offset that is already a record boundary — `read()`
+   * checks the byte before it and, finding anything other than a newline,
+   * rewinds to 0 and reads the entire file. That check is right: an offset
+   * pointing into the middle of a line would splice half a record onto the
+   * next one.
+   *
+   * But a caller that wants "roughly the last 256 KB" has no way to name a
+   * boundary, because it does not know where the lines are. Every such caller
+   * was therefore reading the whole file: an arbitrary byte lands on a newline
+   * about once in a thousand tries, and these transcripts reach tens of
+   * megabytes. `readSessionContext` did this for every active session every two
+   * minutes, inside the bot process, and then `JSON.parse`d every line of it.
+   *
+   * So this factory does the one thing the caller cannot: it scans forward from
+   * the approximation to the first newline and starts after it. The first
+   * partial record is discarded rather than repaired — it is by definition
+   * older than everything that follows, and every caller of this wants recent
+   * lines.
+   */
+  static async near(path: string, approxOffset: number): Promise<TranscriptTail> {
+    const info = await stat(path).catch(() => null);
+    if (info === null) return new TranscriptTail(path, 0);
+
+    const wanted = Math.max(0, Math.min(approxOffset, info.size));
+    if (wanted === 0) {
+      const tail = new TranscriptTail(path, 0);
+      tail.inode = info.ino;
+      return tail;
+    }
+
+    const handle = await open(path, "r").catch(() => null);
+    // Unreadable: fall back to the whole file rather than to a bad offset. The
+    // read that follows will fail the same way and report it.
+    if (!handle) return new TranscriptTail(path, 0);
+
+    try {
+      // One window, not a scan to the end. A record longer than this is a
+      // transcript entry of over a megabyte; starting from the beginning is the
+      // safe answer for that, and it is not the common case.
+      const window = Math.min(1_048_576, info.size - wanted);
+      const buffer = Buffer.alloc(window);
+      const { bytesRead } = await handle.read(buffer, 0, window, wanted);
+      const newline = buffer.subarray(0, bytesRead).indexOf(0x0a);
+      const tail = new TranscriptTail(path, newline === -1 ? 0 : wanted + newline + 1);
+      tail.inode = info.ino;
+      return tail;
+    } catch {
+      return new TranscriptTail(path, 0);
+    } finally {
+      await handle.close().catch(() => {});
+    }
+  }
+
   /** Where the next read will begin. */
   get position(): number {
     return this.offset;

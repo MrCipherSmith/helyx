@@ -8,7 +8,7 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, rmSync, utimesSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, rmSync, utimesSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -173,6 +173,42 @@ describe("TranscriptTail", () => {
     const lines = await tail.read();
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("new");
+  });
+
+  test("an approximate offset reads the tail, not the whole file", async () => {
+    // `at()` demands a real record boundary and answers anything else by
+    // rewinding to zero. A caller asking for "roughly the last N bytes" cannot
+    // name a boundary — it does not know where the lines are — so every such
+    // caller was reading the entire file. `readSessionContext` did this per
+    // active session every two minutes, on transcripts of tens of megabytes,
+    // inside the bot process.
+    const entries = Array.from({ length: 200 }, (_, i) => ({ type: "assistant", note: `line-${i}` }));
+    const path = writeTranscript("slug", "a.jsonl", PROJECT, entries);
+    const size = statSync(path).size;
+
+    // Deliberately mid-record: half way through the file, wherever that lands.
+    const tail = await TranscriptTail.near(path, Math.floor(size / 2));
+    const lines = await tail.read();
+
+    // Not the whole file, and not a spliced fragment: every line read is whole.
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines.length).toBeLessThan(entries.length);
+    for (const line of lines) expect(() => JSON.parse(line)).not.toThrow();
+    // And it is the *tail* — the last entry is present, the first is not.
+    expect(lines.at(-1)).toContain("line-199");
+    expect(lines.join("\n")).not.toContain("line-0\"");
+  });
+
+  test("an offset past the end, or a file with no newline after it, starts from the beginning", async () => {
+    const path = writeTranscript("slug", "a.jsonl", PROJECT, [{ type: "assistant", note: "only" }]);
+    const size = statSync(path).size;
+
+    // Both read the file whole rather than from a nonsense offset.
+    const past = await TranscriptTail.near(path, size + 10_000);
+    expect((await past.read()).join("\n")).toContain("only");
+
+    const zero = await TranscriptTail.near(path, 0);
+    expect((await zero.read()).join("\n")).toContain("only");
   });
 
   test("an unterminated line is held, not parsed as half an object", async () => {

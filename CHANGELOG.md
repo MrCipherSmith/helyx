@@ -50,6 +50,50 @@ tested. Numbers in `field-trial.md`.
 
 Specification: `docs/requirements/ollama-provider-2026-08-07/`.
 
+### feat: summarize before Claude Code folds its own context
+
+Claude Code compacts its context when it fills, and Helyx's summariser never ran
+at that moment. `forceSummarize()` had one trigger — a session idle for
+`IDLE_COMPACT_MIN` minutes with ten or more messages — which a session busy
+enough to fill its window never reaches. The fold landed on exactly the sessions
+a summary would have been worth having for.
+
+Nothing measured how full the window was, either. The `↓ N tokens` in the status
+line is `output_tokens` for the current turn; `utils/transcript-events.ts` says
+where it reads it that the input and cache counts are deliberately unused there.
+It is the wrong number for this question.
+
+The right one was already in the transcript. Every assistant entry carries
+`message.usage`, and the context is `input_tokens + cache_read_input_tokens +
+cache_creation_input_tokens` — 611 571 on this repository's own session while
+this was written. A supervisor loop reads the tail of each active session's
+transcript every two minutes, computes the fraction against a window looked up
+from the model, and summarises at 85%.
+
+Not 98%, which was the first instinct. Summarising needs room to happen; Claude
+Code folds ahead of the hard limit, so a trigger above that point never fires at
+all; and the number lags by a turn, because it is the usage of the last
+completed message and the next tool result can add tens of thousands of tokens
+before anything measures again.
+
+A session at the threshold *mid-turn* is left for the next tick. The fold is
+close, not immediate, and interrupting a turn to talk about it would be its own
+defect. A session parked at 87% is one crossing, not one every two minutes — a
+high-water mark per session makes it once per crossing.
+
+`PreCompact` is the safety net for what the loop cannot catch: a window that
+fills in one step, a large file read or a long test log, where the last
+measurement was well under the threshold and the fold is now. It does **not**
+block. The hook can refuse compaction, and using that to buy time turns a slow
+summariser into a session that cannot continue; both the script and the endpoint
+carry their own timeout instead, and every path exits 0. The worst outcome is
+the situation before this shipped.
+
+Putting the summary back *after* the fold is deliberately not here.
+`PostCompact` and `SessionStart(compact)` are the hooks for it and `/resume`
+already covers the manual case, but what belongs in a fresh context is a
+separate decision, and these two layers are worth having without it.
+
 ### fix: the change that survived the question and not the answer
 
 A permission request arrived as two messages. The first carried the file and

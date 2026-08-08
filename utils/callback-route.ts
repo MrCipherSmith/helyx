@@ -58,6 +58,7 @@ export const CALLBACK_ROUTES: readonly (readonly [prefix: string, route: Callbac
   ["rc:", "remote-control"],
   ["poll_submit:", "poll-submit"],
   ["proj:", "project"],
+  ["pminf:", "project"],
   ["prov:", "provider"],
   ["pmsel:", "project-model"],
   ["pmchg:", "project-model"],

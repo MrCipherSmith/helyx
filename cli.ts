@@ -832,6 +832,19 @@ Write as self-contained sentences. Good: \`"Port 3847 serves both MCP and dashbo
     done();
   }
 
+  // Register PreCompact hook so the summary is written before the fold
+  step("Registering PreCompact hook to summarize before context folds");
+  const compactHookResult = await setupPreCompactHook();
+  if (compactHookResult.status === "skipped") {
+    console.log(` ${c.yellow(`skipped (${compactHookResult.reason})`)}`);
+  } else if (compactHookResult.status === "pruned") {
+    console.log(` ${c.yellow(`removed ${compactHookResult.removed} stale entr${compactHookResult.removed === 1 ? "y" : "ies"}`)}`);
+  } else if (compactHookResult.status === "present") {
+    console.log(` ${c.yellow("already registered")}`);
+  } else {
+    done();
+  }
+
   // Install systemd service (helyx@USER) for auto-start on boot
   step("Installing systemd service");
   const svcUser = process.env.USER ?? basename(homedir());
@@ -900,6 +913,7 @@ Write as self-contained sentences. Good: \`"Port 3847 serves both MCP and dashbo
 
 const HOOK_SCRIPT_REL = "scripts/save-session-facts.sh";
 const ASK_HOOK_SCRIPT_REL = "scripts/ask-question-hook.sh";
+const PRECOMPACT_HOOK_SCRIPT_REL = "scripts/pre-compact-hook.sh";
 
 /**
  * The Stop hook is registered globally in ~/.claude/settings.json with an absolute
@@ -995,7 +1009,7 @@ interface HookEntry {
 
 /** Only the part of the settings file this function reads or writes. */
 interface ClaudeSettings {
-  hooks?: { PreToolUse?: HookEntry[] } & Record<string, unknown>;
+  hooks?: { PreToolUse?: HookEntry[]; PreCompact?: HookEntry[] } & Record<string, unknown>;
   [key: string]: unknown;
 }
 
@@ -1051,6 +1065,63 @@ async function setupAskQuestionHook(): Promise<StopHookResult> {
     hooks: [{ type: "command", command: hookCmd, timeout: 600 }],
   });
 
+  writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf-8");
+  return { status: "registered" };
+}
+
+/**
+ * Register the PreCompact hook.
+ *
+ * Same shape as the two above, and the same pruning, for the same reason: a
+ * checkout that moved leaves a registration pointing at a script that is gone,
+ * and every one of them runs on every compaction.
+ *
+ * `matcher: "auto"` on purpose. A manual `/compact` is the operator deciding to
+ * fold, and they can run a summary first if they want one; the case this exists
+ * for is the fold nobody asked for.
+ */
+async function setupPreCompactHook(): Promise<StopHookResult> {
+  const settingsPath = `${process.env.HOME}/.claude/settings.json`;
+  const hookCmd = `${BOT_DIR}/${PRECOMPACT_HOOK_SCRIPT_REL}`;
+
+  let settings: ClaudeSettings = {};
+  if (existsSync(settingsPath)) {
+    try {
+      settings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+    } catch { /* start fresh */ }
+  }
+
+  if (!settings.hooks) settings.hooks = {};
+  const entries = settings.hooks.PreCompact;
+  if (!Array.isArray(entries)) settings.hooks.PreCompact = [];
+  const list = settings.hooks.PreCompact as HookEntry[];
+
+  const removed = pruneStaleStopHooks(list, `/${PRECOMPACT_HOOK_SCRIPT_REL}`, existsSync);
+
+  const ephemeral = isEphemeralCheckout();
+  if (ephemeral) {
+    if (removed > 0) {
+      writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf-8");
+      return { status: "pruned", removed };
+    }
+    return { status: "skipped", reason: ephemeral };
+  }
+
+  const alreadyAdded = list.some((entry) =>
+    Array.isArray(entry.hooks) && entry.hooks.some((h) => h.command === hookCmd)
+  );
+  if (alreadyAdded) {
+    if (removed > 0) {
+      writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf-8");
+      return { status: "pruned", removed };
+    }
+    return { status: "present" };
+  }
+
+  list.push({
+    matcher: "auto",
+    hooks: [{ type: "command", command: hookCmd, timeout: 25 }],
+  });
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf-8");
   return { status: "registered" };
 }
