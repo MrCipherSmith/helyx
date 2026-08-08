@@ -1084,14 +1084,6 @@ async function runAllowingDifference(argv: string[]): Promise<string> {
 }
 
 /**
- * How much diff this reviewer's transport can carry.
- *
- * The 100 KB figure is about argv, not about the model: a CLI reviewer receives
- * the prompt as one command-line argument and Linux caps that at 128 KiB. So it
- * binds `claude` for exactly the same reason it binds `codex`, and an HTTP
- * provider — which has no argv — still gets the larger budget.
- */
-/**
  * What a reviewer this build does not understand is called.
  *
  * The set of reviewers is JSON in `bot_config`, written by one build and read by
@@ -1107,30 +1099,35 @@ export function unknownKindDetail(kind: string): string {
 }
 
 /**
- * The report for a reviewer no branch claimed.
- *
- * `kind: never` is the point: it is the compiler's proof that every known kind
- * was handled before the call, and it breaks the build the moment one is added
- * without being wired up.
- */
-/**
  * The `/reviewers_status` row for a reviewer no branch claimed.
  *
  * `probed: true` is deliberate. The field exists to stop a green tick meaning
  * "nobody asked" — but this one was asked and the answer is definite: nothing in
  * this build can run it. That is knowledge, not an absence of it.
+ *
+ * Takes the kind as `never` for the same reason `unhandledKind` does: the status
+ * path would otherwise keep answering "unknown reviewer kind: gemini" for a
+ * reviewer that runs perfectly well, one release after `runOne` was taught the
+ * new kind. Both paths break the build together or neither is worth much.
  */
-export function unknownKindStatus(reviewer: Reviewer): ReviewerStatus {
+export function unknownKindStatus(kind: never, reviewer: Reviewer): ReviewerStatus {
   return {
     id: reviewer.id,
     label: reviewer.id,
     model: reviewer.model,
     available: false,
     probed: true,
-    detail: unknownKindDetail(String(reviewer.kind)),
+    detail: unknownKindDetail(String(kind)),
   };
 }
 
+/**
+ * The report for a reviewer no branch claimed.
+ *
+ * `kind: never` is the point: it is the compiler's proof that every known kind
+ * was handled before the call, and it breaks the build the moment one is added
+ * without being wired up.
+ */
 export function unhandledKind(kind: never, reviewer: Reviewer): ReviewerReport {
   return {
     reviewerId: reviewer.id,
@@ -1141,6 +1138,14 @@ export function unhandledKind(kind: never, reviewer: Reviewer): ReviewerReport {
   };
 }
 
+/**
+ * How much diff this reviewer's transport can carry.
+ *
+ * The 100 KB figure is about argv, not about the model: a CLI reviewer receives
+ * the prompt as one command-line argument and Linux caps that at 128 KiB. So it
+ * binds `claude` for exactly the same reason it binds `codex`, and an HTTP
+ * provider — which has no argv — still gets the larger budget.
+ */
 export function budgetFor(reviewer: Reviewer): number {
   return reviewer.kind === "provider" ? REVIEW_DIFF_BUDGET_BYTES_PROVIDER : REVIEW_DIFF_BUDGET_BYTES;
 }
@@ -1324,7 +1329,7 @@ export async function getReviewerStatuses(): Promise<ReviewerStatus[]> {
     // the alternative is a provider lookup for something that was never a
     // provider, and a status line blaming the providers table.
     if (r.kind !== "provider") {
-      out.push(unknownKindStatus(r));
+      out.push(unknownKindStatus(r.kind, r));
       continue;
     }
 

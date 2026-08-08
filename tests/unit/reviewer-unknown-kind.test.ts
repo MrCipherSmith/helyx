@@ -52,7 +52,7 @@ describe("an unrecognised reviewer kind", () => {
   });
 
   test("reads as unavailable in the status list, blaming the kind and not the providers table", () => {
-    const status = unknownKindStatus(fromTheFuture("mystery"));
+    const status = unknownKindStatus("mystery" as never, fromTheFuture("mystery"));
 
     expect(status).toEqual({
       id: "mystery:1",
@@ -69,7 +69,7 @@ describe("an unrecognised reviewer kind", () => {
     const reviewer = fromTheFuture("mystery");
     const report = unhandledKind(reviewer.kind as never, reviewer);
 
-    expect(report.error).toBe(unknownKindStatus(reviewer).detail);
+    expect(report.error).toBe(unknownKindStatus(reviewer.kind as never, reviewer).detail);
     expect(report.error).toBe(unknownKindDetail("mystery"));
   });
 });

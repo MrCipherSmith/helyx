@@ -3,9 +3,9 @@
   "id": "058",
   "slug": "unknown-reviewer-kind",
   "title": "An unknown reviewer kind fails as itself, not as a provider",
-  "status": "in-progress",
+  "status": "implemented",
   "createdAt": "2026-08-08T09:47:50.755Z",
-  "updatedAt": "2026-08-08T09:52:08.415Z",
+  "updatedAt": "2026-08-08T09:52:39.710Z",
   "source": {
     "type": "description",
     "ref": null
@@ -38,7 +38,7 @@
     }
   },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/104"
   },
   "tasks": [
     {
@@ -159,6 +159,11 @@
       "at": "2026-08-08T09:52:08.415Z",
       "event": "ac-confirmed",
       "detail": "AC6: adding a 4th kind 'gemini' produced TS2345 at reviewer-service.ts:1159; reverted"
+    },
+    {
+      "at": "2026-08-08T09:52:39.710Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/104 (warning: PR is not a draft)"
     }
   ]
 }
