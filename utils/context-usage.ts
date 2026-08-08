@@ -465,3 +465,117 @@ export function compactBoundaries(lines: readonly string[]): CompactBoundary[] {
   }
   return out;
 }
+
+/**
+ * What Claude Code reports when a turn fails on the API rather than on the work.
+ *
+ * `kind` is a bucket, not the wording: the wording belongs to another program
+ * and will change, so an unrecognised error becomes `"other"` and is still
+ * reported. Losing an error because its phrasing moved is worse than reporting
+ * one we cannot name.
+ */
+export type ApiErrorKind =
+  | "session-limit"
+  | "weekly-limit"
+  | "overloaded"
+  | "prompt-too-long"
+  | "network"
+  | "other";
+
+export interface ApiError {
+  kind: ApiErrorKind;
+  /** The message as written, for the alert to quote rather than paraphrase. */
+  text: string;
+  /**
+   * When the limit lifts, in UTC minutes since midnight, or null.
+   *
+   * Minutes rather than a Date because the message carries a time of day and no
+   * date — "resets 5:30pm (UTC)" — and resolving that to an instant needs a
+   * clock the parser does not have and should not invent. The caller knows when
+   * it read the line; it can decide whether 5:30pm is later today or tomorrow.
+   */
+  resetsAtUtcMinutes: number | null;
+}
+
+/**
+ * The reset time out of "· resets 5:30pm (UTC)" or "· resets 2pm (UTC)".
+ *
+ * Both forms are observed. Anything else — a timezone that is not UTC, a date,
+ * a phrasing this has not met — returns null rather than a guess, because a
+ * wrong reset time is worse than none: it is what decides when the limit marker
+ * stops suppressing the hung-session alarm.
+ */
+export function parseResetTime(text: string): number | null {
+  const m = /resets?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(UTC\)/i.exec(text);
+  if (!m) return null;
+  let hour = Number(m[1]);
+  const minute = m[2] ? Number(m[2]) : 0;
+  const meridiem = m[3]!.toLowerCase();
+  if (hour < 1 || hour > 12 || minute > 59) return null;
+  if (meridiem === "pm" && hour !== 12) hour += 12;
+  if (meridiem === "am" && hour === 12) hour = 0;
+  return hour * 60 + minute;
+}
+
+/**
+ * Read an API error out of a parsed transcript entry.
+ *
+ * Recognised by `isApiErrorMessage === true` and by nothing else. Not by the
+ * words: this repository's sessions discuss rate limits, overload and prompt
+ * length constantly, and matching prose would turn a conversation about the
+ * problem into a report of the problem. The flag is Claude Code's own
+ * statement that this entry is an error rather than an answer.
+ *
+ * Corroborating, and deliberately not required: these entries carry
+ * `model: "<synthetic>"` and a `usage` block of zeros, because the CLI
+ * manufactures them rather than receiving them. The zeros matter downstream —
+ * anything totalling tokens must not read a synthetic entry as a turn that
+ * used none.
+ *
+ * Texts observed in this project between 2026-07-07 and 2026-08-08:
+ *
+ *     You've hit your session limit · resets 5:30pm (UTC)
+ *     You've hit your weekly limit · resets 2pm (UTC)
+ *     API Error: 529 Overloaded. This is a server-side issue…
+ *     Prompt is too long
+ *     API Error: Unable to connect to API (ENOTFOUND)
+ */
+export function parseApiError(entry: unknown): ApiError | null {
+  if (!entry || typeof entry !== "object") return null;
+  const e = entry as Record<string, unknown>;
+  if (e.isApiErrorMessage !== true) return null;
+
+  const content = (e.message as { content?: unknown } | undefined)?.content;
+  const text =
+    typeof content === "string"
+      ? content
+      : Array.isArray(content)
+        ? content
+            .filter((c): c is { text?: unknown } => Boolean(c) && typeof c === "object")
+            .map((c) => (typeof c.text === "string" ? c.text : ""))
+            .join(" ")
+        : "";
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+
+  // Weekly before session: the weekly message also contains the word "limit",
+  // and it is the more consequential of the two — hours against days.
+  const kind: ApiErrorKind = /weekly limit/i.test(trimmed)
+    ? "weekly-limit"
+    : /session limit|usage limit/i.test(trimmed)
+      ? "session-limit"
+      : /overloaded|\b529\b/i.test(trimmed)
+        ? "overloaded"
+        : /prompt is too long|too many tokens/i.test(trimmed)
+          ? "prompt-too-long"
+          : /unable to connect|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|network/i.test(trimmed)
+            ? "network"
+            : "other";
+
+  return { kind, text: trimmed.slice(0, 500), resetsAtUtcMinutes: parseResetTime(trimmed) };
+}
+
+/** Whether this kind means "the account is out of allowance", not "the call failed". */
+export function isLimitKind(kind: ApiErrorKind): boolean {
+  return kind === "session-limit" || kind === "weekly-limit";
+}
