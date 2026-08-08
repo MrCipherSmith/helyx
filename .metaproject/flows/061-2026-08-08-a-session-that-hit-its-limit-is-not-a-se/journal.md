@@ -26,3 +26,4 @@
 - 2026-08-08T19:00:34.912Z - task-done: T1: Collect remaining context
 - 2026-08-08T19:00:35.010Z - task-done: T2: Implement per plan
 - 2026-08-08T19:00:35.119Z - task-done: T3: Add/adjust tests and make them pass
+- 2026-08-08T19:33:45.955Z - ac-updated: reconcile two collisions the implementer flagged: AC4 vs AC3 (the hang loop stands down, it does not send a second alert) and AC8 vs AC16 (no action on the session; deferring delivery is not action on the session)

@@ -5,65 +5,13 @@
   "title": "A session that hit its limit is not a session that hung",
   "status": "in-progress",
   "createdAt": "2026-08-08T18:02:09.973Z",
-  "updatedAt": "2026-08-08T19:00:35.119Z",
+  "updatedAt": "2026-08-08T19:33:45.955Z",
   "source": {
     "type": "description",
     "ref": null
   },
-  "acChecksum": "sha256:2f5d3eba118c7dadd379d2dbaeaae635572f53b23e8f851a0a74cb61717a23cb",
-  "acConfirmed": {
-    "AC1": {
-      "at": "2026-08-08T19:00:27.164Z"
-    },
-    "AC2": {
-      "at": "2026-08-08T19:00:27.291Z"
-    },
-    "AC3": {
-      "at": "2026-08-08T19:00:27.414Z"
-    },
-    "AC4": {
-      "at": "2026-08-08T19:00:27.525Z"
-    },
-    "AC5": {
-      "at": "2026-08-08T19:00:27.649Z"
-    },
-    "AC6": {
-      "at": "2026-08-08T19:00:27.765Z"
-    },
-    "AC7": {
-      "at": "2026-08-08T19:00:27.873Z"
-    },
-    "AC8": {
-      "at": "2026-08-08T19:00:27.997Z"
-    },
-    "AC10": {
-      "at": "2026-08-08T19:00:28.115Z"
-    },
-    "AC11": {
-      "at": "2026-08-08T19:00:28.224Z"
-    },
-    "AC12": {
-      "at": "2026-08-08T19:00:28.330Z"
-    },
-    "AC13": {
-      "at": "2026-08-08T19:00:28.438Z"
-    },
-    "AC14": {
-      "at": "2026-08-08T19:00:28.550Z"
-    },
-    "AC15": {
-      "at": "2026-08-08T19:00:28.659Z"
-    },
-    "AC16": {
-      "at": "2026-08-08T19:00:28.768Z"
-    },
-    "AC17": {
-      "at": "2026-08-08T19:00:28.881Z"
-    },
-    "AC18": {
-      "at": "2026-08-08T19:00:28.989Z"
-    }
-  },
+  "acChecksum": "sha256:cfd9496079d7bbd83c11fda0bb77e6a6bdbceab0baef6411769ef6f21203d041",
+  "acConfirmed": {},
   "pr": {
     "url": null
   },
@@ -256,6 +204,11 @@
       "at": "2026-08-08T19:00:35.119Z",
       "event": "task-done",
       "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-08T19:33:45.955Z",
+      "event": "ac-updated",
+      "detail": "reconcile two collisions the implementer flagged: AC4 vs AC3 (the hang loop stands down, it does not send a second alert) and AC8 vs AC16 (no action on the session; deferring delivery is not action on the session)"
     }
   ]
 }
