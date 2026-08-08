@@ -39,6 +39,7 @@ const MAX_ASK_QUESTION_BODY = 256 * 1024;
 const MAX_ASK_QUESTION_WAITERS = 16;
 let askQuestionWaiters = 0;
 import { runQuestionExchange, resolveTarget } from "../services/ask-question.ts";
+import { startFoldForProject } from "../services/fold-marker.ts";
 import { sendTelegramMessage, editTelegramMessage } from "../channel/telegram.ts";
 import { summarizeBeforeCompact, summarizeOnDisconnect, summarizeWork, extractFactsFromTranscript } from "../memory/summarizer.ts";
 import { localTranscriptPath } from "../utils/transcript-locate.ts";
@@ -815,6 +816,27 @@ export async function handleMcpRequest(
         res.end(JSON.stringify({ error: "Invalid transcript_path" }));
         return;
       }
+
+      // The fold is about to start, and this is the only place that knows it.
+      //
+      // The transcript says nothing until the fold is over — the
+      // `compact_boundary` record is written afterwards and carries the duration
+      // it took, 119544 ms and 149137 ms on the two observed in this project.
+      // Two watchdogs fire at five minutes of silence, so between them and this
+      // hook the session has to be able to say "that silence is a fold". The
+      // marker goes in `sessions.metadata`, which both the bot in its container
+      // and the channel on the host can read; `channel/status.ts` clears it when
+      // the boundary arrives. See `services/fold-marker.ts`.
+      //
+      // `transcript_path` is validated above and used by nothing here, which an
+      // earlier review noted. It stays validated because the hook sends it and a
+      // path outside the allowed roots is still a request worth refusing.
+      //
+      // Not awaited: the hook is holding compaction open on this response, and a
+      // marker that failed to write costs a status line that stays generic — not
+      // a fold.
+      startFoldForProject(mcpDeps.sql, project_path as string, (trigger as string | undefined) ?? null)
+        .catch((err) => console.error("[hooks/pre-compact] fold marker error:", err?.message));
 
       const timedOut = Symbol("timeout");
       const outcome = await Promise.race([

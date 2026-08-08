@@ -53,6 +53,7 @@ import {
   type RunShell,
 } from "../utils/supervisor-status.ts";
 import { hasOpenQuestion } from "../services/ask-question.ts";
+import { sessionFold } from "../services/fold-marker.ts";
 import {
   sessionProblemKey,
   projectFromSessionProblemKey,
@@ -363,6 +364,22 @@ export async function checkHungSessions(sql: postgres.Sql, runShell?: RunShell):
       // two "session is not responding" alerts and no sign of the question.
       if (await hasOpenQuestion(sql, Number(row.session_id))) {
         console.log(`[supervisor] ${row.project}: waiting on a question, not hung`);
+        continue;
+      }
+
+      // A session compacting its context is folding, not hung, and the two look
+      // identical from here: the status message stops updating for the whole of
+      // it. `durationMs` was 119544 and 149137 on the two folds observed in this
+      // project on 2026-08-08, so a fold eats between a third and a half of
+      // `SESSION_STALE_MS` before it has done anything wrong, and a fold that
+      // starts two minutes into a quiet stretch is alerted on.
+      //
+      // Bounded by `services/fold-marker.ts`: a marker whose fold never finished
+      // — a CLI that died mid-compaction — stops being believed after its grace
+      // window, so this exemption cannot mute the loop permanently.
+      const fold = await sessionFold(sql, sessionId);
+      if (fold) {
+        console.log(`[supervisor] ${row.project}: compacting context for ${Math.round(fold.elapsedMs / 1000)}s, not hung`);
         continue;
       }
 

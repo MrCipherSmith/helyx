@@ -30,7 +30,7 @@ import { shouldReopen, shouldClose, shouldMove, CONTINUATION_IDLE_MS } from "../
 import { escapeHtml } from "../utils/html.ts";
 import { isRequeued, markRequeued } from "../utils/requeue.ts";
 import { hasOpenQuestion } from "../services/ask-question.ts";
-import { endFold } from "../services/fold-marker.ts";
+import { sessionFold, endFold, readFoldMarker, foldFromMarker, type ActiveFold } from "../services/fold-marker.ts";
 import { droppedSpan } from "../utils/transcript-locate.ts";
 import type { CompactBoundary } from "../utils/context-usage.ts";
 import { remember } from "../memory/long-term.ts";
@@ -106,6 +106,15 @@ interface StatusState {
   lastEditAt: number;
   /** The queued catch-up edit, if the floor deferred one. */
   deferredEditTimer: ReturnType<typeof setTimeout> | null;
+  /**
+   * The fold this session is inside, refreshed off the same row as the pane.
+   *
+   * Read from `sessions.metadata` rather than known here, because the process
+   * that knows a fold has started is the bot in its container: the PreCompact
+   * hook fires before compaction, the `compact_boundary` record appears after it,
+   * and the channel only ever sees the second one. See `services/fold-marker.ts`.
+   */
+  folding: ActiveFold | null;
 }
 
 interface SessionStats {
@@ -129,6 +138,20 @@ interface StatusExtras {
   idleMs?: number;
   /** Subagents running right now. */
   agents?: readonly string[];
+  /** How long the session has been folding its context, when it is. */
+  foldingMs?: number | null;
+}
+
+/**
+ * How long the fold has been going, measured now rather than when it was read.
+ *
+ * The marker is refreshed on the timer tick, so `ActiveFold.elapsedMs` is as old
+ * as the last read — up to fifteen seconds, since a folding session produces no
+ * activity and the tick backs off to its idle interval. Recomputing from
+ * `startedAt` makes the line advance between reads instead of jumping.
+ */
+function foldingAge(fold: ActiveFold | null): number | null {
+  return fold === null ? null : Math.max(0, Date.now() - fold.startedAt);
 }
 
 /**
@@ -167,6 +190,7 @@ function formatStatusText(stage: string, elapsed: string, tokens: string, paneSn
     question: extras?.question,
     idleMs: extras?.idleMs,
     agents: extras?.agents,
+    foldingMs: extras?.foldingMs,
     // Derived here rather than passed in: the caller already hands over the
     // stage this is read from, and two callers deriving it separately is how
     // the header and the body come to disagree.
@@ -442,6 +466,30 @@ export class StatusManager {
         await hasOpenQuestion(this.ctx.sql, sessionId).catch(() => false);
       if (awaitingAnswer) {
         channelLogger.info({ chatId, silentMs }, "response guard: question open, re-arming silently");
+        this.armResponseGuard(chatId);
+        return;
+      }
+
+      // Case 0b: the session is not silent, it is folding.
+      //
+      // Compaction answers nothing for its whole duration — 119544 ms and 149137
+      // ms on the two folds observed in this project on 2026-08-08 — and it
+      // starts from whatever the guard's five minutes had already been spent on,
+      // so a fold late in a turn lands inside the alarm rather than beside it.
+      // The operator would then be told the session had died by the one thing
+      // that knew it had not.
+      //
+      // Asked of the database rather than read off `state.folding`, which the
+      // timer refreshes: the tick can be skipped while an edit is in flight, and
+      // this is the decision that ends a turn.
+      const fold = sessionId !== null
+        ? await sessionFold(this.ctx.sql, sessionId, now).catch(() => null)
+        : null;
+      if (fold) {
+        channelLogger.info(
+          { chatId, silentMs, foldingMs: fold.elapsedMs, trigger: fold.trigger },
+          "response guard: session is compacting, re-arming silently",
+        );
         this.armResponseGuard(chatId);
         return;
       }
@@ -915,6 +963,7 @@ export class StatusManager {
         deferredEditTimer: null,
         continuation: options.continuation ?? false,
         movedFor: null,
+        folding: null,
       };
       const scheduleTick = (key: string): void => {
         const state = this.activeStatus.get(key);
@@ -941,7 +990,7 @@ export class StatusManager {
             await this.deleteStatusMessage(state.chatId).catch(() => {});
             return;
           }
-          await this.refreshPaneSnapshot(state).catch(() => {});
+          await this.refreshSessionRow(state).catch(() => {});
           // SU-5: same drain as the immediate paths, rather than a second copy
           // of the protocol that absorbed exactly one buffered update.
           await this.editWithDrain(state);
@@ -1244,6 +1293,7 @@ export class StatusManager {
       toolCount: state.turnToolCount,
       fileCount: state.turnFileCount,
       question: this.currentQuestion.get(key),
+      foldingMs: foldingAge(state.folding),
       ...this.glanceExtras(key),
     };
     const spinnerIcon = spinnerIconAt(state.spinnerFrame, state.lastUpdateAt, Date.now());
@@ -1265,6 +1315,7 @@ export class StatusManager {
       toolCount: state.turnToolCount,
       fileCount: state.turnFileCount,
       question: this.currentQuestion.get(key),
+      foldingMs: foldingAge(state.folding),
       ...this.glanceExtras(key),
     };
 
@@ -1300,18 +1351,49 @@ export class StatusManager {
     return true;
   }
 
-  private async refreshPaneSnapshot(state: StatusState): Promise<void> {
+  /**
+   * Re-read the session row behind whatever status this chat has open.
+   *
+   * Public for the reason `runResponseGuard` is: the only other caller is the
+   * spinner timer, whose interval is between five and fifteen seconds, and what
+   * this reads is the fold marker — the thing that decides whether the operator
+   * is shown two minutes of silence or two minutes of "сворачивает контекст".
+   */
+  async refreshStatusFromSession(chatId: string): Promise<void> {
+    const state = this.activeStatus.get(this.stateKey(chatId));
+    if (!state) return;
+    await this.refreshSessionRow(state);
+  }
+
+  /**
+   * The two things the status reads off the session row on every tick.
+   *
+   * One query for both, deliberately. The fold marker could have had its own
+   * `SELECT metadata`, and then a fleet of eight sessions would issue sixteen
+   * single-row queries every five seconds to render one message each. It is the
+   * same row, and it is already being fetched.
+   *
+   * Named for the row rather than for the pane since the fold marker joined it —
+   * `refreshPaneSnapshot` reading `metadata` would be a method whose name is a
+   * lie about half of what it does.
+   */
+  private async refreshSessionRow(state: StatusState): Promise<void> {
     const sessionId = this.ctx.sessionId();
     if (!sessionId) return;
     const rows = await this.ctx.sql`
-      SELECT pane_snapshot, pane_snapshot_at FROM sessions WHERE id = ${sessionId}
+      SELECT pane_snapshot, pane_snapshot_at, metadata FROM sessions WHERE id = ${sessionId}
     `.catch(() => []);
     if (!rows[0]) return;
-    const { pane_snapshot, pane_snapshot_at } = rows[0] as { pane_snapshot: string | null; pane_snapshot_at: Date | null };
+    const { pane_snapshot, pane_snapshot_at, metadata } = rows[0] as {
+      pane_snapshot: string | null;
+      pane_snapshot_at: Date | null;
+      metadata: unknown;
+    };
     // Only show snapshot if it's fresh (< 30s old)
     const fresh = pane_snapshot_at && (Date.now() - new Date(pane_snapshot_at).getTime()) < 30_000;
     state.paneSnapshot = fresh ? pane_snapshot : null;
     state.paneSnapshotAt = pane_snapshot_at ? new Date(pane_snapshot_at).getTime() : null;
+    state.folding = foldFromMarker(readFoldMarker(metadata), Date.now());
   }
 
   async deleteStatusMessage(chatId: string): Promise<void> {
