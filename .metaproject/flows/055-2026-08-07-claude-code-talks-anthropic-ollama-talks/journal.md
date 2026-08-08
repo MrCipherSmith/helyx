@@ -18,3 +18,5 @@
 - 2026-08-07T18:53:00.550Z - ac-confirmed: AC9: 'the enable gate' asserts the gate, loopback hostname, exit-on-bind-failure and the port default away from 3456
 - 2026-08-07T18:53:00.642Z - ac-confirmed: AC10: typecheck clean, lint 0 errors, bun test tests/unit/ 1977 pass 0 fail
 - 2026-08-07T18:53:00.731Z - task-done: T4: Self-review and prepare draft PR
+- 2026-08-08T13:06:59.062Z - completing
+- 2026-08-08T13:06:59.070Z - done: all gates passed

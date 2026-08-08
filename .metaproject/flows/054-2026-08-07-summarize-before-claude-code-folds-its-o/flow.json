@@ -3,9 +3,9 @@
   "id": "054",
   "slug": "summarize-before-claude-code-folds-its-o",
   "title": "Summarize before Claude Code folds its own context",
-  "status": "implemented",
+  "status": "done",
   "createdAt": "2026-08-07T16:34:52.360Z",
-  "updatedAt": "2026-08-07T20:21:39.321Z",
+  "updatedAt": "2026-08-08T13:06:59.171Z",
   "source": {
     "type": "description",
     "ref": null
@@ -197,6 +197,20 @@
       "at": "2026-08-07T20:21:39.321Z",
       "event": "implemented",
       "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/100 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-08-08T13:06:59.165Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-08T13:06:59.171Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
-  ]
+  ],
+  "merged": {
+    "commit": "ea28a88d",
+    "ref": "origin/main",
+    "at": "2026-08-08T13:06:59.171Z"
+  }
 }

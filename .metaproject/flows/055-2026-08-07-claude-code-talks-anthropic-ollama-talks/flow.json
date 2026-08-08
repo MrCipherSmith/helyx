@@ -3,9 +3,9 @@
   "id": "055",
   "slug": "claude-code-talks-anthropic-ollama-talks",
   "title": "Claude Code talks Anthropic, Ollama talks OpenAI — a local model nobody can select",
-  "status": "implemented",
+  "status": "done",
   "createdAt": "2026-08-07T18:31:56.079Z",
-  "updatedAt": "2026-08-07T18:53:00.731Z",
+  "updatedAt": "2026-08-08T13:06:59.070Z",
   "source": {
     "type": "description",
     "ref": null
@@ -206,6 +206,20 @@
       "at": "2026-08-07T18:53:00.731Z",
       "event": "task-done",
       "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-08T13:06:59.062Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-08T13:06:59.070Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
-  ]
+  ],
+  "merged": {
+    "commit": "8357c4bd",
+    "ref": "origin/main",
+    "at": "2026-08-08T13:06:59.070Z"
+  }
 }

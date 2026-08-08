@@ -3,9 +3,9 @@
   "id": "059",
   "slug": "claude-code-says-exactly-what-it-forgot-",
   "title": "Claude Code says exactly what it forgot, and nobody reads it",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-08T10:36:19.798Z",
-  "updatedAt": "2026-08-08T11:23:01.992Z",
+  "updatedAt": "2026-08-08T13:07:30.875Z",
   "source": {
     "type": "description",
     "ref": null
@@ -32,10 +32,13 @@
     },
     "AC7": {
       "at": "2026-08-08T11:23:01.992Z"
+    },
+    "AC8": {
+      "at": "2026-08-08T13:07:28.874Z"
     }
   },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/105"
   },
   "tasks": [
     {
@@ -87,7 +90,7 @@
       "id": "T4",
       "title": "Self-review and prepare draft PR",
       "kind": "review",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -95,7 +98,8 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     }
   ],
   "history": [
@@ -161,6 +165,49 @@
       "at": "2026-08-08T11:23:01.992Z",
       "event": "ac-confirmed",
       "detail": "AC7"
+    },
+    {
+      "at": "2026-08-08T13:06:58.843Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/105 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-08-08T13:06:58.949Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-08T13:06:58.958Z",
+      "event": "completion-failed",
+      "detail": "acceptance-criteria: unconfirmed: AC8"
+    },
+    {
+      "at": "2026-08-08T13:07:28.875Z",
+      "event": "ac-confirmed",
+      "detail": "AC8"
+    },
+    {
+      "at": "2026-08-08T13:07:28.961Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-08T13:07:30.780Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/105 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-08-08T13:07:30.869Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-08T13:07:30.875Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
-  ]
+  ],
+  "merged": {
+    "commit": "0051ae59",
+    "ref": "origin/main",
+    "at": "2026-08-08T13:07:30.875Z"
+  }
 }

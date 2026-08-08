@@ -3,24 +3,46 @@
   "id": "056",
   "slug": "three-reviewers-out-of-four-cannot-be-re",
   "title": "Three reviewers out of four cannot be reached, and one of them says so as an empty answer",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-08T07:46:04.645Z",
-  "updatedAt": "2026-08-08T08:20:34.738Z",
+  "updatedAt": "2026-08-08T13:07:51.350Z",
   "source": {
     "type": "description",
     "ref": null
   },
   "acChecksum": "sha256:b7ec20ba61d1cb4a822a8408a85efb0d6830ad2cb5147c27eb4dc2a15e0943ff",
-  "acConfirmed": {},
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-08T13:07:41.774Z"
+    },
+    "AC2": {
+      "at": "2026-08-08T13:07:41.868Z"
+    },
+    "AC3": {
+      "at": "2026-08-08T13:07:41.962Z"
+    },
+    "AC4": {
+      "at": "2026-08-08T13:07:42.052Z"
+    },
+    "AC5": {
+      "at": "2026-08-08T13:07:42.144Z"
+    },
+    "AC6": {
+      "at": "2026-08-08T13:07:42.238Z"
+    },
+    "AC7": {
+      "at": "2026-08-08T13:07:42.333Z"
+    }
+  },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/102"
   },
   "tasks": [
     {
       "id": "T1",
       "title": "Collect remaining context",
       "kind": "context",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -28,13 +50,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T2",
       "title": "Implement per plan",
       "kind": "implement",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -42,13 +65,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T3",
       "title": "Add/adjust tests and make them pass",
       "kind": "test",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -56,13 +80,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T4",
       "title": "Self-review and prepare draft PR",
       "kind": "review",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -70,7 +95,8 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     }
   ],
   "history": [
@@ -86,6 +112,80 @@
     {
       "at": "2026-08-08T08:20:34.738Z",
       "event": "started"
+    },
+    {
+      "at": "2026-08-08T13:07:41.774Z",
+      "event": "ac-confirmed",
+      "detail": "AC1"
+    },
+    {
+      "at": "2026-08-08T13:07:41.869Z",
+      "event": "ac-confirmed",
+      "detail": "AC2"
+    },
+    {
+      "at": "2026-08-08T13:07:41.962Z",
+      "event": "ac-confirmed",
+      "detail": "AC3"
+    },
+    {
+      "at": "2026-08-08T13:07:42.052Z",
+      "event": "ac-confirmed",
+      "detail": "AC4"
+    },
+    {
+      "at": "2026-08-08T13:07:42.145Z",
+      "event": "ac-confirmed",
+      "detail": "AC5"
+    },
+    {
+      "at": "2026-08-08T13:07:42.238Z",
+      "event": "ac-confirmed",
+      "detail": "AC6"
+    },
+    {
+      "at": "2026-08-08T13:07:42.333Z",
+      "event": "ac-confirmed",
+      "detail": "AC7"
+    },
+    {
+      "at": "2026-08-08T13:07:42.429Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-08T13:07:42.528Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-08T13:07:42.628Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-08T13:07:42.772Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-08T13:07:51.248Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/102 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-08-08T13:07:51.342Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-08T13:07:51.350Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
-  ]
+  ],
+  "merged": {
+    "commit": "058a7d62",
+    "ref": "origin/main",
+    "at": "2026-08-08T13:07:51.350Z"
+  }
 }
