@@ -250,6 +250,30 @@ describe("when Ollama is not there", () => {
   });
 });
 
+describe("a failure nothing anticipated still reaches the terminal", () => {
+  // The handlers name the failures somebody thought of. An unexpected throw —
+  // `.json()` on a 200 that is not JSON, which is what a reverse proxy in front
+  // of Ollama returns when it is the one answering — escaped past all of them,
+  // and with `fetch: route` that is Bun's default 500 with a body Claude Code
+  // reads as a malformed response rather than as an error message.
+
+  test("a 200 that is not JSON on /v1/models is an Anthropic error, not a bare 500", async () => {
+    http.program("/api/tags", { status: 200, text: "<html>502 Bad Gateway</html>" });
+    const res = await route(new Request("http://127.0.0.1:3458/v1/models"));
+    expect(res.ok).toBe(false);
+    expect((await res.json()).type).toBe("error");
+  });
+
+  test("a 200 that is not JSON on a non-streaming turn is too", async () => {
+    http.program("/api/chat", { status: 200, text: "<html>502 Bad Gateway</html>" });
+    const res = await route(post("/v1/messages", { stream: false, messages: [{ role: "user", content: "hi" }] }));
+    expect(res.ok).toBe(false);
+    const body = await res.json();
+    expect(body.type).toBe("error");
+    expect(body.error.type).toBe("api_error");
+  });
+});
+
 describe("model resolution through the route", () => {
   test("a model this host never pulled is served with the configured default", async () => {
     // Claude Code picks its own small/fast model for background work. Failing

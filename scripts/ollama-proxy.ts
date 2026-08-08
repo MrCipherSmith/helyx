@@ -371,7 +371,31 @@ async function handleModels(): Promise<Response> {
   return Response.json(toModelsResponse((await res.json()) as Parameters<typeof toModelsResponse>[0]));
 }
 
+/**
+ * Every request, including the ways one can fail that nothing here anticipated.
+ *
+ * The wrapper is the whole point of this function. `dispatch` and the handlers
+ * under it name the failures they expect and answer each with Anthropic's error
+ * envelope, which is how the message reaches the terminal at all — but they only
+ * name the ones somebody thought of. `await upstream.json()` on a 200 whose body
+ * is not JSON, `res.json()` in `handleModels` on the same, a `URL` that will not
+ * parse: each of those throws past the handler, and with `fetch: route` an
+ * escaped throw is Bun's default 500 with a body Claude Code cannot read as an
+ * error. The client reports a malformed response, the operator gets no message,
+ * and the actual cause is in neither place.
+ *
+ * One try/catch and `fail()` — already written, already the right shape — turn
+ * every one of those into the envelope the rest of the daemon uses.
+ */
 export async function route(req: Request): Promise<Response> {
+  try {
+    return await dispatch(req);
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+async function dispatch(req: Request): Promise<Response> {
   const path = new URL(req.url).pathname.replace(/\/+$/, "") || "/";
 
   if (path === "/health") return Response.json({ status: "ok", model: CONFIG.OLLAMA_PROXY_MODEL || CONFIG.OLLAMA_CHAT_MODEL });
