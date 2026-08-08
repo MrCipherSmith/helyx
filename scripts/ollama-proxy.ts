@@ -261,7 +261,44 @@ async function handleMessages(req: Request): Promise<Response> {
         emit(translator.start());
         let pending = "";
         let last: OllamaChunk = {};
-        while (reader) {
+
+        /**
+         * One chunk, wherever it came from.
+         *
+         * The loop and the tail after it used to carry a copy of this each, and
+         * a copy is a place for the two to disagree about what a chunk means.
+         */
+        const handle = (chunk: OllamaChunk): void => {
+          // Ollama reports a failure that happens *after* it has answered — the
+          // runner dying, the model failing to load — as one more line of the
+          // stream carrying `error` and nothing else. No `message`, no `done`.
+          // Translating it therefore yielded no events at all, `last` stayed
+          // `{}`, and `finish({})` closed the turn with one empty text block and
+          // `stop_reason: "end_turn"`: a clean 200, nothing in the log, and an
+          // operator watching the model answer with silence. The failure this
+          // whole daemon exists to prevent, arriving through the one path that
+          // had no way to report it.
+          if (chunk.error) {
+            throw new TranslationError("api_error", `Ollama failed mid-stream: ${chunk.error}`, 502);
+          }
+          // The final chunk is translated like every other one before it closes
+          // the turn. Ollama puts content on it — trailing text, and the
+          // `tool_calls` of a turn that ends in one — and routing it straight
+          // into `last` discarded that: a tool call delivered on the `done`
+          // chunk vanished, and because the translator never saw it the turn
+          // was reported `end_turn` instead of `tool_use`, which ends Claude
+          // Code's agent loop and reads as the model refusing to act.
+          emit(translator.chunk(chunk));
+          if (chunk.done) last = chunk;
+        };
+
+        // A streaming 200 with no body at all is the same silent success
+        // arriving a different way: nothing to read, so nothing to translate,
+        // so an empty turn that looks like an answer.
+        if (!reader) {
+          throw new TranslationError("api_error", "Ollama returned a streaming response with no body", 502);
+        }
+        for (;;) {
           const { done, value } = await reader.read();
           if (done) break;
           pending += decoder.decode(value, { stream: true });
@@ -269,24 +306,23 @@ async function handleMessages(req: Request): Promise<Response> {
           if (lastBreak === -1) continue;
           const ready = pending.slice(0, lastBreak);
           pending = pending.slice(lastBreak + 1);
-          for (const chunk of parseNdjson(ready)) {
-            if (chunk.done) last = chunk;
-            else emit(translator.chunk(chunk));
-          }
+          for (const chunk of parseNdjson(ready)) handle(chunk);
         }
-        for (const chunk of parseNdjson(pending)) {
-          if (chunk.done) last = chunk;
-          else emit(translator.chunk(chunk));
-        }
+        for (const chunk of parseNdjson(pending)) handle(chunk);
         emit(translator.finish(last));
       } catch (err) {
-        // Mid-stream the status is already sent, so the only way to say
-        // anything is an error event in the stream itself.
+        const message = err instanceof Error ? err.message : String(err);
+        // Said twice on purpose. Mid-stream the status is already sent, so the
+        // only way to reach the client is an error event in the stream itself —
+        // and the operator reads the terminal this daemon logs to, not the
+        // socket, so a mid-stream failure that appears only in the SSE body is
+        // a failure nobody can go back and look at.
+        log(`stream failed: ${message}`);
         controller.enqueue(
           encoder.encode(
             serializeSse({
               event: "error",
-              data: { type: "error", error: { type: "api_error", message: err instanceof Error ? err.message : String(err) } },
+              data: { type: "error", error: { type: "api_error", message } },
             }),
           ),
         );

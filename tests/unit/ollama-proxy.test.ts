@@ -143,6 +143,53 @@ describe("/v1/messages", () => {
     expect(usageOf(text)).toEqual({ input_tokens: 41_000, output_tokens: 2 });
   });
 
+  test("a mid-stream Ollama error is a failure, not a turn that said nothing", async () => {
+    // Ollama reports the runner dying or a model failing to load as one more
+    // NDJSON line carrying only `error` — no message, no done. Translated as an
+    // ordinary chunk it produced no events at all, and the stream closed with
+    // an empty text block and stop_reason end_turn: HTTP 200, nothing logged,
+    // and an operator watching the model reply with silence.
+    http.program("/api/chat", {
+      text:
+        JSON.stringify({ message: { content: "thin" } }) +
+        "\n" +
+        JSON.stringify({ error: "model runner has unexpectedly stopped" }) +
+        "\n",
+    });
+
+    const res = await route(post("/v1/messages", { stream: true, messages: [{ role: "user", content: "hi" }] }));
+    const text = await res.text();
+    const events = [...text.matchAll(/^event: (.+)$/gm)].map((m) => m[1]);
+    expect(events).toContain("error");
+    expect(text).toContain("model runner has unexpectedly stopped");
+    // And emphatically not a turn that ended normally.
+    expect(events).not.toContain("message_stop");
+    expect(text).not.toContain('"stop_reason":"end_turn"');
+  });
+
+  test("a tool call delivered on the done chunk is not thrown away", async () => {
+    // `if (chunk.done) last = chunk` skipped the translator entirely, so
+    // anything Ollama put on the final chunk — trailing text, the tool_calls of
+    // a turn that ends in one — never became a content block. The stop_reason
+    // followed: no tool call seen means end_turn, which ends Claude Code's
+    // agent loop and reads as the model refusing to act.
+    http.program("/api/chat", {
+      text:
+        JSON.stringify({
+          message: { content: "on it", tool_calls: [{ function: { name: "Bash", arguments: { cmd: "ls" } } }] },
+          done: true,
+          done_reason: "stop",
+          eval_count: 4,
+        }) + "\n",
+    });
+
+    const res = await route(post("/v1/messages", { stream: true, messages: [{ role: "user", content: "hi" }] }));
+    const text = await res.text();
+    expect(text).toContain('"name":"Bash"');
+    expect(text).toContain("on it");
+    expect(text).toContain('"stop_reason":"tool_use"');
+  });
+
   test("a request body that is not JSON is an invalid_request_error", async () => {
     const res = await route(
       new Request("http://127.0.0.1:3458/v1/messages", { method: "POST", body: "not json" }),

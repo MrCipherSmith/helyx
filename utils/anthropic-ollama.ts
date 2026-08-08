@@ -116,6 +116,16 @@ export interface OllamaChunk {
   done_reason?: string;
   prompt_eval_count?: number;
   eval_count?: number;
+  /**
+   * A failure, reported as an ordinary line of the stream.
+   *
+   * Ollama does not close the connection or change the status when the runner
+   * dies or the model fails to load partway through a generation — the 200 and
+   * the headers are long gone. It writes one more NDJSON object carrying this
+   * field and nothing else. A chunk with it is not a chunk; see how
+   * `scripts/ollama-proxy.ts` handles it.
+   */
+  error?: string;
 }
 
 // ─── Errors ──────────────────────────────────────────────────────────────────
