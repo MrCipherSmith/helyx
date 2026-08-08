@@ -58,6 +58,20 @@ session comes back and stops again. The operator is told "not responding" when
 the truth is "not allowed to respond until 5:30pm", which is a different problem
 with a different remedy: wait, or switch provider.
 
+### And there is no way to watch a session that is working
+
+The supervisor speaks only when something is wrong. There is no signal for "this
+session is fine and here is what it is doing", so a long piece of work is
+indistinguishable from a stall until the five-minute alarm decides — and the
+alarm's whole question is whether silence means trouble.
+
+The numbers to answer that already exist, in pieces. `contextTokens` sums the
+three input fields off a transcript entry; `outputTokens` reads the turn's
+output; `usageRatio` turns tokens and a window into a percentage, and the
+context-pressure loop already computes exactly that for every active session
+every two minutes. `sessions` carries `connected_at`, `last_active` and a pane
+snapshot. Nothing assembles them into a line anyone sees.
+
 ## Expected Outcome
 
 - A limit event in a session's transcript is reported to the supervisor topic,
@@ -67,6 +81,9 @@ with a different remedy: wait, or switch provider.
 - A session worked on from the pane can be found hung, like any other.
 - The other API errors in that stream — overload, a prompt too long, a lost
   connection — are distinguishable from each other and from silence.
+- A working session reports a pulse the operator can read: tokens in and out,
+  how long it has been at it, how full its context is, and what it is doing —
+  so that "still thinking" is visible as such, before any alarm has to guess.
 
 ## Out of Scope
 

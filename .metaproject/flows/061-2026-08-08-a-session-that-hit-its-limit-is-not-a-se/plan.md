@@ -49,6 +49,20 @@ visible without changing what "stale" means for the ones already covered.
    instead of inner, and staleness measured from the newest of the status row
    and the session's own last activity.
 
+7. The pulse. Assembled where the numbers already are: the context-pressure
+   loop reads each active session's transcript every two minutes and already
+   computes tokens, window and ratio. It gains an output-token total and the
+   turn's elapsed time, and the supervisor renders one line per working session.
+   The interval is deliberately not the same as that loop's — a pulse every two
+   minutes is noise; the reading is cheap and the posting is not.
+8. "Working" is decided the same way the rest of this file decides it, and that
+   definition is the one step 6 is fixing — so the pulse waits on step 6 rather
+   than inheriting the blind spot.
+9. A pulse identical to the previous one is the interesting case, not the boring
+   one: the numbers moving is the proof that the session is thinking, so two
+   readings the same is a third state beside hung and limited. It is reported as
+   what it is — stopped progressing — and not as either of the other two.
+
 ## Risks
 
 - **Widening the hung query is the dangerous step.** Every session becomes a
@@ -63,3 +77,9 @@ visible without changing what "stale" means for the ones already covered.
 - A limit marker that outlives its reset would suppress hang detection exactly
   when the session is genuinely stuck. It expires on the stated time, and when
   the time is missing it expires on a bound.
+- **The pulse is a message the operator has not asked for, arriving forever.**
+  That is how a monitoring feature becomes noise and then becomes muted, taking
+  the alarms next to it down with it. Hence: only working sessions, nothing sent
+  when there is nothing to say, and an interval chosen against how long real
+  work takes rather than against how often the data refreshes. If it cannot be
+  made quiet, it is worth less than the silence it replaces.

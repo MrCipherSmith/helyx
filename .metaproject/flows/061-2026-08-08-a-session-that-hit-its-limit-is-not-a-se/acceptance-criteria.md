@@ -19,3 +19,7 @@ Rules:
 - AC7: Widening the hung query does not change the verdict for sessions that were already covered: an existing test set for those cases passes unchanged, and each newly reachable case has a test of its own.
 - AC8: Nothing in this flow acts on a limit automatically — no provider switch, no restart, no pause — and the fold marker from flow 059 keeps working alongside the new one.
 - AC9: `bun run lint`, `bun run typecheck` and `bun test tests/unit/` all pass, and CI is green on the pull request.
+- AC10: The supervisor posts a periodic pulse covering every active session that is working, one line per session, carrying the project, input and output tokens, how long the current work has been running, context used against its window, and a short line saying what the session is doing.
+- AC11: A session that is idle rather than working is not in the pulse, and a pulse with nothing to report is not sent at all.
+- AC12: The pulse line is built from numbers that move: two consecutive pulses reporting identical figures for a session is itself reported as a session that has stopped progressing, distinct from both a hang and a limit.
+- AC13: The pulse costs no new polling — it is assembled from the transcript reads and session rows the existing loops already perform.

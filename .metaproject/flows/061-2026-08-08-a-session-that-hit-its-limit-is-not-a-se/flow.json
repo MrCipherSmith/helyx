@@ -5,12 +5,12 @@
   "title": "A session that hit its limit is not a session that hung",
   "status": "in-progress",
   "createdAt": "2026-08-08T18:02:09.973Z",
-  "updatedAt": "2026-08-08T18:03:48.649Z",
+  "updatedAt": "2026-08-08T18:06:35.017Z",
   "source": {
     "type": "description",
     "ref": null
   },
-  "acChecksum": "sha256:0e880b9327a76a604c24e11b675368ba8e517e3c7b3c003ff954853060efae7b",
+  "acChecksum": "sha256:075ea4c9d283afb7eb2b0b31045ea2b1d83508db6cd9b3222ea62714c79c2b82",
   "acConfirmed": {},
   "pr": {
     "url": null
@@ -86,6 +86,11 @@
     {
       "at": "2026-08-08T18:03:48.649Z",
       "event": "started"
+    },
+    {
+      "at": "2026-08-08T18:06:35.017Z",
+      "event": "ac-updated",
+      "detail": "operator added a fourth requirement: a periodic per-session pulse (tokens in/out, elapsed, context, what it is doing) so a working session is visibly working"
     }
   ]
 }
