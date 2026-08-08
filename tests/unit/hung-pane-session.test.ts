@@ -45,6 +45,19 @@ const SPINNING = "✻ Thinking… (12s · 400 tokens)";
 /** A pane at an idle prompt. */
 const IDLE_PANE = "> \n  ? for shortcuts";
 
+/**
+ * The same pane a moment later: the spinner has moved and nothing else has.
+ *
+ * This is what a hung session looks like, and it is why the pane cannot be
+ * compared raw — a photograph of an animating terminal always differs from the
+ * one before it.
+ */
+const SPINNING_LATER = "· Thinking… (318s · 700 tokens)";
+
+/** A pane that is printing: same spinner, more output above it. */
+const printing = (lines: number) =>
+  [...Array(lines)].map((_, i) => `  ${i} pass`).join("\n") + "\n" + SPINNING;
+
 let http: FakeFetch;
 let restoreFetch: () => void;
 
@@ -63,7 +76,13 @@ afterEach(() => restoreFetch());
  * hang detector an activity reading to measure from. Nothing new polls anything:
  * this is the loop that already tails every active session's transcript.
  */
-async function observe(sessionId: number, project: string, tokens: number, pane: string): Promise<void> {
+async function observe(
+  sessionId: number,
+  project: string,
+  tokens: number,
+  pane: string,
+  at: number = Date.now(),
+): Promise<void> {
   const db = new FakeSql();
   db.program(SESSIONS_QUERY, {
     rows: [{
@@ -75,14 +94,24 @@ async function observe(sessionId: number, project: string, tokens: number, pane:
       chat_id: null,
       turn_started_at: null,
       pane_snapshot: pane,
-      pane_snapshot_at: new Date(),
+      pane_snapshot_at: new Date(at),
       metadata: {},
     }],
   });
-  await checkContextPressure(db.sql as never, {
-    readContext: async () => ({ tokens, window: 200_000, outputTokens: 100, activity: "● Bash: bun test" }),
-    summarize: async () => "a summary",
-  });
+  // The loop stamps its observation with `Date.now()`, and every case below is
+  // a claim about two observations minutes apart. Moving the clock for the
+  // duration of the call is the only way to state one without sleeping — and
+  // the elapsed times that matter here are five minutes long.
+  const realNow = Date.now;
+  Date.now = () => at;
+  try {
+    await checkContextPressure(db.sql as never, {
+      readContext: async () => ({ tokens, window: 200_000, outputTokens: 100, activity: "● Bash: bun test" }),
+      summarize: async () => "a summary",
+    });
+  } finally {
+    Date.now = realNow;
+  }
 }
 
 /** The hung query's answer for a session with no status message at all. */
@@ -166,6 +195,55 @@ describe("a session driven entirely from the pane", () => {
     await checkHungSessions(db.sql as never, undefined, Date.now() + 60 * 60_000);
 
     expect(http.count(SEND)).toBe(0);
+  });
+
+  test("a long tool call is not a hang, because the pane is printing", async () => {
+    // The finding this branch nearly shipped with. Between the assistant entry
+    // carrying a `tool_use` and the user entry carrying its result the parent
+    // transcript receives nothing — `utils/transcript-monitor.ts` documents it
+    // and `pollAgents` exists to work around it — so a session running
+    // `bun test`, a docker build or a subagent fan-out has frozen token counts
+    // for the whole of it. On the token counts alone it was reported "не
+    // отвечает" with a restart button, and because the same branch requires a
+    // turning spinner the alert contradicted itself: "Claude сейчас работает"
+    // beside "⚠️ Перезапустить (Claude работает!)".
+    const project = uniqueName("pane-proj");
+    const now = Date.now();
+    await observe(27, project, 100_000, printing(3), now - STALE_MS - 60_000);
+    await observe(27, project, 100_000, printing(40), now - 10_000);
+    const db = hungWorld([paneOnlyRow(27, project, printing(40))]);
+
+    await checkHungSessions(db.sql as never, undefined, now);
+
+    expect(http.count(SEND)).toBe(0);
+  });
+
+  test("but a pane whose only movement is the spinner is still a hang", async () => {
+    // The trap on the other side, and the reason the pane is normalised before
+    // it is compared: a spinner animates, so a raw comparison of two captures
+    // of a motionless pane always differs and nothing would ever be stale —
+    // exactly the lie `last_active` tells.
+    const project = uniqueName("pane-proj");
+    const now = Date.now();
+    await observe(28, project, 100_000, SPINNING, now - STALE_MS - 60_000);
+    await observe(28, project, 100_000, SPINNING_LATER, now - 10_000);
+    const db = hungWorld([paneOnlyRow(28, project, SPINNING_LATER)]);
+
+    await checkHungSessions(db.sql as never, undefined, now);
+
+    expect(http.count(SEND)).toBe(1);
+  });
+
+  test("and so is a session where neither the transcript nor the pane moved", async () => {
+    const project = uniqueName("pane-proj");
+    const now = Date.now();
+    await observe(29, project, 100_000, printing(3), now - STALE_MS - 60_000);
+    await observe(29, project, 100_000, printing(3), now - 10_000);
+    const db = hungWorld([paneOnlyRow(29, project, printing(3))]);
+
+    await checkHungSessions(db.sql as never, undefined, now);
+
+    expect(http.count(SEND)).toBe(1);
   });
 
   test("a session nothing has read yet gets no verdict", async () => {

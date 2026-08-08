@@ -37,10 +37,37 @@
  * `changedAt` is neither. It moves when the transcript's token counts move,
  * which happens only when the model produced something. That is the activity
  * signal, and it exists here because this is where the readings already are.
+ *
+ * ## Why the token counts are not the *whole* activity signal
+ *
+ * Raised in review, and it is the case that makes the detector wrong rather
+ * than blind. The parent transcript receives nothing between the assistant
+ * entry carrying a `tool_use` and the user entry carrying its result —
+ * `utils/transcript-monitor.ts` documents exactly this, and `pollAgents` exists
+ * to work around it for subagents. A session running `bun test`, a docker
+ * build, or any tool call that takes minutes therefore has a *frozen* token
+ * signature for the whole of it, while its pane fills with output and its
+ * spinner turns.
+ *
+ * On that evidence the widened hang path fired at five minutes and offered a
+ * restart, on a session that was working — and shipped the contradiction with
+ * it, because the same branch requires a turning spinner, so the alert said
+ * "Claude сейчас работает" next to "⚠️ Перезапустить (Claude работает!)".
+ *
+ * So there are two signals and a session has to be still in both. The tokens
+ * say the model produced something; the pane says the machine printed
+ * something. A test run moves the second while the first sleeps; a genuinely
+ * hung session moves neither. `paneActivityText` is what makes the pane
+ * comparable at all — see it for why the spinner line has to come out first.
+ *
+ * `changedAt` keeps its old meaning of "the figures moved", because that is
+ * what the pulse's "цифры не менялись" reports. `activeAt` is the wider one,
+ * and it is the only one the hang detector reads.
  */
 
 import { escapeHtml } from "../utils/html.ts";
 import { usageRatio } from "../utils/context-usage.ts";
+import { paneActivityText } from "../utils/terminal.ts";
 
 /** One look at one session, as the context-pressure loop takes it. */
 export interface PulseObservation {
@@ -56,6 +83,17 @@ export interface PulseObservation {
   busy: boolean;
   /** The pane snapshot is fresh and shows a turning spinner. */
   paneSpinner: boolean;
+  /**
+   * The pane snapshot itself, raw, or null when the session has none.
+   *
+   * Raw rather than normalised, so that the one definition of "the pane
+   * changed" lives next to the comparison that uses it and cannot drift from
+   * the caller's idea of it. Null is not the same as an empty pane: a session
+   * with no snapshot at all contributes no pane evidence either way, and the
+   * token counts decide alone — which is the behaviour this had before the
+   * pane was consulted.
+   */
+  pane: string | null;
   /** When the current Telegram turn began, or null when there is none. */
   turnStartedAt: number | null;
   /** The newest line the transcript rendered — what the session is doing. */
@@ -70,6 +108,22 @@ interface Tracked {
   last: PulseObservation;
   /** The last observation whose figures differed from the one before it. */
   changedAt: number;
+  /**
+   * The last observation where *either* signal moved — figures or pane.
+   *
+   * What the hang detector measures staleness from. Never older than
+   * `changedAt` and often newer, which is the whole point: a session inside a
+   * long tool call moves this and not the other.
+   */
+  activeAt: number;
+  /**
+   * The pane as it was last compared, normalised.
+   *
+   * Kept rather than re-derived from `last.pane` so the normalisation runs once
+   * per observation instead of twice, and so the stored value is the one that
+   * was actually compared. Null when the session had no snapshot.
+   */
+  paneText: string | null;
   /** When this stretch of work began, for a session with no Telegram turn. */
   workingSince: number | null;
   /** The figures the previous pulse reported, or null when it reported none. */
@@ -128,10 +182,21 @@ export class SessionPulse {
   observe(o: PulseObservation): void {
     const prev = this.tracked.get(o.sessionId);
     const moved = !prev || signature(prev.last) !== signature(o);
+    // Normalised before it is compared, and the normalisation is the fix: two
+    // captures of a motionless pane differ raw, because the spinner on it is
+    // animating. See `paneActivityText`.
+    const paneText = o.pane === null ? null : paneActivityText(o.pane);
+    // A session that had no snapshot and now has one has not necessarily done
+    // anything — the watchdog may simply have started. `null` on either side is
+    // "no pane evidence", not "the pane changed".
+    const panePresent = paneText !== null && prev?.paneText != null;
+    const paneMoved = panePresent && prev!.paneText !== paneText;
     const working = isWorking(o);
     this.tracked.set(o.sessionId, {
       last: o,
+      paneText,
       changedAt: moved ? o.at : prev!.changedAt,
+      activeAt: moved || paneMoved || !prev ? o.at : prev.activeAt,
       workingSince: working ? (prev?.workingSince ?? o.at) : null,
       // A session that stops working forgets what it last reported, so that
       // coming back and reporting the same figures as an hour ago is not read
@@ -142,7 +207,13 @@ export class SessionPulse {
   }
 
   /**
-   * When this session's figures last moved, or null when it has never been seen.
+   * When this session last did anything, or null when it has never been seen.
+   *
+   * "Anything" is both signals: the transcript's token counts moving, or the
+   * pane printing something that is not its own spinner. A session inside a
+   * long tool call shows only the second, and reading only the first is how the
+   * hang detector came to alarm on a session running `bun test` — see the
+   * header.
    *
    * Null, not `Date.now()`, and the difference is the whole point: a supervisor
    * that has just started has no evidence about any session, and "no evidence"
@@ -150,7 +221,7 @@ export class SessionPulse {
    * skips a session this cannot speak for.
    */
   activityAt(sessionId: number): number | null {
-    return this.tracked.get(sessionId)?.changedAt ?? null;
+    return this.tracked.get(sessionId)?.activeAt ?? null;
   }
 
   /**

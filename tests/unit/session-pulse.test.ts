@@ -39,9 +39,19 @@ function observation(overrides: Partial<PulseObservation> = {}): PulseObservatio
     turnStartedAt: T0 - 260_000,
     activity: "● Bash: bun test tests/unit",
     limited: false,
+    pane: null,
     at: T0,
     ...overrides,
   };
+}
+
+/** A pane whose spinner is on frame `glyph` and whose output is `tail`. */
+function pane(glyph: string, seconds: number, ...tail: string[]): string {
+  return [
+    "● Bash(bun test tests/unit)",
+    ...tail,
+    `${glyph} Thinking… (${seconds}s · ↑ 1.2k tokens · esc to interrupt)`,
+  ].join("\n");
 }
 
 describe("what one line carries", () => {
@@ -170,7 +180,7 @@ describe("two pulses that say the same thing", () => {
 });
 
 describe("the activity signal the hang detector borrows", () => {
-  test("it moves only when the numbers move", () => {
+  test("the numbers moving is activity", () => {
     const pulse = new SessionPulse();
     pulse.observe(observation({ at: T0 }));
     pulse.observe(observation({ at: T0 + 120_000 }));
@@ -178,6 +188,65 @@ describe("the activity signal the hang detector borrows", () => {
 
     pulse.observe(observation({ at: T0 + 240_000, inputTokens: 700_000 }));
     expect(pulse.activityAt(7)).toBe(T0 + 240_000);
+  });
+
+  test("and so is the pane, while the numbers stand still", () => {
+    // The case that made the detector wrong rather than blind. Between the
+    // assistant entry carrying a `tool_use` and the user entry carrying its
+    // result the transcript receives nothing, so a session running `bun test`
+    // has a frozen token signature for the whole run — and was called hung at
+    // five minutes, with a restart button, while its pane filled with output.
+    const pulse = new SessionPulse();
+    pulse.observe(observation({ at: T0, pane: pane("✻", 12, "  12 pass") }));
+    pulse.observe(observation({ at: T0 + 300_000, pane: pane("✶", 312, "  12 pass", "  340 pass") }));
+
+    expect(pulse.activityAt(7)).toBe(T0 + 300_000);
+  });
+
+  test("but a spinner turning on an otherwise unchanged pane is not", () => {
+    // The trap in using the pane at all: it is a photograph of a terminal that
+    // is animating itself, so a raw comparison always differs and nothing is
+    // ever stale — the same lie `last_active` tells. Same output, later frame,
+    // more elapsed seconds, higher token counter on the spinner line: none of
+    // it is the session doing anything.
+    const pulse = new SessionPulse();
+    pulse.observe(observation({ at: T0, pane: pane("✻", 12, "  12 pass") }));
+    pulse.observe(observation({ at: T0 + 300_000, pane: pane("·", 312, "  12 pass") }));
+
+    expect(pulse.activityAt(7)).toBe(T0);
+  });
+
+  test("nor is the same pane redrawn with different escapes and padding", () => {
+    const pulse = new SessionPulse();
+    pulse.observe(observation({ at: T0, pane: "● Bash(bun test)\n\n  12 pass\n" }));
+    pulse.observe(observation({ at: T0 + 300_000, pane: "\x1b[2K● Bash(bun test)\n  12 pass   \n\n\n" }));
+
+    expect(pulse.activityAt(7)).toBe(T0);
+  });
+
+  test("a session that had no pane and then has one has not thereby done anything", () => {
+    // The watchdog starting is not the session working — the same shape of
+    // mistake `pane_snapshot_at` makes, and it must not enter through the door
+    // the pane comparison opens.
+    const pulse = new SessionPulse();
+    pulse.observe(observation({ at: T0, pane: null }));
+    pulse.observe(observation({ at: T0 + 300_000, pane: pane("✻", 12, "  12 pass") }));
+
+    expect(pulse.activityAt(7)).toBe(T0);
+  });
+
+  test("the pulse still reports the figures standing still, whatever the pane did", () => {
+    // `changedAt` and `activeAt` are two clocks on purpose: the pulse's line
+    // says "цифры не менялись", and it would be a false statement if the pane
+    // could reset it.
+    const pulse = new SessionPulse();
+    pulse.observe(observation({ at: T0, pane: pane("✻", 12) }));
+    pulse.pulse(T0);
+    pulse.observe(observation({ at: T0 + PULSE_INTERVAL_MS, pane: pane("✶", 312, "  340 pass") }));
+
+    const [line] = pulse.pulse(T0 + PULSE_INTERVAL_MS);
+    expect(line?.state).toBe("stalled");
+    expect(line?.text).toContain("не менялись");
   });
 
   test("a session never observed answers null, not the epoch", () => {

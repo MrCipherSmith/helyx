@@ -395,8 +395,9 @@ export async function checkHungSessions(
     // reasons. So the second half of the WHERE is not "no status message and
     // quiet" — it is "no status message and a pane that is currently showing a
     // spinner", and the staleness of those is measured in the loop below from
-    // the transcript's own token counts. A session sitting at an idle prompt is
-    // not a candidate at all: it has not been asked to do anything.
+    // two signals at once: the transcript's own token counts and the pane's
+    // text with the spinner taken out of it. A session sitting at an idle
+    // prompt is not a candidate at all: it has not been asked to do anything.
     const rows = await sql`
       SELECT
         s.id         AS session_id,
@@ -429,10 +430,12 @@ export async function checkHungSessions(
       // A session with a status message is judged exactly as it was before this
       // flow: the row's `updated_at` is the clock, and everything below reads it.
       // A session without one reaches here only because its pane shows a
-      // spinner, and its clock is the last time its transcript's numbers moved —
-      // see `SessionPulse.activityAt` for why neither `last_active` nor
-      // `pane_snapshot_at` can serve, and why "no reading yet" means "say
-      // nothing" rather than "stale".
+      // spinner, and its clock is the last time it did anything at all — its
+      // transcript's numbers moving, or its pane printing something that is not
+      // its own spinner. See `SessionPulse.activityAt` for why neither
+      // `last_active` nor `pane_snapshot_at` can serve, why "no reading yet"
+      // means "say nothing" rather than "stale", and why the token counts alone
+      // called a session running `bun test` hung for as long as the test ran.
       let staleSince: number;
       if (row.updated_at) {
         staleSince = new Date(row.updated_at).getTime();
@@ -452,7 +455,7 @@ export async function checkHungSessions(
       // have returned is dropped here instead.
       if (now - staleSince < SESSION_STALE_MS) continue;
       if (!row.updated_at) {
-        console.log(`[supervisor] ${project}: no status message, spinner turning, transcript silent`);
+        console.log(`[supervisor] ${project}: no status message, spinner turning, transcript and pane both silent`);
       }
       // A session that asked the operator something is waiting, not hung. Its
       // status line stops updating either way, and before this the two were
@@ -1330,6 +1333,7 @@ export async function checkContextPressure(sql: postgres.Sql, deps: ContextPress
     // blind to the same ones.
     const paneAt = row.pane_snapshot_at ? new Date(row.pane_snapshot_at).getTime() : null;
     const paneFresh = paneAt !== null && Date.now() - paneAt < PANE_SNAPSHOT_FRESH_MS;
+    const pane = typeof row.pane_snapshot === "string" ? row.pane_snapshot : null;
     sessionPulse.observe({
       sessionId,
       project,
@@ -1337,7 +1341,13 @@ export async function checkContextPressure(sql: postgres.Sql, deps: ContextPress
       outputTokens: reading.outputTokens ?? null,
       window: resolveWindow(learnedWindow, row.model ?? null),
       busy: Boolean(row.busy),
-      paneSpinner: paneFresh && hasActiveSpinner(typeof row.pane_snapshot === "string" ? row.pane_snapshot : ""),
+      paneSpinner: paneFresh && hasActiveSpinner(pane ?? ""),
+      // The second activity signal, and the reason this column is read for
+      // more than its spinner: between an assistant entry carrying a
+      // `tool_use` and the user entry carrying its result, the transcript
+      // says nothing at all, so a session running `bun test` has frozen token
+      // counts for the whole of it while its pane fills with output.
+      pane,
       turnStartedAt: row.turn_started_at ? new Date(row.turn_started_at).getTime() : null,
       activity: reading.activity ?? null,
       limited: limitFromMarker(readLimitMarker(row.metadata), Date.now()) !== null,

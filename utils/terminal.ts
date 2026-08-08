@@ -134,3 +134,45 @@ export function hasActiveSpinner(raw: string, lookback = 10): boolean {
     .slice(-lookback)
     .some(isSpinnerLine);
 }
+
+/**
+ * The part of a captured pane that means "something happened", as text.
+ *
+ * Two captures of a pane are compared to answer one question: has this session
+ * printed anything since the last look? A raw comparison cannot answer it. The
+ * pane is a photograph of a terminal that is being animated, so two captures of
+ * a *motionless* session still differ — which is the same lie `last_active` and
+ * `pane_snapshot_at` tell, and the reason `services/session-pulse.ts` spends a
+ * paragraph on why neither is an activity signal. A signal that always says
+ * "moved" is a hang detector that never fires.
+ *
+ * So three things come out before the comparison:
+ *
+ *   - the escape sequences, which redraw the same characters in place;
+ *   - the spinner line, whole, because it is the animated one. Not just the
+ *     glyph: Claude Code writes the frame, the elapsed seconds and a running
+ *     token count on one line — `✻ Thinking… (12s · ↑ 1.2k tokens · esc to
+ *     interrupt)` — and every field of it changes once a second while nothing
+ *     else on the pane does. Whether the spinner is turning is a separate
+ *     question, already answered separately by `hasActiveSpinner`;
+ *   - blank lines, which tmux emits to pad the window rather than as content.
+ *
+ * What is deliberately left in is everything a working session prints: test
+ * output, a build's progress, a tool's result. That is the evidence this exists
+ * to notice, and a session producing none of it for five minutes while its
+ * spinner turns is the one this lets an alarm be raised about.
+ *
+ * The residual risk, said out loud: anything *else* on the pane that animates
+ * on its own would keep this from ever reading as still, and the cost of that
+ * is a missed alarm rather than a false one. That is the side of the trade
+ * `hasActiveSpinner` already picks — an alarm nobody believes is an alarm that
+ * is off — and the spinner line is the only self-animating element this
+ * project's panes have been observed to carry.
+ */
+export function paneActivityText(raw: string): string {
+  return stripAnsi(raw)
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim() !== "" && !isSpinnerLine(line))
+    .join("\n");
+}
