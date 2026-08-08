@@ -3,9 +3,9 @@
   "id": "057",
   "slug": "projects-provider-model-in-picker",
   "title": "/projects — show provider under Stop and current model under the gear",
-  "status": "implemented",
+  "status": "done",
   "createdAt": "2026-08-08T08:57:37.609Z",
-  "updatedAt": "2026-08-08T09:27:49.189Z",
+  "updatedAt": "2026-08-08T09:39:25.543Z",
   "source": {
     "type": "description",
     "ref": null
@@ -170,6 +170,20 @@
       "at": "2026-08-08T09:27:49.189Z",
       "event": "task-done",
       "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-08T09:39:25.536Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-08T09:39:25.543Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
-  ]
+  ],
+  "merged": {
+    "commit": "5c310bb2aaea52121e6e72a25db3a9b0ba66f094",
+    "ref": "origin/main",
+    "at": "2026-08-08T09:39:25.543Z"
+  }
 }
