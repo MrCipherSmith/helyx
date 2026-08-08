@@ -29,6 +29,7 @@ const EXAMPLES: readonly (readonly [data: string, route: CallbackRoute])[] = [
   ["rc:up", "remote-control"],
   ["poll_submit:9", "poll-submit"],
   ["proj:open:3", "project"],
+  ["pminf:3", "project"],
   ["prov:set:openrouter", "provider"],
   ["pmsel:3", "project-model"],
   ["pmchg:3", "project-model"],

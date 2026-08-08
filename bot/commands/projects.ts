@@ -39,64 +39,123 @@ async function getSelections(ids: number[]): Promise<Map<number, ProviderSelecti
   return map;
 }
 
+/** The slice of a project row that the list rendering depends on. */
+export type ProjectListItem = { id: number; name: string; path: string; session_status: string | null };
+
+/**
+ * Build the /projects message body — text lines and the per-project keyboard
+ * rows. Both render sites (the initial reply and the post-action re-render) call
+ * this, so the per-project layout lives in exactly one place.
+ *
+ * Each settled project gets two rows:
+ *   1. the action row — Stop/Start (left) | ⚙️ settings (right);
+ *   2. an info row beneath it — provider name (left, under the action button)
+ *      and the current model (right, under the gear) — so what each project runs
+ *      on is readable at a glance, beside its controls.
+ *
+ * Provider and model used to repeat inside the text line ("· Provider/model");
+ * they now live only in the info-row buttons, so that annotation is gone. The
+ * info buttons are display-only: a `pminf:<id>` callback answers with the full
+ * config and changes no state. A pending project shows its pending marker but no
+ * controls — its settled state is unknown until the command completes.
+ */
+export function renderProjectsMessage(
+  projects: ProjectListItem[],
+  selections: Map<number, ProviderSelection>,
+  pending: Map<number, "start" | "stop">,
+): { text: string; keyboard: InlineKeyboard } {
+  const lines: string[] = ["Projects:\n"];
+  const keyboard = new InlineKeyboard();
+
+  for (const p of projects) {
+    const pendingAction = pending.get(p.id);
+    if (pendingAction) {
+      lines.push(`${pendingAction === "start" ? "⏳▶️" : "⏳⏹"} ${p.name}  (${p.path})`);
+      continue;
+    }
+    const isActive = p.session_status === "active";
+    lines.push(`${isActive ? "🟢" : "⚪"} ${p.name}  (${p.path})`);
+
+    keyboard
+      .text(isActive ? `⏹ Stop ${p.name}` : `▶️ Start ${p.name}`, `proj:${isActive ? "stop" : "start"}:${p.id}`)
+      .text("⚙️", `pmchg:${p.id}:prov`)
+      .row();
+
+    const cfg = selections.get(p.id);
+    const providerLabel = cfg?.providerName ?? "Claude";
+    const modelLabel = cfg?.model ?? "default";
+    keyboard.text(providerLabel, `pminf:${p.id}`).text(modelLabel, `pminf:${p.id}`).row();
+  }
+
+  return { text: lines.join("\n"), keyboard };
+}
+
+/**
+ * Re-render the list by editing the current message in place.
+ *
+ * Telegram refuses to edit a message whose text+keyboard are unchanged, and one
+ * older than 48h; the catch covers both ("not modified" is a no-op, anything
+ * else falls back to delete + resend). Used after a start/stop/start_all changes
+ * state so the operator sees the new status without a second message.
+ */
+async function rerenderProjects(ctx: Context): Promise<void> {
+  const [projects, pending] = await Promise.all([projectService.list(), getPendingActions()]);
+  const selections = await getSelections(projects.map((p) => p.id));
+  const { text, keyboard } = renderProjectsMessage(projects, selections, pending);
+  keyboard.text("🔄 Refresh", "proj:refresh").row();
+  await ctx.editMessageText(text, { reply_markup: keyboard }).catch(async (err: any) => {
+    // Ignore "message is not modified" — content unchanged, nothing to do
+    if (err?.description?.includes("not modified") || err?.message?.includes("not modified")) return;
+    // For other errors (e.g. message too old to edit), delete and re-send
+    await ctx.deleteMessage().catch(() => {});
+    await replyInThread(ctx, text, { reply_markup: keyboard });
+  });
+}
+
 export async function handleProjects(ctx: Context): Promise<void> {
   const [projects, pending] = await Promise.all([
     projectService.list(),
     getPendingActions(),
   ]);
-  const selections = await getSelections(projects.map((p) => p.id));
 
   if (projects.length === 0) {
     await replyInThread(ctx, "No projects configured.\nUse /project-add to add one.");
     return;
   }
 
-  const kb = new InlineKeyboard();
-  const lines: string[] = ["Projects:\n"];
+  const selections = await getSelections(projects.map((p) => p.id));
+  const { text, keyboard } = renderProjectsMessage(projects, selections, pending);
 
-  for (const p of projects) {
-    const pendingAction = pending.get(p.id);
-    if (pendingAction) {
-      const icon = pendingAction === "start" ? "⏳▶️" : "⏳⏹";
-      lines.push(`${icon} ${p.name}  (${p.path})`);
-    } else {
-      const isActive = p.session_status === "active";
-      const icon = isActive ? "🟢" : "⚪";
-      const cfg = selections.get(p.id);
-      // Only annotate a non-default configuration — a project on stock Claude
-      // should look exactly as it did before this feature existed.
-      const cfgLabel = cfg && (cfg.providerName || cfg.model)
-        ? `  · ${cfg.providerName ?? "Claude"}${cfg.model ? `/${cfg.model}` : ""}`
-        : "";
-      lines.push(`${icon} ${p.name}  (${p.path})${cfgLabel}`);
-      if (isActive) {
-        kb.text(`⏹ Stop ${p.name}`, `proj:stop:${p.id}`)
-          .text("⚙️", `pmchg:${p.id}:prov`).row();
-      } else {
-        kb.text(`▶️ Start ${p.name}`, `proj:start:${p.id}`)
-          .text("⚙️", `pmchg:${p.id}:prov`).row();
-      }
-    }
-  }
+  // Trailing rows are view-specific: Start All only on the fresh view when more
+  // than one project is stopped; Refresh only while something is pending.
+  const stopped = projects.filter((p) => p.session_status !== "active" && !pending.has(p.id));
+  if (stopped.length > 1) keyboard.text("▶️ Start All", "proj:start_all").row();
+  if (pending.size > 0) keyboard.text("🔄 Refresh", "proj:refresh").row();
 
-  const inactiveProjects = projects.filter(
-    p => p.session_status !== "active" && !pending.has(p.id),
-  );
-  if (inactiveProjects.length > 1) {
-    kb.text("▶️ Start All", "proj:start_all").row();
-  }
-
-  if (pending.size > 0) {
-    kb.text("🔄 Refresh", "proj:refresh").row();
-  }
-
-  await replyInThread(ctx, lines.join("\n"), { reply_markup: kb });
+  await replyInThread(ctx, text, { reply_markup: keyboard });
 }
 
 export async function handleProjectCallback(ctx: Context): Promise<void> {
   const data = ctx.callbackQuery?.data ?? "";
   const parts = data.split(":");
-  const action = parts[1]; // "start" | "stop" | "refresh"
+
+  // pminf:<projectId> — display-only: answer with the project's current config,
+  // no state change. The provider/model buttons under each action read as status.
+  if (parts[0] === "pminf") {
+    const id = Number(parts[1]);
+    if (!id) {
+      await ctx.answerCallbackQuery({ text: "Unknown project" });
+      return;
+    }
+    const selections = await getSelections([id]);
+    const cfg = selections.get(id);
+    const provider = cfg?.providerName ?? "Claude";
+    const model = cfg?.model ?? "default";
+    await ctx.answerCallbackQuery({ text: `${provider} / ${model}` });
+    return;
+  }
+
+  const action = parts[1]; // "start" | "stop" | "refresh" | "start_all"
   const id = Number(parts[2]);
 
   if (action === "refresh") {
@@ -112,9 +171,9 @@ export async function handleProjectCallback(ctx: Context): Promise<void> {
       getPendingActions(),
     ]);
     const toStart = allProjects.filter(
-      p => p.session_status !== "active" && !pendingNow.has(p.id),
+      (p) => p.session_status !== "active" && !pendingNow.has(p.id),
     );
-    await Promise.all(toStart.map(p => projectService.start(p.id)));
+    await Promise.all(toStart.map((p) => projectService.start(p.id)));
     await ctx.answerCallbackQuery({ text: `Starting ${toStart.length} project(s)...` });
     await ctx.deleteMessage().catch(() => {});
     await handleProjects(ctx);
@@ -152,48 +211,5 @@ export async function handleProjectCallback(ctx: Context): Promise<void> {
     text: action === "start" ? `Starting ${project.name}...` : `Stopping ${project.name}...`,
   });
 
-  // Edit message in-place to show pending state immediately
-  const [projects, pending] = await Promise.all([
-    projectService.list(),
-    getPendingActions(),
-  ]);
-  const selections = await getSelections(projects.map((p) => p.id));
-
-  const kb = new InlineKeyboard();
-  const lines: string[] = ["Projects:\n"];
-
-  for (const p of projects) {
-    const pendingAction = pending.get(p.id);
-    if (pendingAction) {
-      const icon = pendingAction === "start" ? "⏳▶️" : "⏳⏹";
-      lines.push(`${icon} ${p.name}  (${p.path})`);
-    } else {
-      const isActive = p.session_status === "active";
-      const icon = isActive ? "🟢" : "⚪";
-      const cfg = selections.get(p.id);
-      // Only annotate a non-default configuration — a project on stock Claude
-      // should look exactly as it did before this feature existed.
-      const cfgLabel = cfg && (cfg.providerName || cfg.model)
-        ? `  · ${cfg.providerName ?? "Claude"}${cfg.model ? `/${cfg.model}` : ""}`
-        : "";
-      lines.push(`${icon} ${p.name}  (${p.path})${cfgLabel}`);
-      if (isActive) {
-        kb.text(`⏹ Stop ${p.name}`, `proj:stop:${p.id}`)
-          .text("⚙️", `pmchg:${p.id}:prov`).row();
-      } else {
-        kb.text(`▶️ Start ${p.name}`, `proj:start:${p.id}`)
-          .text("⚙️", `pmchg:${p.id}:prov`).row();
-      }
-    }
-  }
-
-  kb.text("🔄 Refresh", "proj:refresh").row();
-
-  await ctx.editMessageText(lines.join("\n"), { reply_markup: kb }).catch(async (err: any) => {
-    // Ignore "message is not modified" — content unchanged, nothing to do
-    if (err?.description?.includes("not modified") || err?.message?.includes("not modified")) return;
-    // For other errors (e.g. message too old to edit), delete and re-send
-    await ctx.deleteMessage().catch(() => {});
-    await replyInThread(ctx, lines.join("\n"), { reply_markup: kb });
-  });
+  await rerenderProjects(ctx);
 }
