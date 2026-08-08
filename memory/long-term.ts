@@ -61,6 +61,21 @@ export async function remember(memory: Memory): Promise<Memory> {
   return { ...memory, id: row.id, createdAt: row.created_at, updatedAt: row.updated_at };
 }
 
+/**
+ * Why a `transcript` memory is excluded unless it is asked for by name.
+ *
+ * A fold's dropped span is up to 2 MB of raw transcript, and `recall`'s callers
+ * interpolate `content` whole: `claude/prompt.ts` puts it in the bot's system
+ * prompt, `mcp/tools.ts` returns it as a tool result. One such row recalled into
+ * a system prompt would spend the bot's own context on a record of another
+ * session having run out of context — the failure this flow exists to prevent,
+ * caused by the flow.
+ *
+ * `list_memories` already truncates to 100 characters, which is the same hazard
+ * recognised at one site and missed at the other two. So the archive is opt-in:
+ * a caller that wants transcripts passes `type: "transcript"` and is thereby
+ * saying it can handle their size. Raised in review.
+ */
 export async function recall(
   query: string,
   options: {
@@ -85,7 +100,7 @@ export async function recall(
         WHERE 1=1
           AND archived_at IS NULL
           ${projectPath ? sql`AND (project_path = ${projectPath} OR project_path IS NULL)` : sessionId !== undefined ? sql`AND (session_id = ${sessionId} OR session_id IS NULL)` : sql``}
-          ${type ? sql`AND type = ${type}` : sql``}
+          ${type ? sql`AND type = ${type}` : sql`AND type <> 'transcript'`}
           ${tags && tags.length > 0 ? sql`AND tags && ${tags}` : sql``}
         ORDER BY embedding <=> ${`[${queryEmbedding.join(",")}]`}::vector
         LIMIT ${limit}
@@ -99,7 +114,7 @@ export async function recall(
         WHERE 1=1
           AND archived_at IS NULL
           ${projectPath ? sql`AND (project_path = ${projectPath} OR project_path IS NULL)` : sessionId !== undefined ? sql`AND (session_id = ${sessionId} OR session_id IS NULL)` : sql``}
-          ${type ? sql`AND type = ${type}` : sql``}
+          ${type ? sql`AND type = ${type}` : sql`AND type <> 'transcript'`}
           ${tags && tags.length > 0 ? sql`AND tags && ${tags}` : sql``}
         ORDER BY created_at DESC
         LIMIT ${limit}

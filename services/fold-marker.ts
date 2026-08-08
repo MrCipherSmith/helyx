@@ -64,17 +64,33 @@ export interface FoldMarker {
 export const FOLD_GRACE_DEFAULT_MS = 4 * 60_000;
 /** No fold is this quick, so no marker is discarded this quickly. */
 export const FOLD_GRACE_MIN_MS = 60_000;
-/** And none is this slow. Past here the marker is stale, not the fold long. */
-export const FOLD_GRACE_MAX_MS = 10 * 60_000;
+/**
+ * And none is this slow. Past here the marker is stale, not the fold long.
+ *
+ * Four and a half minutes, not ten. Raised in review, and the comment above was
+ * already right while this number contradicted it: the watchdogs this marker
+ * suppresses fire at five minutes (`RESPONSE_GUARD_MS` in `channel/status.ts`,
+ * and the two five-minute loops in `scripts/supervisor.ts`), so a ten-minute
+ * ceiling let the derived grace exceed the alarm it was gating. The threshold
+ * where that flips is a previous fold of 150 seconds — and the slower of the two
+ * folds actually observed measured 149,137 ms. One fold a second longer and this
+ * would have muted hung-session detection for up to ten minutes.
+ *
+ * The cost of the smaller ceiling is a false alarm on a fold slower than four
+ * and a half minutes. That is the right side to be wrong on: a false alarm is a
+ * message the operator can dismiss, and a suppressed one is a dead session
+ * nobody hears about.
+ */
+export const FOLD_GRACE_MAX_MS = 4.5 * 60_000;
 
 /**
  * How long to wait for a fold, given how long the last one took.
  *
- * Twice the previous duration: 149137 ms becomes just under five minutes, which
- * is what the slower of the two observed folds actually needs to be safe from a
- * five-minute alarm. Clamped at both ends because the input is a number written
- * by another program into a file, and a `durationMs` of 0 or of a day is not a
- * reason to change what this decides.
+ * Twice the previous duration, so a session that folds slowly is given room the
+ * default would not have. Clamped at both ends because the input is a number
+ * written by another program into a file, and a `durationMs` of 0 or of a day is
+ * not a reason to change what this decides — the upper clamp in particular is
+ * what keeps this from out-waiting the alarm it gates. See `FOLD_GRACE_MAX_MS`.
  */
 export function foldGraceMs(lastDurationMs: number | null): number {
   if (lastDurationMs === null || !Number.isFinite(lastDurationMs) || lastDurationMs <= 0) {

@@ -1588,23 +1588,31 @@ export class StatusManager {
    */
   async captureFold(boundary: CompactBoundary, transcriptPath: string): Promise<void> {
     const sessionId = this.ctx.sessionId();
-    // Closed first and unconditionally. The marker's whole purpose is to say
-    // "this silence is a fold", and the fold is over whether or not the span
-    // below can be read — a marker left open would suppress the hung-session
-    // alarm until its grace window expired.
-    if (sessionId !== null) {
+    // Closed unconditionally, and before any early return below: the marker's
+    // whole purpose is to say "this silence is a fold", and the fold is over
+    // whether or not the span can be read. A marker left open suppresses the
+    // hung-session alarm until its grace window expires.
+    //
+    // Raised in review: this used to sit above the idempotency check, so the
+    // cheap-and-dangerous mutation ran unguarded while the expensive-and-safe
+    // one was guarded — backwards. It is still unconditional, because clearing
+    // a marker twice is idempotent and leaving one open is not.
+    const clearMarker = async () => {
+      if (sessionId === null) return;
       await endFold(this.ctx.sql, sessionId, boundary.durationMs).catch((err) => {
         channelLogger.warn({ err, sessionId }, "fold: could not clear the marker");
       });
-    }
+    };
 
     // `tailUuid` names the boundary; `headUuid` is where the span stops. A
     // boundary missing either is one this cannot place, and a span attributed to
     // the wrong fold is worse than no span — see `droppedSpan`.
     if (!boundary.tailUuid || !boundary.headUuid) {
+      await clearMarker();
       channelLogger.warn({ transcriptPath, boundary }, "fold: boundary without the uuids to place it");
       return;
     }
+    await clearMarker();
 
     const key = `${transcriptPath}#${boundary.tailUuid}`;
     if (this.capturedFolds.has(key)) return;
@@ -1615,12 +1623,26 @@ export class StatusManager {
     }
 
     const previousTail = this.lastFoldTail.get(transcriptPath) ?? null;
-    this.lastFoldTail.set(transcriptPath, boundary.tailUuid);
 
     try {
       const span = await droppedSpan(transcriptPath, boundary.headUuid, previousTail);
-      if (!span || span.records === 0) {
-        channelLogger.info({ transcriptPath, records: span?.records ?? null }, "fold: nothing to store");
+      if (!span) {
+        // The head could not be found, so this boundary could not be placed.
+        // `lastFoldTail` deliberately stays where it was: advancing it here
+        // would make the *next* fold start its span at this unplaceable one,
+        // and a span that starts at the wrong boundary is attributed to the
+        // wrong work. Leaving it means the next fold reaches further back and
+        // re-reads material already stored, which is waste rather than a lie.
+        channelLogger.warn({ transcriptPath, headUuid: boundary.headUuid }, "fold: could not place the boundary");
+        return;
+      }
+      // Placed. From here the boundary is a valid starting point for the next
+      // span whether or not the store below succeeds — the span was located, and
+      // a failed embedding call costs this fold's record, not the next one's
+      // correctness.
+      this.lastFoldTail.set(transcriptPath, boundary.tailUuid);
+      if (span.records === 0) {
+        channelLogger.info({ transcriptPath }, "fold: nothing to store");
         return;
       }
 

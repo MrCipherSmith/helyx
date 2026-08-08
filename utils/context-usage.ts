@@ -432,7 +432,10 @@ export function parseCompactBoundary(entry: unknown): CompactBoundary | null {
     // is the only way to get the one number a reader actually wants. Derived
     // from pre and post when both are there, because that is this fold by
     // construction.
-    droppedTokens: pre !== null && post !== null ? pre - post : null,
+    // Never negative. A malformed boundary reporting post above pre would
+    // otherwise be stored and shown as `dropped-tokens:-42`, which reads as a
+    // bug in us rather than in what we were handed. Raised in review.
+    droppedTokens: pre !== null && post !== null ? Math.max(0, pre - post) : null,
     cumulativeDroppedTokens: dropped,
     durationMs: finiteOrNull(meta.durationMs),
     headUuid: typeof segment.headUuid === "string" ? segment.headUuid : null,

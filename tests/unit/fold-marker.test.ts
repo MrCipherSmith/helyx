@@ -93,6 +93,22 @@ describe("foldGraceMs", () => {
     expect(foldGraceMs(1)).toBe(FOLD_GRACE_MIN_MS);
     expect(foldGraceMs(86_400_000)).toBe(FOLD_GRACE_MAX_MS);
   });
+
+  test("the grace never outlasts the alarm it suppresses", () => {
+    // The invariant, asserted rather than described. This is the one thing in
+    // this flow that can make matters worse than before it: a window longer
+    // than the watchdog turns a dead session into a silent one. Checked against
+    // the derived branch too, not just the default — the ceiling used to be ten
+    // minutes against a five-minute guard, and the flip point was a previous
+    // fold of 150 s while the slower observed fold measured 149,137 ms.
+    const RESPONSE_GUARD_MS = 5 * 60_000;
+    expect(FOLD_GRACE_DEFAULT_MS).toBeLessThan(RESPONSE_GUARD_MS);
+    expect(FOLD_GRACE_MAX_MS).toBeLessThan(RESPONSE_GUARD_MS);
+    for (const observed of [1, 1_000, 119_144, 149_137, 150_000, 600_000, 86_400_000]) {
+      expect(foldGraceMs(observed)).toBeLessThan(RESPONSE_GUARD_MS);
+    }
+    expect(foldGraceMs(null)).toBeLessThan(RESPONSE_GUARD_MS);
+  });
 });
 
 describe("foldFromMarker", () => {
