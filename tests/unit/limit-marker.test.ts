@@ -18,7 +18,9 @@ import {
   limitedSessions,
   limitLabel,
   resetLabel,
+  LimitHold,
   LIMIT_GRACE_DEFAULT_MS,
+  LIMIT_HOLD_RECHECK_MS,
   type LimitMarker,
 } from "../../services/limit-marker.ts";
 import { FakeSql } from "../fixtures/fake-sql.ts";
@@ -184,6 +186,88 @@ describe("what crosses the process boundary", () => {
     const found = await limitedSessions(db.sql as never, 1_000_000 + 60_000);
 
     expect(found.map((s) => s.project)).toEqual(["helyx"]);
+  });
+});
+
+describe("LimitHold — the queue waits, and then it does not", () => {
+  /** A database whose one session is under the given marker. */
+  function db(marker: unknown): FakeSql {
+    const fake = new FakeSql();
+    fake.program("SELECT metadata FROM sessions", { rows: [{ metadata: marker === null ? {} : { limit: marker } }] });
+    return fake;
+  }
+
+  test("a live limit holds delivery", async () => {
+    const hold = new LimitHold();
+    expect(await hold.held(db(marker()).sql as never, 11, 1_000_000 + 60_000)).toBe(true);
+  });
+
+  test("no limit does not", async () => {
+    const hold = new LimitHold();
+    expect(await hold.held(db(null).sql as never, 11, 1_000_000 + 60_000)).toBe(false);
+  });
+
+  test("the hold lifts by itself when the reset time arrives", async () => {
+    // Nobody types anything. The marker said when it lifts and the poller's own
+    // loop is what notices — the release is the expiry, not a second clock.
+    const fake = db(marker());
+    const hold = new LimitHold();
+
+    expect(await hold.held(fake.sql as never, 11, 1_000_000 + 60_000)).toBe(true);
+    expect(await hold.held(fake.sql as never, 11, 1_000_000 + HOUR)).toBe(false);
+  });
+
+  test("a second limit hit while waiting out the first holds again", async () => {
+    // Releasing blind would deliver a message straight into a fresh failure.
+    const fake = new FakeSql();
+    fake.programSequence("SELECT metadata FROM sessions", [
+      { rows: [{ metadata: { limit: marker() } }] },
+      { rows: [{ metadata: { limit: marker({ startedAt: 1_000_000 + HOUR, resetsAt: 1_000_000 + 3 * HOUR, uuid: "err-2" }) } }] },
+    ]);
+    const hold = new LimitHold();
+
+    expect(await hold.held(fake.sql as never, 11, 1_000_000 + 60_000)).toBe(true);
+    expect(await hold.held(fake.sql as never, 11, 1_000_000 + HOUR)).toBe(true);
+  });
+
+  test("while it holds it asks nothing further", async () => {
+    // The poller runs every couple of seconds and its whole job is to be cheap.
+    const fake = db(marker());
+    const hold = new LimitHold();
+
+    for (let i = 0; i < 20; i++) await hold.held(fake.sql as never, 11, 1_000_000 + 60_000 + i * 2_000);
+
+    expect(fake.count("SELECT metadata FROM sessions")).toBe(1);
+  });
+
+  test("and an unlimited session is not asked about on every pass either", async () => {
+    const fake = db(null);
+    const hold = new LimitHold();
+
+    await hold.held(fake.sql as never, 11, 1_000_000);
+    await hold.held(fake.sql as never, 11, 1_000_000 + LIMIT_HOLD_RECHECK_MS - 1);
+    expect(fake.count("SELECT metadata FROM sessions")).toBe(1);
+
+    await hold.held(fake.sql as never, 11, 1_000_000 + LIMIT_HOLD_RECHECK_MS);
+    expect(fake.count("SELECT metadata FROM sessions")).toBe(2);
+  });
+
+  test("a database that will not answer does not stop the queue", async () => {
+    // Failing closed here would hold every message on the strength of a query
+    // that never came back — the one failure worse than delivering into a
+    // limited session, because it is invisible.
+    const fake = new FakeSql();
+    fake.program("SELECT metadata FROM sessions", { error: new Error("connection reset") });
+
+    expect(await new LimitHold().held(fake.sql as never, 11, 1_000_000)).toBe(false);
+  });
+
+  test("a marker with no reset time still releases, on the bound", async () => {
+    const fake = db(marker({ resetsAt: null }));
+    const hold = new LimitHold();
+
+    expect(await hold.held(fake.sql as never, 11, 1_000_000 + 60_000)).toBe(true);
+    expect(await hold.held(fake.sql as never, 11, 1_000_000 + LIMIT_GRACE_DEFAULT_MS)).toBe(false);
   });
 });
 

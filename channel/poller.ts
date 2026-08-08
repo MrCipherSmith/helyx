@@ -12,6 +12,7 @@ import { getProjectHistory } from "../memory/short-term.ts";
 import { sessionManager } from "../sessions/manager.ts";
 import { renderReplyContext, type ReplyContext } from "../utils/reply-context.ts";
 import { REPLY_RULE_NOTE } from "./reply-rule.ts";
+import { LimitHold, resetLabel } from "../services/limit-marker.ts";
 
 const DEADLINE_EXCEEDED = Symbol("deadline_exceeded");
 const CONTEXT_INJECT_LIMIT = Number(process.env.CONTEXT_INJECT_LIMIT ?? 15);
@@ -166,6 +167,20 @@ export class MessageQueuePoller {
    * or when Claude Code reconnects (clientId changes on each new process).
    */
   private injectedSessions = new Set<string>();
+  /**
+   * Whether this session is out of allowance, and until when.
+   *
+   * The same idea as `deferredChats` above, one level up: that one holds a chat
+   * back because Claude is mid-turn, this one holds the whole session back
+   * because the account is out of allowance and no chat of it can be answered.
+   * Delivering anyway is what used to happen — the message failed, the
+   * stuck-queue detector fired at five minutes, the hung-session detector
+   * offered a restart that could not help, and the loop repeated until the limit
+   * lifted on its own.
+   */
+  private readonly limitHold = new LimitHold();
+  /** Whether the previous pass was holding, so the release is logged once. */
+  private wasHeld = false;
 
   constructor(
     private ctx: PollerContext,
@@ -243,6 +258,37 @@ export class MessageQueuePoller {
         if (sid === null) {
           await new Promise((r) => setTimeout(r, this.ctx.pollIntervalMs));
           continue;
+        }
+
+        // Held, not stuck. A session under an API limit cannot answer anything
+        // until the account's allowance comes back, so its queue waits — the
+        // work stays in `message_queue`, which holds an undelivered row
+        // indefinitely, and goes out on the first pass after the marker expires
+        // with nobody typing anything. The release is the marker's own expiry
+        // and not a second clock; see `LimitHold`.
+        if (await this.limitHold.held(this.ctx.sql, sid)) {
+          if (!this.wasHeld) {
+            this.wasHeld = true;
+            // Recorded once, on the way in. These chats get the "carried over"
+            // prefix when they finally go out, which is the same courtesy the
+            // mid-turn deferral already pays: the operator sees a turn boundary
+            // rather than an answer arriving from nowhere an hour later.
+            const pending = await this.ctx.sql`
+              SELECT DISTINCT chat_id FROM message_queue
+              WHERE session_id = ${sid} AND delivered = false
+            `.catch(() => [] as { chat_id: string }[]);
+            for (const r of pending) this.deferredChats.add(r.chat_id as string);
+            channelLogger.warn(
+              { sessionId: sid, until: this.limitHold.until, holding: pending.length },
+              `poller: session is under a limit, holding the queue ${resetLabel(this.limitHold.until)}`,
+            );
+          }
+          await this.waitForWakeOrTimeout();
+          continue;
+        }
+        if (this.wasHeld) {
+          this.wasHeld = false;
+          channelLogger.info({ sessionId: sid }, "poller: the limit has lifted, delivering what was held");
         }
 
         // FOR UPDATE SKIP LOCKED: concurrent pollers (e.g. from rapid Stop/Start

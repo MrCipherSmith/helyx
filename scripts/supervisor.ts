@@ -602,9 +602,11 @@ export function resetLimitAlerts(): void {
  * the answer decides whether that loop is about to call a limited session hung.
  *
  * No buttons. Not an oversight — there is nothing to press. A restart cannot
- * lift a limit, and this flow deliberately does nothing automatic about one: no
- * provider switch, no queueing, no pause. The message exists so the operator
- * knows they are waiting for a clock rather than for a dead process.
+ * lift a limit, and nothing here switches provider, restarts or interrupts the
+ * session: the only thing that happens automatically is that the poller stops
+ * delivering into a session that cannot answer, and starts again when the
+ * marker expires. The message exists so the operator knows they are waiting for
+ * a clock rather than for a dead process.
  */
 export async function checkLimitedSessions(sql: postgres.Sql, now: number = Date.now()): Promise<void> {
   try {
@@ -617,11 +619,23 @@ export async function checkLimitedSessions(sql: postgres.Sql, now: number = Date
       if (limitAlerted.get(session.sessionId) === key) continue;
       limitAlerted.set(session.sessionId, key);
 
+      // What is waiting behind the limit, so the one message about it answers
+      // the operator's next question too. One count per event, not per tick:
+      // this only runs for a limit that has not been reported yet.
+      const [queued] = await sql`
+        SELECT COUNT(*)::int AS held FROM message_queue
+        WHERE session_id = ${session.sessionId} AND delivered = false
+      `.catch(() => [] as { held?: number }[]);
+      const held = Number((queued as { held?: number } | undefined)?.held ?? 0);
+
       const text = [
         `⛔️ <b>Supervisor: сессия под лимитом</b>`,
         `Проект: <code>${escapeHtml(session.project)}</code>`,
         `${limitLabel(session.limit.kind)} — ${resetLabel(session.limit.resetsAt)}`,
         `<i>${escapeHtml(session.limit.text)}</i>`,
+        ...(held > 0
+          ? [`Сообщений придержано: ${held} — уйдут сами, когда лимит снимется.`]
+          : []),
         `Перезапуск не поможет: лимит на аккаунте, а не на процессе.`,
       ].join("\n");
 
@@ -672,6 +686,18 @@ export async function checkStuckQueue(sql: postgres.Sql, runShell?: RunShell): P
       const stuckCount = Number(row.stuck_count ?? 1);
       const firstMsgContent = String(row.first_msg_content ?? "");
       const dedupKey = sessionProblemKey(project);
+
+      // Held, not stuck. The poller is holding this session's queue on purpose
+      // because the account is out of allowance, so the messages are waiting
+      // for a clock rather than for a process — and `checkLimitedSessions` has
+      // already said so, naming the limit and the time it lifts. Alerting here
+      // as well would tell the operator two different stories about one
+      // situation, and the wrong one would be the one with a restart button.
+      const limit = await sessionLimit(sql, sessionId);
+      if (limit) {
+        console.log(`[supervisor] ${project}: ${stuckCount} message(s) held for ${limitLabel(limit.kind)} ${resetLabel(limit.resetsAt)}, not stuck`);
+        continue;
+      }
 
       console.log(`[supervisor] stuck queue: ${project} (oldest msg ${oldestSec}s, count ${stuckCount})`);
 
@@ -781,7 +807,22 @@ export async function forwardStuckMessages(sql: postgres.Sql, sessionId?: number
 
   if (candidates.length === 0) return;
 
+  // A message held for a limit is not a message nothing managed to deliver, so
+  // it does not go out to the fallback channel. Forwarding it would put the
+  // operator's own question back in front of them as an undeliverable, ten
+  // minutes before the session it is waiting for is allowed to answer it —
+  // and `forwarded_at` is set on the way out, so the same message would then
+  // never be forwarded again if it did later get stuck for real.
+  //
+  // Asked once per session rather than once per row: a session with four held
+  // messages is one limit.
+  const limited = new Set<number>();
+  for (const id of new Set(candidates.map((row) => Number(row.session_id)))) {
+    if (await sessionLimit(sql, id)) limited.add(id);
+  }
+
   for (const row of candidates) {
+    if (limited.has(Number(row.session_id))) continue;
     const ageMin = Math.round(Number(row.age_seconds) / 60);
     const text = [
       `📬 <b>Stuck message forwarded</b>`,

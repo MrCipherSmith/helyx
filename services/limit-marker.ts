@@ -229,6 +229,72 @@ export async function startLimit(sql: postgres.Sql, sessionId: number, marker: L
   `;
 }
 
+/**
+ * How often the poller re-asks whether its session is under a limit.
+ *
+ * The poller's loop runs every couple of seconds and its whole job is to be
+ * cheap, so asking the database on every pass would double its query count to
+ * answer a question whose answer changes at most twice a day. Ten seconds is
+ * the longest a message can be delivered into a session that has just hit a
+ * limit — which costs one failed turn, the same one that happened before this
+ * existed — and it is short enough that the hold is in place well before the
+ * five-minute stuck-queue detector could have an opinion.
+ *
+ * Once a limit *is* found the interval stops mattering: the marker says when it
+ * lifts, so the hold needs no further queries until then.
+ */
+export const LIMIT_HOLD_RECHECK_MS = 10_000;
+
+/**
+ * Whether this session's queued work is being held, and until when.
+ *
+ * The poller already defers delivery for a chat that is mid-turn — a list of
+ * chats to skip, drained when the chat frees up — and a limited session joins
+ * that on the same terms, except that it is the whole session rather than one
+ * chat: the limit is on the account, so no chat of that session can be answered.
+ *
+ * Holding is the one part of this flow that can lose work, so the release is
+ * deliberately not a second clock. It is the marker's own expiry, which
+ * `limitFromMarker` bounds whether or not the stated reset time ever arrives. A
+ * held message that is never released would be worse than one delivered into a
+ * failing session, because the failure is at least visible.
+ *
+ * A class rather than a function because the answer has to be remembered: the
+ * point of the recheck interval is that most passes cost nothing.
+ */
+export class LimitHold {
+  private heldUntil: number | null = null;
+  private checkedAt = Number.NEGATIVE_INFINITY;
+
+  /** True while delivery must wait. Cheap on the passes that ask nothing. */
+  async held(sql: postgres.Sql, sessionId: number, now: number = Date.now()): Promise<boolean> {
+    if (this.heldUntil !== null) {
+      if (now < this.heldUntil) return true;
+      // The reset time arrived. Ask again rather than simply releasing: a
+      // session can hit a second limit while waiting out the first, and
+      // releasing into that would deliver a message straight into a failure.
+      this.heldUntil = null;
+      this.checkedAt = Number.NEGATIVE_INFINITY;
+    }
+
+    if (now - this.checkedAt < LIMIT_HOLD_RECHECK_MS) return false;
+    this.checkedAt = now;
+
+    // A database that will not answer is not a limit, for `sessionLimit`'s
+    // reason turned around: failing closed here would stop delivering messages
+    // on the strength of a query that never came back.
+    const limit = await sessionLimit(sql, sessionId, now).catch(() => null);
+    if (!limit) return false;
+    this.heldUntil = limit.expiresAt;
+    return true;
+  }
+
+  /** When the hold lifts, or null when nothing is held. For the log line. */
+  get until(): number | null {
+    return this.heldUntil;
+  }
+}
+
 /** One active session carrying a limit marker, as the supervisor's scan returns it. */
 export interface LimitedSession {
   sessionId: number;

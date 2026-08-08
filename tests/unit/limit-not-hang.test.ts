@@ -18,6 +18,8 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import {
   checkHungSessions,
   checkLimitedSessions,
+  checkStuckQueue,
+  forwardStuckMessages,
   resetLimitAlerts,
 } from "../../scripts/supervisor.ts";
 import { FakeSql } from "../fixtures/fake-sql.ts";
@@ -216,6 +218,87 @@ describe("the hung-session loop and a limit", () => {
     await checkHungSessions(db.sql as never);
 
     expect(http.count(SEND)).toBe(0);
+  });
+});
+
+describe("held is not stuck", () => {
+  /** A session with messages waiting and, optionally, a limit to wait for. */
+  function queueWorld(metadata: unknown) {
+    const project = uniqueName("held-proj");
+    const db = new FakeSql();
+    db.program("FROM message_queue mq", {
+      rows: [{
+        session_id: 11,
+        project_id: 3,
+        project,
+        project_path: "/home/altsay/bots/helyx",
+        oldest_pending: new Date(Date.now() - 600_000),
+        first_msg_content: "посмотри, пожалуйста, на 061",
+        stuck_count: 2,
+      }],
+    });
+    db.program(SELECT_METADATA, { rows: [{ metadata }] });
+    return { db, project };
+  }
+
+  test("a queue waiting on a limit raises no stuck-queue alert", async () => {
+    // Two stories about one situation, and the wrong one would be the one with
+    // a restart button on it.
+    const { db } = queueWorld({ limit: liveLimit() });
+
+    await checkStuckQueue(db.sql as never);
+
+    expect(http.count(SEND)).toBe(0);
+    expect(db.count(INSERT_INCIDENT)).toBe(0);
+  });
+
+  test("a queue stuck for any other reason is still alerted on", async () => {
+    // The exemption narrows the alarm; it does not switch it off. (The fake's
+    // one `message_queue` program answers the forwarder's query too, so this
+    // asserts on the alert rather than on a count of sends.)
+    const { db, project } = queueWorld({});
+
+    await checkStuckQueue(db.sql as never);
+
+    const stuck = sentTexts().filter((t) => t.includes("очередь застряла"));
+    expect(stuck).toHaveLength(1);
+    expect(stuck[0]).toContain(project);
+  });
+
+  test("held messages are not forwarded to the fallback channel", async () => {
+    // `forwarded_at` is set on the way out, so a message forwarded now would
+    // never be forwarded again if it later got stuck for real — and it would
+    // arrive as an undeliverable ten minutes before the session is allowed to
+    // answer it.
+    const db = new FakeSql();
+    db.program("mq.forwarded_at IS NULL", {
+      rows: [{ id: 5, session_id: 11, chat_id: "555", from_user: "op", content: "held", project: "helyx", age_seconds: 900 }],
+    });
+    db.program(SELECT_METADATA, { rows: [{ metadata: { limit: liveLimit() } }] });
+
+    await forwardStuckMessages(db.sql as never);
+
+    expect(http.count(SEND)).toBe(0);
+    expect(db.count("SET forwarded_at")).toBe(0);
+  });
+
+  test("the limit alert says how much is waiting behind it", async () => {
+    const project = uniqueName("held-proj");
+    const db = new FakeSql();
+    db.program(LIMIT_SCAN, { rows: [{ session_id: 11, project, metadata: { limit: liveLimit() } }] });
+    db.program("COUNT(*)::int AS held", { rows: [{ held: 3 }] });
+
+    await checkLimitedSessions(db.sql as never);
+
+    expect(sentTexts()[0]).toContain("Сообщений придержано: 3");
+  });
+
+  test("and says nothing about it when nothing is waiting", async () => {
+    const { db } = limitedWorld();
+
+    await checkLimitedSessions(db.sql as never);
+
+    expect(sentTexts()[0]).not.toContain("придержано");
   });
 });
 

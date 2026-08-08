@@ -1728,8 +1728,9 @@ export class StatusManager {
    * each other and from silence" needs and all it needs.
    *
    * Nothing is acted on here beyond writing it down. No provider switch, no
-   * restart, no pause — this flow makes the state visible and what to do about
-   * it stays the operator's call.
+   * restart, no interrupt — what the marker causes elsewhere is that the
+   * supervisor says which limit it is and the poller holds delivery until it
+   * lifts, both of which are waiting rather than doing.
    *
    * Public for the reason `captureFold` is: the only other way in is to have a
    * real session hit a real limit, which takes an account and several hours.
