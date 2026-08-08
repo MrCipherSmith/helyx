@@ -9,6 +9,7 @@
 
 import type { Context } from "grammy";
 import {
+  CLAUDE_DEFAULT_MODEL,
   defaultReviewers,
   getReviewerStatuses,
   getReviewers,
@@ -17,9 +18,14 @@ import {
 } from "../../services/reviewer-service.ts";
 import { providerService } from "../../services/provider-service.ts";
 
-/** Render one reviewer line for /reviewers. */
-function renderReviewer(r: Reviewer): string {
-  const target = r.kind === "codex" ? "codex" : `provider #${r.providerId}`;
+/**
+ * Render one reviewer line for /reviewers.
+ *
+ * The target is read from the kind rather than from "is it codex": with a third
+ * CLI kind the old ternary rendered `provider #undefined` for it.
+ */
+export function renderReviewer(r: Reviewer): string {
+  const target = r.kind === "provider" ? `provider #${r.providerId}` : r.kind;
   return `${r.enabled ? "🟢" : "⚪️"} ${r.id} — ${r.model} (${target})`;
 }
 
@@ -27,7 +33,7 @@ export async function handleReviewers(ctx: Context): Promise<void> {
   const reviewers = await getReviewers();
   const lines = reviewers.map(renderReviewer);
   const header = "Reviewers (run in parallel on a review):\n";
-  await ctx.reply(header + (lines.join("\n") || "(none)") + "\n\nUse /reviewers status, /reviewers add, /reviewers remove <id>, /reviewers default.");
+  await ctx.reply(header + (lines.join("\n") || "(none)") + "\n\nUse /reviewers_status, /reviewers_add, /reviewers_remove <id>, /reviewers_default.");
 }
 
 export async function handleReviewersStatus(ctx: Context): Promise<void> {
@@ -49,7 +55,7 @@ export async function handleReviewersAdd(ctx: Context): Promise<void> {
     const model = parts[1] ?? process.env.CODEX_MODEL ?? "gpt-5.6-sol";
     const reviewers = await getReviewers();
     if (reviewers.some((r) => r.id === "codex")) {
-      await ctx.reply("Codex reviewer already exists. Use /reviewers remove codex first, or pick its model in config.");
+      await ctx.reply("Codex reviewer already exists. Use /reviewers_remove codex first, or pick its model in config.");
       return;
     }
     await setReviewers([...reviewers, { id: "codex", kind: "codex", model, enabled: true }]);
@@ -57,10 +63,22 @@ export async function handleReviewersAdd(ctx: Context): Promise<void> {
     return;
   }
 
+  if (parts[0] === "claude") {
+    const model = parts[1] ?? CLAUDE_DEFAULT_MODEL;
+    const reviewers = await getReviewers();
+    if (reviewers.some((r) => r.id === "claude")) {
+      await ctx.reply("Claude reviewer already exists. Use /reviewers_remove claude first.");
+      return;
+    }
+    await setReviewers([...reviewers, { id: "claude", kind: "claude", model, enabled: true }]);
+    await ctx.reply(`Added Claude reviewer (${model}) — runs on the Claude Code CLI subscription.`);
+    return;
+  }
+
   if (parts[0] === "provider") {
     const [ref, model] = [parts[1], parts[2]];
     if (!ref || !model) {
-      await ctx.reply("Usage: /reviewers add provider <name|id> <model>\n  e.g. /reviewers add provider DeepSeek deepseek-v4-pro");
+      await ctx.reply("Usage: /reviewers_add provider <name|id> <model>\n  e.g. /reviewers_add provider DeepSeek deepseek-v4-pro");
       return;
     }
     const provider = /^\d+$/.test(ref)
@@ -73,7 +91,7 @@ export async function handleReviewersAdd(ctx: Context): Promise<void> {
     const id = `provider:${provider.id}`;
     const reviewers = await getReviewers();
     if (reviewers.some((r) => r.id === id)) {
-      await ctx.reply(`A reviewer for ${provider.name} already exists. Remove it first: /reviewers remove ${id}`);
+      await ctx.reply(`A reviewer for ${provider.name} already exists. Remove it first: /reviewers_remove ${id}`);
       return;
     }
     await setReviewers([...reviewers, { id, kind: "provider", providerId: provider.id, model, enabled: true }]);
@@ -81,13 +99,18 @@ export async function handleReviewersAdd(ctx: Context): Promise<void> {
     return;
   }
 
-  await ctx.reply("Usage:\n  /reviewers add codex [model]\n  /reviewers add provider <name|id> <model>");
+  // Underscored, because that is what this handler parses. The printed form
+  // used the spaced one, so an operator who typed back what they were shown
+  // landed on this same usage text.
+  await ctx.reply(
+    "Usage:\n  /reviewers_add codex [model]\n  /reviewers_add claude [model]\n  /reviewers_add provider <name|id> <model>",
+  );
 }
 
 export async function handleReviewersRemove(ctx: Context): Promise<void> {
   const id = (ctx.message?.text ?? "").replace(/^\/reviewers_remove\s*/, "").trim();
   if (!id) {
-    await ctx.reply("Usage: /reviewers remove <id>  (e.g. codex, provider:4)");
+    await ctx.reply("Usage: /reviewers_remove <id>  (e.g. codex, provider:4)");
     return;
   }
   const reviewers = await getReviewers();
