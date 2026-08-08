@@ -38,8 +38,12 @@ function rows(keyboard: { inline_keyboard: readonly (readonly { text: string; ca
 const CONFIGURED: ProviderSelection = { providerId: 7, providerName: "GLM (Z.ai)", model: "glm-5.2" };
 
 describe("renderProjectsMessage", () => {
-  test("a configured project gets an action row and an info row beneath it", () => {
-    const { keyboard } = renderProjectsMessage(
+  test("a configured project gets one row of controls, and its config in the text", () => {
+    // The info row was tried and taken out again: two buttons share a row's
+    // width, and `glm-5.2` survives that but `deepseek-v4-pro` does not. The
+    // text line has the full width, and provider and model are read rather
+    // than pressed.
+    const { text, keyboard } = renderProjectsMessage(
       [project({ id: 3, session_status: "active" })],
       new Map([[3, CONFIGURED]]),
       new Map(),
@@ -47,34 +51,36 @@ describe("renderProjectsMessage", () => {
 
     expect(rows(keyboard)).toEqual([
       [["⏹ Stop helyx", "proj:stop:3"], ["⚙️", "pmchg:3:prov"]],
-      [["GLM (Z.ai)", "pminf:3"], ["glm-5.2", "pminf:3"]],
     ]);
+    expect(text).toContain("GLM (Z.ai) / glm-5.2");
   });
 
   test("a project with no provider row reads as Claude on its default model", () => {
-    const { keyboard } = renderProjectsMessage([project({ id: 4 })], new Map(), new Map());
+    const { text, keyboard } = renderProjectsMessage([project({ id: 4 })], new Map(), new Map());
 
     expect(rows(keyboard)).toEqual([
       [["▶️ Start helyx", "proj:start:4"], ["⚙️", "pmchg:4:prov"]],
-      [["Claude", "pminf:4"], ["default", "pminf:4"]],
     ]);
+    // Spelled out, not left blank: "what is this running on" is the question
+    // the line exists to answer, and an empty answer is how it fails.
+    expect(text).toContain("Claude / default");
   });
 
   test("a provider without a model still names the provider", () => {
     const selection: ProviderSelection = { providerId: 7, providerName: "Ollama", model: null };
-    const { keyboard } = renderProjectsMessage([project({ id: 5 })], new Map([[5, selection]]), new Map());
+    const { text } = renderProjectsMessage([project({ id: 5 })], new Map([[5, selection]]), new Map());
 
-    expect(rows(keyboard)[1]).toEqual([["Ollama", "pminf:5"], ["default", "pminf:5"]]);
+    expect(text).toContain("Ollama / default");
   });
 
-  test("the info buttons carry a callback that cannot change anything", () => {
+  test("nothing renders an info button any more", () => {
+    // The `pminf:` handler stays — a /projects message already in the chat
+    // still carries those buttons and outlives this deploy, and a callback
+    // nobody handles leaves Telegram spinning on it. But nothing emits one.
     const { keyboard } = renderProjectsMessage([project({ id: 3 })], new Map([[3, CONFIGURED]]), new Map());
 
-    for (const [, data] of rows(keyboard)[1]!) {
-      expect(data).toBe("pminf:3");
-      // Not the picker prefix — tapping the label must not open provider/model selection.
-      expect(data.startsWith("pmchg:")).toBe(false);
-      expect(data.startsWith("pmsel:")).toBe(false);
+    for (const row of rows(keyboard)) {
+      for (const [, data] of row) expect(data.startsWith("pminf:")).toBe(false);
     }
   });
 
@@ -86,22 +92,22 @@ describe("renderProjectsMessage", () => {
     );
 
     // Refresh is there because something is pending — but no controls for the
-    // project itself, and no info row claiming a config it may be about to change.
+    // project itself, and no line claiming a config it may be about to change.
     expect(rows(keyboard)).toEqual([[["🔄 Refresh", "proj:refresh"]]]);
     expect(text).toContain("⏳▶️ helyx");
   });
 
-  test("the text lines no longer repeat the provider or the model", () => {
+  test("the text line carries the provider and the model", () => {
     const { text } = renderProjectsMessage(
       [project({ id: 3, session_status: "active" })],
       new Map([[3, CONFIGURED]]),
       new Map(),
     );
 
-    expect(text).toContain("🟢 helyx  (/home/altsay/bots/helyx)");
-    expect(text).not.toContain("·");
-    expect(text).not.toContain("GLM (Z.ai)");
-    expect(text).not.toContain("glm-5.2");
+    // The whole line, not its pieces: the separator and the order are what make
+    // it readable at a glance, and asserting the parts would pass on a line
+    // that had them in any arrangement.
+    expect(text).toContain("🟢 helyx  (/home/altsay/bots/helyx)  ·  GLM (Z.ai) / glm-5.2");
   });
 
   test("the fresh view offers Start All only when more than one project is stopped", () => {
@@ -154,10 +160,11 @@ describe("renderProjectsMessage", () => {
       new Map(),
     );
 
+    // One row per project now, in order, and each project's config in its line.
     const got = rows(keyboard);
-    expect(got.length).toBe(4);
-    expect(got[1]).toEqual([["GLM (Z.ai)", "pminf:1"], ["glm-5.2", "pminf:1"]]);
-    expect(got[3]).toEqual([["Claude", "pminf:2"], ["default", "pminf:2"]]);
+    expect(got.length).toBe(2);
+    expect(got[0]).toEqual([["⏹ Stop a", "proj:stop:1"], ["⚙️", "pmchg:1:prov"]]);
+    expect(got[1]).toEqual([["▶️ Start b", "proj:start:2"], ["⚙️", "pmchg:2:prov"]]);
   });
 });
 

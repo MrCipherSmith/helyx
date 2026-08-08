@@ -65,17 +65,26 @@ export function configLabels(cfg: ProviderSelection | undefined): { provider: st
  * rows. Both render sites (the initial reply and the post-action re-render) call
  * this, so the per-project layout lives in exactly one place.
  *
- * Each settled project gets two rows:
- *   1. the action row — Stop/Start (left) | ⚙️ settings (right);
- *   2. an info row beneath it — provider name (left, under the action button)
- *      and the current model (right, under the gear) — so what each project runs
- *      on is readable at a glance, beside its controls.
+ * Each settled project gets a text line naming what it runs on, and one row of
+ * controls beneath it — Stop/Start (left) | ⚙️ settings (right).
  *
- * Provider and model used to repeat inside the text line ("· Provider/model");
- * they now live only in the info-row buttons, so that annotation is gone. The
- * info buttons are display-only: a `pminf:<id>` callback names the project and
- * its config and changes no state. A pending project shows its pending marker
- * but no controls — its settled state is unknown until the command completes.
+ * Provider and model were briefly moved out of the text and into a second row
+ * of display-only buttons, one under each control. It reads well in a mockup
+ * and badly on a phone: Telegram sizes an inline button to its row, so two
+ * buttons share the width and a label like `deepseek-v4-pro` or
+ * `geekom-model-1` is truncated to something that no longer names the model.
+ * The text line has the full width and does not truncate, which is the whole
+ * reason it is the right place for a value the operator reads rather than
+ * presses.
+ *
+ * So they are back in the line and the info row is gone. The `pminf:` handler
+ * below stays: a `/projects` message already sitting in the chat still carries
+ * those buttons, and it outlives this deploy the same way it outlives a
+ * `/project-remove` — the handler is what keeps an old message from answering
+ * with a spinner that never resolves. Nothing emits `pminf:` any more.
+ *
+ * A pending project shows its pending marker but no controls: its settled state
+ * is unknown until the command completes.
  *
  * The trailing rows are the only thing the two sites ever disagreed about, so
  * they are a parameter rather than a second copy of the loop. `fresh` is the
@@ -100,15 +109,13 @@ export function renderProjectsMessage(
       continue;
     }
     const isActive = p.session_status === "active";
-    lines.push(`${isActive ? "🟢" : "⚪"} ${p.name}  (${p.path})`);
+    const { provider, model } = configLabels(selections.get(p.id));
+    lines.push(`${isActive ? "🟢" : "⚪"} ${p.name}  (${p.path})  ·  ${provider} / ${model}`);
 
     keyboard
       .text(isActive ? `⏹ Stop ${p.name}` : `▶️ Start ${p.name}`, `proj:${isActive ? "stop" : "start"}:${p.id}`)
       .text("⚙️", `pmchg:${p.id}:prov`)
       .row();
-
-    const { provider, model } = configLabels(selections.get(p.id));
-    keyboard.text(provider, `pminf:${p.id}`).text(model, `pminf:${p.id}`).row();
   }
 
   if (variant === "rerender") {
@@ -165,7 +172,13 @@ export async function handleProjectCallback(ctx: Context): Promise<void> {
   const parts = data.split(":");
 
   // pminf:<projectId> — display-only: answer with the project's current config,
-  // no state change. The provider/model buttons under each action read as status.
+  // no state change.
+  //
+  // Nothing renders these buttons any more — provider and model went back into
+  // the text line, because two buttons sharing a row truncate a model id. This
+  // stays for the messages that were already sent: an old /projects message
+  // keeps its buttons for as long as it is on screen, and a callback with no
+  // handler leaves Telegram spinning on it.
   //
   // The absence of a row means the project is gone, not that it is on stock
   // Claude: an old /projects message outlives a `/project-remove`, and answering
