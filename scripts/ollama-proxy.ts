@@ -96,7 +96,7 @@ export async function contextLengthFor(model: string): Promise<number> {
   const cached = ctxCache.get(model);
   if (cached) return cached;
 
-  let length = 8192;
+  let learned: number | null = null;
   try {
     const res = await ollamaFetch("/api/show", {
       method: "POST",
@@ -106,13 +106,27 @@ export async function contextLengthFor(model: string): Promise<number> {
     if (res.ok) {
       const info = (await res.json()) as { model_info?: Record<string, unknown> };
       const entry = Object.entries(info.model_info ?? {}).find(([k]) => k.endsWith(".context_length"));
-      if (typeof entry?.[1] === "number" && entry[1] > 0) length = entry[1] as number;
+      if (typeof entry?.[1] === "number" && entry[1] > 0) learned = entry[1] as number;
     }
   } catch {
     // Unreachable here is not fatal — the request that follows will report it.
   }
-  ctxCache.set(model, length);
-  return length;
+
+  // Only a learned window is remembered. The fallback is what we use *this*
+  // time, never what we decide the model is.
+  //
+  // `ctxCache` has no TTL, so caching the fallback made one bad moment
+  // permanent: Ollama restarting, or the model not yet pulled, and every later
+  // request for the lifetime of this process sends `num_ctx: 8192` for a model
+  // whose real window is 40960. The outage is loud and brief; the truncation
+  // that follows it is silent and forever, and silent truncation is the exact
+  // failure this lookup exists to prevent — see the comment above.
+  //
+  // `availableModels` below already draws this distinction for the same reason.
+  // This function did not, and the two sat eight lines apart.
+  if (learned === null) return 8192;
+  ctxCache.set(model, learned);
+  return learned;
 }
 
 async function availableModels(): Promise<string[]> {

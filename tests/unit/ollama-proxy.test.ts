@@ -10,7 +10,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { installFakeFetch, type FakeFetch } from "../fixtures/fake-fetch.ts";
-import { route, resetModelCaches } from "../../scripts/ollama-proxy.ts";
+import { route, resetModelCaches, contextLengthFor } from "../../scripts/ollama-proxy.ts";
 import { parseModelsResponse } from "../../services/provider-service.ts";
 import { ollamaProxyEnabled, ollamaProxyPort, hostReachableOllamaUrl, DEFAULT_OLLAMA_PROXY_PORT } from "../../utils/ollama-proxy-settings.ts";
 import { CONFIG } from "../../config.ts";
@@ -239,5 +239,33 @@ describe("the enable gate", () => {
     expect(daemon).toContain("hostname: HOST");
     // Never drift to another port: a providers row already names this one.
     expect(daemon).toContain("process.exit(1)");
+  });
+});
+
+describe("the context window is learned, and only a learned one is remembered", () => {
+  test("a momentary outage does not become the model's window for ever", async () => {
+    // The cache has no TTL. Caching the fallback made one bad moment permanent:
+    // Ollama restarting, or the model not yet pulled, and every later request
+    // for the life of this process sends num_ctx 8192 for a 40960 model. The
+    // outage is loud and brief; the truncation after it is silent and forever.
+    http.program("/api/show", { status: 503, text: "ollama is restarting" });
+    expect(await contextLengthFor("geekom-model-1:latest")).toBe(8192);
+
+    http.program("/api/show", { json: SHOW });
+    expect(await contextLengthFor("geekom-model-1:latest")).toBe(40960);
+  });
+
+  test("a learned window is remembered rather than re-asked", async () => {
+    expect(await contextLengthFor("geekom-model-1:latest")).toBe(40960);
+    // Ollama going away afterwards cannot un-learn it.
+    http.program("/api/show", { status: 503, text: "gone" });
+    expect(await contextLengthFor("geekom-model-1:latest")).toBe(40960);
+  });
+
+  test("a response without a context length is not treated as one", async () => {
+    http.program("/api/show", { json: { model_info: { "qwen3.context_length": 0 } } });
+    expect(await contextLengthFor("geekom-model-1:latest")).toBe(8192);
+    http.program("/api/show", { json: SHOW });
+    expect(await contextLengthFor("geekom-model-1:latest")).toBe(40960);
   });
 });
