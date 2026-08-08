@@ -6,3 +6,23 @@
 - 2026-08-08T18:06:35.017Z - ac-updated: operator added a fourth requirement: a periodic per-session pulse (tokens in/out, elapsed, context, what it is doing) so a working session is visibly working
 - 2026-08-08T18:17:51.486Z - ac-updated: operator: the supervisor session list should name the provider and model of each active session
 - 2026-08-08T18:36:26.975Z - ac-updated: operator: sessions should wake by themselves once the limit resets; the queue and the poller's deferral already exist, only the reset time was missing
+- 2026-08-08T19:00:27.164Z - ac-confirmed: AC1
+- 2026-08-08T19:00:27.291Z - ac-confirmed: AC2
+- 2026-08-08T19:00:27.414Z - ac-confirmed: AC3
+- 2026-08-08T19:00:27.525Z - ac-confirmed: AC4
+- 2026-08-08T19:00:27.649Z - ac-confirmed: AC5
+- 2026-08-08T19:00:27.765Z - ac-confirmed: AC6
+- 2026-08-08T19:00:27.873Z - ac-confirmed: AC7
+- 2026-08-08T19:00:27.997Z - ac-confirmed: AC8
+- 2026-08-08T19:00:28.115Z - ac-confirmed: AC10
+- 2026-08-08T19:00:28.224Z - ac-confirmed: AC11
+- 2026-08-08T19:00:28.330Z - ac-confirmed: AC12
+- 2026-08-08T19:00:28.439Z - ac-confirmed: AC13
+- 2026-08-08T19:00:28.550Z - ac-confirmed: AC14
+- 2026-08-08T19:00:28.659Z - ac-confirmed: AC15
+- 2026-08-08T19:00:28.768Z - ac-confirmed: AC16
+- 2026-08-08T19:00:28.881Z - ac-confirmed: AC17
+- 2026-08-08T19:00:28.989Z - ac-confirmed: AC18
+- 2026-08-08T19:00:34.912Z - task-done: T1: Collect remaining context
+- 2026-08-08T19:00:35.010Z - task-done: T2: Implement per plan
+- 2026-08-08T19:00:35.119Z - task-done: T3: Add/adjust tests and make them pass

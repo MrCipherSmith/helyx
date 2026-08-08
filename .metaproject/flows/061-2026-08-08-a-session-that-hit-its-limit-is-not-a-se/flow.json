@@ -5,13 +5,65 @@
   "title": "A session that hit its limit is not a session that hung",
   "status": "in-progress",
   "createdAt": "2026-08-08T18:02:09.973Z",
-  "updatedAt": "2026-08-08T18:36:26.975Z",
+  "updatedAt": "2026-08-08T19:00:35.119Z",
   "source": {
     "type": "description",
     "ref": null
   },
   "acChecksum": "sha256:2f5d3eba118c7dadd379d2dbaeaae635572f53b23e8f851a0a74cb61717a23cb",
-  "acConfirmed": {},
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-08T19:00:27.164Z"
+    },
+    "AC2": {
+      "at": "2026-08-08T19:00:27.291Z"
+    },
+    "AC3": {
+      "at": "2026-08-08T19:00:27.414Z"
+    },
+    "AC4": {
+      "at": "2026-08-08T19:00:27.525Z"
+    },
+    "AC5": {
+      "at": "2026-08-08T19:00:27.649Z"
+    },
+    "AC6": {
+      "at": "2026-08-08T19:00:27.765Z"
+    },
+    "AC7": {
+      "at": "2026-08-08T19:00:27.873Z"
+    },
+    "AC8": {
+      "at": "2026-08-08T19:00:27.997Z"
+    },
+    "AC10": {
+      "at": "2026-08-08T19:00:28.115Z"
+    },
+    "AC11": {
+      "at": "2026-08-08T19:00:28.224Z"
+    },
+    "AC12": {
+      "at": "2026-08-08T19:00:28.330Z"
+    },
+    "AC13": {
+      "at": "2026-08-08T19:00:28.438Z"
+    },
+    "AC14": {
+      "at": "2026-08-08T19:00:28.550Z"
+    },
+    "AC15": {
+      "at": "2026-08-08T19:00:28.659Z"
+    },
+    "AC16": {
+      "at": "2026-08-08T19:00:28.768Z"
+    },
+    "AC17": {
+      "at": "2026-08-08T19:00:28.881Z"
+    },
+    "AC18": {
+      "at": "2026-08-08T19:00:28.989Z"
+    }
+  },
   "pr": {
     "url": null
   },
@@ -20,7 +72,7 @@
       "id": "T1",
       "title": "Collect remaining context",
       "kind": "context",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -28,13 +80,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T2",
       "title": "Implement per plan",
       "kind": "implement",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -42,13 +95,14 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T3",
       "title": "Add/adjust tests and make them pass",
       "kind": "test",
-      "status": "todo",
+      "status": "done",
       "dependsOn": [],
       "attempts": {
         "count": 0,
@@ -56,7 +110,8 @@
       },
       "acRefs": [],
       "evidenceRefs": [],
-      "budget": {}
+      "budget": {},
+      "disposition": "completed"
     },
     {
       "id": "T4",
@@ -101,6 +156,106 @@
       "at": "2026-08-08T18:36:26.975Z",
       "event": "ac-updated",
       "detail": "operator: sessions should wake by themselves once the limit resets; the queue and the poller's deferral already exist, only the reset time was missing"
+    },
+    {
+      "at": "2026-08-08T19:00:27.164Z",
+      "event": "ac-confirmed",
+      "detail": "AC1"
+    },
+    {
+      "at": "2026-08-08T19:00:27.291Z",
+      "event": "ac-confirmed",
+      "detail": "AC2"
+    },
+    {
+      "at": "2026-08-08T19:00:27.414Z",
+      "event": "ac-confirmed",
+      "detail": "AC3"
+    },
+    {
+      "at": "2026-08-08T19:00:27.525Z",
+      "event": "ac-confirmed",
+      "detail": "AC4"
+    },
+    {
+      "at": "2026-08-08T19:00:27.649Z",
+      "event": "ac-confirmed",
+      "detail": "AC5"
+    },
+    {
+      "at": "2026-08-08T19:00:27.765Z",
+      "event": "ac-confirmed",
+      "detail": "AC6"
+    },
+    {
+      "at": "2026-08-08T19:00:27.873Z",
+      "event": "ac-confirmed",
+      "detail": "AC7"
+    },
+    {
+      "at": "2026-08-08T19:00:27.997Z",
+      "event": "ac-confirmed",
+      "detail": "AC8"
+    },
+    {
+      "at": "2026-08-08T19:00:28.115Z",
+      "event": "ac-confirmed",
+      "detail": "AC10"
+    },
+    {
+      "at": "2026-08-08T19:00:28.224Z",
+      "event": "ac-confirmed",
+      "detail": "AC11"
+    },
+    {
+      "at": "2026-08-08T19:00:28.330Z",
+      "event": "ac-confirmed",
+      "detail": "AC12"
+    },
+    {
+      "at": "2026-08-08T19:00:28.439Z",
+      "event": "ac-confirmed",
+      "detail": "AC13"
+    },
+    {
+      "at": "2026-08-08T19:00:28.550Z",
+      "event": "ac-confirmed",
+      "detail": "AC14"
+    },
+    {
+      "at": "2026-08-08T19:00:28.659Z",
+      "event": "ac-confirmed",
+      "detail": "AC15"
+    },
+    {
+      "at": "2026-08-08T19:00:28.768Z",
+      "event": "ac-confirmed",
+      "detail": "AC16"
+    },
+    {
+      "at": "2026-08-08T19:00:28.881Z",
+      "event": "ac-confirmed",
+      "detail": "AC17"
+    },
+    {
+      "at": "2026-08-08T19:00:28.989Z",
+      "event": "ac-confirmed",
+      "detail": "AC18"
+    },
+    {
+      "at": "2026-08-08T19:00:34.912Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-08T19:00:35.010Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-08T19:00:35.119Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
     }
   ]
 }
