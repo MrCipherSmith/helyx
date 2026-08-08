@@ -137,6 +137,9 @@ Edit `.env`. The variables below are required or commonly needed:
 | `POSTGRES_PASSWORD` | **Yes** | Password for the `helyx` DB user. Used by Docker Compose. |
 | `DATABASE_URL` | **Yes** | For the host-side processes (`channel.ts`, `admin-daemon`). Docker Compose overrides this internally. Use `postgres://helyx:<password>@localhost:5433/helyx` when connecting from the host. |
 | `OLLAMA_URL` | Recommended | URL of the Ollama service. Default: `http://localhost:11434`. Used for `nomic-embed-text` embeddings (semantic memory search). If unreachable, memories are stored without embeddings — recall/search is degraded. |
+| `OLLAMA_PROXY_ENABLED` | Optional | Starts `scripts/ollama-proxy.ts` on the host, which lets a project run **Claude Code itself** against the local Ollama — register `http://127.0.0.1:3458` as a Custom provider in `/providers`. Off by default; see `docs/requirements/ollama-provider-2026-08-07/`. |
+| `OLLAMA_PROXY_PORT` | Optional | Where that proxy listens. Default: `3458`. Change it and the `providers` row must change with it. |
+| `OLLAMA_PROXY_MODEL` | Optional | Which Ollama model the proxy runs. Empty means `OLLAMA_CHAT_MODEL`. |
 | `GROQ_API_KEY` | Optional | Enables fast cloud-based Whisper transcription for voice messages. Free at [console.groq.com](https://console.groq.com). |
 | `TTS_PROVIDER` | Optional | `auto` \| `piper` \| `yandex` \| `kokoro` \| `openai` \| `groq` \| `none`. Default: `auto`. |
 | `PORT` | Optional | HTTP port for the MCP server and dashboard. Default: `3847`. |

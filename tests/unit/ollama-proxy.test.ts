@@ -1,0 +1,400 @@
+/**
+ * The proxy's routing, and the two behaviours that decide whether a session
+ * starts at all: which model gets run, and what an unreachable Ollama looks
+ * like from the terminal.
+ *
+ * The daemon half (`Bun.serve`, the heartbeat) is not exercised here — `route()`
+ * is exported precisely so the request handling can be tested without a socket
+ * or a database.
+ */
+
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { installFakeFetch, type FakeFetch } from "../fixtures/fake-fetch.ts";
+import { route, resetModelCaches, contextLengthFor } from "../../scripts/ollama-proxy.ts";
+import { parseModelsResponse } from "../../services/provider-service.ts";
+import { ollamaProxyEnabled, ollamaProxyPort, hostReachableOllamaUrl, DEFAULT_OLLAMA_PROXY_PORT } from "../../utils/ollama-proxy-settings.ts";
+import { CONFIG } from "../../config.ts";
+
+let http: FakeFetch;
+let restore: () => void;
+
+const TAGS = { models: [{ model: "geekom-model-1:latest" }, { model: "gemma4:e2b" }] };
+const SHOW = { model_info: { "qwen3.context_length": 40960 } };
+
+function post(path: string, body: unknown): Request {
+  return new Request(`http://127.0.0.1:3458${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/** The usage a client would assemble for the turn: the `message_delta` one. */
+function usageOf(sse: string): unknown {
+  const frame = sse.split("\n").find((l) => l.startsWith('data: {"type":"message_delta"'));
+  return frame ? JSON.parse(frame.slice("data: ".length)).usage : undefined;
+}
+
+beforeEach(() => {
+  // The model caches are module state with a TTL. Left in place, one test's
+  // model list answers the next one's questions.
+  resetModelCaches();
+  ({ http, restore } = installFakeFetch());
+  http.program("/api/tags", { json: TAGS });
+  http.program("/api/show", { json: SHOW });
+});
+
+afterEach(() => restore());
+
+describe("routing", () => {
+  test("an unknown route names itself rather than answering a bare 404", async () => {
+    const res = await route(new Request("http://127.0.0.1:3458/v1/complete"));
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error.type).toBe("not_found_error");
+    expect(body.error.message).toContain("/v1/complete");
+  });
+
+  test("/health answers without touching Ollama", async () => {
+    const res = await route(new Request("http://127.0.0.1:3458/health"));
+    expect(res.status).toBe(200);
+    expect((await res.json()).status).toBe("ok");
+  });
+
+  test("/v1/models returns what the provider add-flow can parse", async () => {
+    // This route exists for exactly one caller: fetchProviderModels() during
+    // `/providers → ➕ Add → Custom`. Anything it cannot parse leaves the
+    // operator typing model names by hand.
+    const res = await route(new Request("http://127.0.0.1:3458/v1/models"));
+    expect(parseModelsResponse(await res.json())).toEqual([
+      { id: "geekom-model-1:latest", label: "geekom-model-1:latest" },
+      { id: "gemma4:e2b", label: "gemma4:e2b" },
+    ]);
+  });
+
+  test("count_tokens returns a number and admits it is an estimate", async () => {
+    const res = await route(
+      post("/v1/messages/count_tokens", { messages: [{ role: "user", content: "hello there" }] }),
+    );
+    const body = await res.json();
+    expect(body.input_tokens).toBeGreaterThan(0);
+    expect(body.estimated).toBe(true);
+  });
+});
+
+describe("/v1/messages", () => {
+  test("a non-streaming turn is translated in both directions", async () => {
+    http.program("/api/chat", {
+      json: { message: { content: "hi" }, done: true, done_reason: "stop", prompt_eval_count: 5, eval_count: 1 },
+    });
+
+    const res = await route(
+      post("/v1/messages", {
+        model: "geekom-model-1",
+        system: "be terse",
+        stream: false,
+        messages: [{ role: "user", content: "hello" }],
+        tools: [{ name: "Bash", description: "run", input_schema: { type: "object" } }],
+      }),
+    );
+
+    const sent = http.last("/api/chat")?.body as any;
+    expect(sent.messages[0]).toEqual({ role: "system", content: "be terse" });
+    expect(sent.tools[0].function.name).toBe("Bash");
+    // The context window comes from the model, not from a guess.
+    expect(sent.options.num_ctx).toBe(40960);
+
+    const body = await res.json();
+    expect(body.type).toBe("message");
+    expect(body.content[0]).toEqual({ type: "text", text: "hi" });
+    expect(body.stop_reason).toBe("end_turn");
+    expect(body.usage).toEqual({ input_tokens: 5, output_tokens: 1 });
+  });
+
+  test("a streaming turn emits Anthropic SSE frames in order", async () => {
+    http.program("/api/chat", {
+      text:
+        JSON.stringify({ message: { content: "he" } }) +
+        "\n" +
+        JSON.stringify({ message: { content: "llo" } }) +
+        "\n" +
+        JSON.stringify({ done: true, done_reason: "stop", prompt_eval_count: 41_000, eval_count: 2 }) +
+        "\n",
+    });
+
+    const res = await route(post("/v1/messages", { stream: true, messages: [{ role: "user", content: "hi" }] }));
+    expect(res.headers.get("content-type")).toContain("text/event-stream");
+
+    const text = await res.text();
+    const events = [...text.matchAll(/^event: (.+)$/gm)].map((m) => m[1]);
+    expect(events).toEqual([
+      "message_start",
+      "content_block_start",
+      "content_block_delta",
+      "content_block_delta",
+      "content_block_stop",
+      "message_delta",
+      "message_stop",
+    ]);
+    expect(text).toContain('"stop_reason":"end_turn"');
+    // The prompt size, which only the final chunk carries. Reported as zero,
+    // every streamed turn — which is every real turn — looks like a session
+    // holding no context at all.
+    expect(usageOf(text)).toEqual({ input_tokens: 41_000, output_tokens: 2 });
+  });
+
+  test("an absent stream field is not a request to stream", async () => {
+    // Anthropic's Messages API defaults stream to false, so omitting it asks
+    // for one JSON object. Answering SSE does not fail here; it fails in the
+    // caller, reading content[0] off a string that begins "event:".
+    http.program("/api/chat", { json: { message: { content: "hi" }, done: true, done_reason: "stop" } });
+
+    const res = await route(post("/v1/messages", { messages: [{ role: "user", content: "hi" }] }));
+    expect(res.headers.get("content-type")).toContain("application/json");
+    expect((await res.json()).content[0]).toEqual({ type: "text", text: "hi" });
+    expect((http.last("/api/chat")?.body as any).stream).toBe(false);
+  });
+
+  test("a mid-stream Ollama error is a failure, not a turn that said nothing", async () => {
+    // Ollama reports the runner dying or a model failing to load as one more
+    // NDJSON line carrying only `error` — no message, no done. Translated as an
+    // ordinary chunk it produced no events at all, and the stream closed with
+    // an empty text block and stop_reason end_turn: HTTP 200, nothing logged,
+    // and an operator watching the model reply with silence.
+    http.program("/api/chat", {
+      text:
+        JSON.stringify({ message: { content: "thin" } }) +
+        "\n" +
+        JSON.stringify({ error: "model runner has unexpectedly stopped" }) +
+        "\n",
+    });
+
+    const res = await route(post("/v1/messages", { stream: true, messages: [{ role: "user", content: "hi" }] }));
+    const text = await res.text();
+    const events = [...text.matchAll(/^event: (.+)$/gm)].map((m) => m[1]);
+    expect(events).toContain("error");
+    expect(text).toContain("model runner has unexpectedly stopped");
+    // And emphatically not a turn that ended normally.
+    expect(events).not.toContain("message_stop");
+    expect(text).not.toContain('"stop_reason":"end_turn"');
+  });
+
+  test("a tool call delivered on the done chunk is not thrown away", async () => {
+    // `if (chunk.done) last = chunk` skipped the translator entirely, so
+    // anything Ollama put on the final chunk — trailing text, the tool_calls of
+    // a turn that ends in one — never became a content block. The stop_reason
+    // followed: no tool call seen means end_turn, which ends Claude Code's
+    // agent loop and reads as the model refusing to act.
+    http.program("/api/chat", {
+      text:
+        JSON.stringify({
+          message: { content: "on it", tool_calls: [{ function: { name: "Bash", arguments: { cmd: "ls" } } }] },
+          done: true,
+          done_reason: "stop",
+          eval_count: 4,
+        }) + "\n",
+    });
+
+    const res = await route(post("/v1/messages", { stream: true, messages: [{ role: "user", content: "hi" }] }));
+    const text = await res.text();
+    expect(text).toContain('"name":"Bash"');
+    expect(text).toContain("on it");
+    expect(text).toContain('"stop_reason":"tool_use"');
+  });
+
+  test("a body arriving in pieces is reassembled, mid-line and mid-character", async () => {
+    // The fixture used to hand the whole body over in one read, which is the
+    // one shape a streaming reader never has to cope with: every line whole,
+    // every character whole. Both boundary bugs this code guards against are
+    // invisible that way — the remainder kept after the last newline, and the
+    // single TextDecoder that holds the tail of a multi-byte character across
+    // reads. The second only ever shows up in a language that has any: a fresh
+    // decoder per read drops the tail and the first Cyrillic word straddling a
+    // packet comes out as replacement characters.
+    const ndjson =
+      JSON.stringify({ message: { content: "Привет" } }) +
+      "\n" +
+      JSON.stringify({ message: { content: ", мир" } }) +
+      "\n" +
+      JSON.stringify({ done: true, done_reason: "stop", prompt_eval_count: 12, eval_count: 3 }) +
+      "\n";
+
+    const bytes = new TextEncoder().encode(ndjson);
+    // The first byte of "П" is 0xD0; cutting one byte past it lands inside the
+    // character and inside the line — both boundaries at once.
+    const midChar = bytes.indexOf(0xd0) + 1;
+    const midLine = bytes.length - 12;
+    expect(midChar).toBeGreaterThan(0);
+    expect(midLine).toBeGreaterThan(midChar);
+    http.program("/api/chat", {
+      chunks: [bytes.slice(0, midChar), bytes.slice(midChar, midLine), bytes.slice(midLine)],
+    });
+
+    const res = await route(post("/v1/messages", { stream: true, messages: [{ role: "user", content: "привет" }] }));
+    const text = await res.text();
+    const deltas = [...text.matchAll(/"text_delta","text":("(?:[^"\\]|\\.)*")/g)].map((m) => JSON.parse(m[1]));
+    expect(deltas.join("")).toBe("Привет, мир");
+    expect(text).not.toContain("�");
+    expect(usageOf(text)).toEqual({ input_tokens: 12, output_tokens: 3 });
+  });
+
+  test("a request body that is not JSON is an invalid_request_error", async () => {
+    const res = await route(
+      new Request("http://127.0.0.1:3458/v1/messages", { method: "POST", body: "not json" }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.type).toBe("invalid_request_error");
+  });
+
+  test("messages must be an array", async () => {
+    const res = await route(post("/v1/messages", { model: "x" }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.message).toContain("messages");
+  });
+
+  test("an orphaned tool_result is refused with the id it named", async () => {
+    const res = await route(
+      post("/v1/messages", {
+        messages: [{ role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_ghost", content: "x" }] }],
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.message).toContain("toolu_ghost");
+  });
+});
+
+describe("when Ollama is not there", () => {
+  test("the error names the cause and is not a 200", async () => {
+    // The failure this whole flow exists to undo is a session that will not
+    // start with nothing on screen saying why.
+    http.program("/api/chat", () => {
+      throw new Error("connect ECONNREFUSED 127.0.0.1:11434");
+    });
+
+    const res = await route(post("/v1/messages", { messages: [{ role: "user", content: "hi" }] }));
+    expect(res.ok).toBe(false);
+    const body = await res.json();
+    expect(body.type).toBe("error");
+    expect(body.error.message).toMatch(/cannot reach Ollama|ECONNREFUSED/);
+  });
+
+  test("an upstream status is reported, not swallowed", async () => {
+    http.program("/api/chat", { status: 500, text: "model runner crashed" });
+    const res = await route(post("/v1/messages", { stream: false, messages: [{ role: "user", content: "hi" }] }));
+    expect(res.ok).toBe(false);
+    expect((await res.json()).error.message).toContain("model runner crashed");
+  });
+});
+
+describe("a failure nothing anticipated still reaches the terminal", () => {
+  // The handlers name the failures somebody thought of. An unexpected throw —
+  // `.json()` on a 200 that is not JSON, which is what a reverse proxy in front
+  // of Ollama returns when it is the one answering — escaped past all of them,
+  // and with `fetch: route` that is Bun's default 500 with a body Claude Code
+  // reads as a malformed response rather than as an error message.
+
+  test("a 200 that is not JSON on /v1/models is an Anthropic error, not a bare 500", async () => {
+    http.program("/api/tags", { status: 200, text: "<html>502 Bad Gateway</html>" });
+    const res = await route(new Request("http://127.0.0.1:3458/v1/models"));
+    expect(res.ok).toBe(false);
+    expect((await res.json()).type).toBe("error");
+  });
+
+  test("a 200 that is not JSON on a non-streaming turn is too", async () => {
+    http.program("/api/chat", { status: 200, text: "<html>502 Bad Gateway</html>" });
+    const res = await route(post("/v1/messages", { stream: false, messages: [{ role: "user", content: "hi" }] }));
+    expect(res.ok).toBe(false);
+    const body = await res.json();
+    expect(body.type).toBe("error");
+    expect(body.error.type).toBe("api_error");
+  });
+});
+
+describe("model resolution through the route", () => {
+  test("a model this host never pulled is served with the configured default", async () => {
+    // Claude Code picks its own small/fast model for background work. Failing
+    // those calls gives a session that mostly works and reports nothing.
+    http.program("/api/chat", { json: { message: { content: "ok" }, done: true } });
+    await route(post("/v1/messages", { model: "claude-3-5-haiku-20241022", stream: false, messages: [] }));
+    const sent = http.last("/api/chat")?.body as any;
+    expect(sent.model).not.toBe("claude-3-5-haiku-20241022");
+    // Compared against the configured default rather than a literal: the model
+    // name is environment-dependent, and a hardcoded one asserts on whichever
+    // .env happened to be beside the checkout.
+    expect(sent.model).toBe(CONFIG.OLLAMA_PROXY_MODEL || CONFIG.OLLAMA_CHAT_MODEL);
+  });
+
+  test("a model it does have is used as asked", async () => {
+    http.program("/api/chat", { json: { message: { content: "ok" }, done: true } });
+    await route(post("/v1/messages", { model: "gemma4:e2b", stream: false, messages: [] }));
+    expect((http.last("/api/chat")?.body as any).model).toBe("gemma4:e2b");
+  });
+});
+
+describe("the enable gate", () => {
+  test("off unless explicitly turned on", () => {
+    for (const off of [undefined, "", "false", "0", "no", " "]) expect(ollamaProxyEnabled(off)).toBe(false);
+    for (const on of ["1", "true", "TRUE", " yes ", "on"]) expect(ollamaProxyEnabled(on)).toBe(true);
+  });
+
+  test("the port defaults away from the one the failed router used", () => {
+    expect(DEFAULT_OLLAMA_PROXY_PORT).not.toBe(3456);
+    expect(ollamaProxyPort(undefined)).toBe(DEFAULT_OLLAMA_PROXY_PORT);
+    expect(ollamaProxyPort("nonsense")).toBe(DEFAULT_OLLAMA_PROXY_PORT);
+    expect(ollamaProxyPort("70000")).toBe(DEFAULT_OLLAMA_PROXY_PORT);
+    expect(ollamaProxyPort("3999")).toBe(3999);
+  });
+
+  test("a container-only Ollama hostname is rewritten for the host-side proxy", () => {
+    // OLLAMA_URL is written for the bot, which runs in Docker: .env.example
+    // ships http://ollama:11434 and compose overrides it to
+    // host.docker.internal. Neither resolves on the host, where this proxy runs.
+    expect(hostReachableOllamaUrl("http://ollama:11434")).toBe("http://127.0.0.1:11434");
+    expect(hostReachableOllamaUrl("http://host.docker.internal:11434")).toBe("http://127.0.0.1:11434");
+  });
+
+  test("a real remote Ollama is left exactly as configured", () => {
+    expect(hostReachableOllamaUrl("http://localhost:11434")).toBe("http://localhost:11434");
+    expect(hostReachableOllamaUrl("https://ollama.example.com")).toBe("https://ollama.example.com");
+    expect(hostReachableOllamaUrl("http://192.168.1.5:11434/")).toBe("http://192.168.1.5:11434");
+    expect(hostReachableOllamaUrl(undefined)).toBe("http://localhost:11434");
+  });
+
+  test("cli.ts starts the proxy only behind the gate, and never binds beyond loopback", async () => {
+    const cli = await Bun.file(`${import.meta.dir}/../../cli.ts`).text();
+    expect(cli).toContain("if (!ollamaProxyEnabled(process.env.OLLAMA_PROXY_ENABLED)) return;");
+    const daemon = await Bun.file(`${import.meta.dir}/../../scripts/ollama-proxy.ts`).text();
+    expect(daemon).toContain('const HOST = "127.0.0.1"');
+    expect(daemon).toContain("hostname: HOST");
+    // Never drift to another port: a providers row already names this one.
+    expect(daemon).toContain("process.exit(1)");
+  });
+});
+
+describe("the context window is learned, and only a learned one is remembered", () => {
+  test("a momentary outage does not become the model's window for ever", async () => {
+    // The cache has no TTL. Caching the fallback made one bad moment permanent:
+    // Ollama restarting, or the model not yet pulled, and every later request
+    // for the life of this process sends num_ctx 8192 for a 40960 model. The
+    // outage is loud and brief; the truncation after it is silent and forever.
+    http.program("/api/show", { status: 503, text: "ollama is restarting" });
+    expect(await contextLengthFor("geekom-model-1:latest")).toBe(8192);
+
+    http.program("/api/show", { json: SHOW });
+    expect(await contextLengthFor("geekom-model-1:latest")).toBe(40960);
+  });
+
+  test("a learned window is remembered rather than re-asked", async () => {
+    expect(await contextLengthFor("geekom-model-1:latest")).toBe(40960);
+    // Ollama going away afterwards cannot un-learn it.
+    http.program("/api/show", { status: 503, text: "gone" });
+    expect(await contextLengthFor("geekom-model-1:latest")).toBe(40960);
+  });
+
+  test("a response without a context length is not treated as one", async () => {
+    http.program("/api/show", { json: { model_info: { "qwen3.context_length": 0 } } });
+    expect(await contextLengthFor("geekom-model-1:latest")).toBe(8192);
+    http.program("/api/show", { json: SHOW });
+    expect(await contextLengthFor("geekom-model-1:latest")).toBe(40960);
+  });
+});

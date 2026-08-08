@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ollamaProxyEnabled, ollamaProxyPort } from "./utils/ollama-proxy-settings.ts";
 import { contextThreshold } from "./utils/context-usage.ts";
 
 const EnvSchema = z.object({
@@ -29,6 +30,19 @@ const EnvSchema = z.object({
   // Ollama
   OLLAMA_URL: z.string().default("http://localhost:11434"),
   OLLAMA_CHAT_MODEL: z.string().default("geekom-model-1"),
+
+  // Ollama → Claude Code proxy (scripts/ollama-proxy.ts).
+  //
+  // Off by default, and that is the point. `helyx up` starts the host daemons on
+  // every host; a translating proxy that nobody has bound a project to is a new
+  // listener, a new health row and a new thing that can be reported down, in
+  // exchange for nothing. The previous attempt at this feature broke the machine
+  // by making a local experiment global — this flag is the smaller version of
+  // the same mistake, refused.
+  OLLAMA_PROXY_ENABLED: z.string().default("").transform(ollamaProxyEnabled),
+  OLLAMA_PROXY_PORT: z.string().default("").transform(ollamaProxyPort),
+  // Empty means OLLAMA_CHAT_MODEL — one model to configure, not two.
+  OLLAMA_PROXY_MODEL: z.string().default(""),
   SUMMARIZE_MODEL: z.string().default(""), // if set, use local Ollama model for summarization
   // Fraction of the context window at which a session is summarized before
   // Claude Code folds it. Not 0.98: summarizing needs room, and Claude Code
@@ -174,6 +188,9 @@ export const CONFIG = {
   // Ollama
   OLLAMA_URL: env.OLLAMA_URL,
   OLLAMA_CHAT_MODEL: env.OLLAMA_CHAT_MODEL,
+  OLLAMA_PROXY_ENABLED: env.OLLAMA_PROXY_ENABLED,
+  OLLAMA_PROXY_PORT: env.OLLAMA_PROXY_PORT,
+  OLLAMA_PROXY_MODEL: env.OLLAMA_PROXY_MODEL,
   SUMMARIZE_MODEL: env.SUMMARIZE_MODEL,
   CONTEXT_SUMMARY_THRESHOLD: env.CONTEXT_SUMMARY_THRESHOLD,
   EMBEDDING_MODEL: env.EMBEDDING_MODEL,
