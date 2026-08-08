@@ -104,6 +104,17 @@ export interface StatusParts {
   agents?: readonly string[];
   /** One line of what is happening now, above the work block. */
   summary?: string | null;
+  /**
+   * How long this session has been compacting its context, when it is.
+   *
+   * A fold answers nothing for the whole of its duration — 119544 ms and 149137
+   * ms on the two observed in this project — and every other field here keeps
+   * moving through it: the elapsed clock ticks, the spinner turns, and the work
+   * block shows whatever the session did before it went quiet. Two minutes of
+   * that is indistinguishable from a session that died, which is the report this
+   * line exists to answer.
+   */
+  foldingMs?: number | null;
 }
 
 /**
@@ -324,6 +335,16 @@ export function renderStatus(parts: StatusParts): string {
   // `tailWithinBudget` trims the quote from the front, so a line written into
   // it would be the first thing dropped on the busy turn that most needs it.
   let glance = "";
+  // First of the glance lines, above the agents and the summary: while it is
+  // showing, it is the only thing in the message that is true about now. The
+  // duration is rounded by `formatIdle` for the reason that function exists —
+  // the message text is hashed to suppress redundant edits, and a field that
+  // changed every millisecond would defeat that hash for the whole fold.
+  if (parts.foldingMs !== null && parts.foldingMs !== undefined) {
+    const line = `🗜 сворачивает контекст · ${formatIdle(parts.foldingMs)}`;
+    glance += `\n${line}`;
+    remaining -= line.length;
+  }
   const agents = (parts.agents ?? []).filter((label) => label.trim().length > 0);
   if (agents.length > 0) {
     const word = agents.length === 1 ? "агент" : "агента";

@@ -1,0 +1,166 @@
+{
+  "schemaVersion": 2,
+  "id": "059",
+  "slug": "claude-code-says-exactly-what-it-forgot-",
+  "title": "Claude Code says exactly what it forgot, and nobody reads it",
+  "status": "in-progress",
+  "createdAt": "2026-08-08T10:36:19.798Z",
+  "updatedAt": "2026-08-08T11:23:01.992Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:d64425501100ec86f148ed4499c2d93775495e8ef5ac115b31cc02f59a6abe0f",
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-08T11:03:33.755Z"
+    },
+    "AC2": {
+      "at": "2026-08-08T11:03:33.858Z"
+    },
+    "AC3": {
+      "at": "2026-08-08T11:03:33.957Z"
+    },
+    "AC4": {
+      "at": "2026-08-08T11:23:01.688Z"
+    },
+    "AC5": {
+      "at": "2026-08-08T11:23:01.791Z"
+    },
+    "AC6": {
+      "at": "2026-08-08T11:23:01.893Z"
+    },
+    "AC7": {
+      "at": "2026-08-08T11:23:01.992Z"
+    }
+  },
+  "pr": {
+    "url": null
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-08T10:36:19.798Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-08T10:37:30.194Z",
+      "event": "frozen",
+      "detail": "8 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-08T10:37:30.366Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-08T11:03:33.755Z",
+      "event": "ac-confirmed",
+      "detail": "AC1"
+    },
+    {
+      "at": "2026-08-08T11:03:33.858Z",
+      "event": "ac-confirmed",
+      "detail": "AC2"
+    },
+    {
+      "at": "2026-08-08T11:03:33.957Z",
+      "event": "ac-confirmed",
+      "detail": "AC3"
+    },
+    {
+      "at": "2026-08-08T11:03:34.055Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-08T11:23:01.487Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-08T11:23:01.589Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-08T11:23:01.688Z",
+      "event": "ac-confirmed",
+      "detail": "AC4"
+    },
+    {
+      "at": "2026-08-08T11:23:01.792Z",
+      "event": "ac-confirmed",
+      "detail": "AC5"
+    },
+    {
+      "at": "2026-08-08T11:23:01.893Z",
+      "event": "ac-confirmed",
+      "detail": "AC6"
+    },
+    {
+      "at": "2026-08-08T11:23:01.992Z",
+      "event": "ac-confirmed",
+      "detail": "AC7"
+    }
+  ]
+}

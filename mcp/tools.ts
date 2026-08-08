@@ -338,7 +338,9 @@ export async function executeTool(
       const formatted = results
         .map(
           (r) =>
-            `#${r.id} [${r.type}] (distance: ${Number(r.distance).toFixed(3)}) ${r.content}` +
+            // Capped for the same reason as `claude/prompt.ts`: a transcript
+            // archive row is up to 2 MB and this string becomes a tool result.
+            `#${r.id} [${r.type}] (distance: ${Number(r.distance).toFixed(3)}) ${r.content.length > 4_000 ? `${r.content.slice(0, 4_000)}… [${r.content.length - 4_000} more characters]` : r.content}` +
             (r.tags && r.tags.length > 0 ? ` [tags: ${r.tags.join(", ")}]` : ""),
         )
         .join("\n\n");

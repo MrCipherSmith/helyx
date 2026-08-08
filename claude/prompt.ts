@@ -3,6 +3,21 @@ import { recall } from "../memory/long-term.ts";
 import { getContext, getProjectHistory, type Message } from "../memory/short-term.ts";
 import { sessionManager } from "../sessions/manager.ts";
 
+/**
+ * How much of one memory a prompt will carry.
+ *
+ * Generous for a summary, and small enough that no single row can dominate the
+ * prompt it is supposed to inform.
+ */
+const MEMORY_CHARS_IN_PROMPT = 2_000;
+
+function cap(content: string): string {
+  return content.length <= MEMORY_CHARS_IN_PROMPT
+    ? content
+    : `${content.slice(0, MEMORY_CHARS_IN_PROMPT)}… [${content.length - MEMORY_CHARS_IN_PROMPT} more characters; recall this memory by id to read it]`;
+}
+
+
 export async function composePrompt(
   sessionId: number,
   chatId: string,
@@ -42,7 +57,10 @@ export async function composePrompt(
     parts.push("\n## Relevant memories from long-term memory:");
     for (const m of memories) {
       const dist = Number(m.distance).toFixed(3);
-      parts.push(`- [${m.type}] ${m.content} (relevance: ${dist})`);
+      // Capped. `recall` keeps transcript archives out of here, but that is one
+      // filter away from a caller that passes `type` explicitly, and a system
+      // prompt is the worst place in this system to discover a megabyte.
+      parts.push(`- [${m.type}] ${cap(m.content)} (relevance: ${dist})`);
     }
   }
 

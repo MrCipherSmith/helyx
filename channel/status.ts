@@ -30,9 +30,22 @@ import { shouldReopen, shouldClose, shouldMove, CONTINUATION_IDLE_MS } from "../
 import { escapeHtml } from "../utils/html.ts";
 import { isRequeued, markRequeued } from "../utils/requeue.ts";
 import { hasOpenQuestion } from "../services/ask-question.ts";
+import { sessionFold, endFold, readFoldMarker, foldFromMarker, type ActiveFold } from "../services/fold-marker.ts";
+import { droppedSpan } from "../utils/transcript-locate.ts";
+import type { CompactBoundary } from "../utils/context-usage.ts";
+import { remember } from "../memory/long-term.ts";
 
 /** How much of a captured file path the completion notice may carry. */
 const FILE_LABEL_CHARS = 80;
+
+/**
+ * How many folds this process remembers having captured.
+ *
+ * The bound is not about memory — it is one uuid per fold and a long session
+ * takes a handful — but about a map that would otherwise grow for the life of
+ * the channel. Sixty-four folds is more than any session observed has taken.
+ */
+const REMEMBERED_FOLDS = 64;
 
 export interface StatusContext {
   sql: postgres.Sql;
@@ -93,6 +106,15 @@ interface StatusState {
   lastEditAt: number;
   /** The queued catch-up edit, if the floor deferred one. */
   deferredEditTimer: ReturnType<typeof setTimeout> | null;
+  /**
+   * The fold this session is inside, refreshed off the same row as the pane.
+   *
+   * Read from `sessions.metadata` rather than known here, because the process
+   * that knows a fold has started is the bot in its container: the PreCompact
+   * hook fires before compaction, the `compact_boundary` record appears after it,
+   * and the channel only ever sees the second one. See `services/fold-marker.ts`.
+   */
+  folding: ActiveFold | null;
 }
 
 interface SessionStats {
@@ -116,6 +138,40 @@ interface StatusExtras {
   idleMs?: number;
   /** Subagents running right now. */
   agents?: readonly string[];
+  /** How long the session has been folding its context, when it is. */
+  foldingMs?: number | null;
+}
+
+/**
+ * How long the fold has been going, measured now rather than when it was read.
+ *
+ * The marker is refreshed on the timer tick, so `ActiveFold.elapsedMs` is as old
+ * as the last read — up to fifteen seconds, since a folding session produces no
+ * activity and the tick backs off to its idle interval. Recomputing from
+ * `startedAt` makes the line advance between reads instead of jumping.
+ */
+function foldingAge(fold: ActiveFold | null): number | null {
+  return fold === null ? null : Math.max(0, Date.now() - fold.startedAt);
+}
+
+/**
+ * The one line of ours in front of a dropped span.
+ *
+ * The span below it is raw transcript, so a reader — a future session recalling
+ * this — needs to be told what it is looking at and, above all, whether it is
+ * all of it. The truncation is stated in words rather than left to the
+ * `truncated` tag because whoever reads the content may never see the tags.
+ */
+function foldHeader(boundary: CompactBoundary, span: { records: number; truncated: boolean }): string {
+  const facts = [`${span.records} records`];
+  if (boundary.droppedTokens !== null) facts.push(`≈${boundary.droppedTokens} tokens`);
+  if (boundary.durationMs !== null) facts.push(`fold took ${boundary.durationMs} ms`);
+  const line =
+    `Transcript dropped by a ${boundary.trigger ?? "unknown"} context compaction` +
+    ` at ${new Date().toISOString()}: ${facts.join(", ")}`;
+  return span.truncated
+    ? `${line}. TRUNCATED to the byte budget — the records nearest the fold are kept, the oldest are gone.`
+    : `${line}. Complete.`;
 }
 
 function formatStatusText(stage: string, elapsed: string, tokens: string, paneSnapshot?: string | null, spinnerIcon?: string, extras?: StatusExtras): string {
@@ -134,6 +190,7 @@ function formatStatusText(stage: string, elapsed: string, tokens: string, paneSn
     question: extras?.question,
     idleMs: extras?.idleMs,
     agents: extras?.agents,
+    foldingMs: extras?.foldingMs,
     // Derived here rather than passed in: the caller already hands over the
     // stage this is read from, and two callers deriving it separately is how
     // the header and the body come to disagree.
@@ -202,6 +259,37 @@ export class StatusManager {
    * the orphan Telegram message instead of late-registering it in activeStatus.
    */
   private pendingSendGenerations = new Map<string, number>();
+  /**
+   * Folds already written to long-term memory, by the boundary's own `tailUuid`.
+   *
+   * `tailUuid` identifies the `compact_boundary` record itself, so it is the one
+   * value in the metadata that names *this* fold and nothing else — `headUuid`
+   * names the first record kept, and two folds of an empty span would share a
+   * `preTokens`. Without a key, a poll that re-read the boundary would embed the
+   * same two megabytes again, and an embedding call is the most expensive thing
+   * this class can do.
+   *
+   * In process, and it does not need to be more than that. The tail attaches at
+   * the end of the file (`TranscriptTail.atEnd`), so a channel that restarts
+   * never re-reads a boundary it has already passed: what a restart loses is the
+   * fold itself, not the record of having captured it — the case the plan names
+   * as "not every fold is ours to see". The one path that re-reads from zero is
+   * `reresolve`, and that is a different transcript whose boundaries genuinely
+   * have not been captured, which is why the key includes the path.
+   */
+  private readonly capturedFolds = new Set<string>();
+  /**
+   * The newest boundary seen in each transcript, which is where the next fold's
+   * dropped span begins.
+   *
+   * Null until this process has seen one. The first fold after a channel restart
+   * therefore starts its span at the top of the file rather than at the previous
+   * boundary — bounded by `DROPPED_SPAN_BUDGET_BYTES`, which keeps the records
+   * nearest the fold, so what the span gains is old material rather than wrong
+   * material. The alternative was a second read of a multi-megabyte file to
+   * re-find a boundary already gone past.
+   */
+  private readonly lastFoldTail = new Map<string, string>();
   private readonly TYPING_TIMEOUT_MS = 30_000;
   private readonly RESPONSE_GUARD_MS = 5 * 60_000; // 5 min
   /**
@@ -378,6 +466,30 @@ export class StatusManager {
         await hasOpenQuestion(this.ctx.sql, sessionId).catch(() => false);
       if (awaitingAnswer) {
         channelLogger.info({ chatId, silentMs }, "response guard: question open, re-arming silently");
+        this.armResponseGuard(chatId);
+        return;
+      }
+
+      // Case 0b: the session is not silent, it is folding.
+      //
+      // Compaction answers nothing for its whole duration — 119544 ms and 149137
+      // ms on the two folds observed in this project on 2026-08-08 — and it
+      // starts from whatever the guard's five minutes had already been spent on,
+      // so a fold late in a turn lands inside the alarm rather than beside it.
+      // The operator would then be told the session had died by the one thing
+      // that knew it had not.
+      //
+      // Asked of the database rather than read off `state.folding`, which the
+      // timer refreshes: the tick can be skipped while an edit is in flight, and
+      // this is the decision that ends a turn.
+      const fold = sessionId !== null
+        ? await sessionFold(this.ctx.sql, sessionId, now).catch(() => null)
+        : null;
+      if (fold) {
+        channelLogger.info(
+          { chatId, silentMs, foldingMs: fold.elapsedMs, trigger: fold.trigger },
+          "response guard: session is compacting, re-arming silently",
+        );
         this.armResponseGuard(chatId);
         return;
       }
@@ -851,6 +963,7 @@ export class StatusManager {
         deferredEditTimer: null,
         continuation: options.continuation ?? false,
         movedFor: null,
+        folding: null,
       };
       const scheduleTick = (key: string): void => {
         const state = this.activeStatus.get(key);
@@ -877,7 +990,7 @@ export class StatusManager {
             await this.deleteStatusMessage(state.chatId).catch(() => {});
             return;
           }
-          await this.refreshPaneSnapshot(state).catch(() => {});
+          await this.refreshSessionRow(state).catch(() => {});
           // SU-5: same drain as the immediate paths, rather than a second copy
           // of the protocol that absorbed exactly one buffered update.
           await this.editWithDrain(state);
@@ -1180,6 +1293,7 @@ export class StatusManager {
       toolCount: state.turnToolCount,
       fileCount: state.turnFileCount,
       question: this.currentQuestion.get(key),
+      foldingMs: foldingAge(state.folding),
       ...this.glanceExtras(key),
     };
     const spinnerIcon = spinnerIconAt(state.spinnerFrame, state.lastUpdateAt, Date.now());
@@ -1201,6 +1315,7 @@ export class StatusManager {
       toolCount: state.turnToolCount,
       fileCount: state.turnFileCount,
       question: this.currentQuestion.get(key),
+      foldingMs: foldingAge(state.folding),
       ...this.glanceExtras(key),
     };
 
@@ -1236,18 +1351,49 @@ export class StatusManager {
     return true;
   }
 
-  private async refreshPaneSnapshot(state: StatusState): Promise<void> {
+  /**
+   * Re-read the session row behind whatever status this chat has open.
+   *
+   * Public for the reason `runResponseGuard` is: the only other caller is the
+   * spinner timer, whose interval is between five and fifteen seconds, and what
+   * this reads is the fold marker — the thing that decides whether the operator
+   * is shown two minutes of silence or two minutes of "сворачивает контекст".
+   */
+  async refreshStatusFromSession(chatId: string): Promise<void> {
+    const state = this.activeStatus.get(this.stateKey(chatId));
+    if (!state) return;
+    await this.refreshSessionRow(state);
+  }
+
+  /**
+   * The two things the status reads off the session row on every tick.
+   *
+   * One query for both, deliberately. The fold marker could have had its own
+   * `SELECT metadata`, and then a fleet of eight sessions would issue sixteen
+   * single-row queries every five seconds to render one message each. It is the
+   * same row, and it is already being fetched.
+   *
+   * Named for the row rather than for the pane since the fold marker joined it —
+   * `refreshPaneSnapshot` reading `metadata` would be a method whose name is a
+   * lie about half of what it does.
+   */
+  private async refreshSessionRow(state: StatusState): Promise<void> {
     const sessionId = this.ctx.sessionId();
     if (!sessionId) return;
     const rows = await this.ctx.sql`
-      SELECT pane_snapshot, pane_snapshot_at FROM sessions WHERE id = ${sessionId}
+      SELECT pane_snapshot, pane_snapshot_at, metadata FROM sessions WHERE id = ${sessionId}
     `.catch(() => []);
     if (!rows[0]) return;
-    const { pane_snapshot, pane_snapshot_at } = rows[0] as { pane_snapshot: string | null; pane_snapshot_at: Date | null };
+    const { pane_snapshot, pane_snapshot_at, metadata } = rows[0] as {
+      pane_snapshot: string | null;
+      pane_snapshot_at: Date | null;
+      metadata: unknown;
+    };
     // Only show snapshot if it's fresh (< 30s old)
     const fresh = pane_snapshot_at && (Date.now() - new Date(pane_snapshot_at).getTime()) < 30_000;
     state.paneSnapshot = fresh ? pane_snapshot : null;
     state.paneSnapshotAt = pane_snapshot_at ? new Date(pane_snapshot_at).getTime() : null;
+    state.folding = foldFromMarker(readFoldMarker(metadata), Date.now());
   }
 
   async deleteStatusMessage(chatId: string): Promise<void> {
@@ -1420,6 +1566,134 @@ export class StatusManager {
     }
   }
 
+  /**
+   * A fold has happened: store what it dropped, and close the fold marker.
+   *
+   * This is the reaction the flow exists for. Claude Code does not destroy the
+   * material it compacts — the transcript under
+   * `~/.claude/projects/<slug>/<uuid>.jsonl` only grows — it names it: the span
+   * from the previous boundary up to `preservedSegment.headUuid` is exactly what
+   * left the model's head and stayed on disk. Nothing in this repository read
+   * that record before flow 059; the tail walked past it every two seconds.
+   *
+   * Stored raw, without the aux model. A summary of what was lost is a second
+   * and lossier artefact, and whether to make one can be decided later — the span
+   * itself cannot be recovered later, which is the asymmetry the whole decision
+   * turns on. `DROPPED_SPAN_BUDGET_BYTES` bounds it and `truncated` says so in
+   * what is stored, because a cut span filed as a whole one is a lie told to the
+   * session that reads it back.
+   *
+   * Public for the reason `runResponseGuard` is: the only other way in is to have
+   * a real session fold, which takes two minutes and a million tokens.
+   */
+  async captureFold(boundary: CompactBoundary, transcriptPath: string): Promise<void> {
+    const sessionId = this.ctx.sessionId();
+    // Closed unconditionally, and before any early return below: the marker's
+    // whole purpose is to say "this silence is a fold", and the fold is over
+    // whether or not the span can be read. A marker left open suppresses the
+    // hung-session alarm until its grace window expires.
+    //
+    // Raised in review: this used to sit above the idempotency check, so the
+    // cheap-and-dangerous mutation ran unguarded while the expensive-and-safe
+    // one was guarded — backwards. It is still unconditional, because clearing
+    // a marker twice is idempotent and leaving one open is not.
+    const clearMarker = async () => {
+      if (sessionId === null) return;
+      await endFold(this.ctx.sql, sessionId, boundary.durationMs).catch((err) => {
+        channelLogger.warn({ err, sessionId }, "fold: could not clear the marker");
+      });
+    };
+
+    // `tailUuid` names the boundary; `headUuid` is where the span stops. A
+    // boundary missing either is one this cannot place, and a span attributed to
+    // the wrong fold is worse than no span — see `droppedSpan`.
+    if (!boundary.tailUuid || !boundary.headUuid) {
+      await clearMarker();
+      channelLogger.warn({ transcriptPath, boundary }, "fold: boundary without the uuids to place it");
+      return;
+    }
+    await clearMarker();
+
+    const key = `${transcriptPath}#${boundary.tailUuid}`;
+    if (this.capturedFolds.has(key)) return;
+    this.capturedFolds.add(key);
+    if (this.capturedFolds.size > REMEMBERED_FOLDS) {
+      const oldest = this.capturedFolds.values().next().value;
+      if (oldest !== undefined) this.capturedFolds.delete(oldest);
+    }
+
+    const previousTail = this.lastFoldTail.get(transcriptPath) ?? null;
+
+    try {
+      const span = await droppedSpan(transcriptPath, boundary.headUuid, previousTail);
+      if (!span) {
+        // The head could not be found, so this boundary could not be placed.
+        // `lastFoldTail` deliberately stays where it was: advancing it here
+        // would make the *next* fold start its span at this unplaceable one,
+        // and a span that starts at the wrong boundary is attributed to the
+        // wrong work. Leaving it means the next fold reaches further back and
+        // re-reads material already stored, which is waste rather than a lie.
+        channelLogger.warn({ transcriptPath, headUuid: boundary.headUuid }, "fold: could not place the boundary");
+        return;
+      }
+      // Placed. From here the boundary is a valid starting point for the next
+      // span whether or not the store below succeeds — the span was located, and
+      // a failed embedding call costs this fold's record, not the next one's
+      // correctness.
+      this.lastFoldTail.set(transcriptPath, boundary.tailUuid);
+      // Bounded like `capturedFolds` beside it. One entry per transcript path a
+      // channel ever attaches to is a slow leak rather than a fast one, but the
+      // sibling map is explicitly capped and this one was not — raised in
+      // review, and the inconsistency is the part worth removing.
+      if (this.lastFoldTail.size > REMEMBERED_FOLDS) {
+        const oldest = this.lastFoldTail.keys().next().value;
+        if (oldest !== undefined && oldest !== transcriptPath) this.lastFoldTail.delete(oldest);
+      }
+      if (span.records === 0) {
+        channelLogger.info({ transcriptPath }, "fold: nothing to store");
+        return;
+      }
+
+      const saved = await remember({
+        source: "cli",
+        sessionId,
+        projectPath: this.ctx.projectPath ?? null,
+        type: "transcript",
+        content: `${foldHeader(boundary, span)}\n\n${span.text}`,
+        // The columns carry the project and the session because that is what
+        // they are for and what `recall` filters on; the tags carry the
+        // boundary's own numbers, which nothing else in the schema has a place
+        // for and which are the difference between "a fold happened" and "this
+        // fold dropped 986233 tokens over two minutes".
+        tags: [
+          "transcript",
+          "compact-boundary",
+          `trigger:${boundary.trigger ?? "unknown"}`,
+          `dropped-tokens:${boundary.droppedTokens ?? "unknown"}`,
+          `duration-ms:${boundary.durationMs ?? "unknown"}`,
+          `records:${span.records}`,
+          `tail:${boundary.tailUuid}`,
+          ...(span.truncated ? ["truncated"] : []),
+        ],
+      });
+      channelLogger.info(
+        {
+          memoryId: saved.id,
+          sessionId,
+          records: span.records,
+          truncated: span.truncated,
+          droppedTokens: boundary.droppedTokens,
+          durationMs: boundary.durationMs,
+        },
+        "fold: dropped span stored in long-term memory",
+      );
+    } catch (err) {
+      // The span is still in the file, which is the whole premise of this flow.
+      // A failed embedding call costs this fold's record, not the session.
+      channelLogger.warn({ err, transcriptPath }, "fold: could not store the dropped span");
+    }
+  }
+
   async startProgressMonitorForChat(chatId: string): Promise<void> {
     this.stopProgressMonitorForChat(chatId);
     const key = this.stateKey(chatId);
@@ -1437,7 +1711,16 @@ export class StatusManager {
     // poll landed. The two below stay wired for a project with no transcript —
     // nothing mounted at the config root, or a CLI started some other way.
     if (this.ctx.projectPath) {
-      const transcript = await startTranscriptMonitor(this.ctx.projectPath, onStatus);
+      const transcript = await startTranscriptMonitor(this.ctx.projectPath, onStatus, {
+        // The fold is one more kind of line the tail already receives. Nothing
+        // new watches anything: `utils/transcript-monitor.ts` reads the file and
+        // this decides what a boundary in it is worth.
+        onCompactBoundary: (boundary, path) => {
+          void this.captureFold(boundary, path).catch((err) => {
+            channelLogger.warn({ err, path }, "fold: capture failed");
+          });
+        },
+      });
       if (transcript) {
         this.activeMonitors.set(key, transcript);
         channelLogger.info({ projectPath: this.ctx.projectPath }, "transcript monitor started");

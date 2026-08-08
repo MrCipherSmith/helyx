@@ -349,3 +349,119 @@ export function decideCrossing(input: CrossingInput): CrossingDecision {
   }
   return { summarize: true, ratio, window, reason: "crossed" };
 }
+
+/**
+ * What Claude Code says about a fold it has just taken.
+ *
+ * Every field is nullable except the uuids that bound the surviving segment,
+ * because this record is written by another program and its shape is that
+ * program's to change. A future version that stops reporting `durationMs` has
+ * not stopped folding, and a boundary we can only partly read is still a
+ * boundary worth acting on.
+ */
+export interface CompactBoundary {
+  /** "auto" when the window filled, "manual" when something typed `/compact`. */
+  trigger: string | null;
+  /** Context size before the fold, and after it. */
+  preTokens: number | null;
+  postTokens: number | null;
+  /** What this fold dropped, and what every fold in this session has dropped. */
+  droppedTokens: number | null;
+  cumulativeDroppedTokens: number | null;
+  /** How long the session was unresponsive. Two minutes, on both observed folds. */
+  durationMs: number | null;
+  /**
+   * The bounds of what survived.
+   *
+   * `headUuid` is the load-bearing one: everything before it, back to the
+   * previous boundary, is exactly what left the model's head — and is still in
+   * the file. `tailUuid` identifies the boundary itself, which is what keeps a
+   * fold from being captured twice.
+   */
+  headUuid: string | null;
+  tailUuid: string | null;
+}
+
+/** A number, or null — never `NaN`, and never a string that happens to look numeric. */
+function finiteOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * Read a `compact_boundary` record out of a parsed transcript entry.
+ *
+ * The shape, captured verbatim from this project's own transcript on
+ * 2026-08-08 rather than assumed:
+ *
+ *     {"type":"system","subtype":"compact_boundary","content":"Conversation compacted",
+ *      "compactMetadata":{"trigger":"auto","preTokens":999841,"postTokens":13608,
+ *      "cumulativeDroppedTokens":986233,"durationMs":119544,
+ *      "preservedSegment":{"headUuid":"…","anchorUuid":"…","tailUuid":"…"}, …}}
+ *
+ * Recognised by `type` and `subtype` and nothing else. Deliberately not by the
+ * words in `content`: a session that discusses compaction — this repository does
+ * it constantly — writes assistant entries full of the string "Conversation
+ * compacted", and treating one of those as a fold would attribute a span to a
+ * boundary that never happened.
+ *
+ * Returns null for everything that is not one, which is almost every line.
+ */
+export function parseCompactBoundary(entry: unknown): CompactBoundary | null {
+  if (!entry || typeof entry !== "object") return null;
+  const e = entry as Record<string, unknown>;
+  if (e.type !== "system" || e.subtype !== "compact_boundary") return null;
+
+  const meta = (e.compactMetadata && typeof e.compactMetadata === "object"
+    ? (e.compactMetadata as Record<string, unknown>)
+    : {}) as Record<string, unknown>;
+  const segment = (meta.preservedSegment && typeof meta.preservedSegment === "object"
+    ? (meta.preservedSegment as Record<string, unknown>)
+    : {}) as Record<string, unknown>;
+
+  const dropped = finiteOrNull(meta.cumulativeDroppedTokens);
+  const pre = finiteOrNull(meta.preTokens);
+  const post = finiteOrNull(meta.postTokens);
+
+  return {
+    trigger: typeof meta.trigger === "string" ? meta.trigger : null,
+    preTokens: pre,
+    postTokens: post,
+    // What *this* fold dropped, which is not what the metadata reports.
+    // `cumulativeDroppedTokens` is the running total across the session — 986233
+    // on the first observed boundary and 1967705 on the second — so subtracting
+    // is the only way to get the one number a reader actually wants. Derived
+    // from pre and post when both are there, because that is this fold by
+    // construction.
+    // Never negative. A malformed boundary reporting post above pre would
+    // otherwise be stored and shown as `dropped-tokens:-42`, which reads as a
+    // bug in us rather than in what we were handed. Raised in review.
+    droppedTokens: pre !== null && post !== null ? Math.max(0, pre - post) : null,
+    cumulativeDroppedTokens: dropped,
+    durationMs: finiteOrNull(meta.durationMs),
+    headUuid: typeof segment.headUuid === "string" ? segment.headUuid : null,
+    tailUuid: typeof segment.tailUuid === "string" ? segment.tailUuid : null,
+  };
+}
+
+/**
+ * Every boundary in these lines, oldest first.
+ *
+ * Plural and forward, unlike the `/context` readers above, and for the opposite
+ * reason: those want the newest single answer, while a poll that catches two
+ * folds owes the caller both. A long-lived session accumulates them — the
+ * transcript read on 2026-08-08 had two.
+ */
+export function compactBoundaries(lines: readonly string[]): CompactBoundary[] {
+  const out: CompactBoundary[] = [];
+  for (const line of lines) {
+    let entry: unknown;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const boundary = parseCompactBoundary(entry);
+    if (boundary) out.push(boundary);
+  }
+  return out;
+}
