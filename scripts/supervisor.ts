@@ -827,6 +827,17 @@ export async function updateProcessHealth(sql: postgres.Sql): Promise<void> {
  */
 const CONTEXT_THRESHOLD = contextThreshold(process.env.CONTEXT_SUMMARY_THRESHOLD);
 
+/**
+ * How far a session must fall before its high-water mark is released.
+ *
+ * Releasing exactly at the threshold would let a reading hovering on the line
+ * re-arm and re-fire every tick. Ten points is comfortably more than the noise
+ * between two reads and comfortably less than what a fold recovers — a compact
+ * takes a session from ~0.9 to ~0.2, so it clears this by a wide margin and the
+ * next crossing is a real one.
+ */
+const CONTEXT_HIGH_WATER_HYSTERESIS = 0.1;
+
 /** Highest ratio already summarised, per session. Once per crossing, not per tick. */
 const contextHighWater = new Map<number, number>();
 
@@ -897,7 +908,12 @@ export async function readSessionContext(projectPath: string): Promise<ContextRe
   const path = await resolveTranscript(projectPath, claudeConfigRoot()).catch(() => null);
   if (!path) return { tokens: null, window: null };
   const size = await Bun.file(path).size;
-  const tail = TranscriptTail.at(path, Math.max(0, size - CONTEXT_TAIL_BYTES));
+  // `near`, not `at`. An arbitrary byte offset is not a record boundary, and
+  // `read()` answers a non-boundary by rewinding to zero and returning the
+  // whole file — which for these transcripts is tens of megabytes, decoded,
+  // split, and `JSON.parse`d line by line, per active session, every tick, in
+  // the bot process. `at()` is for an offset a previous read produced.
+  const tail = await TranscriptTail.near(path, Math.max(0, size - CONTEXT_TAIL_BYTES));
   const lines = await tail.read().catch(() => [] as string[]);
   // Both come from the same read. The usage total is on every assistant entry;
   // the `/context` report is there only if the command has been run, which is
@@ -956,6 +972,10 @@ export async function checkContextPressure(sql: postgres.Sql, deps: ContextPress
     WHERE s.status = 'active' AND s.id != 0 AND s.project_path IS NOT NULL
   `.catch(() => [] as any[]);
 
+  // Which sessions this tick actually saw, so the per-session maps below can be
+  // pruned to them at the end.
+  const seen = new Set<number>();
+
   for (const row of rows as any[]) {
     const sessionId = Number(row.session_id);
     // The tmux window is named after the project — the same name
@@ -974,6 +994,29 @@ export async function checkContextPressure(sql: postgres.Sql, deps: ContextPress
     if (reading.window) contextWindowBySession.set(sessionId, reading.window);
     const learnedWindow = contextWindowBySession.get(sessionId) ?? null;
 
+    // The mark is released once the session has clearly come back down.
+    //
+    // Without this it only ever rose, and the name "once per crossing" was
+    // wrong: it was once per session. A session summarised at 0.86 folds, drops
+    // to 0.2, fills to 0.86 again — and 0.86 is not greater than 0.86, so
+    // `already-summarized`, nothing happens. The bar ratchets up a little with
+    // every cycle and each one is served later than the last.
+    //
+    // The terminal case is the one that matters: `usageRatio` clamps at 1, so
+    // any session that ever reads full — genuinely, or through a 1M-window
+    // model measured against the 200k default — sets the mark to 1.0, after
+    // which `ratio <= 1` is true for ever and that session is never summarised
+    // again. Silently, and with a log line reading `already-summarized`, which
+    // is exactly what a working system prints.
+    //
+    // Released below threshold minus a margin rather than at the threshold, so
+    // a reading hovering on the line does not re-arm and re-fire every tick.
+    const priorMark = contextHighWater.get(sessionId) ?? 0;
+    const releaseAt = Math.max(0, CONTEXT_THRESHOLD - CONTEXT_HIGH_WATER_HYSTERESIS);
+    if (priorMark > 0 && reading.tokens !== null && learnedWindow) {
+      if (reading.tokens / learnedWindow < releaseAt) contextHighWater.delete(sessionId);
+    }
+
     const decision = decideCrossing({
       contextTokens: reading.tokens,
       model: row.model ?? null,
@@ -982,6 +1025,14 @@ export async function checkContextPressure(sql: postgres.Sql, deps: ContextPress
       idle: !row.busy,
       highWaterRatio: contextHighWater.get(sessionId) ?? 0,
     });
+
+    // Nothing else clears these, and a session id is a serial that Postgres
+    // reuses after the row is reaped. Left alone, all three maps grow for the
+    // process's lifetime and a new session eventually inherits a stranger's
+    // mark — including, in the worst case, a 1.0 that would silence it from its
+    // first tick. Sessions that no longer appear in the query above are dropped
+    // at the end of the tick; see `seen` below.
+    seen.add(sessionId);
 
     // Ask the session what its window is, rather than inferring it from a
     // table that cannot know what GLM or Kimi answer to. Only while idle —
@@ -1057,6 +1108,14 @@ export async function checkContextPressure(sql: postgres.Sql, deps: ContextPress
         console.error(`[context] session=${sessionId} compact failed: ${err?.message}`);
       }
     }
+  }
+
+  // Forget sessions that are gone. Three maps keyed by session id, none of them
+  // ever pruned, in a process that runs for weeks — and the ids are a Postgres
+  // serial that gets reused once the old rows are reaped, so a fresh session
+  // could start life holding a dead one's high-water mark and never summarise.
+  for (const map of [contextHighWater, contextWindowBySession, contextAskedAt]) {
+    for (const id of map.keys()) if (!seen.has(id)) map.delete(id);
   }
 }
 

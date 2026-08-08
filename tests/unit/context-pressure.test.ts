@@ -277,6 +277,51 @@ describe("taking the fold instead of waiting for it", () => {
     expect(seen.length).toBe(1);
   });
 
+  test("a session that came back down is summarised again on the next crossing", async () => {
+    // The mark only ever rose, so "once per crossing" was really once per
+    // session: summarised at 0.86, folded to 0.2, back to 0.86 — and 0.86 is
+    // not greater than 0.86, so nothing happened. Each cycle served later than
+    // the last, and a session that ever read full (usageRatio clamps at 1) was
+    // never summarised again at all.
+    const seen: number[] = [];
+    let tokens = 190_000;
+    const deps = {
+      readContext: async () => ({ tokens, window: 200_000 }),
+      summarize: async (sessionId: number) => { seen.push(sessionId); return "a summary"; },
+    };
+
+    await checkContextPressure(world().sql as never, deps);
+    expect(seen.length).toBe(1);
+
+    // The fold lands: back down to 20%.
+    tokens = 40_000;
+    await checkContextPressure(world().sql as never, deps);
+    expect(seen.length).toBe(1);
+
+    // And it fills again to the same ratio that was served before.
+    tokens = 190_000;
+    await checkContextPressure(world().sql as never, deps);
+    expect(seen.length).toBe(2);
+  });
+
+  test("a session that never comes down is not re-summarised on noise", async () => {
+    // The other side of the hysteresis: a reading wobbling just under the
+    // threshold must not release the mark and re-fire every tick.
+    const seen: number[] = [];
+    let tokens = 190_000;
+    const deps = {
+      readContext: async () => ({ tokens, window: 200_000 }),
+      summarize: async (sessionId: number) => { seen.push(sessionId); return "a summary"; },
+    };
+
+    await checkContextPressure(world().sql as never, deps);
+    tokens = 168_000; // 84% — under the 85% threshold, but not under 75%
+    await checkContextPressure(world().sql as never, deps);
+    tokens = 190_000;
+    await checkContextPressure(world().sql as never, deps);
+    expect(seen.length).toBe(1);
+  });
+
   test("asks an unknown session for its window, once", async () => {
     process.env.CONTEXT_AUTO_COMPACT = "true";
     const s = withPane(1000, null); // below the threshold; only the ask should happen
