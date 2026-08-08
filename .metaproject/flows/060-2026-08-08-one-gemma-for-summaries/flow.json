@@ -3,9 +3,9 @@
   "id": "060",
   "slug": "one-gemma-for-summaries",
   "title": "One Gemma: the summarizer timeout fits the bigger model",
-  "status": "implemented",
+  "status": "done",
   "createdAt": "2026-08-08T12:07:10.495Z",
-  "updatedAt": "2026-08-08T12:23:57.918Z",
+  "updatedAt": "2026-08-08T12:29:01.889Z",
   "source": {
     "type": "description",
     "ref": null
@@ -179,6 +179,20 @@
       "at": "2026-08-08T12:23:57.918Z",
       "event": "task-done",
       "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-08T12:29:01.877Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-08T12:29:01.889Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
-  ]
+  ],
+  "merged": {
+    "commit": "eae49e8c6bdb22bf81f22b00981c69a41c4d416d",
+    "ref": "origin/main",
+    "at": "2026-08-08T12:29:01.889Z"
+  }
 }

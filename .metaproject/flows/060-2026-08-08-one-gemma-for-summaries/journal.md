@@ -59,3 +59,5 @@ Splitting `SUMMARIZE_MODEL` into fast and thorough slots is not done here.
 - The cold-start hole itself: nothing keeps the model resident between calls.
   A `keep_alive` policy is the real fix and is its own change.
 - 2026-08-08T12:23:57.918Z - task-done: T4: Self-review and prepare draft PR
+- 2026-08-08T12:29:01.877Z - completing
+- 2026-08-08T12:29:01.889Z - done: all gates passed
