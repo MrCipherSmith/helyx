@@ -14,6 +14,7 @@ import {
   describeRefreshFailure,
   parseClaudeCredentials,
   fetchProviderModels,
+  relabelOllamaModels,
 } from "../../services/provider-service.ts";
 import { PROVIDER_PRESETS, findPreset } from "../../bot/providers/presets.ts";
 import { modelsFor, FALLBACK_DEFAULT_MODELS } from "../../bot/commands/providers.ts";
@@ -284,5 +285,73 @@ describe("fetchProviderModels headers", () => {
   test("tries /v1/models first and strips a trailing slash from the base url", async () => {
     await fetchProviderModels("https://api.z.ai/api/anthropic/", "tok", "bearer");
     expect(seen.requests[0]?.url).toBe("https://api.z.ai/api/anthropic/v1/models");
+  });
+});
+
+describe("relabelOllamaModels", () => {
+  // The operator's stable aliases — the chat/summarize/embedding model slots.
+  const aliases = ["geekom-model-1", "geekom-model-text"];
+
+  test("an alias is relabelled to the base model sharing its digest", () => {
+    const models = [{ id: "geekom-model-1", label: "geekom-model-1 (qwen3:14b)" }];
+    const tags = [
+      { name: "geekom-model-1:latest", digest: "D1" },
+      { name: "gemma4:e4b", digest: "D1" },
+    ];
+    expect(relabelOllamaModels(models, aliases, tags)).toEqual([
+      { id: "geekom-model-1", label: "geekom-model-1 (gemma4:e4b)" },
+    ]);
+  });
+
+  test("the stale stored parenthetical is replaced, not appended", () => {
+    // Same alias, repointed from qwen3:14b to gemma4:e4b: the digest now matches
+    // gemma4:e4b, so the new label must overwrite the frozen "(qwen3:14b)".
+    const models = [{ id: "geekom-model-1", label: "geekom-model-1 (qwen3:14b)" }];
+    const tags = [
+      { name: "geekom-model-1", digest: "D-new" },
+      { name: "gemma4:e4b", digest: "D-new" },
+    ];
+    expect(relabelOllamaModels(models, aliases, tags)[0].label).toBe("geekom-model-1 (gemma4:e4b)");
+  });
+
+  test("a base model name is left untouched — annotating it with a sibling alias reads backwards", () => {
+    const models = [{ id: "gemma4:e2b", label: "gemma4:e2b" }];
+    const tags = [
+      { name: "gemma4:e2b", digest: "D2" },
+      { name: "geekom-model-text:latest", digest: "D2" },
+    ];
+    expect(relabelOllamaModels(models, aliases, tags)).toEqual([{ id: "gemma4:e2b", label: "gemma4:e2b" }]);
+  });
+
+  test("an alias sharing its digest only with another alias still resolves to that sibling", () => {
+    const models = [{ id: "geekom-model-text", label: "geekom-model-text" }];
+    const tags = [
+      { name: "geekom-model-text:latest", digest: "D2" },
+      { name: "geekom-text-copy", digest: "D2" },
+    ];
+    expect(relabelOllamaModels(models, aliases, tags)[0].label).toBe("geekom-model-text (geekom-text-copy)");
+  });
+
+  test("an alias whose digest no other tag shares is left as stored", () => {
+    const models = [{ id: "geekom-model-1", label: "geekom-model-1 (qwen3:14b)" }];
+    const tags = [{ name: "geekom-model-1:latest", digest: "solo" }];
+    expect(relabelOllamaModels(models, aliases, tags)).toEqual(models);
+  });
+
+  test("an alias not present in /api/tags at all is left as stored", () => {
+    const models = [{ id: "geekom-model-1", label: "geekom-model-1 (qwen3:14b)" }];
+    expect(relabelOllamaModels(models, aliases, [])).toEqual(models);
+  });
+
+  test("ignores tag entries missing name or digest rather than crashing", () => {
+    const models = [{ id: "geekom-model-1", label: "geekom-model-1" }];
+    const tags = [
+      { name: "geekom-model-1", digest: "D1" },
+      { digest: "D1" }, // no name
+      { name: "gemma4:e4b" }, // no digest
+      null,
+      { name: "gemma4:e4b", digest: "D1" },
+    ] as { name?: unknown; digest?: unknown }[];
+    expect(relabelOllamaModels(models, aliases, tags)[0].label).toBe("geekom-model-1 (gemma4:e4b)");
   });
 });
