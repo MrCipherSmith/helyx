@@ -51,6 +51,7 @@ import {
   composeProjectFor,
   listOwnedContainers,
   classifySession,
+  providerLabels,
   summarizeQueue,
   hasProblems,
   type ContainerHealth,
@@ -884,12 +885,21 @@ export async function sendStatusBroadcast(sql: postgres.Sql, runShell: RunShell)
         s.status,
         s.last_active,
         asm.updated_at AS asm_updated,
+        -- What each session is actually running on. Both nullable, and a null in
+        -- either is the default rather than nothing — see providerLabels.
+        -- Joined on p.path = s.project_path, the way the context-pressure loop
+        -- reaches the same row: the provider picker writes the choice onto the
+        -- project, not onto the session.
+        pv.name AS provider_name,
+        p.model  AS model,
         (
           SELECT COUNT(*) FROM message_queue mq
           WHERE mq.session_id = s.id AND mq.delivered = false
         ) AS pending_msgs
       FROM sessions s
       LEFT JOIN active_status_messages asm ON asm.session_id = s.id
+      LEFT JOIN projects p ON p.path = s.project_path
+      LEFT JOIN providers pv ON pv.id = p.provider_id
       WHERE s.status = 'active' AND s.id != 0
       ORDER BY s.project
     `;
@@ -908,7 +918,16 @@ export async function sendStatusBroadcast(sql: postgres.Sql, runShell: RunShell)
         now: Date.now(),
       });
 
-      sessionLines.push(`${stateIcon} <b>${project}</b> — ${stateText}`);
+      // Provider and model after the state, and short: the list is read at a
+      // glance during an incident, so two more fields per line earn their place
+      // only as a name and an id, never as a sentence.
+      const { provider, model } = providerLabels({
+        providerName: row.provider_name as string | null,
+        model: row.model as string | null,
+      });
+      sessionLines.push(
+        `${stateIcon} <b>${project}</b> — ${stateText} · <code>${escapeHtml(provider)}/${escapeHtml(model)}</code>`,
+      );
     }
 
     // --- Queue summary ---

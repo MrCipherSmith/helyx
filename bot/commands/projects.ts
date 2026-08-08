@@ -4,6 +4,7 @@ import { projectService } from "../../services/project-service.ts";
 import type { ProviderSelection } from "../../services/project-service.ts";
 import { sql } from "../../memory/db.ts";
 import { replyInThread } from "../format.ts";
+import { providerLabels } from "../../utils/supervisor-status.ts";
 
 async function getPendingActions(): Promise<Map<number, "start" | "stop">> {
   const rows = await sql`
@@ -49,12 +50,14 @@ export type ProjectListItem = { id: number; name: string; path: string; session_
  * it — one blank label would cost the operator the entire list, not one button.
  * `projects.model` is free-form TEXT and resolve-provider-env already guards
  * against a blank one, so trim-to-default rather than null-coalesce.
+ *
+ * The defaults themselves moved to `utils/supervisor-status.ts` when the
+ * supervisor's session list started naming the same pair: "Claude" and "default"
+ * are a statement about what a null column means, and two copies of it would
+ * disagree the first time either one changed.
  */
 export function configLabels(cfg: ProviderSelection | undefined): { provider: string; model: string } {
-  return {
-    provider: cfg?.providerName?.trim() || "Claude",
-    model: cfg?.model?.trim() || "default",
-  };
+  return providerLabels(cfg);
 }
 
 /**

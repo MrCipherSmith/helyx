@@ -3,6 +3,7 @@ import {
   classifyContainer,
   dockerListingUsable,
   classifySession,
+  providerLabels,
   summarizeQueue,
   hasProblems,
 } from "../../utils/supervisor-status.ts";
@@ -240,5 +241,27 @@ describe("hasProblems — an unreadable docker listing", () => {
     // Callers that do not know about docker at all must not be forced to
     // assert it is fine.
     expect(hasProblems({ containers: [{ healthy: true }], stuckTotal: 0 })).toBe(false);
+  });
+});
+
+describe("providerLabels — a null column is a default, not a blank", () => {
+  test("a configured project reports what it was configured with", () => {
+    expect(providerLabels({ providerName: "DeepSeek", model: "deepseek-v4-pro" }))
+      .toEqual({ provider: "DeepSeek", model: "deepseek-v4-pro" });
+  });
+
+  test("nulls are the default Anthropic endpoint and whatever Claude Code picks", () => {
+    // `projects.provider_id IS NULL` is deliberately not a sentinel row in
+    // `providers`, so "no provider" is a real configuration rather than missing
+    // data. The line exists to answer "what is this session running on", and a
+    // dash answers it with "nothing", which is never true.
+    expect(providerLabels({ providerName: null, model: null }))
+      .toEqual({ provider: "Claude", model: "default" });
+    expect(providerLabels(undefined)).toEqual({ provider: "Claude", model: "default" });
+  });
+
+  test("whitespace is as empty as null", () => {
+    expect(providerLabels({ providerName: "  ", model: "\t" }))
+      .toEqual({ provider: "Claude", model: "default" });
   });
 });
