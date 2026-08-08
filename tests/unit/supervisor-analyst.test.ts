@@ -89,30 +89,52 @@ describe("when the model does not answer", () => {
     // here would be swallowed and the analyst would simply stop running.
     stub(() => new Response("nope", { status: 503 }));
 
-    await expect(callGemmaForHealth("snapshot")).resolves.toEqual({ ok: true, digest: "" });
+    await expect(callGemmaForHealth("snapshot")).resolves.toEqual({ ok: true, digest: "", asked: false });
   });
 
   test("a network failure is the same", async () => {
     stub(() => { throw new Error("ECONNREFUSED"); });
 
-    await expect(callGemmaForHealth("snapshot")).resolves.toEqual({ ok: true, digest: "" });
+    await expect(callGemmaForHealth("snapshot")).resolves.toEqual({ ok: true, digest: "", asked: false });
   });
 
   test("an unparseable body is the same", async () => {
     stub(() => new Response("<html>gateway</html>", { status: 200 }));
 
-    await expect(callGemmaForHealth("snapshot")).resolves.toEqual({ ok: true, digest: "" });
+    await expect(callGemmaForHealth("snapshot")).resolves.toEqual({ ok: true, digest: "", asked: false });
   });
 
   test("OK means healthy, and anything else is carried through as the digest", async () => {
     stub(() => Response.json({ message: { content: "OK" } }));
-    await expect(callGemmaForHealth("snapshot")).resolves.toEqual({ ok: true, digest: "" });
+    await expect(callGemmaForHealth("snapshot")).resolves.toEqual({ ok: true, digest: "", asked: true });
 
     stub(() => Response.json({ message: { content: "Очередь стоит 12 минут" } }));
     const verdict = await callGemmaForHealth("snapshot");
 
     expect(verdict.ok).toBe(false);
     expect(verdict.digest).toContain("Очередь стоит 12 минут");
+    expect(verdict.asked).toBe(true);
+  });
+
+  test("a clean verdict and an unanswered one are not the same value", async () => {
+    // They were, and that is the bug: the analyst runs every 10 minutes against
+    // a 5-minute keep_alive, so it is normally cold, and a cold load outlasts
+    // this call's 15s ceiling. Every timeout used to be filed as health.
+    stub(() => Response.json({ message: { content: "OK" } }));
+    const clean = await callGemmaForHealth("snapshot");
+
+    stub(() => { throw new Error("timed out"); });
+    const silent = await callGemmaForHealth("snapshot");
+
+    expect(clean.ok).toBe(true);
+    expect(silent.ok).toBe(true);
+    expect(clean.asked).not.toBe(silent.asked);
+  });
+
+  test("a reached model that answers with nothing has not answered", async () => {
+    stub(() => Response.json({ message: { content: "   " } }));
+
+    await expect(callGemmaForHealth("snapshot")).resolves.toEqual({ ok: true, digest: "", asked: false });
   });
 
   test("the incident explanation degrades to empty rather than failing the alert", async () => {

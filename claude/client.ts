@@ -459,9 +459,50 @@ export function normalizeSummaryResult(parsed: unknown): { summary: string; fact
   };
 }
 
+/**
+ * How long a summary may take, and how long it may be.
+ *
+ * These two are one decision, so they live together. `num_predict` is the length
+ * a summary needs; the ceiling is what that length costs on the model the host
+ * actually runs, and the cost is measured rather than guessed.
+ *
+ * Measured 2026-08-08 on gemma4:e4b, CPU-only, 27 GB box — the base model, named
+ * rather than the alias, because `geekom-model-1` is repointable with `ollama cp`
+ * and the CHANGELOG still remembers it as qwen3 14B. The figures belong to e4b:
+ * a cold load takes 17.2s before a token appears, and generation runs at
+ * 9.3–12 tok/s. So 400 tokens from cold is roughly 17 + 43 = 60s, and a 60s
+ * ceiling would land exactly on it. The old ceiling was 30s, which the smaller
+ * gemma4:e2b made in 17s and e4b missed at 35s — a miss is not a slow summary,
+ * it is an abort into the paid cloud model below, every single time.
+ *
+ * Shortening the answer instead was the alternative and is worse: a truncated
+ * reply fails `JSON.parse` and falls through to the same cloud model, so it buys
+ * nothing and loses the summary.
+ *
+ * 90s is the *default*, for the callers nobody is watching: the idle, overflow
+ * and disconnect summaries out of `memory/summarizer.ts`. Two callers are not
+ * that, and they pass their own ceiling instead — `/summarize` has an operator
+ * waiting on a "Summarizing…" message, and the PreCompact fold is raced against
+ * 15s by `mcp/server.ts`, which no local run of this model can win. Raised in
+ * review: the first version of this comment claimed nobody was waiting, and
+ * named only the caller that proved it.
+ */
+export const SUMMARIZE_NUM_PREDICT = 400;
+export const SUMMARIZE_TIMEOUT_MS = 90_000;
+
+/** The measurements the ceiling above is derived from, kept so a test can check the arithmetic. */
+export const SUMMARIZE_COLD_LOAD_MS = 17_200;
+export const SUMMARIZE_SLOWEST_TOKENS_PER_SEC = 9.3;
+
 export async function summarizeConversation(
   messages: { role: string; content: string }[],
+  opts: { timeoutMs?: number } = {},
 ): Promise<{ summary: string; facts: string[] }> {
+  // A caller with a deadline of its own overrides the background default. Below
+  // its own ceiling the local model simply loses and the cloud model answers,
+  // which is the point: a bounded attempt beats an abandoned one, and an
+  // abandoned 90s request per compaction is how they stack up.
+  const timeoutMs = opts.timeoutMs ?? SUMMARIZE_TIMEOUT_MS;
   const formatted = messages
     .map((m) => `${m.role}: ${m.content}`)
     .join("\n");
@@ -492,9 +533,9 @@ ${formatted}`;
           ],
           stream: false,
           format: "json",
-          options: { num_predict: 400, temperature: 0.2 },
+          options: { num_predict: SUMMARIZE_NUM_PREDICT, temperature: 0.2 },
         }),
-        signal: AbortSignal.timeout(30_000),
+        signal: AbortSignal.timeout(timeoutMs),
       });
       if (res.ok) {
         const data = (await res.json()) as any;

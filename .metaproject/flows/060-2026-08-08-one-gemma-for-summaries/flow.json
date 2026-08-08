@@ -1,0 +1,184 @@
+{
+  "schemaVersion": 2,
+  "id": "060",
+  "slug": "one-gemma-for-summaries",
+  "title": "One Gemma: the summarizer timeout fits the bigger model",
+  "status": "implemented",
+  "createdAt": "2026-08-08T12:07:10.495Z",
+  "updatedAt": "2026-08-08T12:23:57.918Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:32d6a35e47b18ad909ccadae6210e48ea9ba50ca5fe83605049c248c269f1a4c",
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-08T12:10:43.703Z",
+      "note": "typecheck 0 errors; lint 0 errors"
+    },
+    "AC2": {
+      "at": "2026-08-08T12:10:43.792Z",
+      "note": "tests/unit/summarize-ceiling.test.ts (5 tests); suite 2179 pass / 0 fail"
+    },
+    "AC3": {
+      "at": "2026-08-08T12:10:43.885Z",
+      "note": "SUMMARIZE_TIMEOUT_MS / SUMMARIZE_NUM_PREDICT / SUMMARIZE_COLD_LOAD_MS / SUMMARIZE_SLOWEST_TOKENS_PER_SEC exported; docstring records 17.2s cold load and 9.3-12 tok/s"
+    },
+    "AC4": {
+      "at": "2026-08-08T12:10:43.973Z",
+      "note": "worstCaseMs() = cold load + num_predict/floor rate; asserts ceiling > it, margin > 5s, and that 30s would have failed"
+    },
+    "AC5": {
+      "at": "2026-08-08T12:10:44.060Z",
+      "note": "cold run via real summarizeConversation with SUMMARIZE_MODEL=geekom-model-1: 31638ms of 90000ms, summary string + 5 facts"
+    },
+    "AC6": {
+      "at": "2026-08-08T12:10:44.151Z",
+      "note": "cli.ts commented default is now geekom-model-1, was qwen3:1.7b (never installed)"
+    },
+    "AC7": {
+      "at": "2026-08-08T12:10:44.242Z",
+      "note": "the CONFIG.SUMMARIZE_MODEL guard and the cloud fallback below it are untouched"
+    }
+  },
+  "pr": {
+    "url": "https://github.com/MrCipherSmith/helyx/pull/106"
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-08T12:07:10.495Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-08T12:10:33.754Z",
+      "event": "frozen",
+      "detail": "7 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-08T12:10:33.842Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-08T12:10:33.927Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-08T12:10:34.016Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-08T12:10:34.104Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-08T12:10:43.703Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: typecheck 0 errors; lint 0 errors"
+    },
+    {
+      "at": "2026-08-08T12:10:43.792Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: tests/unit/summarize-ceiling.test.ts (5 tests); suite 2179 pass / 0 fail"
+    },
+    {
+      "at": "2026-08-08T12:10:43.885Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: SUMMARIZE_TIMEOUT_MS / SUMMARIZE_NUM_PREDICT / SUMMARIZE_COLD_LOAD_MS / SUMMARIZE_SLOWEST_TOKENS_PER_SEC exported; docstring records 17.2s cold load and 9.3-12 tok/s"
+    },
+    {
+      "at": "2026-08-08T12:10:43.973Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: worstCaseMs() = cold load + num_predict/floor rate; asserts ceiling > it, margin > 5s, and that 30s would have failed"
+    },
+    {
+      "at": "2026-08-08T12:10:44.060Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: cold run via real summarizeConversation with SUMMARIZE_MODEL=geekom-model-1: 31638ms of 90000ms, summary string + 5 facts"
+    },
+    {
+      "at": "2026-08-08T12:10:44.151Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: cli.ts commented default is now geekom-model-1, was qwen3:1.7b (never installed)"
+    },
+    {
+      "at": "2026-08-08T12:10:44.242Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: the CONFIG.SUMMARIZE_MODEL guard and the cloud fallback below it are untouched"
+    },
+    {
+      "at": "2026-08-08T12:11:30.993Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/106 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-08-08T12:23:57.918Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    }
+  ]
+}

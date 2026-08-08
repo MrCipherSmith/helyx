@@ -115,13 +115,21 @@ export async function checkOverflow(
 
 /**
  * Force summarize current conversation.
+ *
+ * Keeps the ceiling the local model had before it was raised for the background
+ * summaries: `/summarize` is awaited under a "Summarizing…" message, so nobody
+ * here should wait a minute and a half for a model that then falls through to
+ * the cloud anyway. Raised in review — the raise was justified as "nobody is
+ * watching", and on this path somebody is.
  */
+export const MANUAL_SUMMARIZE_TIMEOUT_MS = 30_000;
+
 export async function forceSummarize(
   sessionId: number,
   chatId: string,
   projectPath?: string | null,
 ): Promise<string | null> {
-  return trySummarize(sessionId, chatId, "manual", projectPath);
+  return trySummarize(sessionId, chatId, "manual", projectPath, MANUAL_SUMMARIZE_TIMEOUT_MS);
 }
 
 /**
@@ -136,7 +144,15 @@ export async function forceSummarize(
  * `summarizeOnDisconnect` does: a session can be open in more than one, and the
  * one that is about to lose its context is not necessarily the one that was
  * asked last.
+ *
+ * The local model gets a short leash here, unlike the background summaries. This
+ * runs inside a 15s race in `mcp/server.ts`, and no local run can win it — a
+ * cold load alone is 17s. So the attempt is bounded and the cloud model answers
+ * inside the budget, rather than an abandoned 90s request per chat per
+ * compaction accumulating with nothing counting them. Raised in review.
  */
+export const FOLD_SUMMARIZE_TIMEOUT_MS = 4_000;
+
 export async function summarizeBeforeCompact(projectPath: string): Promise<number> {
   const rows = await sql`
     SELECT s.id AS session_id, cs.chat_id
@@ -147,8 +163,13 @@ export async function summarizeBeforeCompact(projectPath: string): Promise<numbe
 
   let summarized = 0;
   for (const row of rows as any[]) {
-    const written = await trySummarize(Number(row.session_id), String(row.chat_id), "manual", projectPath)
-      .catch(() => null);
+    const written = await trySummarize(
+      Number(row.session_id),
+      String(row.chat_id),
+      "manual",
+      projectPath,
+      FOLD_SUMMARIZE_TIMEOUT_MS,
+    ).catch(() => null);
     if (written) summarized++;
   }
   return summarized;
@@ -177,6 +198,7 @@ async function trySummarize(
   chatId: string,
   trigger: "idle" | "overflow" | "manual" | "disconnect",
   projectPath?: string | null,
+  timeoutMs?: number,
 ): Promise<string | null> {
   // Get messages to summarize
   const rows = await sql`
@@ -209,7 +231,7 @@ async function trySummarize(
   try {
     logger.info({ sessionId, chatId, messageCount: messages.length, trigger, projectPath: projectPath ?? null }, "summarizing");
 
-    const { summary, facts: rawFacts } = await summarizeConversation(messages);
+    const { summary, facts: rawFacts } = await summarizeConversation(messages, { timeoutMs });
     // Defense in depth: summarizeConversation normalizes facts, but a future
     // caller or regression could still hand us undefined — guard so neither
     // `.filter` nor `.length` below throws.
