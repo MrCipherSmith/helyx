@@ -432,3 +432,94 @@ export function parseEntry(line: string): TranscriptEntry | null {
     return null;
   }
 }
+
+/**
+ * How much of a dropped span is worth keeping.
+ *
+ * A fold can drop most of a million tokens — 986,233 on the first boundary
+ * observed in this project — and the span is raw transcript, tool output and
+ * all. Sending that whole to an embedding call is how a feature meant to
+ * preserve context becomes the reason a machine falls over.
+ *
+ * Two megabytes is generous for a record of what a session did and small enough
+ * that the read, the store and the embedding all stay ordinary.
+ */
+export const DROPPED_SPAN_BUDGET_BYTES = 2_097_152;
+
+export interface DroppedSpan {
+  /** The records, in file order, joined as they appeared. */
+  text: string;
+  /** How many records the span held before any truncation. */
+  records: number;
+  /**
+   * Whether the budget cut it, said out loud.
+   *
+   * A truncated span stored as though it were whole is a lie told to whoever
+   * reads it back, and the reader is a future session trying to remember what
+   * happened. The oldest records go first: the newest are nearest the fold and
+   * likeliest to matter.
+   */
+  truncated: boolean;
+}
+
+/**
+ * The records a fold dropped: everything before `headUuid`, back to `afterUuid`.
+ *
+ * `headUuid` is the first record Claude Code kept, so the record before it is
+ * the last one it forgot. `afterUuid` is the previous fold's boundary — pass
+ * null on the first fold and the span starts at the top of the file.
+ *
+ * The file is read whole, deliberately. This runs once per fold, not per poll,
+ * and the alternative is seeking by uuid, which means indexing a file another
+ * program is appending to. Once every two hours at a cost of one read is the
+ * right trade; `readSessionContext`'s per-tick read was not.
+ *
+ * Returns null when `headUuid` is not in the file — a boundary we cannot place
+ * is one we must not guess at, because the guess would attribute the wrong work
+ * to the wrong fold.
+ */
+export async function droppedSpan(
+  path: string,
+  headUuid: string,
+  afterUuid: string | null,
+): Promise<DroppedSpan | null> {
+  const text = await Bun.file(path)
+    .text()
+    .catch(() => null);
+  if (text === null) return null;
+
+  const lines = text.split("\n").filter((l) => l.trim() !== "");
+  const indexOfUuid = (uuid: string): number =>
+    lines.findIndex((line) => {
+      // A substring test first: parsing every record of a multi-megabyte file to
+      // find one uuid costs more than the whole rest of this function.
+      if (!line.includes(uuid)) return false;
+      const entry = parseEntry(line);
+      return entry?.uuid === uuid;
+    });
+
+  const head = indexOfUuid(headUuid);
+  if (head < 0) return null;
+
+  const from = afterUuid ? indexOfUuid(afterUuid) : -1;
+  // The previous boundary is not part of what this fold dropped, so start after
+  // it. Not found means it is no longer in the file, and the top of the file is
+  // the honest answer rather than an empty span.
+  const start = from >= 0 ? from + 1 : 0;
+  if (start >= head) return { text: "", records: 0, truncated: false };
+
+  const span = lines.slice(start, head);
+  let kept = span;
+  let truncated = false;
+  let bytes = 0;
+  for (let i = span.length - 1; i >= 0; i--) {
+    bytes += Buffer.byteLength(span[i]!, "utf8") + 1;
+    if (bytes > DROPPED_SPAN_BUDGET_BYTES) {
+      kept = span.slice(i + 1);
+      truncated = true;
+      break;
+    }
+  }
+
+  return { text: kept.join("\n"), records: span.length, truncated };
+}

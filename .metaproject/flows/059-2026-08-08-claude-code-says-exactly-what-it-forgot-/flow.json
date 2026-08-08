@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 2,
+  "id": "059",
+  "slug": "claude-code-says-exactly-what-it-forgot-",
+  "title": "Claude Code says exactly what it forgot, and nobody reads it",
+  "status": "in-progress",
+  "createdAt": "2026-08-08T10:36:19.798Z",
+  "updatedAt": "2026-08-08T10:37:30.366Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:d64425501100ec86f148ed4499c2d93775495e8ef5ac115b31cc02f59a6abe0f",
+  "acConfirmed": {},
+  "pr": {
+    "url": null
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "todo",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {}
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-08T10:36:19.798Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-08T10:37:30.194Z",
+      "event": "frozen",
+      "detail": "8 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-08T10:37:30.366Z",
+      "event": "started"
+    }
+  ]
+}
