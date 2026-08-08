@@ -31,8 +31,9 @@ import { escapeHtml } from "../utils/html.ts";
 import { isRequeued, markRequeued } from "../utils/requeue.ts";
 import { hasOpenQuestion } from "../services/ask-question.ts";
 import { sessionFold, endFold, readFoldMarker, foldFromMarker, type ActiveFold } from "../services/fold-marker.ts";
+import { startLimit, resolveResetAt } from "../services/limit-marker.ts";
 import { droppedSpan } from "../utils/transcript-locate.ts";
-import type { CompactBoundary } from "../utils/context-usage.ts";
+import { isLimitKind, type CompactBoundary, type ApiErrorEvent } from "../utils/context-usage.ts";
 import { remember } from "../memory/long-term.ts";
 
 /** How much of a captured file path the completion notice may carry. */
@@ -290,6 +291,20 @@ export class StatusManager {
    * re-find a boundary already gone past.
    */
   private readonly lastFoldTail = new Map<string, string>();
+  /**
+   * API errors already acted on, by the transcript entry's own `uuid`.
+   *
+   * The sibling of `capturedFolds`, keyed the same way and bounded the same way,
+   * because it is the same problem: `reresolve` re-reads a transcript from zero,
+   * and without a key every error in it would be written to the marker again —
+   * moving `startedAt` forward each time, which would extend a limit that had
+   * already lifted.
+   *
+   * The uuid is what names *this* error. An error without one is written every
+   * time it is seen rather than dropped: a marker rewritten is a limit reported
+   * a little late, and a limit dropped is a session called hung.
+   */
+  private readonly capturedApiErrors = new Set<string>();
   private readonly TYPING_TIMEOUT_MS = 30_000;
   private readonly RESPONSE_GUARD_MS = 5 * 60_000; // 5 min
   /**
@@ -1694,6 +1709,77 @@ export class StatusManager {
     }
   }
 
+  /**
+   * A turn failed on the API: say so where the supervisor can read it.
+   *
+   * The other half of the pair `captureFold` belongs to, and shaped after it on
+   * purpose — the same silence, the same two processes, the same marker column.
+   * What differs is only which silence it explains. A fold is the session busy
+   * doing something; a limit is the session not permitted to do anything, and
+   * the remedy the operator needs is opposite in each case: wait for a fold,
+   * wait for a clock or switch provider for a limit. The one thing that helps in
+   * neither is the restart button the hung-session loop offers today.
+   *
+   * Only limits are marked. An overload, a prompt too long or a lost connection
+   * ends the turn and the session goes back to the prompt: it is not silent
+   * afterwards, so nothing needs to explain a silence, and marking it would
+   * suppress the hung-session alarm for a session that is perfectly able to
+   * answer. They are logged with their kind, which is what "distinguishable from
+   * each other and from silence" needs and all it needs.
+   *
+   * Nothing is acted on here beyond writing it down. No provider switch, no
+   * restart, no pause — this flow makes the state visible and what to do about
+   * it stays the operator's call.
+   *
+   * Public for the reason `captureFold` is: the only other way in is to have a
+   * real session hit a real limit, which takes an account and several hours.
+   */
+  async noteApiError(error: ApiErrorEvent, transcriptPath: string): Promise<void> {
+    if (!isLimitKind(error.kind)) {
+      channelLogger.warn({ kind: error.kind, text: error.text, transcriptPath }, "api error in the transcript");
+      return;
+    }
+
+    // Keyed by uuid and path, exactly as folds are. An error the CLI wrote
+    // without one is acted on every time it is read — see `capturedApiErrors`.
+    if (error.uuid) {
+      const key = `${transcriptPath}#${error.uuid}`;
+      if (this.capturedApiErrors.has(key)) return;
+      this.capturedApiErrors.add(key);
+      if (this.capturedApiErrors.size > REMEMBERED_FOLDS) {
+        const oldest = this.capturedApiErrors.values().next().value;
+        if (oldest !== undefined) this.capturedApiErrors.delete(oldest);
+      }
+    }
+
+    const sessionId = this.ctx.sessionId();
+    if (sessionId === null) {
+      // A `claude` started by hand outside the fleet hits limits like any other
+      // and has no session row to record it on. Logged rather than dropped, the
+      // way `startFoldForProject` treats the same case.
+      channelLogger.warn({ kind: error.kind, text: error.text }, "api limit with no session to mark");
+      return;
+    }
+
+    const startedAt = Date.now();
+    // The parser returns UTC minutes since midnight and no date, deliberately —
+    // resolving "5:30pm" to an instant needs a clock, and this is the process
+    // holding one at the moment the line was read.
+    const resetsAt = resolveResetAt(error.resetsAtUtcMinutes, startedAt);
+
+    await startLimit(this.ctx.sql, sessionId, {
+      kind: error.kind,
+      text: error.text,
+      startedAt,
+      resetsAt,
+      uuid: error.uuid,
+    }).catch((err) => {
+      channelLogger.warn({ err, sessionId }, "limit: could not write the marker");
+    });
+
+    channelLogger.warn({ sessionId, kind: error.kind, resetsAt, text: error.text }, "session is under an API limit");
+  }
+
   async startProgressMonitorForChat(chatId: string): Promise<void> {
     this.stopProgressMonitorForChat(chatId);
     const key = this.stateKey(chatId);
@@ -1718,6 +1804,15 @@ export class StatusManager {
         onCompactBoundary: (boundary, path) => {
           void this.captureFold(boundary, path).catch((err) => {
             channelLogger.warn({ err, path }, "fold: capture failed");
+          });
+        },
+        // And the limit is one more kind of line still. Same tail, same poll,
+        // nothing new watching anything — the difference between a session that
+        // is quiet because it is working and one that is quiet because it is not
+        // allowed to work is already written in this file, twelve times over.
+        onApiError: (error, path) => {
+          void this.noteApiError(error, path).catch((err) => {
+            channelLogger.warn({ err, path }, "limit: could not record the error");
           });
         },
       });

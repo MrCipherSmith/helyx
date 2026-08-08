@@ -20,7 +20,7 @@
 
 import { resolveTranscript, TranscriptTail, parseEntry, claudeConfigRoot } from "./transcript-locate.ts";
 import { renderEntry, outputTokens, renderTokenLine } from "./transcript-events.ts";
-import { compactBoundaries, type CompactBoundary } from "./context-usage.ts";
+import { compactBoundaries, apiErrors, type CompactBoundary, type ApiErrorEvent } from "./context-usage.ts";
 import { findSubagents, selectAgents, markLines, MAX_TRACKED_AGENTS, type FileAccess, type SubagentFile } from "./subagent-transcripts.ts";
 import { readdir, stat, readFile } from "fs/promises";
 
@@ -145,6 +145,20 @@ export interface TranscriptSessionOptions {
    * and not what the operator's session forgot.
    */
   onCompactBoundary?: (boundary: CompactBoundary, transcriptPath: string) => void;
+  /**
+   * A turn failed on the API rather than on the work.
+   *
+   * The same division as `onCompactBoundary` above, and it is the whole reason
+   * this is a second callback rather than a second reader: the error is one more
+   * kind of line the poll is already reading, and what it is *worth* — a marker
+   * in `sessions.metadata`, an alert that names the limit instead of calling the
+   * session hung — belongs to `channel/status.ts`.
+   *
+   * Called once per error in the lines a single poll read, in file order, and
+   * only for the session's own transcript. A subagent that hit a limit failed
+   * inside the parent's turn; the parent will report it as its own.
+   */
+  onApiError?: (error: ApiErrorEvent, transcriptPath: string) => void;
 }
 
 /**
@@ -281,6 +295,25 @@ export class TranscriptSession {
     }
   }
 
+  /**
+   * Tell the caller about any API error in the lines just read.
+   *
+   * Separate from `announceBoundaries` rather than folded into one walk: the two
+   * callbacks are independent and a throw out of either must not cost the other
+   * its lines. Same belt as above and for the same measured reason — the tail's
+   * read position has already moved past these lines by the time this runs.
+   */
+  private announceApiErrors(lines: readonly string[]): void {
+    const notify = this.options.onApiError;
+    const path = this.tail?.path;
+    if (!notify || !path || lines.length === 0) return;
+    try {
+      for (const error of apiErrors(lines)) notify(error, path);
+    } catch {
+      /* the caller's problem to log; losing this poll's lines is not the price */
+    }
+  }
+
   /** The transcript currently being read, or null before the first resolve. */
   get path(): string | null {
     return this.tail?.path ?? null;
@@ -322,6 +355,7 @@ export class TranscriptSession {
 
     const lines = await this.tail!.read();
     this.announceBoundaries(lines);
+    this.announceApiErrors(lines);
     // Asked every poll, including the ones where the parent said nothing —
     // which is precisely what a fan-out looks like from here.
     const fromAgents = await this.pollAgents();
