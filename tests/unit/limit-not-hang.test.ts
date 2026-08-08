@@ -350,6 +350,13 @@ describe("the channel is what writes the marker", () => {
     text: "You've hit your session limit · resets 5:30pm (UTC)",
     resetsAtUtcMinutes: 17 * 60 + 30,
     uuid: "err-1",
+    // Dated null by default, which is what an entry carrying no timestamp
+    // gives. `ApiErrorEvent.at` is required rather than optional on purpose —
+    // a producer has to decide when the error happened, because dating one by
+    // read time is what lets a replayed transcript mint a live limit — so the
+    // fixture states the absence instead of omitting the field. The tests that
+    // are about dating override it.
+    at: null as number | null,
     ...overrides,
   });
 
