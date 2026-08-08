@@ -37,8 +37,12 @@ function spy(contextTokens: number | null) {
     summarized,
     deps: {
       readContext: async () => ({ tokens: contextTokens, window: null }),
+      // Returns a summary, because `forceSummarize` returns `string | null`
+       // and the loop now reads that return value. A mock that returned
+       // undefined was claiming the summariser had declined.
       summarize: async (sessionId: number, chatId: string) => {
         summarized.push({ sessionId, chatId });
+        return "a summary";
       },
     },
   };
@@ -139,6 +143,7 @@ describe("what the loop tolerates", () => {
       summarize: async (sessionId: number) => {
         seen.push(sessionId);
         if (sessionId === 7) throw new Error("aux model refused");
+        return "a summary";
       },
     };
 
@@ -152,7 +157,7 @@ describe("what the loop tolerates", () => {
     const summarized: number[] = [];
     await checkContextPressure(db.sql as never, {
       readContext: async () => { throw new Error("no such file"); },
-      summarize: async (sessionId: number) => { summarized.push(sessionId); },
+      summarize: async (sessionId: number) => { summarized.push(sessionId); return "a summary"; },
     });
 
     expect(summarized).toEqual([]);
@@ -169,7 +174,7 @@ describe("taking the fold instead of waiting for it", () => {
       summarized,
       deps: {
         readContext: async () => ({ tokens: contextTokens, window }),
-        summarize: async (sessionId: number) => { summarized.push(sessionId); },
+        summarize: async (sessionId: number) => { summarized.push(sessionId); return "a summary"; },
         sendKeys: async (project: string, keys: string) => { typed.push({ project, keys }); },
       },
     };
@@ -208,6 +213,68 @@ describe("taking the fold instead of waiting for it", () => {
       sendKeys: async (project: string, keys: string) => { typed.push({ project, keys }); },
     });
     expect(typed).toEqual([]);
+  });
+
+  test("a declined summary is retried, not recorded as done", async () => {
+    // `forceSummarize` does not throw when it declines — it returns null on the
+    // "low-quality summary output" path, which fired four times for one session
+    // on 2026-08-08. The high-water mark used to be set before the call, so a
+    // decline was remembered as a success: the session was never tried again at
+    // that ratio, and the log said `summarized at 86.0%` for a session where
+    // nothing had been written to memory.
+    process.env.CONTEXT_AUTO_COMPACT = "true";
+    const seen: number[] = [];
+    const typed: Array<{ project: string; keys: string }> = [];
+    const deps = {
+      readContext: async () => ({ tokens: 190_000, window: 200_000 }),
+      summarize: async (sessionId: number) => {
+        seen.push(sessionId);
+        return null;
+      },
+      sendKeys: async (project: string, keys: string) => { typed.push({ project, keys }); },
+    };
+
+    await checkContextPressure(world().sql as never, deps);
+    await checkContextPressure(world().sql as never, deps);
+
+    // Tried again on the next tick at the same ratio, rather than shut out by a
+    // mark that recorded a summary nobody wrote.
+    expect(seen.length).toBe(2);
+    // And no fold: compacting after a declined summary discards exactly the
+    // material the loop runs to preserve.
+    expect(typed).toEqual([]);
+  });
+
+  test("a summary that failed once is retried at the same ratio", async () => {
+    process.env.CONTEXT_AUTO_COMPACT = "true";
+    const seen: number[] = [];
+    let first = true;
+    const deps = {
+      readContext: async () => ({ tokens: 190_000, window: 200_000 }),
+      summarize: async (sessionId: number) => {
+        seen.push(sessionId);
+        if (first) { first = false; throw new Error("summariser down"); }
+        return "a summary";
+      },
+    };
+
+    await checkContextPressure(world().sql as never, deps);
+    await checkContextPressure(world().sql as never, deps);
+    expect(seen.length).toBe(2);
+  });
+
+  test("a session that was summarised is not summarised again at the same ratio", async () => {
+    // The other half of the same rule: a real success does hold the mark, so
+    // the loop does not re-summarise the same crossing every two minutes.
+    const seen: number[] = [];
+    const deps = {
+      readContext: async () => ({ tokens: 190_000, window: 200_000 }),
+      summarize: async (sessionId: number) => { seen.push(sessionId); return "a summary"; },
+    };
+
+    await checkContextPressure(world().sql as never, deps);
+    await checkContextPressure(world().sql as never, deps);
+    expect(seen.length).toBe(1);
   });
 
   test("asks an unknown session for its window, once", async () => {

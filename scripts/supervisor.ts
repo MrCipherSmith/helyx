@@ -1009,10 +1009,25 @@ export async function checkContextPressure(sql: postgres.Sql, deps: ContextPress
 
     if (!decision.summarize) continue;
 
-    contextHighWater.set(sessionId, decision.ratio);
+    // The high-water mark is set *after* a summary exists, and only then.
+    //
+    // It used to be set on the line above the `try`, which made one bad moment
+    // permanent. `decideCrossing` reads `ratio <= highWaterRatio` as
+    // "already-summarized", so a session whose summary threw was never retried
+    // at that ratio — it had to grow past the mark that had just failed, and a
+    // session sitting at 86% of its window may never do that.
+    //
+    // Worse, `forceSummarize` does not throw when it declines. It returns null
+    // on the "low-quality summary output" path, so the old code logged
+    // `summarized at 86.0%` for a session where nothing was written to memory
+    // at all. That path is not hypothetical: it fired four times for one
+    // session on 2026-08-08 while this branch was open.
+    //
+    // `runIdleCompact` below has checked this return value for null since it
+    // was written. This loop is the one that did not.
+    let summary: unknown;
     try {
-      await deps.summarize(sessionId, chatId);
-      console.log(`[context] session=${sessionId} summarized at ${(decision.ratio * 100).toFixed(1)}%`);
+      summary = await deps.summarize(sessionId, chatId);
     } catch (err: any) {
       console.error(`[context] session=${sessionId} summarize failed: ${err?.message}`);
       // The fold is only worth taking once the summary exists. Compacting after
@@ -1020,6 +1035,15 @@ export async function checkContextPressure(sql: postgres.Sql, deps: ContextPress
       // runs to preserve.
       continue;
     }
+    if (!summary) {
+      // Declined, not failed, and said as such — the operator reading this needs
+      // to know the session is still unprotected by *this* layer. The PreCompact
+      // hook remains as the later, tighter safety net.
+      console.warn(`[context] session=${sessionId} summary declined at ${(decision.ratio * 100).toFixed(1)}% — will retry`);
+      continue;
+    }
+    contextHighWater.set(sessionId, decision.ratio);
+    console.log(`[context] session=${sessionId} summarized at ${(decision.ratio * 100).toFixed(1)}%`);
 
     // Take the fold. Claude Code will do this on its own eventually, and its
     // moment is whenever the window fills — mid-turn, mid-thought, with the
