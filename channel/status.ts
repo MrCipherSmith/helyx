@@ -31,8 +31,9 @@ import { escapeHtml } from "../utils/html.ts";
 import { isRequeued, markRequeued } from "../utils/requeue.ts";
 import { hasOpenQuestion } from "../services/ask-question.ts";
 import { sessionFold, endFold, readFoldMarker, foldFromMarker, type ActiveFold } from "../services/fold-marker.ts";
+import { startLimit, endLimit, resolveResetAt, limitFromMarker } from "../services/limit-marker.ts";
 import { droppedSpan } from "../utils/transcript-locate.ts";
-import type { CompactBoundary } from "../utils/context-usage.ts";
+import { isLimitKind, type CompactBoundary, type ApiErrorEvent } from "../utils/context-usage.ts";
 import { remember } from "../memory/long-term.ts";
 
 /** How much of a captured file path the completion notice may carry. */
@@ -290,6 +291,40 @@ export class StatusManager {
    * re-find a boundary already gone past.
    */
   private readonly lastFoldTail = new Map<string, string>();
+  /**
+   * API errors already acted on, by the transcript entry's own `uuid`.
+   *
+   * The sibling of `capturedFolds`, keyed the same way and bounded the same way,
+   * because it is the same problem: `reresolve` re-reads a transcript from zero,
+   * and without a key every error in it would be written to the marker again —
+   * moving `startedAt` forward each time, which would extend a limit that had
+   * already lifted.
+   *
+   * The uuid is what names *this* error. An error without one is written every
+   * time it is seen rather than dropped: a marker rewritten is a limit reported
+   * a little late, and a limit dropped is a session called hung.
+   */
+  private readonly capturedApiErrors = new Set<string>();
+  /**
+   * When this channel last wrote a limit marker, or null when it has not.
+   *
+   * The gate on `noteSessionAnswered`, and it is what keeps that path free. A
+   * real answer arrives in the transcript every few seconds for as long as a
+   * session is working; asking the database each time whether a limit needs
+   * clearing would be a query per turn to answer a question whose answer is
+   * "no" for weeks at a stretch. This is the cheap, in-memory "there is
+   * something to clear".
+   *
+   * In process, and deliberately not the whole fix. A marker written before a
+   * restart is not visible here at all — that one is cleared by
+   * `sessions/manager.ts` when the session re-registers, which is the only
+   * moment anything knows the process is new. The two halves cover different
+   * failures: this one covers a session that starts answering again without
+   * being restarted (a provider switched under it, or an account that recovered
+   * before the stated time), the other covers a marker inherited across a
+   * bounce.
+   */
+  private limitedSince: number | null = null;
   private readonly TYPING_TIMEOUT_MS = 30_000;
   private readonly RESPONSE_GUARD_MS = 5 * 60_000; // 5 min
   /**
@@ -1694,6 +1729,143 @@ export class StatusManager {
     }
   }
 
+  /**
+   * A turn failed on the API: say so where the supervisor can read it.
+   *
+   * The other half of the pair `captureFold` belongs to, and shaped after it on
+   * purpose — the same silence, the same two processes, the same marker column.
+   * What differs is only which silence it explains. A fold is the session busy
+   * doing something; a limit is the session not permitted to do anything, and
+   * the remedy the operator needs is opposite in each case: wait for a fold,
+   * wait for a clock or switch provider for a limit. The one thing that helps in
+   * neither is the restart button the hung-session loop offers today.
+   *
+   * Only limits are marked. An overload, a prompt too long or a lost connection
+   * ends the turn and the session goes back to the prompt: it is not silent
+   * afterwards, so nothing needs to explain a silence, and marking it would
+   * suppress the hung-session alarm for a session that is perfectly able to
+   * answer. They are logged with their kind, which is what "distinguishable from
+   * each other and from silence" needs and all it needs.
+   *
+   * Nothing is acted on here beyond writing it down. No provider switch, no
+   * restart, no interrupt — what the marker causes elsewhere is that the
+   * supervisor says which limit it is and the poller holds delivery until it
+   * lifts, both of which are waiting rather than doing.
+   *
+   * Public for the reason `captureFold` is: the only other way in is to have a
+   * real session hit a real limit, which takes an account and several hours.
+   */
+  async noteApiError(error: ApiErrorEvent, transcriptPath: string): Promise<void> {
+    if (!isLimitKind(error.kind)) {
+      channelLogger.warn({ kind: error.kind, text: error.text, transcriptPath }, "api error in the transcript");
+      return;
+    }
+
+    // Keyed by uuid and path, exactly as folds are. An error the CLI wrote
+    // without one is acted on every time it is read — see `capturedApiErrors`.
+    if (error.uuid) {
+      const key = `${transcriptPath}#${error.uuid}`;
+      if (this.capturedApiErrors.has(key)) return;
+      this.capturedApiErrors.add(key);
+      if (this.capturedApiErrors.size > REMEMBERED_FOLDS) {
+        const oldest = this.capturedApiErrors.values().next().value;
+        if (oldest !== undefined) this.capturedApiErrors.delete(oldest);
+      }
+    }
+
+    const sessionId = this.ctx.sessionId();
+    if (sessionId === null) {
+      // A `claude` started by hand outside the fleet hits limits like any other
+      // and has no session row to record it on. Logged rather than dropped, the
+      // way `startFoldForProject` treats the same case.
+      channelLogger.warn({ kind: error.kind, text: error.text }, "api limit with no session to mark");
+      return;
+    }
+
+    const now = Date.now();
+    // The line's own time, not the time it was read. This used to be
+    // `Date.now()`, and the difference is a live limit minted out of history:
+    // `TranscriptSession.reresolve` attaches to a different transcript at
+    // offset 0 and replays the whole file, so yesterday's "resets 5:30pm" is
+    // read today as new — and `resolveResetAt` resolves a stated time of day to
+    // its *next* occurrence, which puts the reset at 17:30 this afternoon. The
+    // session is healthy and its queue is held for the rest of the day.
+    //
+    // Clamped to now rather than trusted outright. A timestamp in the future is
+    // a clock disagreeing with itself, and `limitFromMarker` reads a start in
+    // the future as no limit at all — which would drop a real one. An entry
+    // with no timestamp falls back to the read time, which is what this always
+    // did and is right for the case it covers: a line written just now.
+    const startedAt = Math.min(error.at ?? now, now);
+    // The parser returns UTC minutes since midnight and no date, deliberately —
+    // resolving "5:30pm" to an instant needs a clock, and the instant it has to
+    // be resolved against is when the line was *written*.
+    const resetsAt = resolveResetAt(error.resetsAtUtcMinutes, startedAt);
+
+    const marker = { kind: error.kind, text: error.text, startedAt, resetsAt, uuid: error.uuid };
+
+    // An error already older than the marker it would write is not news. This
+    // is the same bound the supervisor and the poller read the marker through,
+    // asked one step earlier: a marker that `limitFromMarker` would discard on
+    // sight has nothing to say and should not be written at all, because
+    // writing it costs a row and an alert for a limit that lifted yesterday.
+    if (!limitFromMarker(marker, now)) {
+      channelLogger.info(
+        { sessionId, kind: error.kind, startedAt, resetsAt },
+        "limit: a replayed historical error, already expired; not marked",
+      );
+      return;
+    }
+
+    await startLimit(this.ctx.sql, sessionId, marker).catch((err) => {
+      channelLogger.warn({ err, sessionId }, "limit: could not write the marker");
+    });
+    this.limitedSince = startedAt;
+
+    channelLogger.warn({ sessionId, kind: error.kind, resetsAt, text: error.text }, "session is under an API limit");
+  }
+
+  /**
+   * The session answered, so whatever limit it was under is over.
+   *
+   * The other end of `noteApiError`, and the thing flow 061 shipped without.
+   * `startLimit` had no counterpart: the marker came off only when its own
+   * expiry arrived, and that expiry is the reset time the *error text* stated —
+   * a claim about the account, not about this session.
+   *
+   * The failure that closes, and it is silent from end to end: a weekly limit at
+   * 09:00 says `resets 2pm`. The operator switches the project's provider and
+   * the session answers again at 09:10. Nothing tells the marker, so the poller
+   * holds every queued message until 14:00 and the hung-session and stuck-queue
+   * detectors stay muted for the whole five hours — with no second alert,
+   * because the one alert this flow sends is sent once per event.
+   *
+   * `answeredAt` is the transcript entry's own timestamp, and the comparison
+   * against the marker's `startedAt` is what makes it safe to act on: an answer
+   * written *before* the error is the turn that failed, not the recovery from
+   * it, and both instants now come from the same file rather than one from a
+   * file and one from a clock.
+   *
+   * Public for `noteApiError`'s reason: the only other way in is to have a real
+   * session hit a real limit and then come back from it.
+   */
+  async noteSessionAnswered(answeredAt: number): Promise<void> {
+    const since = this.limitedSince;
+    if (since === null || answeredAt <= since) return;
+    // Cleared before the write, not after: a write that fails must not leave
+    // this armed to retry on every answer for the rest of the session's life.
+    // One lost clearing costs the marker its own expiry, which is where it was
+    // before this existed.
+    this.limitedSince = null;
+
+    const sessionId = this.ctx.sessionId();
+    if (sessionId === null) return;
+    await endLimit(this.ctx.sql, sessionId).catch((err) => {
+      channelLogger.warn({ err, sessionId }, "limit: could not clear the marker");
+    });
+    channelLogger.info({ sessionId, answeredAt }, "session answered again; limit marker cleared");
+  }
+
   async startProgressMonitorForChat(chatId: string): Promise<void> {
     this.stopProgressMonitorForChat(chatId);
     const key = this.stateKey(chatId);
@@ -1718,6 +1890,25 @@ export class StatusManager {
         onCompactBoundary: (boundary, path) => {
           void this.captureFold(boundary, path).catch((err) => {
             channelLogger.warn({ err, path }, "fold: capture failed");
+          });
+        },
+        // And the limit is one more kind of line still. Same tail, same poll,
+        // nothing new watching anything — the difference between a session that
+        // is quiet because it is working and one that is quiet because it is not
+        // allowed to work is already written in this file, twelve times over.
+        onApiError: (error, path) => {
+          void this.noteApiError(error, path).catch((err) => {
+            channelLogger.warn({ err, path }, "limit: could not record the error");
+          });
+        },
+        // And the answer that says the limit is over is one more line still.
+        // The same tail and the same poll: a session under a limit produces no
+        // real assistant entry at all, so the first one after the marker was
+        // written is the session saying it can answer again — which nothing
+        // else in either process is in a position to observe.
+        onAnswer: (answeredAt) => {
+          void this.noteSessionAnswered(answeredAt).catch((err) => {
+            channelLogger.warn({ err }, "limit: could not clear the marker");
           });
         },
       });

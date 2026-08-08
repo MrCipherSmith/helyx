@@ -27,6 +27,7 @@
  */
 
 import { parseEntry, type TranscriptEntry } from "./transcript-locate.ts";
+import { outputTokens } from "./transcript-events.ts";
 
 /**
  * The window assumed for a model nobody told us about.
@@ -151,6 +152,30 @@ export function isKnownModel(model: string | null | undefined): boolean {
 }
 
 /**
+ * An entry the CLI manufactured rather than received.
+ *
+ * Claude Code writes its API errors into the transcript as assistant entries —
+ * `isApiErrorMessage: true`, `model: "<synthetic>"` — and gives them a `usage`
+ * block of zeros, because no call was made and there is nothing to report. That
+ * block is indistinguishable from a real one to anything that only asks whether
+ * `usage` is there.
+ *
+ * Which is a measurement bug, not a cosmetic one. `newestContextTokens` scans
+ * backwards for the newest entry carrying usage, and a limit error is by
+ * definition the newest entry in a session that just hit its limit: the
+ * context-pressure loop would read that session as sitting at 0 tokens, release
+ * its high-water mark and log `no-usage`/`below-threshold` for a window that is
+ * in fact nearly full. The reading is not merely absent, it is confidently
+ * wrong, which is the worse of the two.
+ *
+ * Recognised by the flag, for the reason `parseApiError` uses it: the model
+ * string is corroboration and another program's to change.
+ */
+export function isSyntheticApiError(entry: TranscriptEntry | null | undefined): boolean {
+  return (entry as Record<string, unknown> | null | undefined)?.isApiErrorMessage === true;
+}
+
+/**
  * The context this entry was answered with, or null.
  *
  * Null is an ordinary answer: a user entry, a tool result, a summary line —
@@ -159,6 +184,7 @@ export function isKnownModel(model: string | null | undefined): boolean {
  * rather than the newest entry.
  */
 export function contextTokens(entry: TranscriptEntry | null | undefined): number | null {
+  if (isSyntheticApiError(entry)) return null;
   const usage = entry?.message?.usage;
   if (!usage || typeof usage !== "object") return null;
   const fields = ["input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"];
@@ -175,6 +201,55 @@ export function contextTokens(entry: TranscriptEntry | null | undefined): number
 }
 
 /**
+ * When Claude Code says this entry happened, in epoch milliseconds, or null.
+ *
+ * Every transcript line carries a `timestamp` written by the CLI at the moment
+ * it appended the line. That is a different instant from when this process read
+ * it, and the difference is the whole reason this exists: a transcript is a file
+ * that can be re-read from the beginning — `TranscriptSession.reresolve` does
+ * exactly that when it attaches to a new one — so "now" is a lie about any line
+ * that is not brand new.
+ */
+export function entryTimestamp(entry: TranscriptEntry | null | undefined): number | null {
+  const raw = entry?.timestamp;
+  if (typeof raw !== "string") return null;
+  const at = Date.parse(raw);
+  return Number.isNaN(at) ? null : at;
+}
+
+/**
+ * When the newest real answer in these lines was written, or null.
+ *
+ * "Real" is what `contextTokens` already means by returning a number: an entry
+ * the model actually answered, carrying usage, and not one of the synthetic
+ * error entries the CLI manufactures with a `usage` block of zeros. A session
+ * that produced one of those is a session the API is talking to.
+ *
+ * Which is the evidence a limit is over. The marker cannot expire on its own
+ * before its stated reset time, and that time is a claim about the account
+ * rather than about this session — an operator who switches provider makes it
+ * wrong by five hours. An answer makes it wrong observably, in the same file
+ * the limit was read out of.
+ *
+ * Backwards, and one answer per batch rather than one per entry: the caller
+ * turns this into a database write, and the newest is the only one that decides
+ * anything.
+ */
+export function newestAnswerAt(lines: readonly string[]): number | null {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const entry = parseEntry(lines[i]!);
+    if (contextTokens(entry) === null) continue;
+    // An answer the CLI wrote without a timestamp cannot be placed in time, and
+    // an unplaceable answer is not evidence about a marker written at a stated
+    // instant. Skipped rather than dated to now, which would be the same guess
+    // this function exists to stop making.
+    const at = entryTimestamp(entry);
+    if (at !== null) return at;
+  }
+  return null;
+}
+
+/**
  * The newest context measurement in these lines, or null.
  *
  * Scanned backwards, because the answer is the most recent one and most lines
@@ -185,6 +260,24 @@ export function contextTokens(entry: TranscriptEntry | null | undefined): number
 export function newestContextTokens(lines: readonly string[]): number | null {
   for (let i = lines.length - 1; i >= 0; i--) {
     const tokens = contextTokens(parseEntry(lines[i]!));
+    if (tokens !== null) return tokens;
+  }
+  return null;
+}
+
+/**
+ * What the newest completed turn produced, or null.
+ *
+ * The other half of the pair `newestContextTokens` gives: that one is what went
+ * in, this one is what came back. Backwards for the same reason, and skipping
+ * synthetic entries for the same reason — an error entry's `output_tokens: 0`
+ * is not a turn that answered with nothing, it is a turn that never happened.
+ */
+export function newestOutputTokens(lines: readonly string[]): number | null {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const entry = parseEntry(lines[i]!);
+    if (isSyntheticApiError(entry)) continue;
+    const tokens = outputTokens(entry);
     if (tokens !== null) return tokens;
   }
   return null;
@@ -462,6 +555,188 @@ export function compactBoundaries(lines: readonly string[]): CompactBoundary[] {
     }
     const boundary = parseCompactBoundary(entry);
     if (boundary) out.push(boundary);
+  }
+  return out;
+}
+
+/**
+ * What Claude Code reports when a turn fails on the API rather than on the work.
+ *
+ * `kind` is a bucket, not the wording: the wording belongs to another program
+ * and will change, so an unrecognised error becomes `"other"` and is still
+ * reported. Losing an error because its phrasing moved is worse than reporting
+ * one we cannot name.
+ */
+export type ApiErrorKind =
+  | "session-limit"
+  | "weekly-limit"
+  | "overloaded"
+  | "prompt-too-long"
+  | "network"
+  | "other";
+
+export interface ApiError {
+  kind: ApiErrorKind;
+  /** The message as written, for the alert to quote rather than paraphrase. */
+  text: string;
+  /**
+   * When the limit lifts, in UTC minutes since midnight, or null.
+   *
+   * Minutes rather than a Date because the message carries a time of day and no
+   * date — "resets 5:30pm (UTC)" — and resolving that to an instant needs a
+   * clock the parser does not have and should not invent. The caller knows when
+   * it read the line; it can decide whether 5:30pm is later today or tomorrow.
+   */
+  resetsAtUtcMinutes: number | null;
+}
+
+/**
+ * The reset time out of "· resets 5:30pm (UTC)" or "· resets 2pm (UTC)".
+ *
+ * Both forms are observed. Anything else — a timezone that is not UTC, a date,
+ * a phrasing this has not met — returns null rather than a guess, because a
+ * wrong reset time is worse than none: it is what decides when the limit marker
+ * stops suppressing the hung-session alarm.
+ */
+export function parseResetTime(text: string): number | null {
+  const m = /resets?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(UTC\)/i.exec(text);
+  if (!m) return null;
+  let hour = Number(m[1]);
+  const minute = m[2] ? Number(m[2]) : 0;
+  const meridiem = m[3]!.toLowerCase();
+  if (hour < 1 || hour > 12 || minute > 59) return null;
+  if (meridiem === "pm" && hour !== 12) hour += 12;
+  if (meridiem === "am" && hour === 12) hour = 0;
+  return hour * 60 + minute;
+}
+
+/**
+ * Read an API error out of a parsed transcript entry.
+ *
+ * Recognised by `isApiErrorMessage === true` and by nothing else. Not by the
+ * words: this repository's sessions discuss rate limits, overload and prompt
+ * length constantly, and matching prose would turn a conversation about the
+ * problem into a report of the problem. The flag is Claude Code's own
+ * statement that this entry is an error rather than an answer.
+ *
+ * Corroborating, and deliberately not required: these entries carry
+ * `model: "<synthetic>"` and a `usage` block of zeros, because the CLI
+ * manufactures them rather than receiving them. The zeros matter downstream —
+ * anything totalling tokens must not read a synthetic entry as a turn that
+ * used none.
+ *
+ * Texts observed in this project between 2026-07-07 and 2026-08-08:
+ *
+ *     You've hit your session limit · resets 5:30pm (UTC)
+ *     You've hit your weekly limit · resets 2pm (UTC)
+ *     API Error: 529 Overloaded. This is a server-side issue…
+ *     Prompt is too long
+ *     API Error: Unable to connect to API (ENOTFOUND)
+ */
+export function parseApiError(entry: unknown): ApiError | null {
+  if (!entry || typeof entry !== "object") return null;
+  const e = entry as Record<string, unknown>;
+  if (e.isApiErrorMessage !== true) return null;
+
+  const content = (e.message as { content?: unknown } | undefined)?.content;
+  const text =
+    typeof content === "string"
+      ? content
+      : Array.isArray(content)
+        ? content
+            .filter((c): c is { text?: unknown } => Boolean(c) && typeof c === "object")
+            .map((c) => (typeof c.text === "string" ? c.text : ""))
+            .join(" ")
+        : "";
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+
+  // Weekly before session: the weekly message also contains the word "limit",
+  // and it is the more consequential of the two — hours against days.
+  const kind: ApiErrorKind = /weekly limit/i.test(trimmed)
+    ? "weekly-limit"
+    : /session limit|usage limit/i.test(trimmed)
+      ? "session-limit"
+      : /overloaded|\b529\b/i.test(trimmed)
+        ? "overloaded"
+        : /prompt is too long|too many tokens/i.test(trimmed)
+          ? "prompt-too-long"
+          : /unable to connect|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|network/i.test(trimmed)
+            ? "network"
+            : "other";
+
+  return { kind, text: trimmed.slice(0, 500), resetsAtUtcMinutes: parseResetTime(trimmed) };
+}
+
+/** Whether this kind means "the account is out of allowance", not "the call failed". */
+export function isLimitKind(kind: ApiErrorKind): boolean {
+  return kind === "session-limit" || kind === "weekly-limit";
+}
+
+/**
+ * An API error, plus the identity of the line it was written on.
+ *
+ * `uuid` is this flow's `tailUuid`. Flow 059 needed a name for one boundary so
+ * that re-reading the file did not capture the same fold twice; the same
+ * problem arrives here from two directions at once — the tail re-reads lines
+ * after a re-resolve, and the supervisor re-reads the marker every sixty
+ * seconds — and the answer is the same: every transcript entry carries a `uuid`
+ * written by Claude Code, and two reads of one error agree on it while two
+ * errors never do.
+ *
+ * Null when the entry has none. An error that cannot be named is still
+ * reported; it just cannot be deduplicated, and the caller says what it does
+ * about that rather than this pretending the case does not exist.
+ */
+export interface ApiErrorEvent extends ApiError {
+  uuid: string | null;
+  /**
+   * When Claude Code wrote the line, in epoch milliseconds, or null.
+   *
+   * Not when this process read it, and the distinction is what stops a
+   * historical error from minting a live limit. `TranscriptSession.reresolve`
+   * attaches to a different transcript at offset 0 and replays the whole file,
+   * so a transcript containing yesterday's "You've hit your session limit ·
+   * resets 5:30pm (UTC)" is read today as a brand-new event — and
+   * `resolveResetAt` resolves a stated time of day to its *next* occurrence, so
+   * yesterday's error dated to now produces a marker holding the queue and
+   * muting both watchdogs until 17:30 this afternoon. On a healthy session.
+   *
+   * `capturedApiErrors` cannot help: it is per-process and per-path, and the
+   * replay arrives on a path this process has not read before, in a channel
+   * that may itself be new.
+   *
+   * Null when the entry carries no timestamp. The caller decides what to do
+   * with that rather than this inventing one — see `noteApiError`.
+   */
+  at: number | null;
+}
+
+/**
+ * Every API error in these lines, oldest first.
+ *
+ * Plural and forward, for `compactBoundaries`' reason: a poll that catches two
+ * errors owes the caller both. In practice they arrive one at a time — a limit
+ * ends the turn — but a retried request that fails twice writes two lines, and
+ * dropping either would mean the alert names the wrong one.
+ */
+export function apiErrors(lines: readonly string[]): ApiErrorEvent[] {
+  const out: ApiErrorEvent[] = [];
+  for (const line of lines) {
+    let entry: unknown;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const error = parseApiError(entry);
+    if (!error) continue;
+    const uuid = (entry as Record<string, unknown>).uuid;
+    out.push({
+      ...error,
+      uuid: typeof uuid === "string" && uuid ? uuid : null,
+      at: entryTimestamp(entry as TranscriptEntry),
+    });
   }
   return out;
 }

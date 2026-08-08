@@ -128,6 +128,24 @@ export class SessionManager {
       ON CONFLICT (project_id) WHERE source = 'remote' DO UPDATE SET
         name = EXCLUDED.name,
         project_path = EXCLUDED.project_path,
+        -- The limit marker does not survive a restart, and this is the only
+        -- statement in a position to say so. Every project session is a remote
+        -- session, so this branch is what "bun cli.ts bounce" and the restart
+        -- button both run through, and metadata was left untouched by it: a
+        -- session restarted at 09:10 under a marker reading "resets 2pm" came
+        -- back able to answer and was held by the poller until 14:00, with the
+        -- hung-session and stuck-queue detectors muted for the whole five
+        -- hours and no second alert to say so.
+        --
+        -- Only the limit key goes. The fold key is left alone deliberately: it
+        -- carries lastDurationMs, which is how the next fold's grace window is
+        -- sized, and its own startedAt expires in four and a half minutes
+        -- rather than five hours. Hence a minus on one key rather than a reset
+        -- of the column.
+        --
+        -- (And no backticks in here: this comment lives inside a template
+        -- literal, so one would end the string.)
+        metadata = COALESCE(sessions.metadata, '{}'::jsonb) - 'limit',
         last_active = now()
       RETURNING id, name, project, source, project_path, project_id, client_id, status, metadata, connected_at, last_active, cli_type, cli_config
     `;

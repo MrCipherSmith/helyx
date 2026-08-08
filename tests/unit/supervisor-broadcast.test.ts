@@ -303,6 +303,71 @@ describe("silent when healthy, loud when not", () => {
   });
 });
 
+describe("the session list says what each session is running on", () => {
+  /** A broadcast with one active session, however its project is configured. */
+  function world(session: Record<string, unknown>) {
+    const db = new FakeSql();
+    db.program(SELECT_PROJECTS, { rows: [] });
+    db.program(SELECT_SESSIONS, {
+      rows: [{
+        id: 7,
+        project: "helyx",
+        project_path: "/home/u/helyx",
+        status: "active",
+        last_active: new Date(),
+        asm_updated: new Date(),
+        pending_msgs: 0,
+        ...session,
+      }],
+    });
+    return { db, runShell: async () => ({ ok: true, output: "" }) };
+  }
+
+  function broadcastText(): string {
+    const last = [...http.requests].reverse().find((r) => r.url.includes(SEND) || r.url.includes(EDIT));
+    return String((last?.body as { text?: string })?.text ?? "");
+  }
+
+  test("a configured project names its provider and its model", async () => {
+    const { db, runShell } = world({ provider_name: "DeepSeek", model: "deepseek-v4-pro" });
+
+    await sendStatusBroadcast(db.sql as never, runShell);
+
+    expect(broadcastText()).toContain("DeepSeek/deepseek-v4-pro");
+  });
+
+  test("an unconfigured project says the default it actually uses", async () => {
+    // `projects.provider_id IS NULL` is the default Anthropic endpoint with the
+    // helyx key — deliberately not a sentinel row in `providers` — and a null
+    // model is whatever Claude Code picks. A dash would answer "what is this
+    // running on" with "nothing", which is the one answer that is never true.
+    const { db, runShell } = world({ provider_name: null, model: null });
+
+    await sendStatusBroadcast(db.sql as never, runShell);
+
+    expect(broadcastText()).toContain("Claude/default");
+    expect(broadcastText()).not.toMatch(/helyx<\/b>[^\n]*— [^\n]*· <code>\/</);
+  });
+
+  test("a blank column is a default too, not a blank label", async () => {
+    // `projects.model` is free-form TEXT; resolve-provider-env already guards
+    // against a whitespace-only one.
+    const { db, runShell } = world({ provider_name: "   ", model: "  " });
+
+    await sendStatusBroadcast(db.sql as never, runShell);
+
+    expect(broadcastText()).toContain("Claude/default");
+  });
+
+  test("the state the line already showed is still there", async () => {
+    const { db, runShell } = world({ provider_name: "DeepSeek", model: "deepseek-v4-pro" });
+
+    await sendStatusBroadcast(db.sql as never, runShell);
+
+    expect(broadcastText()).toContain("работает");
+  });
+});
+
 describe("the small loops", () => {
   test("stale voice statuses are cleared", async () => {
     const db = new FakeSql();

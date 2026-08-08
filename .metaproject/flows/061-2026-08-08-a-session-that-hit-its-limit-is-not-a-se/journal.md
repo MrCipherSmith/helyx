@@ -1,0 +1,51 @@
+# Flow Journal
+
+- 2026-08-08T18:02:09.973Z - flow created
+- 2026-08-08T18:03:48.547Z - frozen: 9 criteria; checksum recorded
+- 2026-08-08T18:03:48.649Z - started
+- 2026-08-08T18:06:35.017Z - ac-updated: operator added a fourth requirement: a periodic per-session pulse (tokens in/out, elapsed, context, what it is doing) so a working session is visibly working
+- 2026-08-08T18:17:51.486Z - ac-updated: operator: the supervisor session list should name the provider and model of each active session
+- 2026-08-08T18:36:26.975Z - ac-updated: operator: sessions should wake by themselves once the limit resets; the queue and the poller's deferral already exist, only the reset time was missing
+- 2026-08-08T19:00:27.164Z - ac-confirmed: AC1
+- 2026-08-08T19:00:27.291Z - ac-confirmed: AC2
+- 2026-08-08T19:00:27.414Z - ac-confirmed: AC3
+- 2026-08-08T19:00:27.525Z - ac-confirmed: AC4
+- 2026-08-08T19:00:27.649Z - ac-confirmed: AC5
+- 2026-08-08T19:00:27.765Z - ac-confirmed: AC6
+- 2026-08-08T19:00:27.873Z - ac-confirmed: AC7
+- 2026-08-08T19:00:27.997Z - ac-confirmed: AC8
+- 2026-08-08T19:00:28.115Z - ac-confirmed: AC10
+- 2026-08-08T19:00:28.224Z - ac-confirmed: AC11
+- 2026-08-08T19:00:28.330Z - ac-confirmed: AC12
+- 2026-08-08T19:00:28.439Z - ac-confirmed: AC13
+- 2026-08-08T19:00:28.550Z - ac-confirmed: AC14
+- 2026-08-08T19:00:28.659Z - ac-confirmed: AC15
+- 2026-08-08T19:00:28.768Z - ac-confirmed: AC16
+- 2026-08-08T19:00:28.881Z - ac-confirmed: AC17
+- 2026-08-08T19:00:28.989Z - ac-confirmed: AC18
+- 2026-08-08T19:00:34.912Z - task-done: T1: Collect remaining context
+- 2026-08-08T19:00:35.010Z - task-done: T2: Implement per plan
+- 2026-08-08T19:00:35.119Z - task-done: T3: Add/adjust tests and make them pass
+- 2026-08-08T19:33:45.955Z - ac-updated: reconcile two collisions the implementer flagged: AC4 vs AC3 (the hang loop stands down, it does not send a second alert) and AC8 vs AC16 (no action on the session; deferring delivery is not action on the session)
+- 2026-08-08T20:03:16.380Z - ac-confirmed: AC1
+- 2026-08-08T20:03:16.487Z - ac-confirmed: AC2
+- 2026-08-08T20:03:16.595Z - ac-confirmed: AC3
+- 2026-08-08T20:03:16.702Z - ac-confirmed: AC4
+- 2026-08-08T20:03:16.811Z - ac-confirmed: AC5
+- 2026-08-08T20:03:16.917Z - ac-confirmed: AC6
+- 2026-08-08T20:03:17.023Z - ac-confirmed: AC7
+- 2026-08-08T20:03:17.131Z - ac-confirmed: AC8
+- 2026-08-08T20:03:17.233Z - ac-confirmed: AC9
+- 2026-08-08T20:03:17.339Z - ac-confirmed: AC10
+- 2026-08-08T20:03:17.444Z - ac-confirmed: AC11
+- 2026-08-08T20:03:17.551Z - ac-confirmed: AC12
+- 2026-08-08T20:03:17.657Z - ac-confirmed: AC13
+- 2026-08-08T20:03:17.767Z - ac-confirmed: AC14
+- 2026-08-08T20:03:17.875Z - ac-confirmed: AC15
+- 2026-08-08T20:03:17.981Z - ac-confirmed: AC16
+- 2026-08-08T20:03:18.088Z - ac-confirmed: AC17
+- 2026-08-08T20:03:18.195Z - ac-confirmed: AC18
+- 2026-08-08T20:03:18.300Z - task-done: T1: Collect remaining context
+- 2026-08-08T20:03:18.407Z - task-done: T2: Implement per plan
+- 2026-08-08T20:03:18.515Z - task-done: T3: Add/adjust tests and make them pass
+- 2026-08-08T20:03:18.621Z - task-done: T4: Self-review and prepare draft PR

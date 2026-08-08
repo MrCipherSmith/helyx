@@ -260,6 +260,39 @@ export function classifySession(snap: SessionSnapshot): SessionState {
   return { icon: "⚪", text: `ожидание (idle ${idleStr})` };
 }
 
+/** What a project's row says about where its sessions run. */
+export interface ProviderChoice {
+  /** `providers.name`, or null for the default Anthropic endpoint. */
+  providerName?: string | null;
+  /** `projects.model`, or null for whatever Claude Code defaults to. */
+  model?: string | null;
+}
+
+/**
+ * The provider and model a session is running on, never blank.
+ *
+ * Null in either column is not missing information: `projects.provider_id IS
+ * NULL` is the default Anthropic endpoint with the helyx key — deliberately not
+ * a sentinel row in `providers` — and a null `model` is whatever Claude Code
+ * picks. So both render as the default they actually are. A dash would answer
+ * "what is this session running on" with "nothing", which is the one answer that
+ * is never true, and on a line read at a glance during an incident that is worse
+ * than saying nothing at all.
+ *
+ * One definition, two readers: `bot/commands/projects.ts` renders the same pair
+ * into the buttons under each project in `/projects`, and a second copy of these
+ * two defaults would drift the first time one of them changed. It lives here
+ * rather than there because this module has no imports — the supervisor is
+ * careful about what it pulls in, and `bot/commands/*` reaches grammy and the
+ * database singleton.
+ */
+export function providerLabels(choice: ProviderChoice | undefined | null): { provider: string; model: string } {
+  return {
+    provider: choice?.providerName?.trim() || "Claude",
+    model: choice?.model?.trim() || "default",
+  };
+}
+
 /** The one-line queue verdict under the session list. */
 export function summarizeQueue(pending: number, stuck: number): string {
   if (stuck > 0) return `⚠️ ${pending} pending, ${stuck} зависших`;
