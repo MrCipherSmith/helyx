@@ -199,7 +199,12 @@ async function handleMessages(req: Request): Promise<Response> {
 
   const model = await pickModel(body.model);
   const numCtx = await contextLengthFor(model);
-  const stream = body.stream !== false;
+  // Anthropic's Messages API defaults `stream` to false, so an absent field is
+  // a client asking for one JSON object. `!== false` read it as a request to
+  // stream and answered a JSON caller with an SSE body — which does not fail
+  // where it is wrong, it fails wherever that caller tries to read `content[0]`
+  // off a string beginning `event: message_start`.
+  const stream = body.stream === true;
 
   let ollamaBody: ReturnType<typeof toOllamaRequest>;
   try {

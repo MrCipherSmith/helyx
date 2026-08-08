@@ -122,7 +122,7 @@ describe("/v1/messages", () => {
         "\n",
     });
 
-    const res = await route(post("/v1/messages", { messages: [{ role: "user", content: "hi" }] }));
+    const res = await route(post("/v1/messages", { stream: true, messages: [{ role: "user", content: "hi" }] }));
     expect(res.headers.get("content-type")).toContain("text/event-stream");
 
     const text = await res.text();
@@ -141,6 +141,18 @@ describe("/v1/messages", () => {
     // every streamed turn — which is every real turn — looks like a session
     // holding no context at all.
     expect(usageOf(text)).toEqual({ input_tokens: 41_000, output_tokens: 2 });
+  });
+
+  test("an absent stream field is not a request to stream", async () => {
+    // Anthropic's Messages API defaults stream to false, so omitting it asks
+    // for one JSON object. Answering SSE does not fail here; it fails in the
+    // caller, reading content[0] off a string that begins "event:".
+    http.program("/api/chat", { json: { message: { content: "hi" }, done: true, done_reason: "stop" } });
+
+    const res = await route(post("/v1/messages", { messages: [{ role: "user", content: "hi" }] }));
+    expect(res.headers.get("content-type")).toContain("application/json");
+    expect((await res.json()).content[0]).toEqual({ type: "text", text: "hi" });
+    expect((http.last("/api/chat")?.body as any).stream).toBe(false);
   });
 
   test("a mid-stream Ollama error is a failure, not a turn that said nothing", async () => {
@@ -232,7 +244,7 @@ describe("when Ollama is not there", () => {
 
   test("an upstream status is reported, not swallowed", async () => {
     http.program("/api/chat", { status: 500, text: "model runner crashed" });
-    const res = await route(post("/v1/messages", { messages: [{ role: "user", content: "hi" }] }));
+    const res = await route(post("/v1/messages", { stream: false, messages: [{ role: "user", content: "hi" }] }));
     expect(res.ok).toBe(false);
     expect((await res.json()).error.message).toContain("model runner crashed");
   });
