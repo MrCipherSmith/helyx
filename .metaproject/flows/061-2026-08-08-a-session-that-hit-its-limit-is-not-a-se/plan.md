@@ -63,6 +63,15 @@ visible without changing what "stale" means for the ones already covered.
    readings the same is a third state beside hung and limited. It is reported as
    what it is — stopped progressing — and not as either of the other two.
 
+10. The session list. `scripts/supervisor.ts`'s status broadcast selects
+    `FROM sessions s LEFT JOIN active_status_messages asm` and renders
+    `icon <b>project</b> — state`. The provider and model are one join away and
+    already in the schema: `projects.model`, and `projects.provider_id` into
+    `providers.name`. Both are nullable in practice — of the projects on this
+    machine, several have neither — and a null there means the session is on
+    the default rather than on nothing, so it renders as that default and not
+    as a blank.
+
 ## Risks
 
 - **Widening the hung query is the dangerous step.** Every session becomes a
@@ -77,6 +86,10 @@ visible without changing what "stale" means for the ones already covered.
 - A limit marker that outlives its reset would suppress hang detection exactly
   when the session is genuinely stuck. It expires on the stated time, and when
   the time is missing it expires on a bound.
+- The session list is read at a glance during an incident. Two more fields per
+  line is two more things to read when the reader is in a hurry, so they earn
+  their place only if they are short — a provider name and a model id, not a
+  sentence.
 - **The pulse is a message the operator has not asked for, arriving forever.**
   That is how a monitoring feature becomes noise and then becomes muted, taking
   the alarms next to it down with it. Hence: only working sessions, nothing sent

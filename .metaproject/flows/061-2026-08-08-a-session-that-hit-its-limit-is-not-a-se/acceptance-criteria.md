@@ -23,3 +23,5 @@ Rules:
 - AC11: A session that is idle rather than working is not in the pulse, and a pulse with nothing to report is not sent at all.
 - AC12: The pulse line is built from numbers that move: two consecutive pulses reporting identical figures for a session is itself reported as a session that has stopped progressing, distinct from both a hang and a limit.
 - AC13: The pulse costs no new polling — it is assembled from the transcript reads and session rows the existing loops already perform.
+- AC14: The supervisor's session list names the provider and the model each active session is running on, beside the state it already shows.
+- AC15: A session whose project has no provider or model recorded says so as the default it actually uses, not as a blank or a dash — the line is there to answer "what is this session running on", and an empty answer is the one case where it fails.
