@@ -70,10 +70,17 @@ describe("claudeArgv", () => {
     expect(argv.at(-1)).toBe("the prompt");
   });
 
-  test("a reviewer is not given permission to change anything", () => {
+  test("every route to a shell, a file, the network or a subagent is denied", () => {
+    // A deny-list, because --allowed-tools does not restrict: a CLI started
+    // with `--allowed-tools Read Grep Glob` reports Bash, Write, Task, Workflow
+    // and Skill all still available. And denying only the write tools is not
+    // enough — with those three denied the reviewer reported it could still
+    // reach a shell through Monitor and a subagent through TaskCreate.
     const argv = claudeArgv("m", "p");
     expect(argv).toContain("--disallowed-tools");
-    for (const tool of ["Edit", "Write", "NotebookEdit"]) expect(argv).toContain(tool);
+    for (const tool of ["Bash", "Edit", "Write", "NotebookEdit", "Task", "Agent", "Workflow", "Skill", "Monitor"]) {
+      expect(argv).toContain(tool);
+    }
   });
 
   test("plan mode is not used — it would replace the review with a plan", () => {
@@ -93,9 +100,22 @@ describe("claudeArgv", () => {
     expect(argv.indexOf("--disallowed-tools")).toBeLessThan(argv.indexOf("--model"));
   });
 
-  test("the operator's own hooks and settings are not loaded", () => {
+  test("no --settings, because it would not do what it looks like it does", () => {
+    // `--settings` loads *additional* settings; it does not replace the user's
+    // file, and there is no --strict-settings to match --strict-mcp-config. It
+    // was here with a comment claiming the operator's hooks were dropped, which
+    // is a false claim documented as a fix — worse than the gap it described.
     const argv = claudeArgv("m", "p");
-    expect(JSON.parse(argv[argv.indexOf("--settings") + 1])).toEqual({});
+    expect(argv).not.toContain("--settings");
+  });
+
+  test("the prompt never sits directly behind a variadic flag", () => {
+    // Measured twice: once as `Permission deny rule "single" matches no known
+    // tool`, once as the CLI trying to open the prompt as an MCP config file.
+    const argv = claudeArgv("m", "the prompt");
+    const beforePrompt = argv[argv.length - 2];
+    expect(beforePrompt).toBe("m");
+    expect(argv[argv.length - 3]).toBe("--model");
   });
 });
 
@@ -403,5 +423,54 @@ describe("renderReviewer", () => {
   test("a provider reviewer still names its provider row", () => {
     const line = renderReviewer({ id: "provider:6", kind: "provider", providerId: 6, model: "m", enabled: true });
     expect(line).toContain("provider #6");
+  });
+});
+
+describe("callProviderReview reading order", () => {
+  let http: FakeFetch;
+  let restore: () => void;
+
+  const R: Reviewer = { id: "provider:1", kind: "provider", providerId: 1, model: "m", enabled: true };
+  const prov: GetProvider = async () =>
+    ({
+      id: 1,
+      name: "DeepSeek",
+      base_url: "https://api.deepseek.com/anthropic",
+      auth_token: "t",
+      auth_scheme: "bearer",
+      models: [],
+      created_at: new Date(),
+    }) as Provider;
+
+  beforeEach(() => {
+    ({ http, restore } = installFakeFetch());
+  });
+  afterEach(() => restore());
+
+  test("a review is not thrown away by an empty error field beside it", async () => {
+    // `providerErrorInBody` stringifies `{}` to "{}", which is truthy. Checked
+    // before the content, that discarded a real review and reported the failure
+    // as two braces.
+    http.program(/chat\/completions/, {
+      json: { error: {}, choices: [{ message: { content: "a review" }, finish_reason: "stop" }] },
+    });
+    const report = await callProviderReview(R, "review", http.fetch, prov);
+    expect(report.ok).toBe(true);
+    expect(report.content).toBe("a review");
+  });
+
+  test("a proven-good route is not blamed for a billing failure", async () => {
+    // 429 from the billing layer means the request reached the vendor, so the
+    // route was right. Annotating it with the URL points at the one thing the
+    // response proves correct.
+    http.program(/chat\/completions/, { status: 429, text: "insufficient balance" });
+    const report = await callProviderReview(
+      R,
+      "review",
+      http.fetch,
+      async () => ({ ...(await prov(0))!, base_url: "https://api.example.com/anthropic" }) as Provider,
+    );
+    expect(report.error).toBe("limit/balance");
+    expect(report.error).not.toContain("unmapped vendor");
   });
 });

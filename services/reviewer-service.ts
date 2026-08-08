@@ -514,10 +514,6 @@ export async function callCodexReview(
  * — an empty file is not an empty object, and the reviewer would have failed
  * before it was asked anything, the way the Codex reviewer did for months.
  *
- * `--settings '{}'` drops the user-level settings, and with them the hooks the
- * operator has installed for their own work. A reviewer is not doing the
- * operator's work.
- *
  * There is deliberately **no** `--permission-mode plan` here. It was the
  * obvious way to say "this one only reads", and the first review run through
  * this code path reported what it actually does: plan mode injects Claude
@@ -527,36 +523,94 @@ export async function callCodexReview(
  * complied would answer with a plan-approval request, exit 0 with non-empty
  * stdout, and be filed as a successful review. That is precisely the failure
  * `CODEX_DIRECTIVE` exists to prevent, arriving through the flag meant to make
- * the reviewer safer. Writes are denied explicitly instead.
+ * the reviewer safer.
  *
- * Known and not fixed here: the *project* `.claude/settings.json` still
- * applies, so this repository's `keryx security check-input` hook runs on the
- * review prompt. It degrades the prompt rather than breaking the run — the
- * review that found the plan-mode defect was produced with that hook firing —
- * but it is a channel from the host configuration into the reviewer, and it is
- * open.
+ * But plan mode *was* enforcing read-only, and the first replacement for it —
+ * denying `Edit`, `Write` and `NotebookEdit` — was much weaker than it looked.
+ * The reviewer inherits the caller's working directory, so this repository's
+ * `.claude/settings.local.json` applies, and it allows 379 `Bash(...)` patterns
+ * including `docker compose:*` and `git commit -m ':*`. An allowlisted tool
+ * does not prompt, and under `-p` there is nobody to prompt. A reviewer that
+ * decided to verify a fix by running `helyx bounce` would be the same class of
+ * harm as the `CHANNEL_SOURCE` incident this flow exists to prevent.
+ *
+ * So the denial below is long, and it is a deny-list because the obvious
+ * alternative does not work. `--allowed-tools Read Grep Glob` reads like a
+ * restriction and is not one: asked directly, a CLI started that way reports
+ * Bash, Write, Task, Workflow and Skill all still available. Only
+ * `--disallowed-tools` denies, and it has to name the delegation routes as well
+ * as the direct ones — with only the three write tools denied, the reviewer
+ * reported it could still reach a shell through `Monitor` and a subagent
+ * through `TaskCreate`. With the list as it stands it reports "No Bash,
+ * Edit/Write, fetch, or subagent tool". Anything the CLI gains later is allowed
+ * by default; that is the standing cost of a deny-list, and the reason this
+ * comment records how it was checked.
+ *
+ * Known and not fixed here — two channels from the host into the reviewer:
+ *
+ * - `--settings` is documented as loading *additional* settings ("Path to a
+ *   settings JSON file or a JSON string to load additional settings from").
+ *   It adds a layer, it does not replace one, and there is no `--strict-settings`
+ *   to match `--strict-mcp-config`. So `~/.claude/settings.json` and its hooks
+ *   still load. An earlier version of this comment claimed the opposite, which
+ *   is worse than the gap it described: `--bare` is the only flag that would
+ *   do it, and it forces API-key auth, which defeats the whole point of a
+ *   reviewer on the subscription.
+ * - the *project* `.claude/settings.json` applies as well, so this repository's
+ *   `keryx security check-input` hook runs on the review prompt. It degrades
+ *   the prompt rather than breaking the run — the review that found the
+ *   plan-mode defect was produced with that hook firing.
  */
+
+/**
+ * Everything that can run a command, change a file, reach the network, or hand
+ * the work to something that can. Verified against the CLI, not assumed.
+ */
+export const CLAUDE_DENIED_TOOLS = [
+  "Bash",
+  "Edit",
+  "Write",
+  "NotebookEdit",
+  "Task",
+  "Agent",
+  "Workflow",
+  "Skill",
+  "Monitor",
+  "WebFetch",
+  "WebSearch",
+  "EnterWorktree",
+  "ExitWorktree",
+  "RemoteTrigger",
+  "CronCreate",
+  "CronDelete",
+  "PushNotification",
+  "SendMessage",
+  "DesignSync",
+  "TaskCreate",
+  "TaskUpdate",
+  "TaskStop",
+  "Artifact",
+] as const;
+
 export const CLAUDE_EMPTY_MCP_CONFIG = '{"mcpServers":{}}';
 
 export function claudeArgv(model: string, prompt: string): string[] {
   return [
     "claude",
     "-p",
-    // Variadic, and placed before the flags that take one value each: given
-    // last, it swallows the prompt as further tool names. Measured — the CLI
-    // answered "Permission deny rule \"single\" matches no known tool" and then
-    // refused to run for want of a prompt.
+    // Both of these are variadic. Whatever follows their values is read as one
+    // more value, so the prompt must never sit directly behind one — measured
+    // twice, once as `Permission deny rule "single" matches no known tool` and
+    // once as the CLI trying to open the prompt as an MCP config file. `--model`
+    // takes exactly one value, so it is what stands between them and the
+    // prompt, and it stays last for that reason rather than by taste.
     "--disallowed-tools",
-    "Edit",
-    "Write",
-    "NotebookEdit",
-    "--model",
-    model,
+    ...CLAUDE_DENIED_TOOLS,
     "--strict-mcp-config",
     "--mcp-config",
     CLAUDE_EMPTY_MCP_CONFIG,
-    "--settings",
-    "{}",
+    "--model",
+    model,
     prompt,
   ];
 }
@@ -720,6 +774,14 @@ export async function callClaudeReview(
   const model = reviewer.model || CLAUDE_DEFAULT_MODEL;
   const fail = (error: string): ReviewerReport => ({ reviewerId: reviewer.id, label: "Claude", model, ok: false, error });
   const sent = `${CLAUDE_DIRECTIVE}\n\n${prompt}`;
+  // Asked before spawning rather than after failing. The bot image installs
+  // git, curl and ca-certificates and no CLIs, and `defaultReviewers` enables
+  // this reviewer for every caller — so a Telegram-triggered review would spawn
+  // a process that can only fail. The report is the same either way; this skips
+  // the spawn.
+  if (!Bun.which("claude")) {
+    return fail("unavailable: the claude CLI is not installed in this environment (host-only reviewer)");
+  }
   try {
     const { stdout, stderr, exitCode } = await spawn(claudeArgv(model, sent), claudeEnv());
     const out = stripAnsi(stdout).trim();
@@ -759,18 +821,27 @@ export async function callProviderReview(
   // the fallback answered, the operator needs to know it was a guess.
   const route = openAiRouteFor(prov.base_url);
 
-  // The vendor hint is applied in `fail` rather than at the call sites that
-  // seemed to need it. Raised in review, and correctly: it had been put on
-  // `http <status>` only, while a wrong fallback route is at least as likely to
-  // return an HTML error page (`invalid json`) or refuse the connection
-  // (`network: …`) — the two messages that give the next reader nothing at all
-  // to go on.
+  // The vendor hint goes on the failures a wrong route can cause, and only
+  // those. It started on `http <status>` alone, which missed the HTML error
+  // page (`invalid json`) and the refused connection (`network: …`) — the two
+  // messages that give the next reader nothing to go on. Then it went on every
+  // failure, which was worse in the other direction: `limit/balance` is a real
+  // 429 from the vendor's billing layer and `REVIEW_TRUNCATED` is a well-formed
+  // completion, so both of them *prove* the route was right, and both were
+  // being annotated with the URL as though it were the suspect.
+  //
+  // The narrower set also keeps `base_url` out of the common transient path. It
+  // reaches Telegram and the `run.json` artifacts, and a provider registered
+  // one day with a credential in its query string should not be logged on every
+  // flaky connection.
+  const routeShaped = (error: string): boolean =>
+    error.startsWith("http ") || error.startsWith("network:") || error === "invalid json";
   const fail = (error: string): ReviewerReport => ({
     reviewerId: reviewer.id,
     label,
     model: reviewer.model,
     ok: false,
-    error: route.known ? error : `${error} (unmapped vendor ${prov.base_url})`,
+    error: route.known || !routeShaped(error) ? error : `${error} (unmapped vendor ${prov.base_url})`,
   });
 
   const ask = async (maxTokens: number): Promise<{ status: number; body: string } | string> => {
@@ -826,11 +897,26 @@ export async function callProviderReview(
   if (answer.status < 200 || answer.status >= 300) {
     return isProviderLimitError(answer.status, body) ? fail("limit/balance") : fail(`http ${answer.status}`);
   }
-  // A 2xx carrying an error envelope. Checked before the body is read for
-  // content, because the content of such a body is absent by construction and
-  // the `!content` branch below would report it as the model having nothing to
-  // say. z.ai answers a wrong route this way; it cost this repository a
-  // reviewer that read as broken rather than as misrouted.
+  let data: { choices?: Array<{ message?: { content?: string }; finish_reason?: string }> };
+  try {
+    data = JSON.parse(body) as typeof data;
+  } catch {
+    return fail("invalid json");
+  }
+
+  // Content first, envelope second, and the order is the fix.
+  //
+  // The envelope check used to run before this, so a body that carried both a
+  // review and an empty `"error": {}` — truthy to `providerErrorInBody`, which
+  // stringifies it to `"{}"` — threw the review away and reported the failure
+  // as two braces. Reading the content first costs the z.ai case nothing: that
+  // body has no `choices` at all, so it still falls through to the envelope and
+  // is still reported as `404 NOT_FOUND`.
+  const choice = data.choices?.[0];
+  const content = choice?.message?.content?.trim() ?? "";
+  if (content) return { reviewerId: reviewer.id, label, model: reviewer.model, ok: true, content };
+
+  // Nothing was said. Now the body gets to explain itself.
   const announced = providerErrorInBody(body);
   if (announced) {
     // Classified against the whole body, displayed from `announced`. The
@@ -841,23 +927,12 @@ export async function callProviderReview(
     // marked available.
     return isProviderLimitError(answer.status, body) ? fail("limit/balance") : fail(announced);
   }
-  try {
-    const data = JSON.parse(body) as {
-      choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
-    };
-    const choice = data.choices?.[0];
-    const content = choice?.message?.content?.trim() ?? "";
-    if (!content) {
-      // The distinction the old "empty response" hid. A reasoning model that
-      // runs out of budget mid-thought returns exactly this: 200, well-formed,
-      // finish_reason "length", nothing said. Reported as what it is, so the
-      // next person does not go looking at the account.
-      return fail(choice?.finish_reason === "length" ? REVIEW_TRUNCATED : "empty response");
-    }
-    return { reviewerId: reviewer.id, label, model: reviewer.model, ok: true, content };
-  } catch {
-    return fail("invalid json");
-  }
+
+  // The distinction the old "empty response" hid. A reasoning model that runs
+  // out of budget mid-thought returns exactly this: 200, well-formed,
+  // finish_reason "length", nothing said. Reported as what it is, so the next
+  // person does not go looking at the account.
+  return fail(choice?.finish_reason === "length" ? REVIEW_TRUNCATED : "empty response");
 }
 
 /**
