@@ -104,6 +104,7 @@ describe("what startSupervisor registers", () => {
     [90_000, 1, "error stream"],
     [2 * 60_000, 2, "unanswered messages and context pressure"],
     [5 * 60_000, 2, "voice cleanup and the status broadcast"],
+    [8 * 60_000, 1, "session pulse"],
     [10 * 60_000, 1, "Gemma health analyst"],
     [15 * 60_000, 1, "scheduled review"],
     [30 * 60_000, 2, "idle compaction and reviewer health"],
@@ -184,6 +185,9 @@ describe("what startSupervisor registers", () => {
     // Not a rule — voice cleanup and the status broadcast are both five
     // minutes on purpose. This pins how many such pairs exist, so a new loop
     // landing on an existing tick is a decision rather than a coincidence.
+    // The pulse is eight minutes partly for this reason: five and ten were both
+    // taken, and three loops posting to the same topic on the same tick is a
+    // burst rather than a report.
     start();
 
     const shared = [...countsByInterval().entries()].filter(([, n]) => n > 1);

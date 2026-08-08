@@ -37,9 +37,13 @@ import { TranscriptTail, resolveTranscript, claudeConfigRoot } from "../utils/tr
 import {
   decideCrossing,
   newestContextTokens,
+  newestOutputTokens,
   newestContextReport,
   contextThreshold,
+  resolveWindow,
 } from "../utils/context-usage.ts";
+import { renderEntry } from "../utils/transcript-events.ts";
+import { parseEntry } from "../utils/transcript-locate.ts";
 import { isRequeued, markRequeued } from "../utils/requeue.ts";
 import { paneLines, hasActiveSpinner, escapeHtml } from "../utils/terminal.ts";
 import { stripReasoning } from "../utils/llm-output.ts";
@@ -54,6 +58,8 @@ import {
 } from "../utils/supervisor-status.ts";
 import { hasOpenQuestion } from "../services/ask-question.ts";
 import { sessionFold } from "../services/fold-marker.ts";
+import { sessionLimit, limitedSessions, limitLabel, resetLabel, readLimitMarker, limitFromMarker } from "../services/limit-marker.ts";
+import { SessionPulse } from "../services/session-pulse.ts";
 import {
   sessionProblemKey,
   projectFromSessionProblemKey,
@@ -334,10 +340,62 @@ async function logIncident(
 
 // --- Loop 1: Session heartbeat monitor ---
 
-export async function checkHungSessions(sql: postgres.Sql, runShell?: RunShell): Promise<void> {
+/**
+ * How fresh a pane snapshot has to be to say anything about right now.
+ *
+ * `scripts/tmux-watchdog.ts` stamps `pane_snapshot_at` on every poll of every
+ * active window, so a snapshot older than a couple of minutes means the watchdog
+ * is not running rather than that the pane stopped changing. Two minutes covers
+ * its poll interval with room and is well under the five minutes this loop calls
+ * silence.
+ */
+const PANE_SNAPSHOT_FRESH_MS = 2 * 60_000;
+
+/**
+ * What every active session was doing when it was last looked at.
+ *
+ * Filled by the context-pressure loop, which already reads each session's
+ * transcript every two minutes, and read by two things that would otherwise have
+ * to read it again: the pulse below, and the hung-session loop above, which
+ * needs an activity signal for the sessions that have no status message to
+ * measure. See `services/session-pulse.ts` for why the two obvious columns —
+ * `last_active` and `pane_snapshot_at` — are not activity signals at all.
+ */
+const sessionPulse = new SessionPulse();
+
+/** Exposed so a test can start from nothing; the loops never call it. */
+export function resetSessionPulse(): void {
+  sessionPulse.reset();
+}
+
+/**
+ * @param now Taken as a parameter for `runResponseGuard`'s reason: what this
+ * decides is entirely a question about elapsed time, and the elapsed times that
+ * matter are five minutes long. A test that cannot move the clock can only
+ * exercise the branch where nothing has elapsed — which for the pane-driven
+ * sessions this loop newly reaches is the branch that says nothing at all.
+ */
+export async function checkHungSessions(
+  sql: postgres.Sql,
+  runShell?: RunShell,
+  now: number = Date.now(),
+): Promise<void> {
   try {
     await refreshAcks(sql);
 
+    // The join used to be inner, and that was a blind spot rather than a filter.
+    // `active_status_messages` gets a row in exactly one place — `channel/status.ts`,
+    // when the channel sends a Telegram status message for a turn — so a turn
+    // typed straight into the tmux pane produces no row, and a session driven
+    // that way could not be found hung. Not judged healthy: invisible.
+    //
+    // Widening it is the dangerous half of this flow, because every active
+    // session becomes a candidate and most of them are quiet for ordinary
+    // reasons. So the second half of the WHERE is not "no status message and
+    // quiet" — it is "no status message and a pane that is currently showing a
+    // spinner", and the staleness of those is measured in the loop below from
+    // the transcript's own token counts. A session sitting at an idle prompt is
+    // not a candidate at all: it has not been asked to do anything.
     const rows = await sql`
       SELECT
         s.id         AS session_id,
@@ -346,18 +404,55 @@ export async function checkHungSessions(sql: postgres.Sql, runShell?: RunShell):
         p.id         AS project_id,
         asm.key,
         asm.started_at,
-        asm.updated_at
+        asm.updated_at,
+        s.pane_snapshot,
+        s.pane_snapshot_at
       FROM sessions s
-      JOIN active_status_messages asm ON asm.session_id = s.id
+      LEFT JOIN active_status_messages asm ON asm.session_id = s.id
       JOIN projects p ON p.id = s.project_id AND p.tmux_session_name = 'bots'
       WHERE s.status = 'active'
-        AND asm.updated_at < NOW() - (${Math.floor(SESSION_STALE_MS / 1000)} * INTERVAL '1 second')
+        AND (
+          asm.updated_at < NOW() - (${Math.floor(SESSION_STALE_MS / 1000)} * INTERVAL '1 second')
+          OR (
+            asm.session_id IS NULL
+            AND s.pane_snapshot_at > NOW() - (${Math.floor(PANE_SNAPSHOT_FRESH_MS / 1000)} * INTERVAL '1 second')
+          )
+        )
     `;
 
     for (const row of rows) {
       const project = String(row.project ?? "unknown");
       const sessionId = Number(row.session_id);
       const projectId = Number(row.project_id);
+
+      // A session with a status message is judged exactly as it was before this
+      // flow: the row's `updated_at` is the clock, and everything below reads it.
+      // A session without one reaches here only because its pane shows a
+      // spinner, and its clock is the last time its transcript's numbers moved —
+      // see `SessionPulse.activityAt` for why neither `last_active` nor
+      // `pane_snapshot_at` can serve, and why "no reading yet" means "say
+      // nothing" rather than "stale".
+      let staleSince: number;
+      if (row.updated_at) {
+        staleSince = new Date(row.updated_at).getTime();
+      } else {
+        const paneSnapshot = typeof row.pane_snapshot === "string" ? row.pane_snapshot : "";
+        if (!hasActiveSpinner(paneSnapshot)) continue;
+        const activityAt = sessionPulse.activityAt(sessionId);
+        if (activityAt === null) continue;
+        staleSince = activityAt;
+      }
+
+      // One threshold, applied here as well as in the WHERE above. Redundant
+      // against a correct query and deliberately not left to it: the widening
+      // turned one condition into two joined by OR, and the failure mode of
+      // getting that wrong is an alert reading "молчит 0m 0s" — which teaches
+      // the operator that this topic is noise. The row the query should not
+      // have returned is dropped here instead.
+      if (now - staleSince < SESSION_STALE_MS) continue;
+      if (!row.updated_at) {
+        console.log(`[supervisor] ${project}: no status message, spinner turning, transcript silent`);
+      }
       // A session that asked the operator something is waiting, not hung. Its
       // status line stops updating either way, and before this the two were
       // indistinguishable: the outage that produced this check showed up as
@@ -377,13 +472,30 @@ export async function checkHungSessions(sql: postgres.Sql, runShell?: RunShell):
       // Bounded by `services/fold-marker.ts`: a marker whose fold never finished
       // — a CLI that died mid-compaction — stops being believed after its grace
       // window, so this exemption cannot mute the loop permanently.
-      const fold = await sessionFold(sql, sessionId);
+      const fold = await sessionFold(sql, sessionId, now);
       if (fold) {
         console.log(`[supervisor] ${row.project}: compacting context for ${Math.round(fold.elapsedMs / 1000)}s, not hung`);
         continue;
       }
 
-      const elapsedMs = Date.now() - new Date(row.updated_at).getTime();
+      // And a session under an API limit is not hung either — it is not allowed
+      // to answer. The two look identical from here and the remedies are
+      // opposite: the restart button below cannot help, because the limit is on
+      // the account and not on the process, and a restarted session comes back
+      // and stops again. `checkLimitedSessions` has already said which limit and
+      // when it lifts, once, so this loop's job is to hold its alarm and not to
+      // send a second message about the same thing.
+      //
+      // Bounded by `services/limit-marker.ts`: a marker outlives neither its
+      // stated reset time nor `LIMIT_GRACE_DEFAULT_MS`, so this exemption cannot
+      // mute the loop indefinitely.
+      const limit = await sessionLimit(sql, sessionId, now);
+      if (limit) {
+        console.log(`[supervisor] ${row.project}: ${limitLabel(limit.kind)} ${resetLabel(limit.resetsAt)}, not hung`);
+        continue;
+      }
+
+      const elapsedMs = now - staleSince;
       const elapsedSec = Math.round(elapsedMs / 1000);
       const dedupKey = sessionProblemKey(project);
 
@@ -446,6 +558,82 @@ export async function checkHungSessions(sql: postgres.Sql, runShell?: RunShell):
     }
   } catch (err: any) {
     console.error(`[supervisor] checkHungSessions error: ${err?.message}`);
+  }
+}
+
+// --- Loop 1b: the sessions that are not allowed to answer ---
+
+/**
+ * Limit events already alerted on, by session and by the event's own identity.
+ *
+ * The idempotency problem flow 059 solved with `tailUuid`, arriving from two
+ * directions at once: the channel re-reads transcript lines after a re-resolve,
+ * and this loop re-reads the marker every sixty seconds for as long as the limit
+ * holds — five hours of session limit is three hundred passes over one event.
+ * The equivalent key is the transcript entry's `uuid`, which Claude Code writes
+ * on every line and which travels inside the marker precisely so that the
+ * process doing the alerting can tell one event from the next.
+ *
+ * `startedAt` is the fallback for an entry that carried no uuid. It is written
+ * once, when the channel first sees the error, and the channel does not rewrite
+ * a marker for an error it has already acted on — so it is stable for the life
+ * of one event, which is all this needs it to be.
+ *
+ * In process, like every other dedup map in this file. A supervisor restart
+ * re-alerts once for each limit still in force, and that is the right side of
+ * the trade: the alternative is writing an "alerted" flag back into the marker
+ * from the container, which puts a second writer on the one row both watchdogs
+ * read to decide whether to stay quiet. One duplicate message after a restart —
+ * an event the operator is watching anyway — costs less than that.
+ */
+const limitAlerted = new Map<number, string>();
+
+/** Exposed so a test can start from nothing; the loop never clears it. */
+export function resetLimitAlerts(): void {
+  limitAlerted.clear();
+}
+
+/**
+ * Say which limit a session hit and when it lifts. Once per event.
+ *
+ * Runs on the hung-session loop's timer rather than one of its own: it asks the
+ * same database the same question about the same sessions a beat earlier, and
+ * the answer decides whether that loop is about to call a limited session hung.
+ *
+ * No buttons. Not an oversight — there is nothing to press. A restart cannot
+ * lift a limit, and this flow deliberately does nothing automatic about one: no
+ * provider switch, no queueing, no pause. The message exists so the operator
+ * knows they are waiting for a clock rather than for a dead process.
+ */
+export async function checkLimitedSessions(sql: postgres.Sql, now: number = Date.now()): Promise<void> {
+  try {
+    const limited = await limitedSessions(sql, now);
+    const live = new Set<number>();
+
+    for (const session of limited) {
+      live.add(session.sessionId);
+      const key = session.limit.uuid ?? String(session.limit.startedAt);
+      if (limitAlerted.get(session.sessionId) === key) continue;
+      limitAlerted.set(session.sessionId, key);
+
+      const text = [
+        `⛔️ <b>Supervisor: сессия под лимитом</b>`,
+        `Проект: <code>${escapeHtml(session.project)}</code>`,
+        `${limitLabel(session.limit.kind)} — ${resetLabel(session.limit.resetsAt)}`,
+        `<i>${escapeHtml(session.limit.text)}</i>`,
+        `Перезапуск не поможет: лимит на аккаунте, а не на процессе.`,
+      ].join("\n");
+
+      await sendAlert(text);
+      await logIncident(sql, "session_limited", session.project, session.sessionId, "alerted_user", "waiting", "");
+      console.log(`[supervisor] ${session.project}: ${limitLabel(session.limit.kind)} ${resetLabel(session.limit.resetsAt)}`);
+    }
+
+    // A session whose limit has lifted or whose row is gone is forgotten, so the
+    // next limit it hits is a new event rather than a repeat of the last one.
+    for (const id of limitAlerted.keys()) if (!live.has(id)) limitAlerted.delete(id);
+  } catch (err: any) {
+    console.error(`[supervisor] checkLimitedSessions error: ${err?.message}`);
   }
 }
 
@@ -910,6 +1098,18 @@ export interface ContextReading {
   tokens: number | null;
   /** Window as Claude Code last reported it via `/context`, or null. */
   window: number | null;
+  /**
+   * Newest completed turn's output, or null.
+   *
+   * Optional, and it is the pulse that wants it rather than this loop: the
+   * decision to summarise is about what went in. Optional rather than required
+   * so the existing callers and test doubles that answer the summarising
+   * question keep type-checking without having to answer a question they are not
+   * being asked.
+   */
+  outputTokens?: number | null;
+  /** The newest line the transcript rendered — what the session is doing. */
+  activity?: string | null;
 }
 
 /** How much of the transcript's end is read to find the newest usage. */
@@ -932,10 +1132,38 @@ export async function readSessionContext(projectPath: string): Promise<ContextRe
   // the bot process. `at()` is for an offset a previous read produced.
   const tail = await TranscriptTail.near(path, Math.max(0, size - CONTEXT_TAIL_BYTES));
   const lines = await tail.read().catch(() => [] as string[]);
-  // Both come from the same read. The usage total is on every assistant entry;
-  // the `/context` report is there only if the command has been run, which is
-  // why the window is remembered once found rather than looked up each tick.
-  return { tokens: newestContextTokens(lines), window: newestContextReport(lines)?.window ?? null };
+  // All four come from the same read. The usage total is on every assistant
+  // entry; the `/context` report is there only if the command has been run,
+  // which is why the window is remembered once found rather than looked up each
+  // tick; the output total and the newest rendered line are what the pulse says
+  // about a session that is working, and asking for them here is what keeps the
+  // pulse from being a second reader of the same file.
+  return {
+    tokens: newestContextTokens(lines),
+    window: newestContextReport(lines)?.window ?? null,
+    outputTokens: newestOutputTokens(lines),
+    activity: newestActivityLine(lines),
+  };
+}
+
+/**
+ * The newest thing the session did, as one line.
+ *
+ * `renderEntry` is what the operator already reads in a Telegram status message
+ * — `● Bash: bun test`, `● Read: status.ts`, a slice of what the model said — so
+ * the pulse says the same thing in the same words rather than inventing a second
+ * vocabulary for the same events.
+ *
+ * Backwards, and stopping at the first entry that renders anything: most lines
+ * render nothing at all.
+ */
+export function newestActivityLine(lines: readonly string[]): string | null {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const rendered = renderEntry(parseEntry(lines[i]!));
+    const last = rendered.at(-1);
+    if (last && last.trim()) return last.trim();
+  }
+  return null;
 }
 
 /**
@@ -982,7 +1210,15 @@ export async function checkContextPressure(sql: postgres.Sql, deps: ContextPress
       -- table falls back to its documented default for that.
       p.model AS model,
       (asm.chat_id IS NOT NULL) AS busy,
-      (SELECT cs.chat_id FROM chat_sessions cs WHERE cs.active_session_id = s.id LIMIT 1) AS chat_id
+      -- The pulse's share of this query. Four more columns on a row already
+      -- being fetched, so that saying what a working session is doing costs no
+      -- read of its own: when its turn started, whether its pane is showing a
+      -- spinner, how fresh that picture is, and whether it is under a limit —
+      -- which is a state of its own and not a session that is working.
+      asm.started_at AS turn_started_at,
+      s.pane_snapshot,
+      s.pane_snapshot_at,
+      s.metadata
     FROM sessions s
     LEFT JOIN projects p ON p.path = s.project_path
     LEFT JOIN active_status_messages asm ON asm.session_id = s.id
@@ -990,7 +1226,11 @@ export async function checkContextPressure(sql: postgres.Sql, deps: ContextPress
   `.catch(() => [] as any[]);
 
   // Which sessions this tick actually saw, so the per-session maps below can be
-  // pruned to them at the end.
+  // pruned to them at the end. Nothing else clears them, and a session id is a
+  // serial that Postgres reuses after the row is reaped: left alone, every map
+  // here grows for the process's lifetime and a new session eventually inherits
+  // a stranger's state — in the worst case a high-water mark of 1.0, which would
+  // silence its summaries from its first tick.
   const seen = new Set<number>();
 
   for (const row of rows as any[]) {
@@ -999,7 +1239,6 @@ export async function checkContextPressure(sql: postgres.Sql, deps: ContextPress
     // checkHungSessions captures a pane by.
     const project = String(row.project ?? "");
     const chatId = row.chat_id ? String(row.chat_id) : null;
-    if (!chatId) continue;
 
     const reading = await deps
       .readContext(String(row.project_path))
@@ -1010,6 +1249,30 @@ export async function checkContextPressure(sql: postgres.Sql, deps: ContextPress
     // already have.
     if (reading.window) contextWindowBySession.set(sessionId, reading.window);
     const learnedWindow = contextWindowBySession.get(sessionId) ?? null;
+
+    // Recorded before the chat guard below, deliberately. A session with no
+    // chat bound to it is exactly the pane-driven session this flow is trying to
+    // make visible — skipping it here would leave the widened hung query with no
+    // activity signal for the only sessions it newly reaches, and the pulse
+    // blind to the same ones.
+    const paneAt = row.pane_snapshot_at ? new Date(row.pane_snapshot_at).getTime() : null;
+    const paneFresh = paneAt !== null && Date.now() - paneAt < PANE_SNAPSHOT_FRESH_MS;
+    sessionPulse.observe({
+      sessionId,
+      project,
+      inputTokens: reading.tokens,
+      outputTokens: reading.outputTokens ?? null,
+      window: resolveWindow(learnedWindow, row.model ?? null),
+      busy: Boolean(row.busy),
+      paneSpinner: paneFresh && hasActiveSpinner(typeof row.pane_snapshot === "string" ? row.pane_snapshot : ""),
+      turnStartedAt: row.turn_started_at ? new Date(row.turn_started_at).getTime() : null,
+      activity: reading.activity ?? null,
+      limited: limitFromMarker(readLimitMarker(row.metadata), Date.now()) !== null,
+      at: Date.now(),
+    });
+    seen.add(sessionId);
+
+    if (!chatId) continue;
 
     // The mark is released once the session has clearly come back down.
     //
@@ -1042,14 +1305,6 @@ export async function checkContextPressure(sql: postgres.Sql, deps: ContextPress
       idle: !row.busy,
       highWaterRatio: contextHighWater.get(sessionId) ?? 0,
     });
-
-    // Nothing else clears these, and a session id is a serial that Postgres
-    // reuses after the row is reaped. Left alone, all three maps grow for the
-    // process's lifetime and a new session eventually inherits a stranger's
-    // mark — including, in the worst case, a 1.0 that would silence it from its
-    // first tick. Sessions that no longer appear in the query above are dropped
-    // at the end of the tick; see `seen` below.
-    seen.add(sessionId);
 
     // Ask the session what its window is, rather than inferring it from a
     // table that cannot know what GLM or Kimi answer to. Only while idle —
@@ -1134,6 +1389,61 @@ export async function checkContextPressure(sql: postgres.Sql, deps: ContextPress
   for (const map of [contextHighWater, contextWindowBySession, contextAskedAt]) {
     for (const id of map.keys()) if (!seen.has(id)) map.delete(id);
   }
+  // And the fourth, which is keyed the same way and would inherit the same
+  // stranger — a reused id carrying a dead session's `changedAt` reads as an
+  // hour of silence on a session one minute old.
+  sessionPulse.forget(seen);
+}
+
+// --- Loop 5c: the pulse ---
+
+/**
+ * How often a working session says how it is getting on.
+ *
+ * Deliberately not the two minutes of the loop that gathers the numbers.
+ * Reading a transcript tail is cheap and posting to a Telegram topic is not: at
+ * two minutes a single session produces thirty messages an hour, and four
+ * sessions produce a hundred and twenty. That is how a monitoring feature
+ * becomes noise, then becomes muted, and takes the alarms sitting next to it
+ * down with it.
+ *
+ * Eight minutes is chosen against how long the work takes rather than against
+ * how often the data refreshes. The unit of work in this fleet is a flow, which
+ * runs for hours; a turn inside one runs for minutes — the two folds measured on
+ * 2026-08-08 were two and two and a half minutes of a single compaction. Eight
+ * minutes is long enough that a fleet of four costs about thirty lines an hour
+ * and short enough that any turn worth watching produces several readings.
+ *
+ * It also decides how long "stopped progressing" takes to declare, because that
+ * verdict needs two consecutive pulses: sixteen minutes of figures that have not
+ * moved. That is three times the five minutes at which the hung-session loop
+ * calls silence, which is the right relationship — the softer claim should be
+ * the slower one, and a pulse that raced the alarm would just be a second alarm.
+ *
+ * Not five and not ten, so it does not land on the status broadcast's tick or
+ * the health analyst's. That is DB-load hygiene rather than a rule, and it is
+ * pinned by `supervisor-loops.test.ts`.
+ */
+export const PULSE_INTERVAL_MS = 8 * 60_000;
+
+/**
+ * Post one line per working session, or say nothing at all.
+ *
+ * Nothing at all is the common case and the important one: a fleet where
+ * everything is idle produces no message, and neither does one where the only
+ * active sessions have nothing to report yet. A pulse that arrives forever
+ * regardless of content is worth less than the silence it replaces.
+ */
+export async function sendSessionPulse(now: number = Date.now()): Promise<void> {
+  const lines = sessionPulse.pulse(now);
+  if (lines.length === 0) return;
+
+  const stalled = lines.filter((l) => l.state === "stalled");
+  const header = stalled.length === 0
+    ? `📈 <b>Пульс</b> — ${lines.length} в работе`
+    : `📈 <b>Пульс</b> — ${lines.length} в работе, ${stalled.length} без движения`;
+
+  await sendAlert([header, ...lines.map((l) => l.text)].join("\n"));
 }
 
 // --- Idle session auto-compact ---
@@ -2147,11 +2457,21 @@ export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
   let contextCheckRunning    = false;
   let unansweredCheckRunning = false;
 
-  // Loop 1: Session heartbeat — every 60s
+  // Loop 1: Session heartbeat — every 60s.
+  //
+  // Two checks on one timer, in order. The limit scan runs first because it
+  // decides whether the hung check is about to call a session dead when it is
+  // merely out of allowance, and because both ask the same database about the
+  // same sessions — a second interval for the second question would only mean
+  // the two could disagree about what "now" is.
   const sessionTimer = setInterval(() => {
     if (sessionCheckRunning) return;
     sessionCheckRunning = true;
-    checkHungSessions(sql, runShell).catch(() => {}).finally(() => { sessionCheckRunning = false; });
+    checkLimitedSessions(sql)
+      .catch(() => {})
+      .then(() => checkHungSessions(sql, runShell))
+      .catch(() => {})
+      .finally(() => { sessionCheckRunning = false; });
   }, 60_000);
   sessionTimer.unref?.();
 
@@ -2211,6 +2531,21 @@ export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
     }).catch(() => {}).finally(() => { contextCheckRunning = false; });
   }, 2 * 60_000);
   contextTimer.unref?.();
+
+  // Loop 5c: the pulse — every 8 min, offset 65s.
+  //
+  // Offset because it posts, and because the readings it renders are gathered by
+  // the two-minute loop above: starting it a minute in means its first pulse has
+  // something to say. The interval is argued for at `PULSE_INTERVAL_MS`.
+  setTimeout(() => {
+    let pulseRunning = false;
+    const pulseTimer = setInterval(() => {
+      if (pulseRunning) return;
+      pulseRunning = true;
+      sendSessionPulse().catch(() => {}).finally(() => { pulseRunning = false; });
+    }, PULSE_INTERVAL_MS);
+    pulseTimer.unref?.();
+  }, 65_000);
 
   // Loop 6: Gemma health analyst — every 10 min
   let gemmaHealthRunning = false;
@@ -2318,6 +2653,7 @@ export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
 
   // Run initial checks after a short delay (let admin-daemon settle first)
   setTimeout(() => {
+    checkLimitedSessions(sql).catch(() => {});
     checkHungSessions(sql, runShell).catch(() => {});
     cleanVoiceStatuses(sql).catch(() => {});
     updateProcessHealth(sql).catch(() => {});
@@ -2332,8 +2668,8 @@ export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
   // that under-reports what is running is the same class of quiet untruth this
   // supervisor exists to catch.
   console.error(
-    "[supervisor] watchdog running (session:60s, queue:60s, process-health:30s, voice:5min, " +
-      `status:5min, idle-compact:30min/${IDLE_COMPACT_MIN}min-threshold, gemma-health:10min, ` +
+    "[supervisor] watchdog running (session+limits:60s, queue:60s, process-health:30s, voice:5min, " +
+      `status:5min, idle-compact:30min/${IDLE_COMPACT_MIN}min-threshold, pulse:8min, gemma-health:10min, ` +
       "unanswered:2min, bot-alive:20s, error-stream:90s, reviewer-health:30min, " +
       "scheduled-review:15min, recovery:60s)",
   );
