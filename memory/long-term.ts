@@ -36,9 +36,26 @@ export interface Memory {
   distance?: number;
 }
 
+/**
+ * How much of a memory is offered to the embedding model.
+ *
+ * The row is stored whole; only what gets vectorised is bounded. A fold's
+ * dropped span can be 2 MB, and an embedding call that large exceeds the
+ * model's own context and fails — `embedSafe` then returns null, the row is
+ * stored with a NULL embedding, and a memory that similarity search can never
+ * reach is not a memory. Raised in review.
+ *
+ * The head of the content is the right part to keep: `captureFold` puts its
+ * header there, and a summary's first paragraph says what it is about.
+ */
+const EMBED_INPUT_LIMIT_CHARS = 8_000;
+
 export async function remember(memory: Memory): Promise<Memory> {
   _indexingCount++;
-  const embedding = await embedSafe(memory.content).finally(() => { _indexingCount--; });
+  const embedInput = memory.content.length > EMBED_INPUT_LIMIT_CHARS
+    ? memory.content.slice(0, EMBED_INPUT_LIMIT_CHARS)
+    : memory.content;
+  const embedding = await embedSafe(embedInput).finally(() => { _indexingCount--; });
   const embeddingFrag = embedding
     ? sql`${`[${embedding.join(",")}]`}::vector`
     : sql`NULL`;

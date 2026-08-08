@@ -1641,6 +1641,14 @@ export class StatusManager {
       // a failed embedding call costs this fold's record, not the next one's
       // correctness.
       this.lastFoldTail.set(transcriptPath, boundary.tailUuid);
+      // Bounded like `capturedFolds` beside it. One entry per transcript path a
+      // channel ever attaches to is a slow leak rather than a fast one, but the
+      // sibling map is explicitly capped and this one was not — raised in
+      // review, and the inconsistency is the part worth removing.
+      if (this.lastFoldTail.size > REMEMBERED_FOLDS) {
+        const oldest = this.lastFoldTail.keys().next().value;
+        if (oldest !== undefined && oldest !== transcriptPath) this.lastFoldTail.delete(oldest);
+      }
       if (span.records === 0) {
         channelLogger.info({ transcriptPath }, "fold: nothing to store");
         return;
