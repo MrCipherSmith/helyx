@@ -92,6 +92,7 @@ describe("what startSupervisor registers", () => {
   const IMMEDIATE: Array<[ms: number, count: number, what: string]> = [
     [30_000, 1, "process_health heartbeat"],
     [60_000, 1, "session heartbeat"],
+    [2 * 60_000, 1, "context pressure"],
     [5 * 60_000, 2, "voice cleanup and the status broadcast"],
     [10 * 60_000, 1, "Gemma health analyst"],
     [30 * 60_000, 1, "idle compaction"],
@@ -101,7 +102,7 @@ describe("what startSupervisor registers", () => {
     [30_000, 1, "process_health heartbeat"],
     [60_000, 3, "session heartbeat, stuck queue, recovery check"],
     [90_000, 1, "error stream"],
-    [2 * 60_000, 1, "unanswered messages"],
+    [2 * 60_000, 2, "unanswered messages and context pressure"],
     [5 * 60_000, 2, "voice cleanup and the status broadcast"],
     [10 * 60_000, 1, "Gemma health analyst"],
     [15 * 60_000, 1, "scheduled review"],

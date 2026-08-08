@@ -33,7 +33,13 @@ import { ErrorWindow } from "../utils/error-stream.ts";
 import { getReviewerStatuses, type ReviewerStatus } from "../services/reviewer-service.ts";
 import { persistReviewRun, scheduledReviewDecision, type ScheduledReviewState } from "../services/review-artifacts.ts";
 import { runReviewers, gitReviewDiff } from "../services/reviewer-service.ts";
-import { TranscriptTail } from "../utils/transcript-locate.ts";
+import { TranscriptTail, resolveTranscript, claudeConfigRoot } from "../utils/transcript-locate.ts";
+import {
+  decideCrossing,
+  newestContextTokens,
+  newestContextReport,
+  contextThreshold,
+} from "../utils/context-usage.ts";
 import { isRequeued, markRequeued } from "../utils/requeue.ts";
 import { paneLines, hasActiveSpinner, escapeHtml } from "../utils/terminal.ts";
 import { stripReasoning } from "../utils/llm-output.ts";
@@ -808,6 +814,309 @@ export async function updateProcessHealth(sql: postgres.Sql): Promise<void> {
         SET status = 'running', detail = EXCLUDED.detail, updated_at = NOW()
     `;
   } catch { /* non-blocking */ }
+}
+
+// --- Context pressure: summarize before Claude Code folds its own context ---
+
+/**
+ * How full a window has to be before the session is worth summarising.
+ *
+ * Not 98%, and the reasons are in `utils/context-usage.ts`: summarising needs
+ * room to happen, Claude Code folds ahead of the hard limit so a trigger above
+ * that point never fires, and the number lags by a turn.
+ */
+const CONTEXT_THRESHOLD = contextThreshold(process.env.CONTEXT_SUMMARY_THRESHOLD);
+
+/**
+ * How far a session must fall before its high-water mark is released.
+ *
+ * Releasing exactly at the threshold would let a reading hovering on the line
+ * re-arm and re-fire every tick. Ten points is comfortably more than the noise
+ * between two reads and comfortably less than what a fold recovers — a compact
+ * takes a session from ~0.9 to ~0.2, so it clears this by a wide margin and the
+ * next crossing is a real one.
+ */
+const CONTEXT_HIGH_WATER_HYSTERESIS = 0.1;
+
+/** Highest ratio already summarised, per session. Once per crossing, not per tick. */
+const contextHighWater = new Map<number, number>();
+
+/**
+ * Windows Claude Code has told us, per session.
+ *
+ * A window does not change while a session runs, so this is asked once and
+ * kept. It is the difference between a percentage and a guess for every
+ * provider the table cannot cover — GLM, Kimi, anything arriving through
+ * OpenRouter tomorrow.
+ */
+const contextWindowBySession = new Map<number, number>();
+
+/** Sessions already asked for a window, so a silent `/context` is not retyped every tick. */
+const contextAskedAt = new Map<number, number>();
+
+/** How long to wait before asking a session for its window again. */
+const CONTEXT_ASK_COOLDOWN_MS = 30 * 60 * 1000;
+
+/**
+ * Whether the supervisor may type into a session to take the fold for itself.
+ *
+ * Off by default, and deliberately: this writes into a live pane the operator
+ * may be looking at, and `/compact` replaces the session's own context. Both
+ * are the right thing at the right moment and an ambush at any other one, so
+ * the moment is gated — idle only — and the whole behaviour is opt-in.
+ */
+export function autoCompactEnabled(): boolean {
+  return ["1", "true", "yes", "on"].includes((process.env.CONTEXT_AUTO_COMPACT ?? "").trim().toLowerCase());
+}
+
+/** Reading the tail of a transcript, and summarising — the two things a test cannot do for real. */
+export interface ContextPressureDeps {
+  /** The newest context measurement for this project, or null when unknown. */
+  readContext: (projectPath: string) => Promise<ContextReading>;
+  /** What to run when the threshold is crossed. */
+  summarize: (sessionId: number, chatId: string) => Promise<unknown>;
+  /**
+   * Type into a session's tmux window, or absent to do neither of the two
+   * things that need it.
+   *
+   * This is how `/context` and `/compact` are reached: they are interactive
+   * commands, and typing into a pane is how `scripts/tmux-watchdog.ts` already
+   * answers permission prompts. Optional because a supervisor without a shell
+   * still does the useful half — measuring and summarising.
+   */
+  sendKeys?: (project: string, keys: string) => Promise<void>;
+}
+
+/** What one look at a transcript tail found. */
+export interface ContextReading {
+  /** Newest `message.usage` total, or null when the transcript has none yet. */
+  tokens: number | null;
+  /** Window as Claude Code last reported it via `/context`, or null. */
+  window: number | null;
+}
+
+/** How much of the transcript's end is read to find the newest usage. */
+const CONTEXT_TAIL_BYTES = 256 * 1024;
+
+/**
+ * The newest context measurement for a project, from its transcript.
+ *
+ * Separated from the loop because it is the only part that touches a disk, and
+ * the loop's decisions are worth testing without one.
+ */
+export async function readSessionContext(projectPath: string): Promise<ContextReading> {
+  const path = await resolveTranscript(projectPath, claudeConfigRoot()).catch(() => null);
+  if (!path) return { tokens: null, window: null };
+  const size = await Bun.file(path).size;
+  // `near`, not `at`. An arbitrary byte offset is not a record boundary, and
+  // `read()` answers a non-boundary by rewinding to zero and returning the
+  // whole file — which for these transcripts is tens of megabytes, decoded,
+  // split, and `JSON.parse`d line by line, per active session, every tick, in
+  // the bot process. `at()` is for an offset a previous read produced.
+  const tail = await TranscriptTail.near(path, Math.max(0, size - CONTEXT_TAIL_BYTES));
+  const lines = await tail.read().catch(() => [] as string[]);
+  // Both come from the same read. The usage total is on every assistant entry;
+  // the `/context` report is there only if the command has been run, which is
+  // why the window is remembered once found rather than looked up each tick.
+  return { tokens: newestContextTokens(lines), window: newestContextReport(lines)?.window ?? null };
+}
+
+/**
+ * Type a command into a session's tmux window.
+ *
+ * The window name is the project name inside the `bots` session — the same
+ * address `checkHungSessions` captures a pane by, and the same mechanism
+ * `scripts/tmux-watchdog.ts` uses to answer permission prompts.
+ *
+ * The name is checked against a strict pattern before it reaches a shell:
+ * it arrives from a database column, and everything after it is a command
+ * line. The keys are a fixed string at every call site, never operator input.
+ */
+export async function typeIntoSession(runShell: RunShell, project: string, keys: string): Promise<void> {
+  if (!/^[A-Za-z0-9_.-]+$/.test(project)) throw new Error(`refusing to type into window "${project}"`);
+  if (!/^\/[a-z]+$/.test(keys)) throw new Error(`refusing to type "${keys}"`);
+  await runShell(`tmux send-keys -t "bots:${project}" "${keys}" Enter`);
+}
+
+/** Exposed so a test can reset between cases; the loop itself never clears it. */
+export function resetContextHighWater(): void {
+  contextHighWater.clear();
+  contextWindowBySession.clear();
+  contextAskedAt.clear();
+}
+
+/**
+ * Summarise the sessions that are about to lose the material worth summarising.
+ *
+ * Idle is read from `active_status_messages`: a row exists for exactly as long
+ * as a turn is being reported, so its absence is the session being between
+ * turns. A session at the threshold mid-turn is left for the next tick rather
+ * than interrupted — the fold is close, not immediate, and cutting into a turn
+ * to talk about it would be its own defect.
+ */
+export async function checkContextPressure(sql: postgres.Sql, deps: ContextPressureDeps): Promise<void> {
+  const rows = await sql`
+    SELECT
+      s.id            AS session_id,
+      s.project       AS project,
+      s.project_path,
+      -- Per project, not per session: /providers sets the model on the
+      -- projects row. NULL means whatever Claude defaults to, and the window
+      -- table falls back to its documented default for that.
+      p.model AS model,
+      (asm.chat_id IS NOT NULL) AS busy,
+      (SELECT cs.chat_id FROM chat_sessions cs WHERE cs.active_session_id = s.id LIMIT 1) AS chat_id
+    FROM sessions s
+    LEFT JOIN projects p ON p.path = s.project_path
+    LEFT JOIN active_status_messages asm ON asm.session_id = s.id
+    WHERE s.status = 'active' AND s.id != 0 AND s.project_path IS NOT NULL
+  `.catch(() => [] as any[]);
+
+  // Which sessions this tick actually saw, so the per-session maps below can be
+  // pruned to them at the end.
+  const seen = new Set<number>();
+
+  for (const row of rows as any[]) {
+    const sessionId = Number(row.session_id);
+    // The tmux window is named after the project — the same name
+    // checkHungSessions captures a pane by.
+    const project = String(row.project ?? "");
+    const chatId = row.chat_id ? String(row.chat_id) : null;
+    if (!chatId) continue;
+
+    const reading = await deps
+      .readContext(String(row.project_path))
+      .catch(() => ({ tokens: null, window: null }) as ContextReading);
+
+    // A window, once reported, is kept: it does not change while the session
+    // runs, and re-reading it every tick would be a lookup for an answer we
+    // already have.
+    if (reading.window) contextWindowBySession.set(sessionId, reading.window);
+    const learnedWindow = contextWindowBySession.get(sessionId) ?? null;
+
+    // The mark is released once the session has clearly come back down.
+    //
+    // Without this it only ever rose, and the name "once per crossing" was
+    // wrong: it was once per session. A session summarised at 0.86 folds, drops
+    // to 0.2, fills to 0.86 again — and 0.86 is not greater than 0.86, so
+    // `already-summarized`, nothing happens. The bar ratchets up a little with
+    // every cycle and each one is served later than the last.
+    //
+    // The terminal case is the one that matters: `usageRatio` clamps at 1, so
+    // any session that ever reads full — genuinely, or through a 1M-window
+    // model measured against the 200k default — sets the mark to 1.0, after
+    // which `ratio <= 1` is true for ever and that session is never summarised
+    // again. Silently, and with a log line reading `already-summarized`, which
+    // is exactly what a working system prints.
+    //
+    // Released below threshold minus a margin rather than at the threshold, so
+    // a reading hovering on the line does not re-arm and re-fire every tick.
+    const priorMark = contextHighWater.get(sessionId) ?? 0;
+    const releaseAt = Math.max(0, CONTEXT_THRESHOLD - CONTEXT_HIGH_WATER_HYSTERESIS);
+    if (priorMark > 0 && reading.tokens !== null && learnedWindow) {
+      if (reading.tokens / learnedWindow < releaseAt) contextHighWater.delete(sessionId);
+    }
+
+    const decision = decideCrossing({
+      contextTokens: reading.tokens,
+      model: row.model ?? null,
+      learnedWindow,
+      threshold: CONTEXT_THRESHOLD,
+      idle: !row.busy,
+      highWaterRatio: contextHighWater.get(sessionId) ?? 0,
+    });
+
+    // Nothing else clears these, and a session id is a serial that Postgres
+    // reuses after the row is reaped. Left alone, all three maps grow for the
+    // process's lifetime and a new session eventually inherits a stranger's
+    // mark — including, in the worst case, a 1.0 that would silence it from its
+    // first tick. Sessions that no longer appear in the query above are dropped
+    // at the end of the tick; see `seen` below.
+    seen.add(sessionId);
+
+    // Ask the session what its window is, rather than inferring it from a
+    // table that cannot know what GLM or Kimi answer to. Only while idle —
+    // typing into a pane mid-turn corrupts whatever is being composed there —
+    // and only once in a while, because an unanswered ask must not become a
+    // command retyped every tick.
+    if (autoCompactEnabled() && deps.sendKeys && !learnedWindow && !row.busy) {
+      const askedAt = contextAskedAt.get(sessionId) ?? 0;
+      if (Date.now() - askedAt > CONTEXT_ASK_COOLDOWN_MS) {
+        contextAskedAt.set(sessionId, Date.now());
+        await deps.sendKeys(project, "/context").catch((err: any) =>
+          console.error(`[context] session=${sessionId} could not ask for the window: ${err?.message}`),
+        );
+      }
+    }
+
+    // Logged with the window it used. A wrong denominator makes the ratio
+    // meaningless, and the only way that is visible rather than silent is if
+    // both numbers appear together.
+    if (decision.reason !== "no-usage" && decision.reason !== "below-threshold") {
+      console.log(
+        `[context] session=${sessionId} ratio=${decision.ratio.toFixed(3)} window=${decision.window} ${decision.reason}`,
+      );
+    }
+
+    if (!decision.summarize) continue;
+
+    // The high-water mark is set *after* a summary exists, and only then.
+    //
+    // It used to be set on the line above the `try`, which made one bad moment
+    // permanent. `decideCrossing` reads `ratio <= highWaterRatio` as
+    // "already-summarized", so a session whose summary threw was never retried
+    // at that ratio — it had to grow past the mark that had just failed, and a
+    // session sitting at 86% of its window may never do that.
+    //
+    // Worse, `forceSummarize` does not throw when it declines. It returns null
+    // on the "low-quality summary output" path, so the old code logged
+    // `summarized at 86.0%` for a session where nothing was written to memory
+    // at all. That path is not hypothetical: it fired four times for one
+    // session on 2026-08-08 while this branch was open.
+    //
+    // `runIdleCompact` below has checked this return value for null since it
+    // was written. This loop is the one that did not.
+    let summary: unknown;
+    try {
+      summary = await deps.summarize(sessionId, chatId);
+    } catch (err: any) {
+      console.error(`[context] session=${sessionId} summarize failed: ${err?.message}`);
+      // The fold is only worth taking once the summary exists. Compacting after
+      // a failed summarise would discard exactly the material this whole loop
+      // runs to preserve.
+      continue;
+    }
+    if (!summary) {
+      // Declined, not failed, and said as such — the operator reading this needs
+      // to know the session is still unprotected by *this* layer. The PreCompact
+      // hook remains as the later, tighter safety net.
+      console.warn(`[context] session=${sessionId} summary declined at ${(decision.ratio * 100).toFixed(1)}% — will retry`);
+      continue;
+    }
+    contextHighWater.set(sessionId, decision.ratio);
+    console.log(`[context] session=${sessionId} summarized at ${(decision.ratio * 100).toFixed(1)}%`);
+
+    // Take the fold. Claude Code will do this on its own eventually, and its
+    // moment is whenever the window fills — mid-turn, mid-thought, with the
+    // operator watching a status message that stops moving. This one happens
+    // between turns, immediately after the summary is safely written.
+    if (autoCompactEnabled() && deps.sendKeys) {
+      try {
+        await deps.sendKeys(project, "/compact");
+        console.log(`[context] session=${sessionId} compacted at ${(decision.ratio * 100).toFixed(1)}%`);
+      } catch (err: any) {
+        console.error(`[context] session=${sessionId} compact failed: ${err?.message}`);
+      }
+    }
+  }
+
+  // Forget sessions that are gone. Three maps keyed by session id, none of them
+  // ever pruned, in a process that runs for weeks — and the ids are a Postgres
+  // serial that gets reused once the old rows are reaped, so a fresh session
+  // could start life holding a dead one's high-water mark and never summarise.
+  for (const map of [contextHighWater, contextWindowBySession, contextAskedAt]) {
+    for (const id of map.keys()) if (!seen.has(id)) map.delete(id);
+  }
 }
 
 // --- Idle session auto-compact ---
@@ -1792,6 +2101,7 @@ export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
   let voiceCheckRunning      = false;
   let broadcastRunning       = false;
   let idleCheckRunning       = false;
+  let contextCheckRunning    = false;
   let unansweredCheckRunning = false;
 
   // Loop 1: Session heartbeat — every 60s
@@ -1843,6 +2153,21 @@ export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
     checkIdleSessions(sql).catch(() => {}).finally(() => { idleCheckRunning = false; });
   }, 30 * 60_000);
   idleTimer.unref?.();
+
+  // Loop 5b: Context pressure — every 2 min.
+  //
+  // Faster than the idle loop because it is racing something. A window fills
+  // over minutes, and half an hour between looks is most of the time it takes.
+  const contextTimer = setInterval(() => {
+    if (contextCheckRunning) return;
+    contextCheckRunning = true;
+    checkContextPressure(sql, {
+      readContext: readSessionContext,
+      summarize: (sessionId, chatId) => forceSummarize(sessionId, chatId),
+      sendKeys: runShell ? (project, keys) => typeIntoSession(runShell, project, keys) : undefined,
+    }).catch(() => {}).finally(() => { contextCheckRunning = false; });
+  }, 2 * 60_000);
+  contextTimer.unref?.();
 
   // Loop 6: Gemma health analyst — every 10 min
   let gemmaHealthRunning = false;

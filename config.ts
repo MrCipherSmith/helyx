@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { contextThreshold } from "./utils/context-usage.ts";
 
 const EnvSchema = z.object({
   // Telegram
@@ -29,6 +30,13 @@ const EnvSchema = z.object({
   OLLAMA_URL: z.string().default("http://localhost:11434"),
   OLLAMA_CHAT_MODEL: z.string().default("geekom-model-1"),
   SUMMARIZE_MODEL: z.string().default(""), // if set, use local Ollama model for summarization
+  // Fraction of the context window at which a session is summarized before
+  // Claude Code folds it. Not 0.98: summarizing needs room, and Claude Code
+  // compacts ahead of the hard limit, so a threshold above that never fires.
+  // Clamped, not validated: an out-of-range value is an operator typo, and
+  // exiting the process over one is a worse outcome than using the nearest
+  // sane number. See contextThreshold() — the supervisor reads it too.
+  CONTEXT_SUMMARY_THRESHOLD: z.string().default("").transform(contextThreshold),
   EMBEDDING_MODEL: z.string().default("nomic-embed-text"),
 
   // PostgreSQL
@@ -167,6 +175,7 @@ export const CONFIG = {
   OLLAMA_URL: env.OLLAMA_URL,
   OLLAMA_CHAT_MODEL: env.OLLAMA_CHAT_MODEL,
   SUMMARIZE_MODEL: env.SUMMARIZE_MODEL,
+  CONTEXT_SUMMARY_THRESHOLD: env.CONTEXT_SUMMARY_THRESHOLD,
   EMBEDDING_MODEL: env.EMBEDDING_MODEL,
   VECTOR_DIMENSIONS: 768 as const,
 

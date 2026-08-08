@@ -40,7 +40,7 @@ const MAX_ASK_QUESTION_WAITERS = 16;
 let askQuestionWaiters = 0;
 import { runQuestionExchange, resolveTarget } from "../services/ask-question.ts";
 import { sendTelegramMessage, editTelegramMessage } from "../channel/telegram.ts";
-import { summarizeOnDisconnect, summarizeWork, extractFactsFromTranscript } from "../memory/summarizer.ts";
+import { summarizeBeforeCompact, summarizeOnDisconnect, summarizeWork, extractFactsFromTranscript } from "../memory/summarizer.ts";
 import { localTranscriptPath } from "../utils/transcript-locate.ts";
 import { verifyJwt } from "../dashboard/auth.ts";
 import { IncomingMessage, ServerResponse } from "http";
@@ -411,6 +411,17 @@ export async function deliverTurnSummary(
  * `hookToken` is in here because it is read once at module load from a file on
  * the host, and a test has no other way to hold the right one.
  */
+/**
+ * How long the fold may be made to wait.
+ *
+ * Bounded here as well as in the hook script because the two protect different
+ * things: the script's `--max-time` keeps a hung bot from stalling compaction,
+ * this keeps a hung summariser from holding a request open. Shorter than the
+ * script's twenty seconds, so the bot answers before the script gives up and
+ * the log says what happened.
+ */
+const PRE_COMPACT_TIMEOUT_MS = 15_000;
+
 export interface McpDeps {
   sql: typeof sql;
   summarizeOnDisconnect: typeof summarizeOnDisconnect;
@@ -419,6 +430,8 @@ export interface McpDeps {
   extractFactsFromTranscript: typeof extractFactsFromTranscript;
   deliverTurnSummary: typeof deliverTurnSummary;
   runQuestionExchange: typeof runQuestionExchange;
+  /** Summarise a project's session before its context folds. */
+  summarizeBeforeCompact: (projectPath: string) => Promise<unknown>;
   /** Null when no token file could be read — `tokenMatches` refuses everything then. */
   hookToken: string | null;
 }
@@ -431,6 +444,7 @@ const PRODUCTION_MCP_DEPS: McpDeps = {
   extractFactsFromTranscript,
   deliverTurnSummary,
   runQuestionExchange,
+  summarizeBeforeCompact,
   hookToken: HOOK_TOKEN,
 };
 
@@ -757,6 +771,69 @@ export async function handleMcpRequest(
         .catch((err) => console.error("[hooks/stop] extractFactsFromTranscript error:", err?.message));
       mcpDeps.deliverTurnSummary(transcript_path as string, project_path as string)
         .catch((err) => console.error("[hooks/stop] deliverTurnSummary error:", err?.message));
+    } catch (err: any) {
+      if (!res.headersSent) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: err?.message }));
+      }
+    }
+    return;
+  }
+
+  /**
+   * The fold is about to happen; write the summary while there is still
+   * something to write it from.
+   *
+   * Answered synchronously, unlike `/api/hooks/stop` — the caller is a hook
+   * that Claude Code waits on, and answering early would let compaction start
+   * while the summariser is still reading the messages it is summarising. The
+   * wait is bounded here as well as in the hook script: two timeouts because
+   * they fail differently, the script's protecting the fold from a hung bot and
+   * this one protecting the bot from a hung summariser.
+   */
+  if (url.pathname === "/api/hooks/pre-compact" && req.method === "POST") {
+    if (!isLocalRequest(req)) {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Forbidden" }));
+      return;
+    }
+    try {
+      const body = await new Promise<string>((resolve, reject) => {
+        let data = "";
+        req.on("data", (chunk) => (data += chunk));
+        req.on("end", () => resolve(data));
+        req.on("error", reject);
+      });
+      const { transcript_path, project_path, trigger } = JSON.parse(body);
+      if (!transcript_path || !project_path) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "transcript_path and project_path required" }));
+        return;
+      }
+      if (!isAllowedTranscriptPath(transcript_path)) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Invalid transcript_path" }));
+        return;
+      }
+
+      const timedOut = Symbol("timeout");
+      const outcome = await Promise.race([
+        mcpDeps.summarizeBeforeCompact(project_path as string).then(() => "summarized" as const),
+        new Promise<typeof timedOut>((resolve) =>
+          setTimeout(() => resolve(timedOut), PRE_COMPACT_TIMEOUT_MS).unref?.(),
+        ),
+      ]).catch((err) => {
+        console.error("[hooks/pre-compact] summarize error:", err?.message);
+        return "failed" as const;
+      });
+
+      const status = outcome === timedOut ? "timeout" : outcome;
+      console.log(`[hooks/pre-compact] trigger=${trigger ?? "auto"} ${status}`);
+      // 200 in every case, including the timeout. The hook does not read this
+      // body; the only thing that matters is that the request ends, because the
+      // fold is waiting on it.
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, status }));
     } catch (err: any) {
       if (!res.headersSent) {
         res.writeHead(500, { "Content-Type": "application/json" });
