@@ -29,6 +29,12 @@ function post(path: string, body: unknown): Request {
   });
 }
 
+/** The usage a client would assemble for the turn: the `message_delta` one. */
+function usageOf(sse: string): unknown {
+  const frame = sse.split("\n").find((l) => l.startsWith('data: {"type":"message_delta"'));
+  return frame ? JSON.parse(frame.slice("data: ".length)).usage : undefined;
+}
+
 beforeEach(() => {
   // The model caches are module state with a TTL. Left in place, one test's
   // model list answers the next one's questions.
@@ -112,7 +118,7 @@ describe("/v1/messages", () => {
         "\n" +
         JSON.stringify({ message: { content: "llo" } }) +
         "\n" +
-        JSON.stringify({ done: true, done_reason: "stop", eval_count: 2 }) +
+        JSON.stringify({ done: true, done_reason: "stop", prompt_eval_count: 41_000, eval_count: 2 }) +
         "\n",
     });
 
@@ -131,6 +137,10 @@ describe("/v1/messages", () => {
       "message_stop",
     ]);
     expect(text).toContain('"stop_reason":"end_turn"');
+    // The prompt size, which only the final chunk carries. Reported as zero,
+    // every streamed turn — which is every real turn — looks like a session
+    // holding no context at all.
+    expect(usageOf(text)).toEqual({ input_tokens: 41_000, output_tokens: 2 });
   });
 
   test("a request body that is not JSON is an invalid_request_error", async () => {

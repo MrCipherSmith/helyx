@@ -422,11 +422,13 @@ export class AnthropicStream {
   private index = -1;
   private textOpen = false;
   private toolCalls = 0;
+  private inputTokens = 0;
   private outputTokens = 0;
 
   constructor(private readonly model: string) {}
 
   start(inputTokens = 0): SseEvent[] {
+    this.inputTokens = inputTokens;
     return [
       {
         event: "message_start",
@@ -514,13 +516,27 @@ export class AnthropicStream {
       out.push({ event: "content_block_stop", data: { type: "content_block_stop", index: 0 } });
       this.index = 0;
     }
+    // Both counts, and the input one is the half that was missing.
+    //
+    // Ollama reports the prompt size only on the final chunk, so `message_start`
+    // cannot carry it — it goes out before the model has read anything — and
+    // `message_delta` is the one remaining place it can be said. Omitted, the
+    // usage a client assembles for the turn keeps the zero `start()` sent, and
+    // `stream` is on for every real turn: Claude Code's system prompt and tool
+    // definitions measure ~41k tokens against this host's 40960-token window,
+    // and all of it was reported as nothing. Anything reading `message.usage`
+    // to account for context — a context meter, a budget, a warning that the
+    // window is nearly full — reads that as a session with an empty prompt and
+    // is wrong by the entire prompt. `toAnthropicResponse()` has always sent
+    // it; only the streaming path did not.
+    this.inputTokens = final.prompt_eval_count ?? this.inputTokens;
     this.outputTokens = final.eval_count ?? this.outputTokens;
     out.push({
       event: "message_delta",
       data: {
         type: "message_delta",
         delta: { stop_reason: stopReasonFor(this.toolCalls > 0, final.done_reason), stop_sequence: null },
-        usage: { output_tokens: this.outputTokens },
+        usage: { input_tokens: this.inputTokens, output_tokens: this.outputTokens },
       },
     });
     out.push({ event: "message_stop", data: { type: "message_stop" } });

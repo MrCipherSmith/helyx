@@ -249,6 +249,27 @@ describe("streaming", () => {
     expect((events.at(-2)?.data as any).usage.output_tokens).toBe(2);
   });
 
+  test("the prompt size reaches message_delta, because message_start cannot carry it", () => {
+    // Ollama reports prompt_eval_count only on the final chunk, so message_start
+    // goes out as zero and message_delta is the one place the real number can be
+    // said. Omitted, the turn's usage stays that zero — and stream is on for
+    // every real turn, so a ~41k-token prompt was reported as no prompt at all
+    // to anything accounting for the context window.
+    const s = new AnthropicStream("m");
+    const events = [
+      ...s.start(),
+      ...s.chunk({ message: { content: "hi" } }),
+      ...s.finish({ done: true, done_reason: "stop", prompt_eval_count: 41_000, eval_count: 2 }),
+    ];
+    expect((events.at(-2)?.data as any).usage).toEqual({ input_tokens: 41_000, output_tokens: 2 });
+  });
+
+  test("a final chunk without counts keeps what message_start announced", () => {
+    const s = new AnthropicStream("m");
+    const events = [...s.start(7), ...s.finish({ done: true })];
+    expect((events.at(-2)?.data as any).usage).toEqual({ input_tokens: 7, output_tokens: 0 });
+  });
+
   test("a tool call closes the open text block first and reports tool_use", () => {
     const s = new AnthropicStream("m");
     const events = [
