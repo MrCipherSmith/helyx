@@ -322,6 +322,25 @@ describe("taking the fold instead of waiting for it", () => {
     expect(seen.length).toBe(1);
   });
 
+  test("the query still selects chat_id, and this test reads the SQL because no fixture can", async () => {
+    // Flow 061 added four pulse columns *over* this subselect rather than
+    // beside it. `row.chat_id` then read null for every session, the
+    // `if (!chatId) continue` guard skipped every one, and the entire loop —
+    // high-water release, decideCrossing, the /context ask, the summarise, the
+    // fold — went silent. Silently: the log line that would have shown it only
+    // prints for sessions that get past the guard.
+    //
+    // Every other test here hands `chat_id` back from the fixture, so all of
+    // them passed with the column gone. The only way to catch it is to read the
+    // statement the loop actually sends.
+    const db = world();
+    await checkContextPressure(db.sql as never, spy(1000).deps);
+
+    const sent = db.queries.map((q) => q.text).find((t) => t.includes("SELECT s.id"));
+    expect(sent).toBeDefined();
+    expect(sent).toContain("AS chat_id");
+  });
+
   test("asks an unknown session for its window, once", async () => {
     process.env.CONTEXT_AUTO_COMPACT = "true";
     const s = withPane(1000, null); // below the threshold; only the ask should happen

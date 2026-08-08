@@ -1270,6 +1270,19 @@ export async function checkContextPressure(sql: postgres.Sql, deps: ContextPress
       -- table falls back to its documented default for that.
       p.model AS model,
       (asm.chat_id IS NOT NULL) AS busy,
+      -- Restored, and worth a comment because of how it went missing: the
+      -- pulse's four columns were added *over* this subselect rather than
+      -- beside it, so row.chat_id read null for every session and the
+      -- if (!chatId) guard below skipped every one of them. The whole loop --
+      -- the high-water release, decideCrossing, the /context ask, the summarise
+      -- and the fold -- went silent, and silently, because the log line that
+      -- would have shown it only prints for sessions that get past the guard.
+      --
+      -- No fixture catches this: FakeSql matches on a query substring and the
+      -- tests hand chat_id back themselves. The test for it reads the SQL text.
+      -- (And no backticks in here: this comment lives inside a template
+      -- literal, so one would end the string.)
+      (SELECT cs.chat_id FROM chat_sessions cs WHERE cs.active_session_id = s.id LIMIT 1) AS chat_id,
       -- The pulse's share of this query. Four more columns on a row already
       -- being fetched, so that saying what a working session is doing costs no
       -- read of its own: when its turn started, whether its pane is showing a
