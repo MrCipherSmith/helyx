@@ -5,8 +5,10 @@ import {
   DEFAULT_PROVIDER_LABEL,
   fetchProviderModels,
   describeRefreshFailure,
+  resolveOllamaBaseLabels,
 } from "../../services/provider-service.ts";
 import type { ProviderSummary, RefreshResult } from "../../services/provider-service.ts";
+import { CONFIG } from "../../config.ts";
 import { projectService } from "../../services/project-service.ts";
 import { PROVIDER_PRESETS, findPreset } from "../providers/presets.ts";
 import type { ProviderModel } from "../providers/presets.ts";
@@ -301,7 +303,22 @@ async function showModelPicker(
     storedDefaultsFor(providerId),
   ]);
   const provider = providerId === null ? null : providers.find((p) => p.id === providerId) ?? null;
-  const models = modelsFor(provider, storedDefaults);
+  let models = modelsFor(provider, storedDefaults);
+  // Ollama aliases (geekom-model-*) are repointable with `ollama cp`, so a stored
+  // label like "geekom-model-1 (qwen3:14b)" freezes and lies after a repoint.
+  // Resolve the live base by digest so the parenthetical is always current. The
+  // helper only touches ids that are CONFIG model slots, so a misnamed provider
+  // is harmless, and it never throws — a failed fetch leaves labels as stored.
+  // relabelOllamaModels maps in place — same length and order, only labels
+  // change — so the index-based pmsel callback still resolves idx to the right
+  // model (it only reads chosen.id, never the label).
+  if (provider && /\bollama\b/i.test(provider.name)) {
+    models = await resolveOllamaBaseLabels(
+      models,
+      [CONFIG.OLLAMA_CHAT_MODEL, CONFIG.SUMMARIZE_MODEL, CONFIG.EMBEDDING_MODEL],
+      CONFIG.OLLAMA_URL,
+    );
+  }
   const current = selection?.model ?? "";
 
   const kb = new InlineKeyboard();

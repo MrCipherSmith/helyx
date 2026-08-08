@@ -219,6 +219,98 @@ export function parseModelsResponse(body: unknown): ProviderModel[] | null {
 }
 
 /**
+ * Strip Ollama's implicit `:latest` tag so a name compares equal whether the
+ * source wrote it or not. `gemma4:e2b` is a real tag (the `e2b` is the version),
+ * so only a trailing `:latest` is removed — never an arbitrary `:segment`.
+ */
+function normalizeOllamaName(name: string): string {
+  return name.replace(/:latest$/, "");
+}
+
+/**
+ * Relabel Ollama models so an alias shows the real model it currently runs in
+ * parentheses — "geekom-model-1 (gemma4:e4b)" instead of a frozen
+ * "geekom-model-1 (qwen3:14b)" that survives long after the alias is repointed.
+ *
+ * An `ollama cp` alias shares its manifest digest with the base model it points
+ * at, and that digest is the only reliable signal of the link: `/api/show`
+ * reports a blob path for `FROM` and leaves `parent_model` empty, so there is no
+ * "what does this resolve to" field to read. Matching digests across `/api/tags`
+ * is how the current base is discovered.
+ *
+ * Pure and tag-fed so the relabelling is testable without a running Ollama —
+ * `resolveOllamaBaseLabels` does the fetch and hands the tags in.
+ *
+ * `aliases` are the operator's stable names (the chat/summarize/embedding model
+ * slots): only those get a parenthetical, because a real model name like
+ * `gemma4:e2b` is already its own truth and annotating it with a sibling alias
+ * would read backwards. For an alias, the base is the same-digest tag that is
+ * not itself an alias (the pulled library model); if every sibling is an alias
+ * the first sibling is used, and an alias with no sibling is left untouched.
+ */
+export function relabelOllamaModels(
+  models: ProviderModel[],
+  aliases: Iterable<string>,
+  tags: { name?: unknown; digest?: unknown }[],
+): ProviderModel[] {
+  const aliasSet = new Set(
+    [...aliases]
+      .filter((a): a is string => typeof a === "string" && a.length > 0)
+      .map((a) => normalizeOllamaName(a)),
+  );
+
+  const nameToDigest = new Map<string, string>();
+  const digestToNames = new Map<string, string[]>();
+  for (const tag of tags) {
+    const name = typeof tag?.name === "string" ? normalizeOllamaName(tag.name) : "";
+    const digest = typeof tag?.digest === "string" ? tag.digest : "";
+    if (!name || !digest) continue;
+    nameToDigest.set(name, digest);
+    const siblings = digestToNames.get(digest);
+    if (siblings) siblings.push(name);
+    else digestToNames.set(digest, [name]);
+  }
+
+  return models.map((model) => {
+    const id = normalizeOllamaName(model.id);
+    if (!aliasSet.has(id)) return model; // a base model — its own label is the truth
+    const digest = nameToDigest.get(id);
+    if (!digest) return model; // alias not installed (or no longer) — leave the stored label
+    const siblings = (digestToNames.get(digest) ?? []).filter((name) => name !== id);
+    const base = siblings.find((name) => !aliasSet.has(name)) ?? siblings[0];
+    if (!base) return model; // nothing else shares the digest — nothing to annotate
+    return { ...model, label: `${id} (${base})` };
+  });
+}
+
+/**
+ * Fetch `/api/tags` from Ollama and relabel `models` so aliases show their
+ * current base. Live, not cached: an alias can be repointed with `ollama cp` at
+ * any moment, and the whole point is that the parenthetical stops going stale.
+ *
+ * Never throws. Ollama being down, an unexpected payload, or a fetch timeout
+ * returns the models unchanged so the picker still renders — the operator sees a
+ * stale label rather than no picker at all, and the next open retried live.
+ */
+export async function resolveOllamaBaseLabels(
+  models: ProviderModel[],
+  aliases: Iterable<string>,
+  ollamaUrl: string,
+): Promise<ProviderModel[]> {
+  try {
+    const res = await fetch(`${ollamaUrl.replace(/\/+$/, "")}/api/tags`, {
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) return models;
+    const body = (await res.json()) as { models?: unknown };
+    const tags = Array.isArray(body?.models) ? (body.models as { name?: unknown; digest?: unknown }[]) : [];
+    return relabelOllamaModels(models, aliases, tags);
+  } catch {
+    return models;
+  }
+}
+
+/**
  * Ask the provider what models it has.
  *
  * Hardcoded model lists go stale the moment a vendor ships a new version — the

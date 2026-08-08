@@ -19,15 +19,15 @@ import { lastOutcomeByReviewer, type ReviewerOutcome } from "./review-artifacts.
 import { providerService, providerAuthHeaders, type Provider } from "./provider-service.ts";
 import { stripAnsi } from "../utils/terminal.ts";
 
-export type ReviewerKind = "codex" | "provider";
+export type ReviewerKind = "codex" | "provider" | "claude";
 
 export interface Reviewer {
-  /** Stable id used by `/reviewers remove <id>`. "codex" or "provider:<n>". */
+  /** Stable id used by `/reviewers remove <id>`. "codex", "claude" or "provider:<n>". */
   id: string;
   kind: ReviewerKind;
   /** `providers.id` — only meaningful for kind === "provider". */
   providerId?: number | null;
-  /** Codex model name, or the provider's model id. */
+  /** The CLI model name, or the provider's model id. */
   model: string;
   enabled: boolean;
 }
@@ -101,6 +101,9 @@ export const REVIEW_MAX_TOKENS = 32_000;
  */
 export const REVIEW_MAX_TOKENS_FALLBACK = 4_096;
 
+/** The model the Claude CLI reviewer runs on when none is configured. */
+export const CLAUDE_DEFAULT_MODEL = "claude-opus-5";
+
 /** An error body that reads like the model rejecting the size of the ask. */
 export function isBudgetRejection(body: string): boolean {
   return /max_tokens|max tokens|maximum context|context length|too large|output limit/i.test(body);
@@ -160,6 +163,12 @@ export async function defaultReviewers(): Promise<Reviewer[]> {
   const deepseek = await providerService.getByName("DeepSeek");
   return [
     { id: "codex", kind: "codex", model: process.env.CODEX_MODEL ?? "gpt-5.6-sol", enabled: true },
+    // Unconditional, unlike the provider reviewers: it needs no row in
+    // `providers` and no key, only the CLI the operator already runs. It is
+    // here rather than left to `/reviewers_add` because `/reviewers_default` is
+    // what an operator reaches for when the set is broken, and a default that
+    // restores only the two reviewers that were down is not a repair.
+    { id: "claude", kind: "claude" as const, model: CLAUDE_DEFAULT_MODEL, enabled: true },
     ...(deepseek
       ? [{ id: `provider:${deepseek.id}`, kind: "provider" as const, providerId: deepseek.id, model: "deepseek-v4-pro", enabled: true }]
       : []),
@@ -195,6 +204,112 @@ export async function setReviewers(reviewers: Reviewer[]): Promise<void> {
  */
 export function normalizeProviderBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/anthropic$/, "").replace(/\/v1$/, "").replace(/\/+$/, "");
+}
+
+/**
+ * Where each vendor actually keeps its OpenAI-compatible chat endpoint.
+ *
+ * `normalizeProviderBaseUrl` above is a guess: chop the Anthropic suffix, append
+ * `/chat/completions`, hope. Measured against the four providers registered on
+ * this machine it is right about exactly one of them — DeepSeek — which is why
+ * it looked like a rule for as long as DeepSeek was the only reviewer that ran.
+ *
+ *   deepseek  api.deepseek.com/anthropic  → /chat/completions          ✔ (no /v1 needed)
+ *   openrouter openrouter.ai/api          → /api/chat/completions      ✘ 404
+ *   z.ai      api.z.ai/api/anthropic      → /api/chat/completions      ✘ see below
+ *   moonshot  api.moonshot.ai/anthropic   → /chat/completions          ✘ needs /v1
+ *
+ * z.ai is the one that hurt: it answers that wrong route with **HTTP 200** and
+ * `{"code":500,"msg":"404 NOT_FOUND","success":false}` in the body, so the
+ * request "succeeded", the content was empty, and the operator was told the
+ * model had nothing to say. See `providerErrorInBody`.
+ *
+ * Keyed by host so a stored URL that differs in path or trailing slash still
+ * matches, and falling back to the old behaviour for a vendor nobody has taught
+ * this map about — a guess is still better than refusing to call.
+ *
+ * A `Map`, not an object literal: indexed by a host read out of a database row,
+ * a plain object answers `constructor` and `__proto__` with something truthy
+ * and non-string, producing a garbage URL flagged `known: true` — the one case
+ * where the "this was a guess" flag would be actively lying.
+ */
+const OPENAI_ROUTE_BY_HOST = new Map<string, string>([
+  ["openrouter.ai", "/api/v1/chat/completions"],
+  ["api.z.ai", "/api/paas/v4/chat/completions"],
+  ["api.moonshot.ai", "/v1/chat/completions"],
+  ["api.moonshot.cn", "/v1/chat/completions"],
+  ["api.deepseek.com", "/chat/completions"],
+]);
+
+/**
+ * The full URL to POST a review to, and whether it came from the map.
+ *
+ * The flag is not decoration: when the fallback answered, the vendor is named in
+ * the failure so the next person reads "openrouter.ai: http 404" rather than a
+ * bare 404 that could have come from anywhere.
+ */
+export function openAiRouteFor(baseUrl: string): { url: string; known: boolean } {
+  let host = "";
+  try {
+    host = new URL(baseUrl).host.toLowerCase();
+  } catch {
+    // Not a URL at all. The fallback below produces the same string the
+    // previous code did, so a malformed row fails the way it used to.
+  }
+  const mapped = OPENAI_ROUTE_BY_HOST.get(host);
+  if (mapped) {
+    const origin = new URL(baseUrl).origin;
+    return { url: `${origin}${mapped}`, known: true };
+  }
+  return { url: `${normalizeProviderBaseUrl(baseUrl)}/chat/completions`, known: false };
+}
+
+/**
+ * The error a 200 is carrying, if it is carrying one.
+ *
+ * A success status is not a success. z.ai reports a missing route as
+ * `{"code":500,"msg":"404 NOT_FOUND","success":false}` under HTTP 200; several
+ * OpenAI-compatible gateways do the same with `{"error":{"message":…}}`. Every
+ * one of those used to reach the `!content` branch and be reported as "empty
+ * response" — a wrong route described as a quiet model, which sends whoever
+ * reads it to the account page instead of the URL.
+ *
+ * Returns null when the body says nothing about a failure, which includes every
+ * ordinary successful completion.
+ */
+export function providerErrorInBody(body: string): string | null {
+  let data: unknown;
+  try {
+    data = JSON.parse(body);
+  } catch {
+    return null;
+  }
+  if (!data || typeof data !== "object") return null;
+  const obj = data as Record<string, unknown>;
+
+  // `{"error": {...}}` or `{"error": "…"}` — the OpenAI shape.
+  const err = obj.error;
+  if (typeof err === "string" && err.trim()) return err.trim().slice(0, 200);
+  if (err && typeof err === "object") {
+    const msg = (err as Record<string, unknown>).message;
+    if (typeof msg === "string" && msg.trim()) return msg.trim().slice(0, 200);
+    return JSON.stringify(err).slice(0, 200);
+  }
+
+  // `{"code":500,"msg":"404 NOT_FOUND","success":false}` — the z.ai shape.
+  // `success: false` is the reliable half; `code` is 200-as-a-number on some
+  // gateways and a string on others, so it is only read when it disagrees.
+  const failed =
+    obj.success === false ||
+    (typeof obj.code === "number" && obj.code >= 400) ||
+    (typeof obj.code === "string" && /^\d+$/.test(obj.code) && Number(obj.code) >= 400);
+  if (failed) {
+    const msg = obj.msg ?? obj.message;
+    if (typeof msg === "string" && msg.trim()) return msg.trim().slice(0, 200);
+    return `provider error ${String(obj.code ?? "")}`.trim().slice(0, 200);
+  }
+
+  return null;
 }
 
 /** Whether an OpenAI-compatible error response means "this reviewer is down". */
@@ -382,6 +497,325 @@ export async function callCodexReview(
   }
 }
 
+/**
+ * The argv for a non-interactive Claude Code run.
+ *
+ * `--strict-mcp-config` with an empty config is load-bearing, not tidiness.
+ * `~/.claude.json` defines `helyx` and `helyx-channel` as *global* MCP servers,
+ * loaded by every `claude` in every directory. A reviewer that loaded them
+ * would connect to the bot on every review — see `claudeEnv` for what that
+ * costs.
+ *
+ * The config is passed inline rather than as `/dev/null`. That was the obvious
+ * way to say "no servers" and the CLI rejects it:
+ *
+ *   Error: Invalid MCP configuration: MCP config is not a valid JSON
+ *
+ * — an empty file is not an empty object, and the reviewer would have failed
+ * before it was asked anything, the way the Codex reviewer did for months.
+ *
+ * There is deliberately **no** `--permission-mode plan` here. It was the
+ * obvious way to say "this one only reads", and the first review run through
+ * this code path reported what it actually does: plan mode injects Claude
+ * Code's own plan workflow into the system prompt — write a plan file, launch
+ * Explore subagents, end the turn with `ExitPlanMode` or `AskUserQuestion` —
+ * which contradicts every clause of `CLAUDE_DIRECTIVE` below. A reviewer that
+ * complied would answer with a plan-approval request, exit 0 with non-empty
+ * stdout, and be filed as a successful review. That is precisely the failure
+ * `CODEX_DIRECTIVE` exists to prevent, arriving through the flag meant to make
+ * the reviewer safer.
+ *
+ * But plan mode *was* enforcing read-only, and the first replacement for it —
+ * denying `Edit`, `Write` and `NotebookEdit` — was much weaker than it looked.
+ * The reviewer inherits the caller's working directory, so this repository's
+ * `.claude/settings.local.json` applies, and it allows 379 `Bash(...)` patterns
+ * including `docker compose:*` and `git commit -m ':*`. An allowlisted tool
+ * does not prompt, and under `-p` there is nobody to prompt. A reviewer that
+ * decided to verify a fix by running `helyx bounce` would be the same class of
+ * harm as the `CHANNEL_SOURCE` incident this flow exists to prevent.
+ *
+ * So the denial below is long, and it is a deny-list because the obvious
+ * alternative does not work. `--allowed-tools Read Grep Glob` reads like a
+ * restriction and is not one: asked directly, a CLI started that way reports
+ * Bash, Write, Task, Workflow and Skill all still available. Only
+ * `--disallowed-tools` denies, and it has to name the delegation routes as well
+ * as the direct ones — with only the three write tools denied, the reviewer
+ * reported it could still reach a shell through `Monitor` and a subagent
+ * through `TaskCreate`. With the list as it stands it reports "No Bash,
+ * Edit/Write, fetch, or subagent tool". Anything the CLI gains later is allowed
+ * by default; that is the standing cost of a deny-list, and the reason this
+ * comment records how it was checked.
+ *
+ * Known and not fixed here — two channels from the host into the reviewer:
+ *
+ * - `--settings` is documented as loading *additional* settings ("Path to a
+ *   settings JSON file or a JSON string to load additional settings from").
+ *   It adds a layer, it does not replace one, and there is no `--strict-settings`
+ *   to match `--strict-mcp-config`. So `~/.claude/settings.json` and its hooks
+ *   still load. An earlier version of this comment claimed the opposite, which
+ *   is worse than the gap it described: `--bare` is the only flag that would
+ *   do it, and it forces API-key auth, which defeats the whole point of a
+ *   reviewer on the subscription.
+ * - the *project* `.claude/settings.json` applies as well, so this repository's
+ *   `keryx security check-input` hook runs on the review prompt. It degrades
+ *   the prompt rather than breaking the run — the review that found the
+ *   plan-mode defect was produced with that hook firing.
+ */
+
+/**
+ * Everything that can run a command, change a file, reach the network, or hand
+ * the work to something that can. Verified against the CLI, not assumed.
+ */
+export const CLAUDE_DENIED_TOOLS = [
+  "Bash",
+  "Edit",
+  "Write",
+  "NotebookEdit",
+  "Task",
+  "Agent",
+  "Workflow",
+  "Skill",
+  "Monitor",
+  "WebFetch",
+  "WebSearch",
+  "EnterWorktree",
+  "ExitWorktree",
+  "RemoteTrigger",
+  "CronCreate",
+  "CronDelete",
+  "PushNotification",
+  "SendMessage",
+  "DesignSync",
+  "TaskCreate",
+  "TaskUpdate",
+  "TaskStop",
+  "Artifact",
+] as const;
+
+export const CLAUDE_EMPTY_MCP_CONFIG = '{"mcpServers":{}}';
+
+export function claudeArgv(model: string, prompt: string): string[] {
+  return [
+    "claude",
+    "-p",
+    // Both of these are variadic. Whatever follows their values is read as one
+    // more value, so the prompt must never sit directly behind one — measured
+    // twice, once as `Permission deny rule "single" matches no known tool` and
+    // once as the CLI trying to open the prompt as an MCP config file. `--model`
+    // takes exactly one value, so it is what stands between them and the
+    // prompt, and it stays last for that reason rather than by taste.
+    "--disallowed-tools",
+    ...CLAUDE_DENIED_TOOLS,
+    "--strict-mcp-config",
+    "--mcp-config",
+    CLAUDE_EMPTY_MCP_CONFIG,
+    "--model",
+    model,
+    prompt,
+  ];
+}
+
+/**
+ * The variables a nested `claude` must NOT inherit, and why each one.
+ *
+ * `ANTHROPIC_*` — the session this runs inside may be bound to a third-party
+ * provider (GLM, Kimi, the local Ollama proxy). Inheriting those would route
+ * the "independent" review straight back through the model it is supposed to be
+ * independent of, and the report would still be labelled Claude. Verified on
+ * 2026-08-08: with `ANTHROPIC_API_KEY` left in place the CLI answers
+ * `Not logged in · Please run /login`; with all four cleared it answers on the
+ * subscription.
+ *
+ * `CHANNEL_SOURCE` — the expensive one. `scripts/run-cli.sh:137` starts a
+ * session as `CHANNEL_SOURCE=remote claude …`, a prefix assignment, so the
+ * variable lives in the session's own environment and every child process
+ * inherits it. `channel/index.ts:81` reads it and registers the process as a
+ * *remote session for its project path* — the same row the parent session
+ * holds. On 2026-08-08 a single hand-run `claude -p` did exactly this: the bot
+ * logged `sessionId 3 … trigger:"disconnect"` at 07:45:47 while the parent was
+ * still working, the parent's next tool call never returned, and three operator
+ * messages sat in a queue for 22 minutes routed `mode:"disconnected"`. A
+ * reviewer runs on every review, so this would not have been a one-off.
+ *
+ * `CLAUDE_CONFIG_DIR` and the `CLAUDE_CODE_*` family — a settings file can
+ * carry `env.ANTHROPIC_BASE_URL` of its own, which is how `claude-code-router`
+ * hijacked every session on this machine once already. Stripping the variables
+ * while leaving a pointer to a config that re-sets them would route the
+ * "independent" review back through the third-party provider *and still label
+ * the report Claude*, which is the one failure this list exists to prevent.
+ */
+export const CLAUDE_STRIPPED_ENV = [
+  "ANTHROPIC_BASE_URL",
+  "ANTHROPIC_AUTH_TOKEN",
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_MODEL",
+  "CHANNEL_SOURCE",
+  "CLAUDE_CONFIG_DIR",
+  "CLAUDECODE",
+] as const;
+
+/**
+ * The environment for the reviewer CLI: the caller's, minus the above.
+ *
+ * The `CLAUDE_CODE_*` prefix is swept rather than listed: the list would be a
+ * table, and this repository has been bitten by tables that fell behind.
+ */
+export function claudeEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...base, FORCE_COLOR: "0" };
+  for (const key of CLAUDE_STRIPPED_ENV) delete env[key];
+  for (const key of Object.keys(env)) {
+    if (key.startsWith("CLAUDE_CODE_")) delete env[key];
+  }
+  return env;
+}
+
+/**
+ * Said to the Claude CLI, and only to it.
+ *
+ * Same reason `CODEX_DIRECTIVE` exists: a CLI reviewer reads the operator's own
+ * `CLAUDE.md` and skills, and this repository's `CLAUDE.md` instructs any agent
+ * asked for a review to run `scripts/review.ts` — which is what is calling it.
+ * Without this the reviewer would try to convene the reviewers.
+ */
+export const CLAUDE_DIRECTIVE =
+  "You are running non-interactively as one independent reviewer. Output the review itself as your " +
+  "final message. Do not delegate to other reviewers or run any review script, do not ask questions, " +
+  "do not route to another skill or orchestrator, and do not create or write any files.";
+
+/**
+ * Why a Claude CLI run produced nothing.
+ *
+ * Deliberately not `classifyCodexFailure`: that function subtracts the prompt
+ * and reads only self-describing lines because `codex exec` narrates itself
+ * onto stderr while it works. `claude -p` does not, so the wording it uses for
+ * the two states that matter — a rejected login and a spent limit — can be read
+ * directly. Null means the run succeeded.
+ */
+export function classifyClaudeFailure(exitCode: number, stdout: string, stderr: string): string | null {
+  const out = stdout.trim();
+
+  // Checked before the "it answered" short-circuit, and this ordering is the
+  // point. `claude -p` prints its refusal to *stdout* and can exit 0 doing it:
+  //
+  //   Not logged in · Please run /login
+  //
+  // Under the Codex-style short-circuit that is a successful review whose
+  // content is the login error — recorded, shown to the operator as this
+  // reviewer's opinion, and counted by `pickMode` as a reason not to fall back
+  // to reviewing the change ourselves.
+  //
+  // Bounded by length *and* anchored to the start, so it stays a refusal and
+  // not a filter on reviews. Unanchored it was a filter: a terse reviewer
+  // writing "The invalid api key path is unhandled." is 38 characters, matches,
+  // and would be discarded as an auth failure — and the diff under review
+  // contains the CLI's own refusal text four times, which is exactly the sort
+  // of string a reviewer quotes back.
+  if (out.length < 200 && /^(not logged in|please run \/login|invalid api key)/i.test(out)) {
+    return "auth: the Claude CLI is not logged in for this environment";
+  }
+
+  // It answered. Same reason as the Codex path: a review that happens to quote
+  // the word "limit" is still a review.
+  if (exitCode === 0 && out) return null;
+
+  const all = `${stdout}\n${stderr}`.toLowerCase();
+  if (/not logged in|please run \/login|invalid api key|authentication_error|unauthorized/.test(all)) {
+    return "auth: the Claude CLI is not logged in for this environment";
+  }
+  if (/usage limit|rate limit|quota|too many requests/.test(all)) {
+    const until = all.match(/try again at ([^.\n]+)/)?.[1]?.trim();
+    return until ? `limit until ${until}` : "limit";
+  }
+  if (/credit balance|insufficient/.test(all)) return "limit/balance";
+  if (exitCode !== 0) return `failed (exit ${exitCode})`;
+  return "empty output";
+}
+
+/** What `callClaudeReview` needs from the world, so a test can be the world. */
+export type SpawnClaude = (
+  argv: string[],
+  env: NodeJS.ProcessEnv,
+) => Promise<{ stdout: string; stderr: string; exitCode: number }>;
+
+const spawnClaude: SpawnClaude = async (argv, env) => {
+  const proc = Bun.spawn(argv, {
+    // The CLI waits on an inherited stdin the same way Codex does, and nothing
+    // here has anything to send it.
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+    env,
+  });
+
+  const timer = setTimeout(() => proc.kill(), REVIEW_TIMEOUT_MS);
+  const expired = new Promise<never>((_, reject) => {
+    setTimeout(
+      () => reject(new Error(`claude timed out after ${Math.round(REVIEW_TIMEOUT_MS / 1000)}s`)),
+      REVIEW_TIMEOUT_MS + 5_000,
+    ).unref?.();
+  });
+
+  try {
+    const [stdout, stderr, exitCode] = await Promise.race([
+      Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]),
+      expired,
+    ]);
+    return { stdout, stderr, exitCode };
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+/**
+ * Whether the CLI exists here, as an argument rather than as a fact.
+ *
+ * It was `Bun.which("claude")` inline, and that reached past the `spawn` seam:
+ * on a machine without the CLI — CI, and the bot image — the four tests that
+ * inject a fake spawn never got to use it, because the function had already
+ * decided the world was empty. A test that supplies the world should not be
+ * overruled by the real one. Caught by CI, which is exactly the machine the
+ * check was added for.
+ */
+export type WhichClaude = () => string | null;
+
+export async function callClaudeReview(
+  reviewer: Reviewer,
+  prompt: string,
+  spawn: SpawnClaude = spawnClaude,
+  which: WhichClaude = () => Bun.which("claude"),
+): Promise<ReviewerReport> {
+  const model = reviewer.model || CLAUDE_DEFAULT_MODEL;
+  const fail = (error: string): ReviewerReport => ({ reviewerId: reviewer.id, label: "Claude", model, ok: false, error });
+  const sent = `${CLAUDE_DIRECTIVE}\n\n${prompt}`;
+  // Asked before spawning rather than after failing. The bot image installs
+  // git, curl and ca-certificates and no CLIs, and `defaultReviewers` enables
+  // this reviewer for every caller — so a Telegram-triggered review would spawn
+  // a process that can only fail. The report is the same either way; this skips
+  // the spawn.
+  if (!which()) {
+    return fail("unavailable: the claude CLI is not installed in this environment (host-only reviewer)");
+  }
+  try {
+    const { stdout, stderr, exitCode } = await spawn(claudeArgv(model, sent), claudeEnv());
+    const out = stripAnsi(stdout).trim();
+    const failure = classifyClaudeFailure(exitCode, out, stripAnsi(stderr));
+    if (failure) return fail(failure);
+    return { reviewerId: reviewer.id, label: "Claude", model, ok: true, content: out };
+  } catch (err) {
+    const text = String(err);
+    // The bot image installs git, curl and ca-certificates and no CLIs, so a
+    // review triggered from Telegram rather than from the host reaches this.
+    // Said plainly, because "ENOENT" in a reviewer report reads as a bug in the
+    // reviewer rather than as "this reviewer does not exist in here". The
+    // subscription login lives in the operator's home directory, so the fix is
+    // not to add the binary to the image.
+    if (/ENOENT|not found|No such file/i.test(text)) {
+      return fail("unavailable: the claude CLI is not installed in this environment (host-only reviewer)");
+    }
+    return fail(text.slice(0, 200));
+  }
+}
+
 /** The provider row lookup, so a test does not need a database to have a provider. */
 export type GetProvider = (id: number) => Promise<Provider | null>;
 
@@ -394,14 +828,39 @@ export async function callProviderReview(
   const prov = await getProvider(reviewer.providerId ?? -1);
   if (!prov) return { reviewerId: reviewer.id, label: `provider#${reviewer.providerId}`, model: reviewer.model, ok: false, error: "unknown provider" };
   const label = prov.name;
-  const fail = (error: string): ReviewerReport => ({ reviewerId: reviewer.id, label, model: reviewer.model, ok: false, error });
 
-  const baseUrl = normalizeProviderBaseUrl(prov.base_url);
+  // The route the vendor actually has, rather than one derived by chopping a
+  // suffix off the Anthropic URL. `known` travels to the failure message: when
+  // the fallback answered, the operator needs to know it was a guess.
+  const route = openAiRouteFor(prov.base_url);
+
+  // The vendor hint goes on the failures a wrong route can cause, and only
+  // those. It started on `http <status>` alone, which missed the HTML error
+  // page (`invalid json`) and the refused connection (`network: …`) — the two
+  // messages that give the next reader nothing to go on. Then it went on every
+  // failure, which was worse in the other direction: `limit/balance` is a real
+  // 429 from the vendor's billing layer and `REVIEW_TRUNCATED` is a well-formed
+  // completion, so both of them *prove* the route was right, and both were
+  // being annotated with the URL as though it were the suspect.
+  //
+  // The narrower set also keeps `base_url` out of the common transient path. It
+  // reaches Telegram and the `run.json` artifacts, and a provider registered
+  // one day with a credential in its query string should not be logged on every
+  // flaky connection.
+  const routeShaped = (error: string): boolean =>
+    error.startsWith("http ") || error.startsWith("network:") || error === "invalid json";
+  const fail = (error: string): ReviewerReport => ({
+    reviewerId: reviewer.id,
+    label,
+    model: reviewer.model,
+    ok: false,
+    error: route.known || !routeShaped(error) ? error : `${error} (unmapped vendor ${prov.base_url})`,
+  });
 
   const ask = async (maxTokens: number): Promise<{ status: number; body: string } | string> => {
     let res: Response;
     try {
-      res = await doFetch(`${baseUrl}/chat/completions`, {
+      res = await doFetch(route.url, {
         method: "POST",
         // From the provider's own auth_scheme rather than an assumption. This
         // said `Bearer` unconditionally, which is right for DeepSeek and a 401
@@ -451,23 +910,42 @@ export async function callProviderReview(
   if (answer.status < 200 || answer.status >= 300) {
     return isProviderLimitError(answer.status, body) ? fail("limit/balance") : fail(`http ${answer.status}`);
   }
+  let data: { choices?: Array<{ message?: { content?: string }; finish_reason?: string }> };
   try {
-    const data = JSON.parse(body) as {
-      choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
-    };
-    const choice = data.choices?.[0];
-    const content = choice?.message?.content?.trim() ?? "";
-    if (!content) {
-      // The distinction the old "empty response" hid. A reasoning model that
-      // runs out of budget mid-thought returns exactly this: 200, well-formed,
-      // finish_reason "length", nothing said. Reported as what it is, so the
-      // next person does not go looking at the account.
-      return fail(choice?.finish_reason === "length" ? REVIEW_TRUNCATED : "empty response");
-    }
-    return { reviewerId: reviewer.id, label, model: reviewer.model, ok: true, content };
+    data = JSON.parse(body) as typeof data;
   } catch {
     return fail("invalid json");
   }
+
+  // Content first, envelope second, and the order is the fix.
+  //
+  // The envelope check used to run before this, so a body that carried both a
+  // review and an empty `"error": {}` — truthy to `providerErrorInBody`, which
+  // stringifies it to `"{}"` — threw the review away and reported the failure
+  // as two braces. Reading the content first costs the z.ai case nothing: that
+  // body has no `choices` at all, so it still falls through to the envelope and
+  // is still reported as `404 NOT_FOUND`.
+  const choice = data.choices?.[0];
+  const content = choice?.message?.content?.trim() ?? "";
+  if (content) return { reviewerId: reviewer.id, label, model: reviewer.model, ok: true, content };
+
+  // Nothing was said. Now the body gets to explain itself.
+  const announced = providerErrorInBody(body);
+  if (announced) {
+    // Classified against the whole body, displayed from `announced`. The
+    // machine-readable half of an OpenAI error envelope lives in siblings of
+    // `message` — `"type":"insufficient_quota"`, `"code":"billing_hard_limit_reached"`
+    // — so classifying the extracted sentence alone reports a spent quota as a
+    // generic error, and `failureHidesFromProbe` then leaves the reviewer
+    // marked available.
+    return isProviderLimitError(answer.status, body) ? fail("limit/balance") : fail(announced);
+  }
+
+  // The distinction the old "empty response" hid. A reasoning model that runs
+  // out of budget mid-thought returns exactly this: 200, well-formed,
+  // finish_reason "length", nothing said. Reported as what it is, so the next
+  // person does not go looking at the account.
+  return fail(choice?.finish_reason === "length" ? REVIEW_TRUNCATED : "empty response");
 }
 
 /**
@@ -605,13 +1083,22 @@ async function runAllowingDifference(argv: string[]): Promise<string> {
   }
 }
 
-/** How much diff this reviewer's transport can carry. */
+/**
+ * How much diff this reviewer's transport can carry.
+ *
+ * The 100 KB figure is about argv, not about the model: a CLI reviewer receives
+ * the prompt as one command-line argument and Linux caps that at 128 KiB. So it
+ * binds `claude` for exactly the same reason it binds `codex`, and an HTTP
+ * provider — which has no argv — still gets the larger budget.
+ */
 export function budgetFor(reviewer: Reviewer): number {
-  return reviewer.kind === "codex" ? REVIEW_DIFF_BUDGET_BYTES : REVIEW_DIFF_BUDGET_BYTES_PROVIDER;
+  return reviewer.kind === "provider" ? REVIEW_DIFF_BUDGET_BYTES_PROVIDER : REVIEW_DIFF_BUDGET_BYTES;
 }
 
 async function runOne(reviewer: Reviewer, prompt: string): Promise<ReviewerReport> {
-  return reviewer.kind === "codex" ? callCodexReview(reviewer, prompt) : callProviderReview(reviewer, prompt);
+  if (reviewer.kind === "codex") return callCodexReview(reviewer, prompt);
+  if (reviewer.kind === "claude") return callClaudeReview(reviewer, prompt);
+  return callProviderReview(reviewer, prompt);
 }
 
 /**
@@ -743,6 +1230,33 @@ export async function getReviewerStatuses(): Promise<ReviewerStatus[]> {
         }
       }
       out.push({ id: r.id, label: "Codex", model: r.model, available, probed: true, detail });
+      continue;
+    }
+
+    if (r.kind === "claude") {
+      // No probe, and deliberately none. The only thing that proves this
+      // reviewer works is a headless run, and a headless run spends the
+      // operator's own subscription quota — the same pool the sessions draw
+      // from. `claude --version` would prove the binary exists and nothing
+      // about the login, which is precisely the green tick this file's
+      // `probed` field was added to stop telling.
+      //
+      // Because there is no probe, a failed last run is the *only* evidence
+      // there is, and it decides. The Codex branch above may keep a reviewer
+      // green through a transient failure because a live probe disagrees with
+      // it; here nothing disagrees with it. Raised in review: the borrowed
+      // expression left `available: true` next to a detail line reading
+      // "последний прогон не удался" — the green tick meaning "nobody asked"
+      // that `probed` was added to abolish.
+      const last = lastRun.get(r.id);
+      out.push({
+        id: r.id,
+        label: "Claude",
+        model: r.model,
+        available: last ? last.ok : true,
+        probed: Boolean(last),
+        detail: last ? (last.ok ? "последний прогон: ок" : (last.error ?? "последний прогон не удался")) : "не проверялся",
+      });
       continue;
     }
 
