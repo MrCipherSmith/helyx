@@ -81,6 +81,14 @@ unblocked by the maintainer and landed too. Coverage 36.25% → 43.30%, tests
 "what would close it", and it argues for changing the method rather than
 repeating it.
 
+## Outside the current programme
+
+Packages opened directly by the operator, not from the 2026-08-05 survey.
+
+| Package | Status | Note |
+|---|---|---|
+| [codex-provider-2026-08-09](codex-provider-2026-08-09/README.md) | `draft` | Add Codex (OpenAI, via the operator's ChatGPT subscription) as a `/providers` option, same mechanism as DeepSeek/Ollama. Phase 0 spike run 2026-08-09 (see `spike-findings.md`): `codex exec` cannot separate "decide" from "act" the way Ollama's `/api/chat` does — the clean-translation design is ruled out; a reduced-fidelity delegated-sub-agent design remains, pending an operator decision on whether to build it |
+
 ## Earlier packages
 
 | Package | Status | Note |
