@@ -87,6 +87,24 @@ export async function authorizeRestart(
 ): Promise<GateResult> {
   const fingerprint = fingerprintOf(row);
   if (!fingerprint) {
+    if (GATED_RESTART_COMMANDS.has(row.command)) {
+      // Structural safety before policy (adopted property #4). A command in
+      // the gated set with a payload `fingerprintOf` cannot read a
+      // fingerprint from — `docker_restart` with no `container`, `proj_stop`
+      // with no `path` — has nothing to compare a grant against, and "cannot
+      // derive a fingerprint" is not the same question as "was this
+      // approved". **Corrected 2026-08-12**: this used to return `ok: true`
+      // for every null fingerprint regardless of whether the command was
+      // gated, which let a malformed gated command straight through — found
+      // in review, and reachable in practice: `docker_restart`'s own
+      // container-name regex coerces `undefined` to the string `"undefined"`
+      // and passes it, so this was the only thing standing between a
+      // malformed row and an unapproved restart.
+      return {
+        ok: false,
+        message: `refused — ${row.command} is gated but no fingerprint could be derived from its payload (malformed)`,
+      };
+    }
     // Not one of the eight gated commands — nothing to authorize. Callers are
     // expected to only invoke this for commands in GATED_RESTART_COMMANDS;
     // this is the safe default for anything else that reaches it by mistake.
@@ -102,7 +120,22 @@ export async function authorizeRestart(
   }
 
   const result = await presentGrant(sql, grantId, fingerprint, now);
-  if (result.ok) return { ok: true };
+  if (result.ok) {
+    // F6 — a standing grant authorizes an autonomous actor through
+    // `authorizeAutonomousAction`, which this gate never calls. Accepting one
+    // here would turn "standing" into an operator bypass of P-2.2's
+    // single-use rule: the same grant, presented for the same fingerprint
+    // through an operator-issued `admin_commands` row, would authorize every
+    // restart of that shape forever rather than the one an operator actually
+    // confirmed.
+    if (result.grant.kind === "standing") {
+      return {
+        ok: false,
+        message: "grant is a standing grant — it authorizes an autonomous actor, not an operator-issued command",
+      };
+    }
+    return { ok: true };
+  }
 
   switch (result.reason) {
     case "not-found":

@@ -10,7 +10,7 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { databaseAvailable, provisionTestDatabase, NO_DATABASE_MESSAGE, type TestDatabase } from "../fixtures/test-db.ts";
 import { authorizeRestart, GATED_RESTART_COMMANDS } from "../../scripts/restart-gate.ts";
-import { issueOperatorGrant } from "../../utils/action-approval-grant.ts";
+import { issueOperatorGrant, issueStandingGrant } from "../../utils/action-approval-grant.ts";
 
 describe("GATED_RESTART_COMMANDS", () => {
   test("is every teardown-capable command, not only the ones that take the lease", () => {
@@ -128,6 +128,48 @@ describeWithDb("authorizeRestart, against a real database", () => {
     // the forged one — so this must succeed exactly because the forged field
     // was never read.
     expect(result.ok).toBe(true);
+  });
+
+  // F2 — a gated command whose payload yields no fingerprint must fail
+  // closed, not open. Before the fix, `authorizeRestart` returned `ok: true`
+  // for ANY null fingerprint, gated or not — this is the case that mattered.
+  test("F2: docker_restart with no container (malformed) fails closed, not open", async () => {
+    const result = await authorizeRestart(db.sql, { command: "docker_restart", payload: {} });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable");
+    expect(result.message).toMatch(/malformed/);
+  });
+
+  test("F2: proj_stop with project_id but no path (malformed) fails closed — the exact shape the daemon's own name/project_id fallback can produce", async () => {
+    const result = await authorizeRestart(db.sql, { command: "proj_stop", payload: { project_id: 42 } });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable");
+    expect(result.message).toMatch(/malformed/);
+  });
+
+  test("F2: a command outside the gated set with no fingerprint is still allowed — the safe default is unchanged for genuinely ungated commands", async () => {
+    const result = await authorizeRestart(db.sql, { command: "stack_up", payload: {} });
+    expect(result.ok).toBe(true);
+  });
+
+  // F6 — a standing grant authorizes an autonomous actor via
+  // `authorizeAutonomousAction`, never an operator-issued `admin_commands`
+  // row. Without this check a standing grant would be an unlimited-use
+  // operator bypass of P-2.2's single-use rule for its fingerprint.
+  test("F6: a standing grant does not authorize an operator-issued admin_commands row, even with a matching fingerprint", async () => {
+    const path = "/tmp/standing-not-operator";
+    const standing = await issueStandingGrant(db.sql, {
+      fingerprint: { half: "sessions", scope: path, downtime: "full" },
+      actor: "tmux-watchdog",
+      authorizedBy: 1,
+    });
+    const result = await authorizeRestart(db.sql, {
+      command: "proj_stop",
+      payload: { path, grantId: standing.grantId },
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable");
+    expect(result.message).toMatch(/standing/);
   });
 
   test("a matching, unspent grant authorizes the action", async () => {
