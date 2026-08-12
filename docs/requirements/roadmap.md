@@ -1,6 +1,6 @@
 # Requirements Roadmap
 
-Version: 1.0.0
+Version: 1.2.0
 
 Index of requirements packages under `docs/requirements/`, the order they are
 worked in, and what each one is waiting on. One row per package; a package is
@@ -80,6 +80,31 @@ unblocked by the maintainer and landed too. Coverage 36.25% → 43.30%, tests
 1443 → 1661, gate still WARN against a 60% floor. Block E is the answer to
 "what would close it", and it argues for changing the method rather than
 repeating it.
+
+## Cross-cutting — patterns adopted from keryx
+
+Opened 2026-08-12 from a read of the keryx repository at `af380a6a` (v0.2.16).
+Five areas where keryx has either built or specified something helyx has as
+prose, recorded as one standard-level package rather than five loose notes.
+
+| Package | Status | Blocked on | Order |
+|---|---|---|---|
+| [keryx-adoption-2026-08-12](keryx-adoption-2026-08-12/README.md) | `draft` | nothing — but no area is scheduled | unscheduled |
+
+The package sequences its own areas **A2 → A1 → A3 → A5 → A4** and states that a
+partial outcome is a real one: A2 alone (an approval bound to the fingerprint of
+the action it approved) is worth the package. Two of its five areas rest on
+keryx *specifications* rather than keryx code, and are graded as such inside it.
+
+Version 1.1.0 rescoped A1 and demoted it. As first written it scanned the
+operator's own `reply` channel, fail-closed; that gated the one path that must
+not fail, against a threat — the operator receiving their own secret — that is
+not one. A1 now guards the five places helyx content crosses to a service the
+operator does not control, and the operator channel is excluded by a rule that a
+test enforces.
+
+A4 is a delta to [codex-session-engine-2026-08-09](codex-session-engine-2026-08-09/README.md)
+and cannot land before that package chooses its path.
 
 ## Earlier packages
 

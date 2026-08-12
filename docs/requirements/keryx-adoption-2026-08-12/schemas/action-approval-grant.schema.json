@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/MrCipherSmith/helyx/schemas/action-approval-grant.schema.json",
+  "title": "Action Approval Grant",
+  "description": "An approval bound to the fingerprint of one action (adoption area A2). Adopted from keryx's policy engine property: an approval authorizes exactly one action, bound to that action's fingerprint, and a single-use grant is spent once consumed. Two kinds exist: an 'operator' grant (single-use, minutes) and a 'standing' grant held by an autonomous actor (not consumed, bounded by being narrow). The first and only adopter in scope is the restart family.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "grantId",
+    "kind",
+    "fingerprint",
+    "issuedAt",
+    "issuedBy"
+  ],
+  "properties": {
+    "grantId": {
+      "type": "string",
+      "minLength": 16,
+      "description": "Opaque, unguessable identifier. This is what travels in callback data; the action never travels with it (P-5.4)."
+    },
+    "fingerprint": {
+      "$ref": "#/$defs/actionFingerprint"
+    },
+    "requestId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The pending request this grant answers. Null for a standing grant, which answers no single request."
+    },
+    "issuedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the grant came into existence — the FIRST tap of the two-tap confirmation, not the confirming tap. The unconsumed grant is itself the pending state."
+    },
+    "expiresAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "For an 'operator' grant: minutes — a restart approval is answered immediately or not at all. For a 'standing' grant: null, because it is revoked rather than expired."
+    },
+    "consumedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "default": null,
+      "description": "Set when an 'operator' grant is spent; once set it authorizes nothing further (P-2.2). A 'standing' grant is never consumed — that exemption is what 'standing' means — and every use is instead recorded as an autonomous action so the operator can see in the morning what restarted itself."
+    },
+    "issuedBy": {
+      "oneOf": [
+        {
+          "type": "integer",
+          "description": "Telegram user id of the sender who approved. Used when kind is 'operator'."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "actor",
+            "authorizedBy"
+          ],
+          "description": "Used when kind is 'standing'.",
+          "properties": {
+            "actor": {
+              "type": "string",
+              "description": "The autonomous actor holding the grant.",
+              "examples": [
+                "tmux-watchdog"
+              ]
+            },
+            "authorizedBy": {
+              "type": "integer",
+              "description": "Telegram user id of the operator who authorized the standing grant. A standing grant still has a human behind it."
+            }
+          }
+        }
+      ],
+      "description": "Who the grant belongs to. Per-sender authorization means the identity of the approver is part of the record, not an assumption about the room."
+    },
+    "statedTo": {
+      "type": "string",
+      "description": "The human sentence shown to the operator before they answered — the words the grant's 'да' refers to. Recorded so that a disputed restart can be reconstructed from what was actually asked, not from what the code meant."
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "operator",
+        "standing"
+      ],
+      "default": "operator",
+      "description": "An 'operator' grant is single-use and short-lived: one press, one action. A 'standing' grant belongs to an autonomous actor (today only scripts/tmux-watchdog.ts), is not consumed on use, and is bounded by being narrow rather than by being temporary. Decided 2026-08-12: without it, P-2.3 would turn a 4am recoverable hang into an outage until morning."
+    }
+  },
+  "$defs": {
+    "actionFingerprint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "half",
+        "scope",
+        "downtime"
+      ],
+      "description": "Deliberately coarse. A fingerprint over the exact command string would re-ask on every trivial variation and train the operator to approve without reading — which is the failure being prevented, reached by a different road. These three components are what the operator would actually notice.",
+      "properties": {
+        "half": {
+          "type": "string",
+          "enum": [
+            "container",
+            "sessions",
+            "both"
+          ],
+          "description": "Which half of the system the action restarts. The exact distinction the recorded incidents turned on: containers are the bot and Postgres; sessions are the tmux windows and their channel subprocesses. Code that ships in the container does not reach a running session."
+        },
+        "scope": {
+          "type": "string",
+          "description": "'all', an absolute project path, or 'container:<name>' for a single named container. A one-project restart is not a stack restart, and one named container is not the container half.",
+          "examples": [
+            "all",
+            "/home/altsay/bots/helyx",
+            "container:helyx-postgres-1"
+          ]
+        },
+        "downtime": {
+          "type": "string",
+          "enum": [
+            "none",
+            "brief",
+            "full"
+          ],
+          "description": "Whether the operator loses the running session, and for how long. 'brief' means it comes back on its own; 'full' means it stays down until something else brings it up — which is why tmux_stop and proj_stop are 'full'."
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "grantId": "g_7f3c1a9e42b85d06",
+      "kind": "operator",
+      "fingerprint": {
+        "half": "container",
+        "scope": "all",
+        "downtime": "brief"
+      },
+      "requestId": "req-1182",
+      "issuedAt": "2026-08-12T20:11:53Z",
+      "expiresAt": "2026-08-12T20:16:53Z",
+      "consumedAt": null,
+      "issuedBy": 100200300,
+      "statedTo": "Перезапустить только контейнер бота. Сессии останутся на старом коде."
+    },
+    {
+      "grantId": "g_standing_watchdog_helyx",
+      "kind": "standing",
+      "fingerprint": {
+        "half": "sessions",
+        "scope": "/home/altsay/bots/helyx",
+        "downtime": "brief"
+      },
+      "requestId": null,
+      "issuedAt": "2026-08-12T21:00:00Z",
+      "expiresAt": null,
+      "consumedAt": null,
+      "issuedBy": {
+        "actor": "tmux-watchdog",
+        "authorizedBy": 100200300
+      },
+      "statedTo": "tmux-watchdog may restart a wedged session of this project without asking. It may not restart the container, the whole stack, or another project."
+    }
+  ]
+}

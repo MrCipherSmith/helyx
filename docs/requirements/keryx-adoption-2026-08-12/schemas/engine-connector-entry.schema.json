@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/MrCipherSmith/helyx/schemas/engine-connector-entry.schema.json",
+  "title": "Engine Connector Entry",
+  "description": "A registry entry for an external agent CLI that helyx can run as a project's session engine (adoption area A4). Adapted from keryx's connector-entry schema. A connector is not a provider: a provider supplies a raw model stream; a connector delegates the agentic loop to an external agent process while helyx supplies project context, identity and approval routing. In helyx terms, provider_id/model configure a provider; engine selects a connector. Today scripts/run-cli.sh launches one binary unconditionally; this entry turns that line into data.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "displayName", "launch", "transport", "identity", "limitSignal"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "description": "Stable engine identifier as stored on a project row.",
+      "examples": ["claude", "codex"]
+    },
+    "displayName": {
+      "type": "string",
+      "description": "What the operator sees in Telegram."
+    },
+    "launch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command", "args"],
+      "properties": {
+        "command": { "type": "string", "description": "Executable name resolved on PATH." },
+        "args": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Argv as launched. The Claude entry reproduces what run-cli.sh hardcodes today."
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Extra environment for the child. Never a credential value (P-3.3)."
+        },
+        "unsetEnv": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Variables that must be removed before launch. ANTHROPIC_API_KEY belongs here for third-party providers — an inherited key silently overrides the intended backend."
+        }
+      }
+    },
+    "transport": {
+      "type": "string",
+      "enum": ["stdio", "mcp"],
+      "description": "How helyx reaches the running process. 'mcp' means the engine registers helyx-channel as an MCP server and talks over it; 'stdio' means direct pipes."
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "description": "How the engine's process communicates which project it belongs to.",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["http-header", "env", "argv", "none"],
+          "description": "Claude today: an http-header — X-Helyx-Project, built from HELYX_PROJECT_PATH."
+        },
+        "name": {
+          "type": "string",
+          "description": "Header name, variable name, or flag, depending on kind.",
+          "examples": ["X-Helyx-Project", "HELYX_PROJECT_PATH"]
+        },
+        "verified": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether this has been tested end to end for this engine. False for Codex as of 2026-08-12: codex mcp add/list/get/remove exists, but whether it accepts the same HTTP transport and a custom header is untested. Recorded as R2 in codex-session-engine-2026-08-09/review-focus.md."
+        }
+      }
+    },
+    "credential": {
+      "type": ["object", "null"],
+      "default": null,
+      "additionalProperties": false,
+      "description": "The credential file the vendor's own client owns. Read-only to helyx in every case (P-3.1).",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Absolute path, tilde-expanded at read time.",
+          "examples": ["~/.claude/.credentials.json", "~/.codex/auth.json"]
+        },
+        "access": {
+          "type": "string",
+          "const": "read-only",
+          "description": "Fixed. helyx never writes, modifies, creates or moves a vendor credential file — doing so can corrupt the official client's state and cost the operator the login helyx depends on."
+        },
+        "refreshOwner": {
+          "type": "string",
+          "const": "vendor-client",
+          "description": "Fixed. helyx does not mint access tokens from a refresh token (P-3.2). On expiry it surfaces an authorization error and names the command that fixes it."
+        },
+        "reauthCommand": {
+          "type": "string",
+          "description": "What the operator runs when the credential expires.",
+          "examples": ["claude login", "codex --login"]
+        }
+      }
+    },
+    "resume": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "The engine's own same-engine continuity command, if it has one. Same-engine only: it does not carry a conversation across a switch.",
+      "examples": ["codex resume --last"]
+    },
+    "limitSignal": {
+      "type": ["object", "null"],
+      "description": "How 'this engine hit its usage limit' is detected. Null is the honest encoding of an engine with no such signal, and is deliberately required rather than optional so that the gap cannot be omitted by accident.",
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": ["transcript-entry", "exit-code", "stderr-pattern"],
+              "description": "Claude today: a transcript-entry — channel/status.ts noteApiError() reads a synthetic isApiErrorMessage entry Claude Code writes into its own transcript."
+            },
+            "detail": {
+              "type": "string",
+              "description": "The entry shape, exit code, or pattern matched."
+            }
+          }
+        }
+      ]
+    },
+    "notes": {
+      "type": "string",
+      "description": "Anything an operator or implementer must know that the fields above cannot carry — including where this engine's behaviour is known to differ from Claude Code's."
+    }
+  },
+  "examples": [
+    {
+      "id": "claude",
+      "displayName": "Claude Code",
+      "launch": {
+        "command": "claude",
+        "args": ["--dangerously-load-development-channels", "server:helyx-channel"]
+      },
+      "transport": "mcp",
+      "identity": { "kind": "http-header", "name": "X-Helyx-Project", "verified": true },
+      "credential": {
+        "path": "~/.claude/.credentials.json",
+        "access": "read-only",
+        "refreshOwner": "vendor-client",
+        "reauthCommand": "claude login"
+      },
+      "resume": null,
+      "limitSignal": {
+        "kind": "transcript-entry",
+        "detail": "isApiErrorMessage: true, read by noteApiError() in channel/status.ts"
+      }
+    },
+    {
+      "id": "codex",
+      "displayName": "OpenAI Codex",
+      "launch": { "command": "codex", "args": [] },
+      "transport": "mcp",
+      "identity": { "kind": "http-header", "name": "X-Helyx-Project", "verified": false },
+      "credential": {
+        "path": "~/.codex/auth.json",
+        "access": "read-only",
+        "refreshOwner": "vendor-client",
+        "reauthCommand": "codex --login"
+      },
+      "resume": "codex resume --last",
+      "limitSignal": null,
+      "notes": "limitSignal is null and that asymmetry is real: noteApiError reads a shape specific to Claude Code's transcript format, and Codex has no transcript in that format at all. Recorded as R1 in codex-session-engine-2026-08-09/review-focus.md. Until it is closed, a Codex→Claude switch has no automatic trigger."
+    }
+  ]
+}
