@@ -63,3 +63,43 @@ describe("the A2 gate above claimRestart", () => {
     expect(occurrences).toBe(3);
   });
 });
+
+describe("F3: a gated command ending in error notifies the admin chat", () => {
+  // `restart-grant.ts` has already edited the operator's message to
+  // "✅ Подтверждено — выполняется." by the time this row is picked up here —
+  // CLAUDE.md's "the symptom is silence, not an error" for exactly this
+  // shape of failure. `admin-daemon.ts` cannot be imported directly (real
+  // side effects at import time), so this is a structural read of the
+  // source, same as the rest of this file.
+  test("notifyGateFailure is defined and posts to the admin chat", () => {
+    expect(source).toContain("async function notifyGateFailure");
+    expect(source).toContain("api.telegram.org/bot");
+  });
+
+  test("the non-deferred status update calls notifyGateFailure only for a failed, gated command", () => {
+    const marker = "if (!result.ok && GATED_RESTART_COMMANDS.has(row.command))";
+    expect(source).toContain(marker);
+    const idx = source.indexOf(marker);
+    const nearby = source.slice(idx, idx + 200);
+    expect(nearby).toContain("notifyGateFailure(");
+  });
+});
+
+describe("F6: a refusal after the gate says the approval was already spent", () => {
+  // `claimRestart` and `spawned` both run strictly after `authorizeOrRefuse`
+  // (proven above, AC5) — so by the time either can refuse, the grant behind
+  // the row is already consumed. A retry needs a fresh confirmation, not
+  // just the same button again; the refusal text says so rather than only a
+  // code comment explaining it.
+  test("a lease refusal after the gate says the grant was already spent", () => {
+    const idx = source.indexOf("const claimRestart = ()");
+    const body = source.slice(idx, source.indexOf("const authorizeOrRefuse"));
+    expect(body).toContain("already spent");
+  });
+
+  test("a failed spawn after the gate says the grant was already spent", () => {
+    const idx = source.indexOf("const spawned = (");
+    const body = source.slice(idx, source.indexOf("try {", idx));
+    expect(body).toContain("already spent");
+  });
+});
