@@ -7,16 +7,28 @@
  * grant carrying it, then waits for the second tap — `grant:go:<id>`,
  * handled by `bot/commands/restart-grant.ts` — before anything is enqueued.
  *
- * Returns `false` for a command `fingerprintOf` does not gate (everything
- * that never took the restart lease: `docker_restart`, `docker_restart_all`,
- * `stack_up`, `channel_kill`, `tmux_start`, `tmux_stop`, …), so a caller can
- * fall through to its existing immediate-enqueue behaviour unchanged.
+ * Returns `false` for a command `fingerprintOf` does not gate at all
+ * (`stack_up`, `tmux_start`, `proj_start`, and everything outside the
+ * fingerprint model), so a caller can fall through to its existing
+ * immediate-enqueue behaviour unchanged.
+ *
+ * Returns `true` — telling the caller NOT to fall through — for a command
+ * that IS in `GATED_RESTART_COMMANDS` but whose payload `fingerprintOf`
+ * cannot derive a fingerprint from (malformed: `docker_restart` with no
+ * `container`, `proj_stop` with no `path`). **Corrected 2026-08-12,
+ * DeepSeek finding #1**: this used to return `false` for both cases alike,
+ * and every caller reads `false` as "not gated, enqueue directly" — so a
+ * gated command with a malformed payload reached `admin_commands` with no
+ * grant, the exact bypass this module exists to close. Every current caller
+ * happens to build a well-formed payload, so this was unreachable in
+ * practice; it stops being unreachable the day one doesn't.
  */
 
 import type { Context } from "grammy";
 import { InlineKeyboard } from "grammy";
 import { sql } from "../memory/db.ts";
 import { fingerprintOf, confirmationText, issueOperatorGrant } from "../utils/action-approval-grant.ts";
+import { GATED_RESTART_COMMANDS } from "../scripts/restart-gate.ts";
 
 export async function beginRestartConfirmation(
   ctx: Context,
@@ -24,7 +36,17 @@ export async function beginRestartConfirmation(
   payload: Record<string, unknown> = {},
 ): Promise<boolean> {
   const fingerprint = fingerprintOf({ command, payload });
-  if (!fingerprint) return false;
+  if (!fingerprint) {
+    if (!GATED_RESTART_COMMANDS.has(command)) return false;
+    // Gated, but malformed — refuse rather than let the caller fall through
+    // to an unguarded enqueue.
+    if (ctx.callbackQuery) {
+      await ctx.answerCallbackQuery({ text: "Refused — malformed request, nothing to approve" });
+    } else {
+      await ctx.reply("⛔ Refused — malformed request, nothing to approve");
+    }
+    return true;
+  }
 
   const issuedBy = ctx.from?.id;
   if (!issuedBy) {
