@@ -1,6 +1,7 @@
 import type { Context } from "grammy";
 import { InlineKeyboard } from "grammy";
 import { sql } from "../../memory/db.ts";
+import { beginRestartConfirmation } from "../restart-confirm.ts";
 
 export async function handleRemoteControl(ctx: Context): Promise<void> {
   const [active, pending] = await Promise.all([
@@ -64,6 +65,13 @@ export async function handleRemoteControlCallback(ctx: Context): Promise<void> {
 
   if (action === "kill" || action === "start") {
     const cmd = action === "kill" ? "tmux_stop" : "tmux_start";
+    // A2 — `tmux_stop` is gated (F1/2026-08-12: this button, `rc:kill`, was
+    // enqueueing it with no grant and dying at the daemon with "no approver
+    // reachable"). `tmux_start` stays ungated, bring-up by decision.
+    if (cmd === "tmux_stop") {
+      const gated = await beginRestartConfirmation(ctx, cmd, {});
+      if (gated) return;
+    }
     const already = await sql`
       SELECT id FROM admin_commands
       WHERE command = ${cmd} AND status IN ('pending', 'processing')

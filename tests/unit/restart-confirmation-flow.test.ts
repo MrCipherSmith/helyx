@@ -141,6 +141,24 @@ describeWithDb("the confirmation flow, driven through the real handlers", () => 
     expect(enqueued[0]!.payload.grantId).toBe(grant!.grant_id);
   });
 
+  test("a different admin-chat user cannot answer someone else's confirmation", async () => {
+    const { handleSystemCallback } = await import("../../bot/commands/system.ts");
+    const { handleRestartGrantCallback } = await import("../../bot/commands/restart-grant.ts");
+
+    const first = callbackContext("sys:bounce", "999", 100200300);
+    await handleSystemCallback(first.ctx);
+
+    const [grant] = await db.sql`SELECT grant_id FROM action_approval_grants WHERE pending_command = 'bounce'`;
+    // Same admin chat, different Telegram user — the grant records who it
+    // was issued to for exactly this check.
+    const second = callbackContext(`grant:go:${grant!.grant_id}`, "999", 555999);
+    await handleRestartGrantCallback(second.ctx);
+
+    expect(second.toasts).toContain("This confirmation is not yours to answer");
+    const enqueued = await db.sql`SELECT id FROM admin_commands WHERE command = 'bounce'`;
+    expect(enqueued).toHaveLength(0);
+  });
+
   test("sup:bounce (the supervisor topic's button) goes through the same gate", async () => {
     const { handleSupervisorCallback } = await import("../../bot/commands/supervisor-actions.ts");
     const { ctx } = callbackContext("sup:bounce");
@@ -151,5 +169,179 @@ describeWithDb("the confirmation flow, driven through the real handlers", () => 
     expect(enqueued).toHaveLength(0);
     const grants = await db.sql`SELECT grant_id FROM action_approval_grants WHERE pending_command = 'bounce'`;
     expect(grants).toHaveLength(1);
+  });
+
+  // F1 — the four producers the review found enqueueing a gated command with
+  // no grant at all: /projects → Stop, rc:kill, mon:docker_restart, and the
+  // dashboard's docker_restart button (checked separately below, since it has
+  // no grammY ctx). Each of these used to insert straight into
+  // `admin_commands` and rely on `authorizeRestart` refusing it forever with
+  // "no approver reachable" — the feature looked like it worked (the button
+  // answered) and never did anything.
+  test("F1: /projects → Stop states the fingerprint and enqueues nothing yet", async () => {
+    const [project] = await db.sql`
+      INSERT INTO projects (name, path, tmux_session_name)
+      VALUES ('f1-proj', '/tmp/f1-proj', 'f1_proj')
+      RETURNING id
+    `;
+    const { handleProjectCallback } = await import("../../bot/commands/projects.ts");
+    const { ctx, edits } = callbackContext(`proj:stop:${project!.id}`);
+
+    await handleProjectCallback(ctx);
+
+    expect(edits).toHaveLength(1);
+    expect(edits[0]!.text).toContain("/tmp/f1-proj");
+
+    const enqueued = await db.sql`SELECT id FROM admin_commands WHERE command = 'proj_stop'`;
+    expect(enqueued).toHaveLength(0);
+
+    const grants = await db.sql`
+      SELECT half, scope, downtime FROM action_approval_grants WHERE pending_command = 'proj_stop'
+    `;
+    expect(grants).toHaveLength(1);
+    expect(grants[0]).toEqual({ half: "sessions", scope: "/tmp/f1-proj", downtime: "full" });
+  });
+
+  test("F1: the second tap enqueues proj_stop with the project's own payload and a grantId", async () => {
+    const [project] = await db.sql`
+      INSERT INTO projects (name, path, tmux_session_name)
+      VALUES ('f1-proj-2', '/tmp/f1-proj-2', 'f1_proj_2')
+      RETURNING id
+    `;
+    const { handleProjectCallback } = await import("../../bot/commands/projects.ts");
+    const { handleRestartGrantCallback } = await import("../../bot/commands/restart-grant.ts");
+
+    await handleProjectCallback(callbackContext(`proj:stop:${project!.id}`).ctx);
+    const [grant] = await db.sql`SELECT grant_id FROM action_approval_grants WHERE pending_command = 'proj_stop'`;
+    await handleRestartGrantCallback(callbackContext(`grant:go:${grant!.grant_id}`).ctx);
+
+    const [enqueued] = await db.sql`SELECT payload FROM admin_commands WHERE command = 'proj_stop'`;
+    expect(enqueued).toBeDefined();
+    expect(enqueued!.payload.project_id).toBe(project!.id);
+    expect(enqueued!.payload.path).toBe("/tmp/f1-proj-2");
+    expect(enqueued!.payload.grantId).toBe(grant!.grant_id);
+  });
+
+  test("F1: rc:kill (tmux_stop) states the fingerprint before enqueueing", async () => {
+    const { handleRemoteControlCallback } = await import("../../bot/commands/remote-control.ts");
+    const { ctx } = callbackContext("rc:kill");
+
+    await handleRemoteControlCallback(ctx);
+
+    const enqueued = await db.sql`SELECT id FROM admin_commands WHERE command = 'tmux_stop'`;
+    expect(enqueued).toHaveLength(0);
+    const grants = await db.sql`SELECT grant_id FROM action_approval_grants WHERE pending_command = 'tmux_stop'`;
+    expect(grants).toHaveLength(1);
+  });
+
+  test("F1: rc:start (tmux_start, ungated) still enqueues immediately — bring-up stays ungated", async () => {
+    const { handleRemoteControlCallback } = await import("../../bot/commands/remote-control.ts");
+    const { ctx } = callbackContext("rc:start");
+
+    await handleRemoteControlCallback(ctx);
+
+    const enqueued = await db.sql`SELECT id FROM admin_commands WHERE command = 'tmux_start'`;
+    expect(enqueued).toHaveLength(1);
+  });
+
+  test("F1: mon:docker_restart:<container> states the fingerprint before enqueueing", async () => {
+    const { handleMonitorCallback } = await import("../../bot/commands/monitor.ts");
+    const { ctx } = callbackContext("mon:docker_restart:helyx-postgres-1");
+
+    await handleMonitorCallback(ctx);
+
+    const enqueued = await db.sql`SELECT id FROM admin_commands WHERE command = 'docker_restart'`;
+    expect(enqueued).toHaveLength(0);
+    const grants = await db.sql`
+      SELECT scope FROM action_approval_grants WHERE pending_command = 'docker_restart'
+    `;
+    expect(grants).toHaveLength(1);
+    expect(grants[0]!.scope).toBe("container:helyx-postgres-1");
+  });
+});
+
+// F1 — the dashboard has no grammY ctx and no two-tap flow, so it is checked
+// separately: the decision recorded for it (DECISIONS_I_MADE) is to refuse a
+// gated action outright rather than build a confirmation flow, so what this
+// proves is the refusal, not a grant.
+describeWithDb("F1: the dashboard API refuses gated admin commands rather than enqueueing them unapproved", () => {
+  let db: TestDatabase;
+  let realDb: Record<string, unknown>;
+
+  beforeAll(async () => {
+    db = await provisionTestDatabase();
+  });
+
+  afterAll(async () => {
+    await db?.drop();
+  });
+
+  beforeEach(async () => {
+    realDb = { ...(await import("../../memory/db.ts")) };
+    mock.module(DB_MODULE, () => ({ ...realDb, sql: db.sql }));
+  });
+
+  afterEach(async () => {
+    mock.module(DB_MODULE, () => ({ ...realDb }));
+    await db.sql`DELETE FROM admin_commands`;
+    await db.sql`DELETE FROM projects`;
+  });
+
+  function fakeRes() {
+    const chunks: string[] = [];
+    let statusCode = 200;
+    const res = {
+      writeHead: (code: number) => { statusCode = code; },
+      end: (body: string) => { chunks.push(body); },
+    } as unknown as import("http").ServerResponse;
+    return { res, body: () => JSON.parse(chunks.join("")), status: () => statusCode };
+  }
+
+  test("handleProjectAction('stop') refuses rather than enqueueing proj_stop", async () => {
+    const dashboardApi = await import("../../mcp/dashboard-api.ts");
+    const [project] = await db.sql`
+      INSERT INTO projects (name, path, tmux_session_name)
+      VALUES ('f1-dash-proj', '/tmp/f1-dash-proj', 'f1_dash_proj')
+      RETURNING id
+    `;
+    const { res, body, status } = fakeRes();
+    await dashboardApi.handleProjectAction({} as unknown as import("http").IncomingMessage, res, project!.id, "stop");
+
+    expect(status()).toBe(403);
+    expect(body().error).toMatch(/Telegram/);
+    const enqueued = await db.sql`SELECT id FROM admin_commands WHERE command = 'proj_stop'`;
+    expect(enqueued).toHaveLength(0);
+  });
+
+  test("handleProcessAction('restart-docker') refuses rather than enqueueing docker_restart", async () => {
+    const dashboardApi = await import("../../mcp/dashboard-api.ts");
+    const { res, body, status } = fakeRes();
+    const req = {
+      on: (event: string, cb: (...args: unknown[]) => void) => {
+        if (event === "end") cb();
+      },
+    } as unknown as import("http").IncomingMessage;
+    await dashboardApi.handleProcessAction(req, res, "restart-docker");
+
+    expect(status()).toBe(400); // "container required" — body never sent container, refusal happens before the field check would matter
+    expect(body().error).toBeDefined();
+  });
+
+  test("handleProcessAction('restart-docker') with a container still refuses rather than enqueueing", async () => {
+    const dashboardApi = await import("../../mcp/dashboard-api.ts");
+    const { res, body, status } = fakeRes();
+    const bodyText = JSON.stringify({ container: "helyx-bot-1" });
+    const req = {
+      on: (event: string, cb: (...args: unknown[]) => void) => {
+        if (event === "data") cb(bodyText);
+        if (event === "end") cb();
+      },
+    } as unknown as import("http").IncomingMessage;
+    await dashboardApi.handleProcessAction(req, res, "restart-docker");
+
+    expect(status()).toBe(403);
+    expect(body().error).toMatch(/Telegram/);
+    const enqueued = await db.sql`SELECT id FROM admin_commands WHERE command = 'docker_restart'`;
+    expect(enqueued).toHaveLength(0);
   });
 });
