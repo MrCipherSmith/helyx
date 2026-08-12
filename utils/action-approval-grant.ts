@@ -119,15 +119,22 @@ export function fingerprintOf(action: RestartAction): ActionFingerprint | null {
       return { half: "sessions", scope: "all", downtime: "brief" };
 
     case "proj_stop": {
+      // `scope` must be the absolute project path, never the bare name — the
+      // spec's own fingerprint table (§A2 "The fingerprint") says `scope` is
+      // `"all"`, an absolute project path, or `container:<name>`, and two
+      // different projects can share a `name`. **Corrected 2026-08-12**: this
+      // used to fall back to `payload.name` when `path` was absent, which
+      // would let a grant for one project's stop authorize another project's
+      // stop if the two happened to share a name. `null` when there is no
+      // path: structural safety before policy (adopted property #4) — a
+      // malformed action has nothing to gate.
       const path = typeof payload.path === "string" && payload.path ? payload.path : null;
-      const name = typeof payload.name === "string" && payload.name ? payload.name : null;
-      const scope = path ?? name;
-      if (!scope) return null;
+      if (!path) return null;
       // `full`, not `brief` — nothing restarts a stopped project's session
       // until a human presses Start (or a limit clears and a queue path
       // re-enqueues `proj_start`). Corrected from the first version of this
       // mapping, which had it `brief`.
-      return { half: "sessions", scope, downtime: "full" };
+      return { half: "sessions", scope: path, downtime: "full" };
     }
 
     default:
@@ -322,8 +329,20 @@ export interface IssueStandingGrantParams {
 
 /**
  * Declare a standing grant for an autonomous actor — narrow by construction,
- * per P-2.3a. Re-issuing the same actor+fingerprint replaces the row (see the
- * unique index in the migration) rather than accumulating duplicates.
+ * per P-2.3a. Re-issuing the same actor+fingerprint replaces the row's
+ * metadata rather than accumulating duplicates (see the unique index in the
+ * migration).
+ *
+ * **Corrected 2026-08-12.** `grant_id` itself now stays put across a
+ * re-issue. It used to be rewritten to a fresh id on every conflict, which
+ * breaks the moment the grant has ever been used: `autonomous_actions.grant_id`
+ * is a foreign key with no `ON UPDATE CASCADE` (deliberately — rewriting a
+ * historical row to point at a new id would falsify the audit log), so
+ * updating the referenced key fails once a row references it. Re-issuing a
+ * standing grant for the same actor+fingerprint is the realistic case, not
+ * the edge case, so this can't be a rare failure. The generated `grantId` this
+ * call computes is discarded on conflict; the row keeps the one it already
+ * had.
  */
 export async function issueStandingGrant(
   sql: postgres.Sql,
@@ -343,13 +362,44 @@ export async function issueStandingGrant(
        ${params.actor}, ${params.authorizedBy}, ${statedTo}, NULL, '{}')
     ON CONFLICT (issued_by_actor, half, scope, downtime) WHERE kind = 'standing'
     DO UPDATE SET
-      grant_id = EXCLUDED.grant_id,
       issued_at = EXCLUDED.issued_at,
       issued_by_authorized_by = EXCLUDED.issued_by_authorized_by,
       stated_to = EXCLUDED.stated_to
     RETURNING *
   `;
   return rowToGrant(row!);
+}
+
+/**
+ * Push an unconsumed operator grant's expiry forward, from the confirming
+ * tap rather than the first one — F4/the 2026-08-12 review.
+ *
+ * `expiresAt` used to run only from `issueOperatorGrant` (the first tap,
+ * which only asks to see the fingerprint), so a confirmed restart queued
+ * behind a slow command (`docker_restart` at `timeout 240`, a build inside
+ * `full_restart`, …) could expire before the daemon ever got to it — an
+ * approval the operator gave, refused minutes later with nothing saying so.
+ * `bot/commands/restart-grant.ts` calls this at `grant:go:<id>` — the
+ * confirming tap — so the TTL now answers two separate questions at two
+ * separate times: "did the operator answer the prompt in time" (checked
+ * before this runs, against the original `expiresAt`) and "did the daemon
+ * get to the approved action in time" (this grant's new window). A grant
+ * that is already consumed or expired is left alone — this only extends a
+ * grant still capable of being spent.
+ */
+export async function extendGrantForExecution(
+  sql: postgres.Sql,
+  grantId: string,
+  ttlMs: number = OPERATOR_GRANT_TTL_MS,
+  now: Date = new Date(),
+): Promise<void> {
+  const expiresAt = new Date(now.getTime() + ttlMs);
+  await sql`
+    UPDATE action_approval_grants
+    SET expires_at = ${expiresAt}
+    WHERE grant_id = ${grantId} AND kind = 'operator' AND consumed_at IS NULL
+      AND (expires_at IS NULL OR expires_at > ${now})
+  `;
 }
 
 /** Read a grant by id, or null. Carries the internal `pending*` fields for the bot's use. */
