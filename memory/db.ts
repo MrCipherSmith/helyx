@@ -906,6 +906,69 @@ const migrations: Migration[] = [
       await tx`ALTER TABLE permission_requests ADD COLUMN IF NOT EXISTS rendered_body TEXT`;
     },
   },
+  {
+    version: 51,
+    name: "action_approval_grants + autonomous_actions — A2 approval bound to an action",
+    up: async (tx) => {
+      // The bot (in its container) issues grants when the operator taps a
+      // restart confirmation; the admin daemon (on the host) re-derives the
+      // fingerprint and spends them. Neither process shares a filesystem with
+      // the other — only Postgres does — so the grant lives here rather than
+      // in a file next to `utils/restart-lease.ts`, which the two DO share
+      // (both run on the host). See docs/requirements/keryx-adoption-2026-08-12/
+      // schemas/action-approval-grant.schema.json for the contract this table
+      // backs; `pending_command`/`pending_payload` are NOT part of that
+      // contract — they are how the bot remembers what an unconfirmed grant
+      // was for, and are stripped before a row is shown as a grant anywhere.
+      await tx`
+        CREATE TABLE IF NOT EXISTS action_approval_grants (
+          grant_id            TEXT PRIMARY KEY,
+          kind                TEXT NOT NULL CHECK (kind IN ('operator', 'standing')),
+          half                TEXT NOT NULL CHECK (half IN ('container', 'sessions', 'both')),
+          scope               TEXT NOT NULL,
+          downtime            TEXT NOT NULL CHECK (downtime IN ('none', 'brief', 'full')),
+          request_id          TEXT,
+          issued_at           TIMESTAMPTZ NOT NULL,
+          expires_at          TIMESTAMPTZ,
+          consumed_at         TIMESTAMPTZ,
+          issued_by_user_id   BIGINT,
+          issued_by_actor     TEXT,
+          issued_by_authorized_by BIGINT,
+          stated_to           TEXT,
+          pending_command     TEXT,
+          pending_payload     JSONB NOT NULL DEFAULT '{}',
+          created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+      `;
+      await tx`CREATE INDEX IF NOT EXISTS idx_action_approval_grants_lookup ON action_approval_grants(grant_id)`;
+      // One standing grant per actor+fingerprint — re-authorizing the same
+      // scope replaces it rather than accumulating duplicates a query would
+      // then have to pick among.
+      await tx`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_action_approval_grants_standing
+        ON action_approval_grants(issued_by_actor, half, scope, downtime)
+        WHERE kind = 'standing'
+      `;
+
+      // A standing grant is not consumed by use (P-2.3a), so "what did it
+      // authorize, and when" lives in its own append-only log rather than on
+      // the grant row — the morning read is "what restarted itself and on
+      // whose authority", not "is the grant still good".
+      await tx`
+        CREATE TABLE IF NOT EXISTS autonomous_actions (
+          id             BIGSERIAL PRIMARY KEY,
+          grant_id       TEXT NOT NULL REFERENCES action_approval_grants(grant_id),
+          actor          TEXT NOT NULL,
+          authorized_by  BIGINT NOT NULL,
+          half           TEXT NOT NULL,
+          scope          TEXT NOT NULL,
+          downtime       TEXT NOT NULL,
+          acted_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+      `;
+      await tx`CREATE INDEX IF NOT EXISTS idx_autonomous_actions_actor ON autonomous_actions(actor, acted_at DESC)`;
+    },
+  },
 ];
 
 // --- Public API ---

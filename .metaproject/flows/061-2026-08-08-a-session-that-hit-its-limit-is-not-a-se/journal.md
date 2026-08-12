@@ -49,3 +49,6 @@
 - 2026-08-08T20:03:18.407Z - task-done: T2: Implement per plan
 - 2026-08-08T20:03:18.515Z - task-done: T3: Add/adjust tests and make them pass
 - 2026-08-08T20:03:18.621Z - task-done: T4: Self-review and prepare draft PR
+- 2026-08-12T23:09:27.030Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/107 (warning: PR is not a draft)
+- 2026-08-12T23:09:27.111Z - completing
+- 2026-08-12T23:09:27.119Z - done: all gates passed

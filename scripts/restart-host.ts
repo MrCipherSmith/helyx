@@ -81,8 +81,13 @@ export async function restartHostHalf(
   const cd = `cd ${shellQuote(botDir)}`;
   const steps: RestartHostStep[] = [];
 
+  // This caller already holds the restart lease — `restart-host-run.ts` runs
+  // inside a process spawned only after `admin-daemon.ts`'s `claimRestart()`
+  // succeeded. `HELYX_RESTART_LEASE_HELD=1` tells `cli.ts`'s own `bounce`
+  // branch not to take it a second time, which would refuse itself: the same
+  // lease file does not know "this is the same restart, one level down."
   const bounce = await run(
-    `${cd} && timeout ${BOUNCE_TIMEOUT_SEC} ${shellQuote(bunBin)} ${shellQuote(cli)} bounce 2>&1`,
+    `${cd} && HELYX_RESTART_LEASE_HELD=1 timeout ${BOUNCE_TIMEOUT_SEC} ${shellQuote(bunBin)} ${shellQuote(cli)} bounce 2>&1`,
   );
   steps.push({
     name: "bounce (tmux windows, claude, channel.ts)",

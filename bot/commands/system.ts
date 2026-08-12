@@ -8,6 +8,8 @@ import { InlineKeyboard } from "grammy";
 import { sql } from "../../memory/db.ts";
 import { renderTmuxHealthLine, TMUX_HEALTH_NAME } from "../../sessions/tmux-server.ts";
 import { LEASE_EXPIRY_MS } from "../../utils/restart-lease.ts";
+import { GATED_RESTART_COMMANDS } from "../../scripts/restart-gate.ts";
+import { beginRestartConfirmation } from "../restart-confirm.ts";
 
 function isAdmin(ctx: Context): boolean {
   const adminChatId = process.env.TELEGRAM_CHAT_ID;
@@ -224,10 +226,20 @@ function buildKeyboard(running: boolean, busy: boolean): InlineKeyboard {
  * one execution path per half and the duplicate guard covers a button and a
  * command racing each other.
  */
-async function enqueue(ctx: Context, command: string, label: string): Promise<void> {
+async function enqueue(ctx: Context, command: string, label: string, payload: Record<string, unknown> = {}): Promise<void> {
   if (!isAdmin(ctx)) {
     await ctx.reply("⛔ Admin only.");
     return;
+  }
+
+  // A2 — no teardown-capable command goes straight into the queue any more:
+  // each needs a matching, unspent approval grant, and the operator has not
+  // seen the fingerprint in words yet. The set is the authority, not a list
+  // written out here — `GATED_RESTART_COMMANDS` grew from three commands to
+  // eight once "takes the restart lease" stopped being mistaken for "needs
+  // approval", and a hardcoded list here would have been left behind.
+  if (GATED_RESTART_COMMANDS.has(command)) {
+    if (await beginRestartConfirmation(ctx, command, payload)) return;
   }
 
   // Bounded by the lease expiry, and that bound is what makes leaving the row
@@ -247,7 +259,7 @@ async function enqueue(ctx: Context, command: string, label: string): Promise<vo
     return;
   }
 
-  await sql`INSERT INTO admin_commands (command, payload) VALUES (${command}, ${sql.json({} as any)})`;
+  await sql`INSERT INTO admin_commands (command, payload) VALUES (${command}, ${sql.json(payload as any)})`;
   await ctx.reply(`${label}\n\nПрогресс — /system, кнопка 🔄 Refresh.`);
 }
 
@@ -293,6 +305,13 @@ export async function handleSystemCallback(ctx: Context): Promise<void> {
   if (!entry) {
     await ctx.answerCallbackQuery({ text: "Unknown action" });
     return;
+  }
+
+  // A2 — every teardown-capable action in this map goes through a
+  // confirmation that states the fingerprint in words first (AC6). The
+  // bring-up entries (`stack_up` and friends) keep enqueueing immediately.
+  if (GATED_RESTART_COMMANDS.has(entry.command)) {
+    if (await beginRestartConfirmation(ctx, entry.command, entry.payload ?? {})) return;
   }
 
   const already = await sql`

@@ -75,8 +75,8 @@ describeWithDb("applied to an empty database", () => {
     // and now that is written down instead of being discovered by whoever
     // deploys next.
     const expected = [
-      "active_status_messages", "admin_commands", "agent_created_skills", "api_request_stats",
-      "aux_llm_invocations", "bot_config", "chat_sessions", "curator_pending_actions",
+      "action_approval_grants", "active_status_messages", "admin_commands", "agent_created_skills", "api_request_stats",
+      "autonomous_actions", "aux_llm_invocations", "bot_config", "chat_sessions", "curator_pending_actions",
       "curator_runs", "matrix_violations", "memories", "message_queue",
       "messages", "orchestration_runs", "pending_replies", "permission_requests",
       "poll_sessions", "process_health", "projects", "providers",

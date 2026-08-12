@@ -1,0 +1,40 @@
+# Flow Journal
+
+- 2026-08-12T21:57:48.089Z - flow created
+- 2026-08-12T21:58:54.966Z - frozen: 13 criteria; checksum recorded
+- 2026-08-12T21:58:55.137Z - started
+- 2026-08-12T22:28:49.598Z - ac-confirmed: AC1: verified by orchestrator: full suite 2376 pass/0 fail, tsc clean
+- 2026-08-12T22:28:49.674Z - ac-confirmed: AC2: verified by orchestrator: full suite 2376 pass/0 fail, tsc clean
+- 2026-08-12T22:28:49.754Z - ac-confirmed: AC3: verified by orchestrator: full suite 2376 pass/0 fail, tsc clean
+- 2026-08-12T22:28:49.826Z - ac-confirmed: AC4: verified by orchestrator: full suite 2376 pass/0 fail, tsc clean
+- 2026-08-12T22:28:49.902Z - ac-confirmed: AC5: verified by orchestrator: full suite 2376 pass/0 fail, tsc clean
+- 2026-08-12T22:28:49.976Z - ac-confirmed: AC6: verified by orchestrator: full suite 2376 pass/0 fail, tsc clean
+- 2026-08-12T22:28:50.050Z - ac-confirmed: AC7: verified by orchestrator: full suite 2376 pass/0 fail, tsc clean
+- 2026-08-12T22:28:50.125Z - ac-confirmed: AC11: verified by orchestrator: full suite 2376 pass/0 fail, tsc clean
+- 2026-08-12T22:28:50.198Z - ac-confirmed: AC12: verified by orchestrator: full suite 2376 pass/0 fail, tsc clean
+- 2026-08-12T22:28:50.274Z - ac-confirmed: AC13: verified by orchestrator: full suite 2376 pass/0 fail, tsc clean
+- 2026-08-12T22:35:14.732Z - ac-updated: Watchdog premise was false: the original tmux-watchdog only alerts and never restarted. AC8-AC10 assumed a capability that did not exist; the trigger is withdrawn and the standing-grant mechanism stays unused. Separately, the spec's mapping table named three commands so the gate covered three of eight entrances; the remaining five are now in scope.
+- 2026-08-12T22:35:48.305Z - ac-updated: Watchdog premise was false: the original tmux-watchdog only alerts and never restarted, so AC8-AC10 assumed a capability that did not exist. Trigger withdrawn (AC14), standing-grant mechanism kept and tested but unused. Gate coverage extended from 3 to all 8 teardown-capable commands (AC15-AC19) after the spec's mapping table proved incomplete.
+- 2026-08-12T22:53:20.989Z - ac-confirmed: AC1: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors
+- 2026-08-12T22:53:21.063Z - ac-confirmed: AC2: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors
+- 2026-08-12T22:53:21.136Z - ac-confirmed: AC3: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors
+- 2026-08-12T22:53:21.215Z - ac-confirmed: AC4: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors
+- 2026-08-12T22:53:21.286Z - ac-confirmed: AC5: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors
+- 2026-08-12T22:53:21.360Z - ac-confirmed: AC6: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors
+- 2026-08-12T22:53:21.433Z - ac-confirmed: AC7: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors
+- 2026-08-12T22:53:21.505Z - ac-confirmed: AC8: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors
+- 2026-08-12T22:53:21.578Z - ac-confirmed: AC9: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors
+- 2026-08-12T22:53:21.648Z - ac-confirmed: AC10: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors
+- 2026-08-12T22:53:21.720Z - ac-confirmed: AC11: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors
+- 2026-08-12T22:53:21.797Z - ac-confirmed: AC12: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors
+- 2026-08-12T22:53:21.871Z - ac-confirmed: AC13: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors
+- 2026-08-12T22:53:21.942Z - ac-confirmed: AC14: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors
+- 2026-08-12T22:53:22.012Z - ac-confirmed: AC15: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors
+- 2026-08-12T22:53:22.082Z - ac-confirmed: AC16: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors
+- 2026-08-12T22:53:22.154Z - ac-confirmed: AC17: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors
+- 2026-08-12T22:53:22.227Z - ac-confirmed: AC18: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors
+- 2026-08-12T22:53:22.300Z - ac-confirmed: AC19: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors
+- 2026-08-12T23:04:11.103Z - task-done: T1: Collect remaining context
+- 2026-08-12T23:04:11.175Z - task-done: T2: Implement per plan
+- 2026-08-12T23:04:11.248Z - task-done: T3: Add/adjust tests and make them pass
+- 2026-08-12T23:04:11.319Z - task-done: T4: Self-review and prepare draft PR
