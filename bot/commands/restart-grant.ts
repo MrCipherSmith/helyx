@@ -45,6 +45,20 @@ export async function handleRestartGrantCallback(ctx: Context): Promise<void> {
   }
 
   if (action === "cancel") {
+    // The same "not yours to answer" rule the `go` branch enforces below.
+    //
+    // Found in the second review: `go` checked the caller against
+    // `issuedBy` and `cancel` did not, so any member of the admin chat could
+    // cancel someone else's pending confirmation. `isAdmin` is not the check
+    // that matters here — when `TELEGRAM_CHAT_ID` is a group it passes for
+    // everyone in the room, and a cancellation nobody asked for is a quiet
+    // denial of the approval rather than an error anyone would notice.
+    const grant = await getGrant(sql, grantId);
+    if (grant && typeof grant.issuedBy === "number" && ctx.from?.id !== grant.issuedBy) {
+      await ctx.answerCallbackQuery({ text: "This confirmation is not yours to answer" });
+      return;
+    }
+
     await cancelGrant(sql, grantId);
     await ctx.answerCallbackQuery({ text: "Отменено" });
     await ctx.editMessageText("❌ Отменено.", { reply_markup: new InlineKeyboard() }).catch(() => {});

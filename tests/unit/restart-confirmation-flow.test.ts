@@ -159,6 +159,35 @@ describeWithDb("the confirmation flow, driven through the real handlers", () => 
     expect(enqueued).toHaveLength(0);
   });
 
+  // Found in the second review: `go` enforced ownership and `cancel` did not,
+  // so anyone in the admin chat could cancel someone else's pending
+  // confirmation. A cancellation nobody asked for is a quiet denial of the
+  // approval — the operator taps Confirm and finds the request already gone,
+  // with nothing saying who took it away.
+  test("grant:cancel is refused for someone else's confirmation, and the grant survives", async () => {
+    const { handleSystemCallback } = await import("../../bot/commands/system.ts");
+    const { handleRestartGrantCallback } = await import("../../bot/commands/restart-grant.ts");
+
+    const first = callbackContext("sys:bounce", "999", 100200300);
+    await handleSystemCallback(first.ctx);
+
+    const [grant] = await db.sql`SELECT grant_id FROM action_approval_grants WHERE pending_command = 'bounce'`;
+    const stranger = callbackContext(`grant:cancel:${grant!.grant_id}`, "999", 555999);
+    await handleRestartGrantCallback(stranger.ctx);
+
+    expect(stranger.toasts).toContain("This confirmation is not yours to answer");
+
+    // Still answerable by the operator it belongs to.
+    const [after] = await db.sql`
+      SELECT consumed_at FROM action_approval_grants WHERE grant_id = ${grant!.grant_id}
+    `;
+    expect(after!.consumed_at).toBeNull();
+
+    const owner = callbackContext(`grant:cancel:${grant!.grant_id}`, "999", 100200300);
+    await handleRestartGrantCallback(owner.ctx);
+    expect(owner.toasts).toContain("Отменено");
+  });
+
   test("sup:bounce (the supervisor topic's button) goes through the same gate", async () => {
     const { handleSupervisorCallback } = await import("../../bot/commands/supervisor-actions.ts");
     const { ctx } = callbackContext("sup:bounce");
