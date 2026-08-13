@@ -1,12 +1,68 @@
 # Implementation Plan: Adopting keryx Patterns into helyx
 
-Version: 1.1.0
+Version: 1.2.0
 
 ## Status
 
-Nothing here is scheduled. This plan states the order, the dependencies, and the
-size of each area so that whoever picks one up is not re-deriving the sequence.
-Each area is a candidate flow; none is a flow yet.
+| Area | State | Where |
+|---|---|---|
+| **A2** action-bound approval | **done** — shipped 2026-08-13 | flow 062, PR #110, merged as `390f7d8` |
+| **A1** external boundary | **next** — decided, not started | see §A1 below and the decisions recorded there |
+| A3 compaction record | not started | — |
+| A5 perimeter | not started | — |
+| A4 engine connector | not started, and blocked | waits on `codex-session-engine-2026-08-09` choosing its path |
+
+### Where A2 ended, and what it cost to get right
+
+Two review rounds, both of which found something the implementation and this
+plan had missed.
+
+**Round one found the same mistake this plan had already named, on the other
+side of the wall.** The gate was extended from three commands to eight and a
+test was written asserting the *consumer* side was exhaustive. Four *producers*
+— `/projects` → Stop, `rc:kill`, the monitor's container button, the dashboard —
+still enqueued gated commands with no grant, so those features were dead on the
+branch. AC19's own sentence, "a control over three of eight entrances is a
+control over three entrances", is symmetric, and only one side of it had been
+applied. `tests/unit/restart-gate-producer-coverage.test.ts` is the counterpart
+that now exists.
+
+Round one also found `authorizeRestart` failing **open**: a gated command whose
+payload could not yield a fingerprint was waved through as "nothing to check".
+
+**Round two found a defect the round-one fixes introduced** — `cancel` did not
+check who was answering while `go` did, so anyone in the admin chat could cancel
+someone else's pending confirmation. Fixed in `40dd721`.
+
+Worth recording for whoever runs the next area: round two had **one reviewer of
+four** available (Codex rate-limited, Claude failed, GLM out of balance), so its
+verdict is thinner than round one's, and the `cancel` fix was never seen by a
+third pass.
+
+### A2's standing-grant mechanism is built and unused
+
+`utils/action-approval-grant.ts` supports `kind: "standing"`, and
+`scripts/grant-watchdog-standing.ts` can issue one. **Nothing holds one.** The
+mechanism was justified by a claim that turned out to be false — that
+`tmux-watchdog` already restarted wedged sessions unattended. It never did; it
+alerts, and AC14 pins that it still only alerts. Adding an autonomous actor is a
+decision, not an implementation detail, and building the mechanism does not
+authorize taking it.
+
+### Decisions already made for A1, before it starts
+
+Recorded so the next session does not re-litigate them:
+
+1. **keryx goes into the bot image** (`Dockerfile`). E3/E4/E5 run in the
+   container, which today has only `git curl ca-certificates`. Pin the version
+   and check it at startup.
+2. **The false-positive measurement is a separate step, before any code.** The
+   corpus is git diffs and reviewer reports — the E4 payloads — not reply
+   history, because replies are no longer scanned.
+3. **Step 0 is the exclusion test**, written before any scanning code exists: a
+   test that fails if a scan ever appears on `channel/tools.ts` or
+   `mcp/tools.ts` `reply`. The boundary of this area is enforced from the first
+   commit rather than after the first mistake.
 
 ## Order
 

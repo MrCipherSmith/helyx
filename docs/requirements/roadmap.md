@@ -1,6 +1,6 @@
 # Requirements Roadmap
 
-Version: 1.2.0
+Version: 1.3.0
 
 Index of requirements packages under `docs/requirements/`, the order they are
 worked in, and what each one is waiting on. One row per package; a package is
@@ -89,7 +89,7 @@ prose, recorded as one standard-level package rather than five loose notes.
 
 | Package | Status | Blocked on | Order |
 |---|---|---|---|
-| [keryx-adoption-2026-08-12](keryx-adoption-2026-08-12/README.md) | `draft` | nothing — but no area is scheduled | unscheduled |
+| [keryx-adoption-2026-08-12](keryx-adoption-2026-08-12/README.md) | `in progress` | nothing — A2 shipped 2026-08-13, A1 is next | A1 next |
 
 The package sequences its own areas **A2 → A1 → A3 → A5 → A4** and states that a
 partial outcome is a real one: A2 alone (an approval bound to the fingerprint of

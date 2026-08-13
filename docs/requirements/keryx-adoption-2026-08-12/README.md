@@ -1,6 +1,6 @@
 # Adopting keryx Patterns into helyx
 
-Version: 1.1.0
+Version: 1.2.0
 
 ## Purpose
 
@@ -21,7 +21,11 @@ token theft". This package is the return leg.
 
 ## Status
 
-`draft` — written 2026-08-12 from a read of keryx at `af380a6a` (v0.2.16).
+`in progress` — written 2026-08-12 from a read of keryx at `af380a6a`
+(v0.2.16). **A2 shipped 2026-08-13** (flow 062, PR #110, merged as `390f7d8`);
+A1 is next and its decisions are recorded in
+[implementation-plan.md](implementation-plan.md) §Status. The other three areas
+are unstarted.
 
 No adoption area below is implemented in helyx as an area. Two of A5's four
 perimeter rules turned out to hold already, discovered while writing rather than

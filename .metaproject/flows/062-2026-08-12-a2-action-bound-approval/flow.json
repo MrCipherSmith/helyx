@@ -3,9 +3,9 @@
   "id": "062",
   "slug": "a2-action-bound-approval",
   "title": "A2: approval bound to an action fingerprint",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-12T21:57:48.089Z",
-  "updatedAt": "2026-08-12T23:04:11.319Z",
+  "updatedAt": "2026-08-13T05:15:43.765Z",
   "source": {
     "type": "description",
     "ref": null
@@ -90,7 +90,7 @@
     }
   },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/110"
   },
   "tasks": [
     {
@@ -342,6 +342,25 @@
       "at": "2026-08-12T23:04:11.319Z",
       "event": "task-done",
       "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-13T05:15:43.684Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/110 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-08-13T05:15:43.757Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-13T05:15:43.765Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
-  ]
+  ],
+  "merged": {
+    "commit": "390f7d8",
+    "ref": "origin/main",
+    "at": "2026-08-13T05:15:43.765Z"
+  }
 }

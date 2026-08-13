@@ -173,7 +173,7 @@ This bot is a full **[Model Context Protocol](https://modelcontextprotocol.io) s
 - **Service Layer** — `services/` directory with `SessionService`, `ProjectService`, `PermissionService`, `MemoryService`, `MessageService`, `SummarizationService`; typed wrappers over raw SQL with atomic operations
 - **Zod Config Validation** — all env vars parsed and validated at startup via `config.ts`; bot exits immediately on missing required vars
 - **Structured Logging (Pino)** — JSON-structured logs throughout the codebase; `LOG_LEVEL` env var; `channelLogger` writes to stderr fd 2 for MCP stdio compatibility
-- **Unit Test Suite** — 77 pure unit tests in `tests/unit/` covering session lifecycle, permission state machine, memory reconciliation, and forum topic routing; runs in ~30ms with `bun test tests/unit/`
+- **Unit Test Suite** — 2,430 pure unit tests across 137 files in `tests/unit/` covering session lifecycle, permission state machine, memory reconciliation, forum topic routing, status rendering, transcript parsing, and restart approval; runs in ~17s with `bun test tests/unit/`
 - **Security Defaults** — bot exits immediately at startup if `ALLOWED_USERS` is empty and `ALLOW_ALL_USERS=true` is not set; no silent open-access deployments
 - **Session State Machine** — `sessions/state-machine.ts` enforces valid status transitions (`active→inactive`, `active→terminated`, `inactive→active`); invalid transitions are blocked and logged
 
