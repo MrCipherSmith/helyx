@@ -3,9 +3,9 @@
   "id": "063",
   "slug": "a1-external-boundary-scan",
   "title": "A1: scanning the boundary with the external world",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-13T08:16:42.903Z",
-  "updatedAt": "2026-08-13T09:24:49.010Z",
+  "updatedAt": "2026-08-13T10:47:58.621Z",
   "source": {
     "type": "description",
     "ref": null
@@ -229,6 +229,20 @@
       "at": "2026-08-13T09:24:49.010Z",
       "event": "completion-failed",
       "detail": "pull-request: PR checks not green | health: no report; run `keryx health run` first"
+    },
+    {
+      "at": "2026-08-13T10:47:38.819Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/112 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-08-13T10:47:53.547Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-13T10:47:58.621Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
   ]
 }
