@@ -25,6 +25,7 @@ import { CONFIG } from "../../config.ts";
 
 const realFetch = globalThis.fetch;
 const realSpawn = Bun.spawn;
+const realWhich = Bun.which;
 // `CONFIG` is typed read-only and is a plain object at runtime. The cast is
 // the honest way to say "this test changes a setting and puts it back".
 const settings = CONFIG as { TTS_PROVIDER: string };
@@ -107,7 +108,25 @@ function install(script: Script): void {
   // Piper writes a wav to the path it is given. The stub does the same, because
   // a stub that only reports an exit code would prove the binary was called
   // rather than that sound came back.
+  //
+  // synthesize() now reaches the world through a third subprocess door: before
+  // any reply leaves for a remote voice, it is scanned by `keryx security
+  // check-output` (adoption area A1, the external boundary). These tests are
+  // about provider order, not the boundary, so the scanner answers a clean pass
+  // — and `Bun.which` is pinned to find it, so the chain is the same on a machine
+  // that has keryx and one that does not, which is the whole point of this file.
+  (Bun as { which: unknown }).which = ((bin: string) =>
+    bin === "keryx" ? "/fake/keryx" : realWhich(bin)) as unknown as typeof Bun.which;
+
   (Bun as { spawn: unknown }).spawn = ((argv: string[], options?: { stdin?: Uint8Array }) => {
+    if (argv[0] === "keryx") {
+      return {
+        stdout: new TextEncoder().encode('{"gate":"pass","action":"allow","findings":[]}'),
+        stderr: new Uint8Array(),
+        exited: Promise.resolve(0),
+        kill() {},
+      };
+    }
     doors.tried.push("piper");
     doors.piperRuns++;
     doors.spoken.piper = options?.stdin ? new TextDecoder().decode(options.stdin) : "";
@@ -122,6 +141,7 @@ beforeEach(() => { install({}); });
 afterEach(() => {
   globalThis.fetch = realFetch;
   (Bun as { spawn: unknown }).spawn = realSpawn;
+  (Bun as { which: unknown }).which = realWhich;
   settings.TTS_PROVIDER = realProvider;
 });
 

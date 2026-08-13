@@ -149,6 +149,18 @@ const EnvSchema = z.object({
     .string()
     .default("true")
     .transform((s) => s !== "false"),
+
+  // External boundary scan (adoption area A1). Master switch and per-scan
+  // wall-clock budget for `keryx security check-output` on the five crossings to
+  // services the operator does not control. The operator channel is never
+  // scanned and cannot be enabled here. Default on: fail-closed on a crossing
+  // costs a locally synthesised voice or a skipped reviewer, never a reply — so
+  // there is no message the operator loses by leaving this on.
+  EXTERNAL_BOUNDARY_SCAN_ENABLED: z
+    .string()
+    .default("true")
+    .transform((s) => s !== "false"),
+  EXTERNAL_BOUNDARY_SCAN_TIMEOUT_MS: z.coerce.number().int().positive().default(3000),
 });
 
 const result = EnvSchema.safeParse(process.env);
@@ -173,6 +185,10 @@ export const CONFIG = {
   // Deployment
   HELYX_PROFILE: env.HELYX_PROFILE,
   ENABLE_DASHBOARD: env.ENABLE_DASHBOARD,
+
+  // External boundary scan (A1)
+  EXTERNAL_BOUNDARY_SCAN_ENABLED: env.EXTERNAL_BOUNDARY_SCAN_ENABLED,
+  EXTERNAL_BOUNDARY_SCAN_TIMEOUT_MS: env.EXTERNAL_BOUNDARY_SCAN_TIMEOUT_MS,
 
   // Telegram
   TELEGRAM_BOT_TOKEN: env.TELEGRAM_BOT_TOKEN,

@@ -4,6 +4,7 @@ import { join } from "path";
 import { CONFIG } from "../config.ts";
 import { channelLogger } from "../logger.ts";
 import { cyrillize } from "./cyrillize.ts";
+import { guardOutbound } from "./external-boundary-scan.ts";
 
 const PIPER_DIR = process.env.PIPER_DIR ?? join(import.meta.dir, "../piper");
 const PIPER_BIN = join(PIPER_DIR, "piper/piper");
@@ -485,7 +486,24 @@ export async function synthesize(text: string): Promise<{ buf: Buffer; fmt: "mp3
 
   const wrap = (buf: Buffer | null, fmt: "mp3" | "wav") => buf ? { buf, fmt } : null;
 
+  // E1 — the external boundary. Before the reply text leaves for a remote
+  // synthesiser (Yandex/Groq/OpenAI — services the operator does not control) it
+  // is scanned. A finding, or a scanner that cannot run, costs a locally
+  // synthesised voice, never a reply: synthesis falls through to local Piper and
+  // the substitution is recorded. Local providers (Piper/Kokoro) are not a
+  // crossing and are never gated.
+  const boundary = await guardOutbound(clean, "E1-remote-tts");
+  const remoteAllowed = boundary.cross;
+  const piperSubstitute = async (): Promise<{ buf: Buffer; fmt: "mp3" | "wav" } | null> => {
+    channelLogger.warn(
+      { crossing: "E1-remote-tts", reason: boundary.reason },
+      "tts: external boundary withheld remote synthesis, substituting local piper",
+    );
+    return wrap(await synthesizePiper(clean, isRussian), "wav");
+  };
+
   if (provider === "yandex") {
+    if (!remoteAllowed) return piperSubstitute();
     if (!YANDEX_API_KEY || !YANDEX_FOLDER_ID) {
       channelLogger.warn({}, "tts: TTS_PROVIDER=yandex but YANDEX_API_KEY/YANDEX_FOLDER_ID not set");
       return null;
@@ -505,10 +523,12 @@ export async function synthesize(text: string): Promise<{ buf: Buffer; fmt: "mp3
   }
 
   if (provider === "openai") {
+    if (!remoteAllowed) return piperSubstitute();
     return synthesizeOpenAI(clean).then(b => wrap(b, "mp3"));
   }
 
   if (provider === "groq") {
+    if (!remoteAllowed) return piperSubstitute();
     return synthesizeGroq(clean).then(b => wrap(b, "wav"));
   }
 
@@ -531,7 +551,7 @@ export async function synthesize(text: string): Promise<{ buf: Buffer; fmt: "mp3
       channelLogger.warn({ err }, "tts: Piper failed, trying Yandex");
     }
 
-    if (YANDEX_API_KEY && YANDEX_FOLDER_ID) {
+    if (remoteAllowed && YANDEX_API_KEY && YANDEX_FOLDER_ID) {
       try {
         const buf = await synthesizeYandex(clean);
         if (buf) {
@@ -561,6 +581,18 @@ export async function synthesize(text: string): Promise<{ buf: Buffer; fmt: "mp3
     } catch {
       // fall through to Groq
     }
+  }
+
+  // The last resort in auto mode is Groq — a remote crossing. If the boundary
+  // withheld it, the local attempts above have already run; there is no remote
+  // escalation to make, so record the withheld crossing and return no voice. The
+  // text reply is unaffected — it left before any of this.
+  if (!remoteAllowed) {
+    channelLogger.warn(
+      { crossing: "E1-remote-tts", reason: boundary.reason },
+      "tts: external boundary withheld remote fallback, no local voice available",
+    );
+    return null;
   }
 
   try {
