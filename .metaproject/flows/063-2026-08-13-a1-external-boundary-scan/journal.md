@@ -18,3 +18,7 @@
 - 2026-08-13T09:17:14.428Z - ac-confirmed: AC11: metrics-M1.md: scan latency measured (median ~0.9s, bounded by timeoutMs); operator path adds 0 by construction (AC1 guard); orchestrator-verified: full unit suite 2468 pass/0 fail, tsc clean (core tree), eslint 0 errors
 - 2026-08-13T09:17:14.520Z - task-done: T2: Implement per plan
 - 2026-08-13T09:17:14.639Z - task-done: T3: Add/adjust tests and make them pass
+- 2026-08-13T09:24:43.288Z - task-done: T4: Self-review and prepare draft PR
+- 2026-08-13T09:24:46.189Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/112 (warning: PR is not a draft)
+- 2026-08-13T09:24:46.256Z - completing
+- 2026-08-13T09:24:49.010Z - completion-failed: pull-request: PR checks not green | health: no report; run `keryx health run` first

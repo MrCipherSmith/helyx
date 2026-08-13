@@ -17,6 +17,7 @@ import { runReviewers, setReviewers } from "../../services/reviewer-service.ts";
 import { providerService } from "../../services/provider-service.ts";
 import { sql } from "../../memory/db.ts";
 import { installFakeFetch, type FakeFetch } from "../fixtures/fake-fetch.ts";
+import { installPassingScanner } from "../fixtures/fake-scanner.ts";
 
 const TEST_DATABASE_ENV = "HELYX_TEST_DATABASE";
 const hasDatabase = Boolean(process.env[TEST_DATABASE_ENV]);
@@ -24,10 +25,16 @@ const hasDatabase = Boolean(process.env[TEST_DATABASE_ENV]);
 describe.skipIf(!hasDatabase)("runReviewers", () => {
   let http: FakeFetch;
   let restore: () => void;
+  let restoreScanner: () => void;
   let providerId: number;
 
   beforeEach(async () => {
     ({ http, restore } = installFakeFetch());
+    // runReviewers now scans the diff on the way out (E4). These tests are about
+    // the diff reaching the reviewer, not the boundary, so the scanner is pinned
+    // to a clean pass — otherwise the result would depend on whether keryx is
+    // installed on the machine running the suite (it is not, on CI).
+    ({ restore: restoreScanner } = installPassingScanner());
     await sql`DELETE FROM providers WHERE name = 'ReviewFixture'`;
     const created = await providerService.create({
       name: "ReviewFixture",
@@ -43,6 +50,7 @@ describe.skipIf(!hasDatabase)("runReviewers", () => {
 
   afterEach(async () => {
     restore();
+    restoreScanner();
     await sql`DELETE FROM providers WHERE name = 'ReviewFixture'`.catch(() => {});
   });
 
