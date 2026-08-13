@@ -32,7 +32,8 @@ export type CallbackRoute =
   | "menu"
   | "supervisor"
   | "tmux-log"
-  | "now";
+  | "now"
+  | "restart-grant";
 
 /**
  * The table, in order. First match wins.
@@ -71,6 +72,9 @@ export const CALLBACK_ROUTES: readonly (readonly [prefix: string, route: Callbac
   ["sup:", "supervisor"],
   ["tmuxlog:", "tmux-log"],
   ["now:", "now"],
+  // A2 — the opaque token that answers a restart confirmation. The command it
+  // enqueues never travels in this data; only the grant id does (P-5.4).
+  ["grant:", "restart-grant"],
 ];
 
 /**

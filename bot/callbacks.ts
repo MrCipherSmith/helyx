@@ -89,6 +89,10 @@ export const defaultCallbackHandlers: CallbackHandlers = {
     const { handleNowCallback } = await import("./commands/now.ts");
     return handleNowCallback(ctx);
   },
+  "restart-grant": async (ctx) => {
+    const { handleRestartGrantCallback } = await import("./commands/restart-grant.ts");
+    return handleRestartGrantCallback(ctx);
+  },
 };
 
 export async function handleCallbackQuery(

@@ -11,6 +11,7 @@ import { enqueueRestart } from "../../services/project-service.ts";
 import { forwardStuckMessages } from "../../scripts/supervisor.ts";
 import { parseSupervisorCallback } from "../../utils/supervisor-callbacks.ts";
 import { paneLines, escapeHtml } from "../../utils/terminal.ts";
+import { beginRestartConfirmation } from "../restart-confirm.ts";
 
 export async function handleSupervisorCallback(ctx: Context): Promise<void> {
   // Only the configured admin chat may trigger supervisor actions
@@ -64,14 +65,9 @@ export async function handleSupervisorCallback(ctx: Context): Promise<void> {
   }
 
   if (action === "bounce") {
-    await sql`
-      INSERT INTO admin_commands (command, payload)
-      VALUES ('bounce', ${sql.json({})})
-    `.catch(() => {});
-    await ctx.answerCallbackQuery({ text: "🚀 Bounce запущен" });
-    await ctx.editMessageReplyMarkup({
-      reply_markup: new InlineKeyboard().text("🚀 Bouncing...", "sup:noop"),
-    }).catch(() => {});
+    // A2 — same gate as /system's 🔄 Bounce button: state the fingerprint,
+    // wait for the confirming tap, only then enqueue.
+    await beginRestartConfirmation(ctx, "bounce", {});
     return;
   }
 

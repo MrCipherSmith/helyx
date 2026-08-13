@@ -1,0 +1,347 @@
+{
+  "schemaVersion": 2,
+  "id": "062",
+  "slug": "a2-action-bound-approval",
+  "title": "A2: approval bound to an action fingerprint",
+  "status": "in-progress",
+  "createdAt": "2026-08-12T21:57:48.089Z",
+  "updatedAt": "2026-08-12T23:04:11.319Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:4c64dd9947d68fe43bbe7c64112d040e31ad05f49e9bae31cbf18a3fb6c902d7",
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-12T22:53:20.989Z",
+      "note": "orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    "AC2": {
+      "at": "2026-08-12T22:53:21.063Z",
+      "note": "orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    "AC3": {
+      "at": "2026-08-12T22:53:21.136Z",
+      "note": "orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    "AC4": {
+      "at": "2026-08-12T22:53:21.215Z",
+      "note": "orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    "AC5": {
+      "at": "2026-08-12T22:53:21.286Z",
+      "note": "orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    "AC6": {
+      "at": "2026-08-12T22:53:21.360Z",
+      "note": "orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    "AC7": {
+      "at": "2026-08-12T22:53:21.433Z",
+      "note": "orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    "AC8": {
+      "at": "2026-08-12T22:53:21.505Z",
+      "note": "orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    "AC9": {
+      "at": "2026-08-12T22:53:21.578Z",
+      "note": "orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    "AC10": {
+      "at": "2026-08-12T22:53:21.648Z",
+      "note": "orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    "AC11": {
+      "at": "2026-08-12T22:53:21.720Z",
+      "note": "orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    "AC12": {
+      "at": "2026-08-12T22:53:21.797Z",
+      "note": "orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    "AC13": {
+      "at": "2026-08-12T22:53:21.870Z",
+      "note": "orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    "AC14": {
+      "at": "2026-08-12T22:53:21.942Z",
+      "note": "orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    "AC15": {
+      "at": "2026-08-12T22:53:22.012Z",
+      "note": "orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    "AC16": {
+      "at": "2026-08-12T22:53:22.082Z",
+      "note": "orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    "AC17": {
+      "at": "2026-08-12T22:53:22.154Z",
+      "note": "orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    "AC18": {
+      "at": "2026-08-12T22:53:22.227Z",
+      "note": "orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    "AC19": {
+      "at": "2026-08-12T22:53:22.300Z",
+      "note": "orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    }
+  },
+  "pr": {
+    "url": null
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-12T21:57:48.089Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-12T21:58:54.966Z",
+      "event": "frozen",
+      "detail": "13 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-12T21:58:55.137Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-12T22:28:49.598Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: verified by orchestrator: full suite 2376 pass/0 fail, tsc clean"
+    },
+    {
+      "at": "2026-08-12T22:28:49.674Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: verified by orchestrator: full suite 2376 pass/0 fail, tsc clean"
+    },
+    {
+      "at": "2026-08-12T22:28:49.754Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: verified by orchestrator: full suite 2376 pass/0 fail, tsc clean"
+    },
+    {
+      "at": "2026-08-12T22:28:49.826Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: verified by orchestrator: full suite 2376 pass/0 fail, tsc clean"
+    },
+    {
+      "at": "2026-08-12T22:28:49.902Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: verified by orchestrator: full suite 2376 pass/0 fail, tsc clean"
+    },
+    {
+      "at": "2026-08-12T22:28:49.976Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: verified by orchestrator: full suite 2376 pass/0 fail, tsc clean"
+    },
+    {
+      "at": "2026-08-12T22:28:50.050Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: verified by orchestrator: full suite 2376 pass/0 fail, tsc clean"
+    },
+    {
+      "at": "2026-08-12T22:28:50.125Z",
+      "event": "ac-confirmed",
+      "detail": "AC11: verified by orchestrator: full suite 2376 pass/0 fail, tsc clean"
+    },
+    {
+      "at": "2026-08-12T22:28:50.198Z",
+      "event": "ac-confirmed",
+      "detail": "AC12: verified by orchestrator: full suite 2376 pass/0 fail, tsc clean"
+    },
+    {
+      "at": "2026-08-12T22:28:50.274Z",
+      "event": "ac-confirmed",
+      "detail": "AC13: verified by orchestrator: full suite 2376 pass/0 fail, tsc clean"
+    },
+    {
+      "at": "2026-08-12T22:35:14.732Z",
+      "event": "ac-updated",
+      "detail": "Watchdog premise was false: the original tmux-watchdog only alerts and never restarted. AC8-AC10 assumed a capability that did not exist; the trigger is withdrawn and the standing-grant mechanism stays unused. Separately, the spec's mapping table named three commands so the gate covered three of eight entrances; the remaining five are now in scope."
+    },
+    {
+      "at": "2026-08-12T22:35:48.305Z",
+      "event": "ac-updated",
+      "detail": "Watchdog premise was false: the original tmux-watchdog only alerts and never restarted, so AC8-AC10 assumed a capability that did not exist. Trigger withdrawn (AC14), standing-grant mechanism kept and tested but unused. Gate coverage extended from 3 to all 8 teardown-capable commands (AC15-AC19) after the spec's mapping table proved incomplete."
+    },
+    {
+      "at": "2026-08-12T22:53:20.989Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    {
+      "at": "2026-08-12T22:53:21.063Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    {
+      "at": "2026-08-12T22:53:21.136Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    {
+      "at": "2026-08-12T22:53:21.215Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    {
+      "at": "2026-08-12T22:53:21.286Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    {
+      "at": "2026-08-12T22:53:21.360Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    {
+      "at": "2026-08-12T22:53:21.433Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    {
+      "at": "2026-08-12T22:53:21.505Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    {
+      "at": "2026-08-12T22:53:21.578Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    {
+      "at": "2026-08-12T22:53:21.648Z",
+      "event": "ac-confirmed",
+      "detail": "AC10: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    {
+      "at": "2026-08-12T22:53:21.720Z",
+      "event": "ac-confirmed",
+      "detail": "AC11: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    {
+      "at": "2026-08-12T22:53:21.797Z",
+      "event": "ac-confirmed",
+      "detail": "AC12: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    {
+      "at": "2026-08-12T22:53:21.871Z",
+      "event": "ac-confirmed",
+      "detail": "AC13: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    {
+      "at": "2026-08-12T22:53:21.942Z",
+      "event": "ac-confirmed",
+      "detail": "AC14: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    {
+      "at": "2026-08-12T22:53:22.012Z",
+      "event": "ac-confirmed",
+      "detail": "AC15: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    {
+      "at": "2026-08-12T22:53:22.082Z",
+      "event": "ac-confirmed",
+      "detail": "AC16: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    {
+      "at": "2026-08-12T22:53:22.154Z",
+      "event": "ac-confirmed",
+      "detail": "AC17: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    {
+      "at": "2026-08-12T22:53:22.227Z",
+      "event": "ac-confirmed",
+      "detail": "AC18: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    {
+      "at": "2026-08-12T22:53:22.300Z",
+      "event": "ac-confirmed",
+      "detail": "AC19: orchestrator-verified: bun test 2402 pass/0 fail, tsc clean, eslint 0 errors"
+    },
+    {
+      "at": "2026-08-12T23:04:11.103Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-12T23:04:11.175Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-12T23:04:11.248Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-12T23:04:11.319Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    }
+  ]
+}

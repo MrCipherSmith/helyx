@@ -24,6 +24,7 @@ import { parseWindowNames } from "../sessions/tmux-windows.ts";
 import { runCurator, getLastCuratorRun } from "../utils/curator.ts";
 import { takeRestartLease, releaseRestartLease, heldMessage } from "../utils/restart-lease.ts";
 import { sendCuratorSummary } from "../utils/skill-approval.ts";
+import { authorizeRestart, GATED_RESTART_COMMANDS } from "./restart-gate.ts";
 
 const BOT_DIR = resolve(import.meta.dir, "..");
 const CLI = resolve(BOT_DIR, "cli.ts");
@@ -341,10 +342,38 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
    */
   const claimRestart = (): { ok: true } | { ok: false; result: { ok: boolean; output: string } } => {
     const lease = takeRestartLease(String(row.command));
-    if (!lease.ok) return { ok: false, result: { ok: false, output: heldMessage(lease.held) } };
+    if (!lease.ok) {
+      // F6 — by construction (AC5), `claimRestart` only ever runs after
+      // `authorizeOrRefuse` already succeeded, which means the grant behind
+      // this row is already consumed. A refusal here does not give it back:
+      // the operator's "да" is spent and a retry needs a fresh confirmation,
+      // not just a retry of the same button. Said here so the row's own
+      // `result` carries it, rather than only in a code comment nobody
+      // reading Telegram sees.
+      return {
+        ok: false,
+        result: { ok: false, output: `${heldMessage(lease.held)} — the approval for this restart was already spent; confirm again to retry` },
+      };
+    }
     if (lease.broke) {
       console.error(`[admin-daemon] broke stale lease from ${lease.broke.owner}`);
     }
+    return { ok: true };
+  };
+
+  /**
+   * The gate above `claimRestart` (A2 — see scripts/restart-gate.ts).
+   *
+   * Re-derives the fingerprint of this row's own command and payload — never
+   * trusting anything the request carried alongside `payload.grantId` — and
+   * checks it against a matching, unspent grant. An unapproved action is
+   * refused here and never reaches `claimRestart`: the lease is a mutex on
+   * restarts that are already happening, and taking it for one that was never
+   * approved would let it block the *approved* restart that comes after it.
+   */
+  const authorizeOrRefuse = async (): Promise<{ ok: true } | { ok: false; result: { ok: boolean; output: string } }> => {
+    const gate = await authorizeRestart(sql, { command: String(row.command), payload });
+    if (!gate.ok) return { ok: false, result: { ok: false, output: gate.message } };
     return { ok: true };
   };
 
@@ -362,7 +391,10 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
   ): { ok: boolean; output: string; deferred?: boolean } => {
     if (shell.ok) return ifOk;
     releaseRestartLease();
-    return { ok: false, output: `failed to start: ${shell.output.slice(0, 200)}` };
+    // F6 — same reasoning as `claimRestart`'s refusal above: the grant is
+    // already consumed by the time a spawn can fail, so the operator's
+    // approval does not survive a failed launch either.
+    return { ok: false, output: `failed to start: ${shell.output.slice(0, 200)} — the approval for this restart was already spent; confirm again to retry` };
   };
 
   try {
@@ -371,11 +403,17 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
         result = await runCommand("up", ["-s"]);
         break;
 
-      case "tmux_stop":
+      case "tmux_stop": {
+        // A2 — gated, `full` downtime: nothing brings the session half back
+        // up on its own. No lease here: tmux_stop never took one, and
+        // approval and mutual exclusion are different questions (P-2.6).
+        const authorized = await authorizeOrRefuse();
+        if (!authorized.ok) { result = authorized.result; break; }
         result = await runShell("tmux kill-session -t bots 2>&1 || true");
         // Mark all remote sessions as inactive in DB
         await sql`UPDATE sessions SET status = 'inactive' WHERE source = 'remote'`;
         break;
+      }
 
       case "proj_start": {
         const { path } = payload;
@@ -413,6 +451,8 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
         //
         // Spawned detached so the daemon survives the kill-session that tears
         // down its own window.
+        const authorized = await authorizeOrRefuse();
+        if (!authorized.ok) { result = authorized.result; break; }
         const claim = claimRestart();
         if (!claim.ok) { result = claim.result; break; }
         const bunBin = Bun.which("bun") ?? process.execPath;
@@ -427,6 +467,10 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
       }
 
       case "channel_kill": {
+        // A2 — gated, `brief` downtime: Claude Code respawns the subprocesses.
+        // No lease: channel_kill never took one.
+        const authorized = await authorizeOrRefuse();
+        if (!authorized.ok) { result = authorized.result; break; }
         // Kill all channel.ts MCP subprocesses so Claude Code respawns them with fresh code.
         const killResult = await runShell(`pkill -f "bun.*helyx/channel\\.ts" 2>&1 || true`);
         result = { ok: true, output: killResult.output || "channel processes killed" };
@@ -434,12 +478,25 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
       }
 
       case "docker_restart": {
-        const { container } = payload as { container: string };
-        if (!container) { result = { ok: false, output: "missing container" }; break; }
+        const { container } = payload as { container: unknown };
+        // `typeof` before the regex: `RegExp.test` coerces its argument to a
+        // string, so an `undefined` container (a malformed row) becomes the
+        // string `"undefined"`, which matches `[a-zA-Z0-9_.-]+` and would
+        // otherwise sail through this check. Raised in review.
+        if (typeof container !== "string" || container.length === 0) {
+          result = { ok: false, output: "missing container" }; break;
+        }
         // Validate container name to prevent shell injection
         if (!/^[a-zA-Z0-9_.-]+$/.test(container)) {
           result = { ok: false, output: `invalid container name: ${container}` }; break;
         }
+        // A2 — gated per named container (`container:<name>`, not the
+        // container half as a whole): a grant for `helyx-postgres-1` does not
+        // authorize restarting `helyx-bot-1`. Structural safety (the
+        // container-name checks above) runs before this — adopted property
+        // #4. No lease: docker_restart never took one.
+        const authorized = await authorizeOrRefuse();
+        if (!authorized.ok) { result = authorized.result; break; }
         // Bounded like every other docker step here, and for the reason stated
         // in `stack-up.ts`: the command queue is single-threaded, so a hung
         // daemon does not merely fail this restart — it holds every command
@@ -471,6 +528,10 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
       }
 
       case "docker_restart_all": {
+        // A2 — gated, `brief` downtime. No lease: docker_restart_all never
+        // took one.
+        const authorized = await authorizeOrRefuse();
+        if (!authorized.ok) { result = authorized.result; break; }
         // The container half by name. Short enough to run inline — no rebuild,
         // so this is seconds, not the minutes `full_restart` takes.
         const docker = await restartDockerHalf(runShell, { botDir: BOT_DIR });
@@ -491,6 +552,8 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
         // whole flow is about. Falls back to `nohup` where systemd-run is
         // absent, in which case the daemon step is skipped rather than run in a
         // way that would cut its own throat.
+        const authorized = await authorizeOrRefuse();
+        if (!authorized.ok) { result = authorized.result; break; }
         const claim = claimRestart();
         if (!claim.ok) { result = claim.result; break; }
         const bunBin = Bun.which("bun") ?? process.execPath;
@@ -519,6 +582,8 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
         // both halves. Detached for the same reason `bounce` is: the bounce
         // tears down the daemon's own tmux window, and a build measured in
         // minutes would otherwise block this single-threaded command queue.
+        const authorized = await authorizeOrRefuse();
+        if (!authorized.ok) { result = authorized.result; break; }
         const claim = claimRestart();
         if (!claim.ok) { result = claim.result; break; }
         const bunBin = Bun.which("bun") ?? process.execPath;
@@ -530,8 +595,13 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
         // its exit status: chained with `;` a failed build still ran the bounce
         // and still closed the row as done, so a restart that never rebuilt
         // anything reported success. Raised in review.
+        //
+        // `HELYX_RESTART_LEASE_HELD=1` — this whole sequence already holds the
+        // lease, taken by `claimRestart()` above. Without it, `cli.ts`'s own
+        // `bounce` branch would try to take the same lease a second time and
+        // refuse itself (see cli.ts, the "bounce" switch branch).
         const shell = await runShell(
-          `nohup bash -c "(cd \\"${BOT_DIR}\\" && docker compose up -d --build bot && sleep 5 && \\"${bunBin}\\" \\"${CLI}\\" bounce) >> /tmp/helyx-full-restart.log 2>&1; \\"${bunBin}\\" \\"${finish}\\" ${row.id} \\$? >> /tmp/helyx-full-restart.log 2>&1" &`
+          `nohup bash -c "(cd \\"${BOT_DIR}\\" && docker compose up -d --build bot && sleep 5 && HELYX_RESTART_LEASE_HELD=1 \\"${bunBin}\\" \\"${CLI}\\" bounce) >> /tmp/helyx-full-restart.log 2>&1; \\"${bunBin}\\" \\"${finish}\\" ${row.id} \\$? >> /tmp/helyx-full-restart.log 2>&1" &`
         );
         result = spawned(shell, { ok: true, deferred: true, output: "full restart running: rebuild bot → bounce sessions (log: /tmp/helyx-full-restart.log)" });
         break;
@@ -659,6 +729,17 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
         if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
           result = { ok: false, output: `invalid project name: ${name}` }; break;
         }
+        // A2 — gated, `full` downtime: nothing restarts a stopped project's
+        // session until a human presses Start. `fingerprintOf` reads
+        // `payload.path`, ahead of any of this case's own side effects — a
+        // row missing `path` (this case's own `name`/`project_id` fallback
+        // above is a separate concern, for the tmux kill-window below) has no
+        // fingerprint to authorize and is refused below, at the gate call
+        // rather than falling through on `name` alone (F6/2026-08-12: scope
+        // must be the absolute path, since two projects can share a name).
+        // No lease: proj_stop never took one.
+        const authorized = await authorizeOrRefuse();
+        if (!authorized.ok) { result = authorized.result; break; }
         // Reset in-flight messages (delivered=true but Claude not yet responded) so they
         // get re-delivered to the new session after restart. Only touches messages from
         // the last 30 min — older ones were almost certainly already processed.
@@ -711,9 +792,39 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
       SET status = ${result.ok ? "done" : "error"}, result = ${result.output}, executed_at = now()
       WHERE id = ${row.id as unknown as number}
     `;
+    // F3/2026-08-12 — the exact silence CLAUDE.md warns about: by the time a
+    // gated command reaches here, `bot/commands/restart-grant.ts` has already
+    // edited the operator's message to "✅ Подтверждено — выполняется.", and
+    // nothing else reads `admin_commands.result` back to Telegram. A refusal
+    // — a stale producer, an expired grant, lease contention, a malformed
+    // payload — would otherwise look identical to a restart that was
+    // confirmed and quietly never happened. Scoped to the gated family on
+    // purpose: this is the one failure mode this flow can produce silently,
+    // not a general result-delivery framework for every admin command.
+    if (!result.ok && GATED_RESTART_COMMANDS.has(row.command)) {
+      await notifyGateFailure(String(row.command), result.output);
+    }
   }
 
   console.log(`[admin-daemon] ${result.ok ? "✓" : "✗"} ${row.command}: ${result.output.slice(0, 100)}`);
+}
+
+/** One best-effort Telegram message to the admin chat — see the call site above. */
+async function notifyGateFailure(command: string, reason: string): Promise<void> {
+  if (!botToken || !adminChatId) return;
+  try {
+    await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: Number(adminChatId),
+        text: `⚠️ ${command} did not run: ${reason.slice(0, 500)}`,
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch (err) {
+    console.error("[admin-daemon] notifyGateFailure failed:", err);
+  }
 }
 
 // Main polling loop — dequeue one command at a time to guarantee order.

@@ -371,8 +371,22 @@ async function handleCreateProject(req: IncomingMessage, res: ServerResponse): P
   }
 }
 
-async function handleProjectAction(_req: IncomingMessage, res: ServerResponse, id: number, action: "start" | "stop"): Promise<void> {
-  const result = action === "start" ? await projectService.start(id) : await projectService.stop(id);
+/** Exported for tests — see `tests/unit/restart-confirmation-flow.test.ts`, F1's dashboard coverage. */
+export async function handleProjectAction(_req: IncomingMessage, res: ServerResponse, id: number, action: "start" | "stop"): Promise<void> {
+  if (action === "stop") {
+    // A2/F1/2026-08-12 — `proj_stop` is gated. The dashboard authenticates a
+    // real Telegram-verified user (`AuthPayload.id` via `verifyTelegramLogin`),
+    // but has no equivalent of the bot's two-tap flow — no persisted
+    // confirmation sentence shown before the operator answers (AC6), no
+    // `grant:go` step. Building that is real feature work, not a defect fix,
+    // so this refuses rather than either enqueueing a doomed row (the bug
+    // being fixed) or silently issuing a grant the operator never actually
+    // confirmed reading (this endpoint sends the request and the reply in the
+    // same round trip — there's no separate tap to bind a confirmation to).
+    sendError(res, "Stopping a project now requires approval from Telegram — use /projects there.", 403);
+    return;
+  }
+  const result = await projectService.start(id);
   if (!result.ok) { sendError(res, result.error ?? "Failed", 404); return; }
   sendJson(res, { ok: true });
 }
@@ -398,7 +412,8 @@ async function handleGetProcessHealth(res: ServerResponse): Promise<void> {
   sendJson(res, { health, activeSessionCount: activeCount });
 }
 
-async function handleProcessAction(req: IncomingMessage, res: ServerResponse, action: "restart-daemon" | "restart-docker"): Promise<void> {
+/** Exported for tests — see `tests/unit/restart-confirmation-flow.test.ts`, F1's dashboard coverage. */
+export async function handleProcessAction(req: IncomingMessage, res: ServerResponse, action: "restart-daemon" | "restart-docker"): Promise<void> {
   if (action === "restart-daemon") {
     await sql`INSERT INTO admin_commands (command, payload) VALUES ('restart_admin_daemon', '{}')`;
     sendJson(res, { ok: true });
@@ -407,8 +422,11 @@ async function handleProcessAction(req: IncomingMessage, res: ServerResponse, ac
   if (action === "restart-docker") {
     const { container } = await parseBody(req);
     if (!container || typeof container !== "string") { sendError(res, "container required"); return; }
-    await sql`INSERT INTO admin_commands (command, payload) VALUES ('docker_restart', ${sql.json({ container })})`;
-    sendJson(res, { ok: true });
+    // A2/F1/2026-08-12 — `docker_restart` is gated; see the same reasoning in
+    // `handleProjectAction`'s `stop` case just above. Refuse rather than
+    // enqueue a row the daemon will refuse anyway with a message nobody in
+    // the dashboard ever sees.
+    sendError(res, "Restarting a container now requires approval from Telegram — use /system or /monitor there.", 403);
     return;
   }
   sendError(res, "Unknown action", 400);

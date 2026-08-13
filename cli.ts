@@ -26,6 +26,7 @@ import { resolveMemoryMb, presetsThatFit } from "./utils/host-memory.ts";
 import { dashboardEnvLines } from "./utils/dashboard-readiness.ts";
 import { classifyCheckout, pruneStaleStopHooks } from "./utils/stop-hook.ts";
 import { ollamaProxyEnabled, ollamaProxyPort } from "./utils/ollama-proxy-settings.ts";
+import { takeRestartLease, releaseRestartLease, heldMessage } from "./utils/restart-lease.ts";
 
 // --- ANSI colors ---
 const c = {
@@ -2310,14 +2311,39 @@ switch (command) {
   case "up":          await tmuxStart(); break;
   case "down":        await tmuxStop(); break;
   case "bounce": {
-    await tmuxStop();
-    // Wait for the tmux session to fully terminate before starting
-    for (let i = 0; i < 10; i++) {
-      const exists = await run(["tmux", "has-session", "-t", TMUX_SESSION], { silent: true });
-      if (!exists.ok) break;
-      await Bun.sleep(500);
+    // A2 (docs/requirements/keryx-adoption-2026-08-12) — CLAUDE.md names this
+    // exact branch as the one path that bypassed `utils/restart-lease.ts`:
+    // "That lease does not cover `bun cli.ts bounce` run directly on the
+    // host." Running it from a terminal while a Telegram-triggered `bounce`,
+    // `host_restart` or `full_restart` is in flight raced the same
+    // `tmux kill-session` sequence the lease exists to keep to one at a time.
+    //
+    // `HELYX_RESTART_LEASE_HELD=1` is how those three tell this branch "I
+    // already hold the lease, this is a sub-step of my own restart" —
+    // `scripts/restart-host.ts` and `scripts/admin-daemon.ts`'s `full_restart`
+    // both set it when they shell out to `bun cli.ts bounce` themselves.
+    // Without the flag, this run is unmediated: nobody upstream took the
+    // lease on its behalf, so it takes its own or refuses rather than racing
+    // whoever already holds it.
+    const heldByCaller = process.env.HELYX_RESTART_LEASE_HELD === "1";
+    const lease = heldByCaller ? { ok: true as const, broke: null } : takeRestartLease("cli:bounce");
+    if (!lease.ok) {
+      console.error(`❌ ${heldMessage(lease.held)}`);
+      process.exitCode = 1;
+      break;
     }
-    await tmuxStart();
+    try {
+      await tmuxStop();
+      // Wait for the tmux session to fully terminate before starting
+      for (let i = 0; i < 10; i++) {
+        const exists = await run(["tmux", "has-session", "-t", TMUX_SESSION], { silent: true });
+        if (!exists.ok) break;
+        await Bun.sleep(500);
+      }
+      await tmuxStart();
+    } finally {
+      if (!heldByCaller) releaseRestartLease();
+    }
     break;
   }
   case "ps":          await tmuxList(); break;

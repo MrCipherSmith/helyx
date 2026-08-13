@@ -3,9 +3,9 @@
   "id": "061",
   "slug": "a-session-that-hit-its-limit-is-not-a-se",
   "title": "A session that hit its limit is not a session that hung",
-  "status": "in-progress",
+  "status": "done",
   "createdAt": "2026-08-08T18:02:09.973Z",
-  "updatedAt": "2026-08-08T20:03:18.621Z",
+  "updatedAt": "2026-08-12T23:09:27.119Z",
   "source": {
     "type": "description",
     "ref": null
@@ -68,7 +68,7 @@
     }
   },
   "pr": {
-    "url": null
+    "url": "https://github.com/MrCipherSmith/helyx/pull/107"
   },
   "tasks": [
     {
@@ -375,6 +375,25 @@
       "at": "2026-08-08T20:03:18.621Z",
       "event": "task-done",
       "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-12T23:09:27.030Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/107 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-08-12T23:09:27.111Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-12T23:09:27.119Z",
+      "event": "done",
+      "detail": "all gates passed"
     }
-  ]
+  ],
+  "merged": {
+    "commit": "0863e8c6092ac614a5a8bde1f2c972fdc2ccbe4f",
+    "ref": "origin/main",
+    "at": "2026-08-12T23:09:27.119Z"
+  }
 }

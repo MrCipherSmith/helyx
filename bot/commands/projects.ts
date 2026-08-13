@@ -5,6 +5,7 @@ import type { ProviderSelection } from "../../services/project-service.ts";
 import { sql } from "../../memory/db.ts";
 import { replyInThread } from "../format.ts";
 import { providerLabels } from "../../utils/supervisor-status.ts";
+import { beginRestartConfirmation } from "../restart-confirm.ts";
 
 async function getPendingActions(): Promise<Map<number, "start" | "stop">> {
   const rows = await sql`
@@ -251,11 +252,30 @@ export async function handleProjectCallback(ctx: Context): Promise<void> {
   if (action === "start") {
     await projectService.start(id);
   } else {
-    await projectService.stop(id);
+    // A2 — `proj_stop` is gated (CLAUDE.md names this button as *the* way to
+    // stop one project's session, and F1/2026-08-12 found it enqueueing with
+    // no grant and silently dying at the daemon). Same two-tap flow as
+    // `/system`'s buttons: state the fingerprint, wait for `grant:go:<id>`,
+    // only then enqueue. `project.path` is always set (from `projects`), so
+    // this always has a fingerprint and always shows the confirmation.
+    const gated = await beginRestartConfirmation(ctx, "proj_stop", {
+      project_id: project.id,
+      path: project.path,
+      name: project.name,
+      tmux_session_name: project.tmux_session_name,
+    });
+    if (gated) return;
+    // Unreachable in practice — `proj_stop` always derives a fingerprint from
+    // a real project's `path` — but if `fingerprintOf` ever disagreed with
+    // this call site about what "gated" means, falling through to the old
+    // direct-enqueue would be exactly the silent bypass F1 found. Refuse
+    // instead.
+    await ctx.answerCallbackQuery({ text: "Could not start the stop confirmation — try /system" });
+    return;
   }
 
   await ctx.answerCallbackQuery({
-    text: action === "start" ? `Starting ${project.name}...` : `Stopping ${project.name}...`,
+    text: `Starting ${project.name}...`,
   });
 
   await rerenderProjects(ctx);

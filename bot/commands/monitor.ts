@@ -9,6 +9,7 @@
 import type { Context } from "grammy";
 import { InlineKeyboard } from "grammy";
 import { sql } from "../../memory/db.ts";
+import { beginRestartConfirmation } from "../restart-confirm.ts";
 
 function icon(status: string): string {
   return status === "running" ? "🟢" : "🔴";
@@ -146,9 +147,12 @@ export async function handleMonitorCallback(ctx: Context): Promise<void> {
   if (action === "docker_restart") {
     const container = parts.slice(2).join(":");
     if (!container) { await ctx.answerCallbackQuery({ text: "Missing container" }); return; }
-    await sql`INSERT INTO admin_commands (command, payload) VALUES ('docker_restart', ${sql.json({ container })})`;
-    await ctx.answerCallbackQuery({ text: `⏳ Restarting ${container}...` });
-    await ctx.editMessageReplyMarkup({ reply_markup: new InlineKeyboard().text("🔄 Refresh", "mon:refresh") });
+    // A2 — `docker_restart` is gated (F1/2026-08-12: `mon:docker_restart:<c>`
+    // was enqueueing it with no grant and dying at the daemon). `container`
+    // is always set by this point, so `fingerprintOf` always derives one and
+    // this always shows the confirmation — there is no well-formed input
+    // that reaches an immediate enqueue any more.
+    await beginRestartConfirmation(ctx, "docker_restart", { container });
     return;
   }
 
