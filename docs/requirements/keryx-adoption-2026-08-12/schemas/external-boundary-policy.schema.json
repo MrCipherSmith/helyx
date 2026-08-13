@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/MrCipherSmith/helyx/schemas/external-boundary-policy.schema.json",
+  "title": "External Boundary Policy",
+  "description": "Configuration for scanning the crossings between helyx and services the operator does not control (adoption area A1). The operator channel — replies, instructions, permission prompts between the operator and a session — is inside the trust boundary and is never scanned; it is absent from this schema by design and cannot be added through configuration.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["enabled", "crossings"],
+  "properties": {
+    "enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Master switch for boundary scanning. Disabling is an operator decision that is logged at startup."
+    },
+    "command": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": ["keryx", "security", "check-output", "--json", "--target", "external"],
+      "description": "How the scanner is invoked. Must include --json: the verdict is read from parsed output, never from the exit code, because keryx exits 0 even when it blocks (verified 2026-08-12, v0.2.16)."
+    },
+    "timeoutMs": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 3000,
+      "description": "Wall-clock budget for one scan. A timeout is a scan failure and takes the crossing's onScanFailure path."
+    },
+    "onScanFailure": {
+      "type": "string",
+      "enum": ["fallback", "skip-crossing"],
+      "default": "fallback",
+      "description": "What happens when the scanner cannot run. 'fallback' takes the crossing's declared local alternative where one exists and skips the crossing where none does. There is deliberately no 'proceed' value: an unscanned crossing is the thing this policy exists to prevent. Note that neither value can withhold an operator message, because no operator path is a crossing."
+    },
+    "crossings": {
+      "type": "object",
+      "description": "Per-crossing configuration. Keys are the crossing ids from the specification.",
+      "additionalProperties": false,
+      "properties": {
+        "E1-remote-tts": {
+          "$ref": "#/$defs/crossing",
+          "description": "Reply text leaving for Yandex Cloud, Groq or OpenAI speech synthesis (utils/tts.ts). Fallback: local piper."
+        },
+        "E2-transcription": {
+          "$ref": "#/$defs/crossing",
+          "description": "Operator voice audio leaving for Groq (utils/transcribe.ts). Raw audio is not scannable content; this crossing is governed by posture (below), not by a payload scan."
+        },
+        "E3-aux-llm": {
+          "$ref": "#/$defs/crossing",
+          "description": "Prompts and completions to and from DeepSeek or OpenRouter (utils/aux-llm-client.ts). Skipped entirely when the base URL is the local Ollama."
+        },
+        "E4-reviewers": {
+          "$ref": "#/$defs/crossing",
+          "description": "Project diffs to third-party reviewer models and the reports they return."
+        },
+        "E5-session-provider": {
+          "$ref": "#/$defs/crossing",
+          "description": "Session content to a non-local provider. Anthropic-direct is still external."
+        }
+      }
+    },
+    "posture": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Crossings decided by configuration rather than payload. The control here is visibility, not a gate.",
+      "properties": {
+        "remoteTtsOptIn": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether remote speech synthesis may be used at all. False means local piper only, regardless of what a voice preset names."
+        },
+        "remoteTranscriptionOptIn": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether the operator's voice audio may leave for a remote transcriber. There is no local fallback today, so false means voice input is unavailable rather than degraded — an honest trade, stated rather than discovered."
+        },
+        "reportInStatus": {
+          "type": "boolean",
+          "const": true,
+          "default": true,
+          "description": "Which remote services are active must be visible from a status surface without reading .env. Fixed true: a posture nobody can see is not a posture."
+        }
+      }
+    }
+  },
+  "$defs": {
+    "crossing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scan"],
+      "properties": {
+        "scan": {
+          "type": "string",
+          "enum": ["both", "outbound", "inbound", "off"],
+          "default": "both",
+          "description": "Which directions are scanned. 'inbound' content is scanned as untrusted-external before it reaches a session or memory — that is the prompt-injection surface."
+        },
+        "onFinding": {
+          "type": "string",
+          "enum": ["fallback", "redact", "skip-crossing", "warn"],
+          "default": "fallback",
+          "description": "What a blocking finding does. 'fallback' uses the crossing's local alternative (piper for E1); 'skip-crossing' refuses that external call and reports it at the call site. A finding must never cost the operator a message — every value here is satisfiable without touching the operator channel."
+        },
+        "localFallback": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "The local alternative used when onFinding is 'fallback'. Null means none exists and the crossing is skipped instead.",
+          "examples": ["piper", null]
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "enabled": true,
+      "onScanFailure": "fallback",
+      "crossings": {
+        "E1-remote-tts": { "scan": "outbound", "onFinding": "fallback", "localFallback": "piper" },
+        "E2-transcription": { "scan": "off", "onFinding": "skip-crossing", "localFallback": null },
+        "E3-aux-llm": { "scan": "both", "onFinding": "skip-crossing", "localFallback": null },
+        "E4-reviewers": { "scan": "both", "onFinding": "skip-crossing", "localFallback": null },
+        "E5-session-provider": { "scan": "both", "onFinding": "redact", "localFallback": null }
+      },
+      "posture": { "remoteTtsOptIn": false, "remoteTranscriptionOptIn": true, "reportInStatus": true }
+    }
+  ]
+}
