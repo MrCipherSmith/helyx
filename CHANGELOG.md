@@ -2,6 +2,68 @@
 
 ## Unreleased
 
+## v1.57.0
+
+### feat(security): scan the boundary with the external world (A1)
+
+Helyx content leaving for a service the operator does not control — TTS
+request bodies, aux-LLM completions, reviewer diffs and reports, non-local
+provider calls — was unexamined. A leaked credential in a diff, or an injected
+instruction returning from a remote model, crossed the boundary the same way
+ordinary content did.
+
+Five crossings now scan through `keryx security check-output --json --target
+external` before or after the boundary: `utils/tts.ts` (Yandex, Groq, OpenAI —
+falls through to local `piper` on a finding or a scan failure),
+`utils/aux-llm-client.ts` (the outbound request and the untrusted completion
+coming back; skipped for the local Ollama URL), `services/reviewer-service.ts`
+/ `scripts/review.ts` (the diff going out, the report coming back),
+`services/provider-service.ts` / `claude/client.ts` (non-local providers), and
+`utils/transcribe.ts` (posture, not payload — remote transcription is now an
+explicit opt-in surfaced on the status line, not a content scan).
+
+A missing binary, a spawn failure, a timeout, and a parse failure all resolve
+to the same "scan unavailable" result, which takes the crossing's own fallback
+path rather than blocking it — the gate never withholds what it cannot
+evaluate. The operator's own channel — `reply` on `channel/tools.ts` and
+`mcp/tools.ts` — is excluded by name, and a structural test fails if a scanner
+ever reaches it.
+
+E1 and E2 live in `utils/**`, which the host channel subprocess imports as
+well as the container — rebuilding the bot alone leaves an already-running
+session on the old code; a full restart is required for this change to reach
+sessions already in flight.
+
+flow 063, PR #112, merged as `81487ac`.
+
+### feat(restart): an approval that names the action it approved (A2)
+
+A restart grant authorized *that* an operator had approved something, not
+*which* action they had approved — a grant issued for `bounce` could be
+replayed against `full_restart`. `authorizeRestart` now binds a grant to the
+fingerprint of the specific command it was issued for; a mismatch, a second
+use, or an expired grant is refused, and the refusal names which of the three
+it was.
+
+Two review rounds found what the implementation had missed on its own. The
+gate covered eight restart-capable commands, but only from the consumer side —
+four producers (`/projects` → Stop, `rc:kill`, the monitor's container button,
+the dashboard) still enqueued gated commands with no grant at all, silently
+dead on the branch until `tests/unit/restart-gate-producer-coverage.test.ts`
+caught it. The same pass found `authorizeRestart` failing **open**: a payload
+that could not yield a fingerprint was waved through as "nothing to check"
+rather than refused. A second round then found that the round-one fix for
+`cancel` had not been given the same who-is-answering check as `go`, letting
+anyone in the admin chat cancel someone else's pending confirmation — fixed in
+`40dd721`.
+
+The standing-grant mechanism (`kind: "standing"`, issued via
+`scripts/grant-watchdog-standing.ts`) shipped but is held by nothing —
+`tmux-watchdog` still only alerts on a wedged session, it does not restart
+one, so no autonomous actor holds a standing grant yet.
+
+flow 062, PR #110, merged as `390f7d8`.
+
 ### fix: a summariser ceiling the host's own model can make
 
 `SUMMARIZE_MODEL`'s JSON summary was capped at 30s, a number chosen when it

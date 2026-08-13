@@ -89,7 +89,7 @@ prose, recorded as one standard-level package rather than five loose notes.
 
 | Package | Status | Blocked on | Order |
 |---|---|---|---|
-| [keryx-adoption-2026-08-12](keryx-adoption-2026-08-12/README.md) | `in progress` | nothing — A2 shipped 2026-08-13, A1 is next | A1 next |
+| [keryx-adoption-2026-08-12](keryx-adoption-2026-08-12/README.md) | `in progress` | nothing — A2 and A1 shipped 2026-08-13, A3 is next | A3 next |
 
 The package sequences its own areas **A2 → A1 → A3 → A5 → A4** and states that a
 partial outcome is a real one: A2 alone (an approval bound to the fingerprint of

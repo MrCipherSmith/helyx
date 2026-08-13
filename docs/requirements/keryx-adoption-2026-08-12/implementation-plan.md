@@ -7,7 +7,7 @@ Version: 1.2.0
 | Area | State | Where |
 |---|---|---|
 | **A2** action-bound approval | **done** — shipped 2026-08-13 | flow 062, PR #110, merged as `390f7d8` |
-| **A1** external boundary | **next** — decided, not started | see §A1 below and the decisions recorded there |
+| **A1** external boundary | **done** — shipped 2026-08-13 | flow 063, PR #112, merged as `81487ac` |
 | A3 compaction record | not started | — |
 | A5 perimeter | not started | — |
 | A4 engine connector | not started, and blocked | waits on `codex-session-engine-2026-08-09` choosing its path |
