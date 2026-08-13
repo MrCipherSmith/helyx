@@ -115,6 +115,15 @@ export interface StatusParts {
    * line exists to answer.
    */
   foldingMs?: number | null;
+  /**
+   * Whether remote TTS / remote transcription are reachable, from
+   * `remotePosture()` in utils/external-boundary-scan.ts — derived from
+   * configuration at process start, never from a read of .env at render time
+   * (adoption area A1.10). Undefined means the caller did not supply it, and
+   * no line is rendered — that reads as "unknown", not as "off".
+   */
+  remoteTts?: boolean;
+  remoteTranscription?: boolean;
 }
 
 /**
@@ -356,6 +365,16 @@ export function renderStatus(parts: StatusParts): string {
   if (summary) {
     const line = clampEscaped(escaped(summary), SUMMARY_BUDGET_CHARS);
     glance += `\n▸ ${line}`;
+    remaining -= line.length;
+  }
+  // The boundary posture (A1.10): whether remote TTS/transcription are active,
+  // without reading .env. Ours and booleans — nothing to escape. Rendered only
+  // when the caller supplied at least one field, same rule as the lines above.
+  if (parts.remoteTts !== undefined || parts.remoteTranscription !== undefined) {
+    const tts = parts.remoteTts ? "on" : "off";
+    const transcription = parts.remoteTranscription ? "on" : "off";
+    const line = `🌐 remote: TTS ${tts} · transcription ${transcription}`;
+    glance += `\n${line}`;
     remaining -= line.length;
   }
 

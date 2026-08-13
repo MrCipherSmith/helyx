@@ -1,0 +1,27 @@
+# Flow Journal
+
+- 2026-08-13T08:16:42.903Z - flow created
+- 2026-08-13T08:17:55.216Z - frozen: 11 criteria; checksum recorded
+- 2026-08-13T08:17:55.402Z - started
+- 2026-08-13T08:21:20.638Z - task-done: T1: Collect remaining context
+- 2026-08-13T08:40:01.099Z - task-done: T1: Collect remaining context
+- 2026-08-13T09:17:13.327Z - ac-confirmed: AC1: operator-channel-no-scan.test.ts structural guard: reply in channel/tools.ts & mcp/tools.ts reference no scanner; orchestrator-verified: full unit suite 2468 pass/0 fail, tsc clean (core tree), eslint 0 errors
+- 2026-08-13T09:17:13.412Z - ac-confirmed: AC2: operator-channel-no-scan.test.ts: AWS-key reply delivered verbatim via executeTool reply path; orchestrator-verified: full unit suite 2468 pass/0 fail, tsc clean (core tree), eslint 0 errors
+- 2026-08-13T09:17:13.531Z - ac-confirmed: AC3: tts-external-boundary.test.ts: secret text -> no remote synth fetch; tts-chain.test.ts models scanner door; orchestrator-verified: full unit suite 2468 pass/0 fail, tsc clean (core tree), eslint 0 errors
+- 2026-08-13T09:17:13.671Z - ac-confirmed: AC4: reviewer-external-boundary.test.ts: diff with AKIA -> reviewers not invoked, skip reported via reviewConsoleLines; orchestrator-verified: full unit suite 2468 pass/0 fail, tsc clean (core tree), eslint 0 errors
+- 2026-08-13T09:17:13.904Z - ac-confirmed: AC5: aux-llm & reviewer external-boundary tests: inbound injection redacted before reaching session; orchestrator-verified: full unit suite 2468 pass/0 fail, tsc clean (core tree), eslint 0 errors
+- 2026-08-13T09:17:14.017Z - ac-confirmed: AC6: aux-llm-external-boundary.test.ts: HELYX_AUX_LLM_PROVIDER=ollama skips scan entirely; orchestrator-verified: full unit suite 2468 pass/0 fail, tsc clean (core tree), eslint 0 errors
+- 2026-08-13T09:17:14.109Z - ac-confirmed: AC7: external-boundary-scan.test.ts: missing binary/spawn-throw/timeout -> scan unavailable -> fallback, never withholds; orchestrator-verified: full unit suite 2468 pass/0 fail, tsc clean (core tree), eslint 0 errors
+- 2026-08-13T09:17:14.187Z - ac-confirmed: AC8: external-boundary-scan.test.ts: verdict read from --json, exit code ignored (exit1+pass honored, exit0+block blocks); orchestrator-verified: full unit suite 2468 pass/0 fail, tsc clean (core tree), eslint 0 errors
+- 2026-08-13T09:17:14.259Z - ac-confirmed: AC9: external-boundary-scan.test.ts: command carries --target external; real-keryx probe asserts finding.target==external; orchestrator-verified: full unit suite 2468 pass/0 fail, tsc clean (core tree), eslint 0 errors
+- 2026-08-13T09:17:14.331Z - ac-confirmed: AC10: status-render-posture.test.ts: remotePosture() renders TTS/transcription posture from CONFIG, no .env at render; orchestrator-verified: full unit suite 2468 pass/0 fail, tsc clean (core tree), eslint 0 errors
+- 2026-08-13T09:17:14.428Z - ac-confirmed: AC11: metrics-M1.md: scan latency measured (median ~0.9s, bounded by timeoutMs); operator path adds 0 by construction (AC1 guard); orchestrator-verified: full unit suite 2468 pass/0 fail, tsc clean (core tree), eslint 0 errors
+- 2026-08-13T09:17:14.520Z - task-done: T2: Implement per plan
+- 2026-08-13T09:17:14.639Z - task-done: T3: Add/adjust tests and make them pass
+- 2026-08-13T09:24:43.288Z - task-done: T4: Self-review and prepare draft PR
+- 2026-08-13T09:24:46.189Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/112 (warning: PR is not a draft)
+- 2026-08-13T09:24:46.256Z - completing
+- 2026-08-13T09:24:49.010Z - completion-failed: pull-request: PR checks not green | health: no report; run `keryx health run` first
+- 2026-08-13T10:47:38.819Z - implemented: draft PR: https://github.com/MrCipherSmith/helyx/pull/112 (warning: PR is not a draft)
+- 2026-08-13T10:47:53.547Z - completing
+- 2026-08-13T10:47:58.621Z - done: all gates passed

@@ -18,6 +18,7 @@ import { sql } from "../memory/db.ts";
 import { lastOutcomeByReviewer, type ReviewerOutcome } from "./review-artifacts.ts";
 import { providerService, providerAuthHeaders, type Provider } from "./provider-service.ts";
 import { stripAnsi } from "../utils/terminal.ts";
+import { guardOutbound, guardInbound } from "../utils/external-boundary-scan.ts";
 
 export type ReviewerKind = "codex" | "provider" | "claude";
 
@@ -1191,6 +1192,41 @@ export async function runSingleReviewer(
  * is attached here; callers used to be silently responsible for that and none
  * of them did it, so every provider review was made blind.
  */
+/**
+ * The report for a reviewer that never ran because the outbound scan withheld
+ * the diff (A1.4). Shaped like `unhandledKind`'s report — no transport was
+ * attempted, so there is nothing to look up (a provider's display name, a CLI
+ * label) beyond the reviewer's own id.
+ */
+function outboundBlockedReport(reviewer: Reviewer, reason: string): ReviewerReport {
+  return {
+    reviewerId: reviewer.id,
+    label: reviewer.id,
+    model: reviewer.model,
+    ok: false,
+    error: `content-scan blocked the diff before it reached a reviewer: ${reason}`,
+  };
+}
+
+/**
+ * What a reviewer's returned content becomes after the inbound scan (A1.5): the
+ * text unchanged and marked `ok: true` when nothing was found; the scanner's
+ * redacted text in place of the original when it found something; or, on a
+ * scan that refused to run at all, the report turned into a failure so the
+ * unscanned text never surfaces.
+ */
+async function guardReportInbound(report: ReviewerReport): Promise<ReviewerReport> {
+  if (!report.ok || !report.content) return report;
+  const decision = await guardInbound(report.content, "E4-reviewers");
+  if (!decision.accept) {
+    return { ...report, ok: false, content: undefined, error: `withheld: inbound content-scan could not run (${decision.reason ?? "unavailable"})` };
+  }
+  if (decision.redacted) {
+    return { ...report, content: decision.text ?? report.content };
+  }
+  return report;
+}
+
 export async function runReviewers(
   request: string,
   readDiff: ReadDiff = gitReviewDiff,
@@ -1201,14 +1237,39 @@ export async function runReviewers(
   // change, and one `git diff` is enough for all of them. The *prompt* is built
   // per reviewer, because the two transports do not have the same ceiling.
   const diff = await readDiff();
+
+  // Outbound (A1.4): the diff is what leaves for every reviewer model, so it is
+  // scanned once, before any of them sees it — not per-reviewer, which would
+  // still let some reviewers see a diff withheld from others. A block reports
+  // every enabled reviewer as skipped rather than sending nothing and staying
+  // silent about why.
+  //
+  // `mode: "external"` here, not `pickMode(reports)`. Every report is `ok:
+  // false`, and `pickMode` would say "self" — which `reviewConsoleLines` turns
+  // into the single line `SELF`, discarding every report and, with it, the
+  // reason the operator most needs: that a scan withheld the diff, not that
+  // the reviewers were unreachable. E4's contract is "skip and report", not
+  // "fall back to a local review of the same unscanned diff".
+  const guard = await guardOutbound(diff, "E4-reviewers");
+  if (!guard.cross) {
+    const reports = reviewers.map((r) => outboundBlockedReport(r, guard.reason ?? "blocked"));
+    return { mode: "external", reports };
+  }
+
   const settled = await Promise.allSettled(
     reviewers.map((r) => runOne(r, buildReviewPrompt(request, diff, budgetFor(r)))),
   );
-  const reports = settled.map((s, i) =>
+  const rawReports = settled.map((s, i) =>
     s.status === "fulfilled"
       ? s.value
       : { reviewerId: reviewers[i].id, label: reviewers[i].id, model: reviewers[i].model, ok: false, error: String(s.reason ?? "error").slice(0, 200) },
   );
+
+  // Inbound (A1.5): each reviewer's content is untrusted external text and is
+  // scanned before it is collected here — the one place `reviewConsoleLines`
+  // and `persistReviewRun` both read from.
+  const reports = await Promise.all(rawReports.map(guardReportInbound));
+
   return { mode: pickMode(reports), reports };
 }
 

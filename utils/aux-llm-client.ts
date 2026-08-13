@@ -1,4 +1,5 @@
 import { sql } from "../memory/db.ts";
+import { guardInbound, guardOutbound } from "./external-boundary-scan.ts";
 
 export interface AuxLlmConfig {
   provider: "deepseek" | "ollama" | "openrouter";
@@ -71,8 +72,20 @@ export async function callAuxLlm(
 ): Promise<AuxLlmResponse | AuxLlmError> {
   const config = getConfig();
   const startTime = Date.now();
+  // ollama is local — not a crossing of the external boundary (A1.6).
+  const isCrossing = config.provider !== "ollama";
 
   try {
+    if (isCrossing) {
+      const guard = await guardOutbound(userPrompt, "E3-aux-llm");
+      if (!guard.cross) {
+        return {
+          error: `external-boundary: outbound crossing withheld (${guard.reason ?? "blocked"})`,
+          durationMs: Date.now() - startTime,
+        };
+      }
+    }
+
     const res = await fetch(`${config.baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
@@ -107,7 +120,19 @@ export async function callAuxLlm(
       return { error: data.error.message, durationMs };
     }
 
-    const content = data.choices?.[0]?.message?.content ?? "";
+    let content = data.choices?.[0]?.message?.content ?? "";
+
+    if (isCrossing) {
+      const inbound = await guardInbound(content, "E3-aux-llm");
+      if (!inbound.accept) {
+        return {
+          error: `external-boundary: inbound content withheld (${inbound.reason ?? "scan unavailable"})`,
+          durationMs: Date.now() - startTime,
+        };
+      }
+      if (inbound.redacted) content = inbound.text ?? content;
+    }
+
     const tokensIn = data.usage?.prompt_tokens ?? Math.floor((systemPrompt + userPrompt).length / 4);
     const tokensOut = data.usage?.completion_tokens ?? Math.floor(content.length / 4);
     const costUsd = computeCostUsd(config.provider, tokensIn, tokensOut);

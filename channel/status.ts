@@ -26,6 +26,7 @@ import {
 } from "../utils/status-format.ts";
 import { HoldCounter } from "../utils/hold-counter.ts";
 import { renderStatus, renderFinal, clampEscaped, summarizeActivity } from "../utils/status-render.ts";
+import { remotePosture } from "../utils/external-boundary-scan.ts";
 import { shouldReopen, shouldClose, shouldMove, CONTINUATION_IDLE_MS } from "../utils/status-continuation.ts";
 import { escapeHtml } from "../utils/html.ts";
 import { isRequeued, markRequeued } from "../utils/requeue.ts";
@@ -179,6 +180,10 @@ function formatStatusText(stage: string, elapsed: string, tokens: string, paneSn
   // The rendering itself lives in utils/status-render.ts: it is pure, it is the
   // part the operator actually reads, and it was previously reachable only by
   // having a session produce output.
+  // Posture, not payload (A1.10): derived once from CONFIG at process start by
+  // remotePosture(), not read from .env here — same source the boundary policy
+  // itself uses, so the status line and the policy can never disagree.
+  const posture = remotePosture();
   return renderStatus({
     stage,
     elapsed: `${elapsed}${tokens}`,
@@ -196,6 +201,8 @@ function formatStatusText(stage: string, elapsed: string, tokens: string, paneSn
     // stage this is read from, and two callers deriving it separately is how
     // the header and the body come to disagree.
     summary: summarizeActivity(stage),
+    remoteTts: posture.remoteTts,
+    remoteTranscription: posture.remoteTranscription,
   });
 }
 
