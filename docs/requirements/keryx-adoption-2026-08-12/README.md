@@ -23,8 +23,9 @@ token theft". This package is the return leg.
 
 `in progress` — written 2026-08-12 from a read of keryx at `af380a6a`
 (v0.2.16). **A2 shipped 2026-08-13** (flow 062, PR #110, merged as `390f7d8`);
-A1 is next and its decisions are recorded in
-[implementation-plan.md](implementation-plan.md) §Status. The other three areas
+**A1 shipped 2026-08-13** (flow 063, PR #112, merged as `81487ac`). A3 is next
+and decisions for it are recorded in
+[implementation-plan.md](implementation-plan.md) §Status. The other two areas
 are unstarted.
 
 No adoption area below is implemented in helyx as an area. Two of A5's four
