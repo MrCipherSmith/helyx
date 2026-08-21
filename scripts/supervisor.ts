@@ -888,8 +888,36 @@ export async function cleanVoiceStatuses(sql: postgres.Sql): Promise<void> {
 }
 
 // --- Loop 4: 5-minute full status broadcast ---
+//
+// The check itself still runs every 5 min (Loop 4's own interval, unchanged) —
+// this only throttles how often a result actually reaches Telegram. Before
+// this, "healthy" was already silent (an in-place edit, no notification), but
+// "problems" posted a fresh delete+send on every single 5-min tick — and once
+// `hasProblems()` starts returning true for a real, standing condition (a
+// container failing its healthcheck for days, say — see 2026-08-21's
+// carlson-bot incident), that is a delete+send every 5 minutes forever, which
+// is what actually started 429-throttling the bot in this chat. Healthy now
+// posts at most once per HEALTHY_NOTIFY_INTERVAL_MS; problems still post every
+// check (PROBLEM_NOTIFY_INTERVAL_MS == the check interval, so no change there)
+// — except a problem→healthy transition always posts immediately, so recovery
+// isn't hidden behind the healthy interval.
+const HEALTHY_NOTIFY_INTERVAL_MS = 20 * 60 * 1000;
+const PROBLEM_NOTIFY_INTERVAL_MS = 5 * 60 * 1000;
 
 let statusMessageId: number | null = null; // edit existing message instead of spamming
+let lastNotifyAt = 0;
+let lastNotifyWasProblem = false;
+
+/**
+ * Test-only: resets the throttle clock so the next call is treated as due,
+ * without touching `statusMessageId` — that persistence is what
+ * supervisor-broadcast.test.ts's "silent when healthy, loud when not" suite
+ * is actually testing, and stays in effect across calls exactly as before.
+ */
+export function resetBroadcastThrottle(): void {
+  lastNotifyAt = 0;
+  lastNotifyWasProblem = false;
+}
 
 export async function sendStatusBroadcast(sql: postgres.Sql, runShell: RunShell): Promise<void> {
   try {
@@ -1023,6 +1051,24 @@ export async function sendStatusBroadcast(sql: postgres.Sql, runShell: RunShell)
     // Decided from the classified containers, not from the rendered lines: the
     // choice of icon must not be able to switch alerting off.
     const problems = hasProblems({ containers, stuckTotal, dockerUsable }) || scopeLost;
+
+    // Throttle: post at most once per interval, except a recovery transition
+    // (problem -> healthy) always posts immediately regardless of timing.
+    const notifyNow = Date.now();
+    const isFirstEver = lastNotifyAt === 0;
+    const justRecovered = lastNotifyWasProblem && !problems;
+    const dueInterval = problems ? PROBLEM_NOTIFY_INTERVAL_MS : HEALTHY_NOTIFY_INTERVAL_MS;
+    const isDue = isFirstEver || justRecovered || (notifyNow - lastNotifyAt) >= dueInterval;
+
+    if (!isDue) {
+      console.log(
+        `[supervisor] status broadcast throttled (${problems ? "problem" : "healthy"}, ` +
+        `${Math.round((notifyNow - lastNotifyAt) / 1000)}s since last post, due at ${Math.round(dueInterval / 1000)}s)`,
+      );
+      return;
+    }
+    lastNotifyAt = notifyNow;
+    lastNotifyWasProblem = problems;
 
     if (statusMessageId && !problems) {
       // Healthy — edit in-place (silent, no notification)

@@ -14,7 +14,7 @@
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { FakeSql } from "../fixtures/fake-sql.ts";
-import { startSupervisor } from "../../scripts/supervisor.ts";
+import { startSupervisor, resetBroadcastThrottle } from "../../scripts/supervisor.ts";
 
 interface Registered {
   ms: number;
@@ -37,6 +37,11 @@ beforeEach(() => {
   timeouts = [];
   runTimeouts = false;
   attempted = [];
+  // The notify throttle (2026-08-21) is module state shared across every test
+  // file in the same `bun test` process — without this, a broadcast test file
+  // that ran moments earlier leaves it looking like the last post was seconds
+  // ago, and the "first broadcast" this file expects gets throttled away.
+  resetBroadcastThrottle();
 
   // `startSupervisor` runs its first checks inside an offset timeout, and one
   // of them is the status broadcast — which posts to Telegram. Found by

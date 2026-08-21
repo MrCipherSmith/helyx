@@ -15,7 +15,7 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { sendStatusBroadcast, cleanVoiceStatuses, updateProcessHealth } from "../../scripts/supervisor.ts";
+import { sendStatusBroadcast, cleanVoiceStatuses, updateProcessHealth, resetBroadcastThrottle } from "../../scripts/supervisor.ts";
 import { isOurContainer, parseContainerLine, composeProjectFor } from "../../utils/supervisor-status.ts";
 import { FakeSql } from "../fixtures/fake-sql.ts";
 import { installFakeFetch, type FakeFetch } from "../fixtures/fake-fetch.ts";
@@ -32,6 +32,10 @@ let restore: () => void;
 beforeEach(() => {
   ({ http, restore } = installFakeFetch());
   http.program("api.telegram.org", { json: { ok: true, result: { message_id: 4000 } } });
+  // The notify throttle (2026-08-21) is module state like statusMessageId,
+  // but unlike statusMessageId, no test here is exercising it — every test
+  // below is written to assume its own call is always due.
+  resetBroadcastThrottle();
 });
 
 afterEach(() => restore());
@@ -251,6 +255,7 @@ describe("silent when healthy, loud when not", () => {
     await sendStatusBroadcast(healthy.db.sql as never, healthy.runShell);
 
     http.requests.length = 0;
+    resetBroadcastThrottle(); // this call represents the *next* check tick, not a re-send of the same one
     const second = world("helyx\thelyx-bot-1\tUp 2 hours (healthy)");
     await sendStatusBroadcast(second.db.sql as never, second.runShell);
 
@@ -264,6 +269,7 @@ describe("silent when healthy, loud when not", () => {
     await sendStatusBroadcast(healthy.db.sql as never, healthy.runShell);
 
     http.requests.length = 0;
+    resetBroadcastThrottle();
     const broken = world("helyx\thelyx-bot-1\tExited (1) 2 minutes ago");
     await sendStatusBroadcast(broken.db.sql as never, broken.runShell);
 
@@ -278,6 +284,7 @@ describe("silent when healthy, loud when not", () => {
     await sendStatusBroadcast(healthy.db.sql as never, healthy.runShell);
 
     http.requests.length = 0;
+    resetBroadcastThrottle();
     const blind = world("");
     await sendStatusBroadcast(blind.db.sql as never, blind.runShell);
 
@@ -292,6 +299,7 @@ describe("silent when healthy, loud when not", () => {
     await sendStatusBroadcast(healthy.db.sql as never, healthy.runShell);
 
     http.requests.length = 0;
+    resetBroadcastThrottle();
     const foreign = world("other\tother-db-1\tUp 3 days");
     await sendStatusBroadcast(foreign.db.sql as never, foreign.runShell);
 
