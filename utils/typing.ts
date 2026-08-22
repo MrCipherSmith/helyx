@@ -3,6 +3,8 @@
  * Telegram typing indicator lasts ~5 seconds, so we resend every 4s.
  */
 
+import { acquireSendSlot } from "./telegram-rate-budget.ts";
+
 const TYPING_INTERVAL_MS = 4000;
 
 export interface TypingHandle {
@@ -48,6 +50,9 @@ export function startTypingRaw(
   chatId: string | number,
 ): TypingHandle {
   return startTyping(async () => {
+    // Shared cross-process gate (flow 064) — the same budget
+    // channel/telegram.ts's telegramRequest gates on.
+    await acquireSendSlot();
     const res = await fetch(`https://api.telegram.org/bot${token}/sendChatAction`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

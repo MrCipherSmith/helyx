@@ -969,6 +969,33 @@ const migrations: Migration[] = [
       await tx`CREATE INDEX IF NOT EXISTS idx_autonomous_actions_actor ON autonomous_actions(actor, acted_at DESC)`;
     },
   },
+  {
+    version: 52,
+    name: "telegram_rate_budget — shared token bucket across concurrent channel.ts subprocesses",
+    up: async (tx) => {
+      // ~10 project channel.ts subprocesses all send to the same Telegram bot
+      // token/chat_id — the rate limit is per-chat, not per-topic (flow 064
+      // description.md). `tokens` is leased in small batches by
+      // `utils/telegram-rate-budget.ts` rather than acquired per send, so this
+      // table sees on the order of one query every ~5s per active subprocess,
+      // not one per outbound Telegram call.
+      await tx`
+        CREATE TABLE IF NOT EXISTS telegram_rate_budget (
+          bucket     TEXT PRIMARY KEY,
+          tokens     NUMERIC NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+      `;
+      // The limit is per-chat and there is currently exactly one chat in
+      // play — one global row, seeded at capacity so the first lease after a
+      // fresh deploy is not throttled by an empty bucket.
+      await tx`
+        INSERT INTO telegram_rate_budget (bucket, tokens, updated_at)
+        VALUES ('global', 20, now())
+        ON CONFLICT (bucket) DO NOTHING
+      `;
+    },
+  },
 ];
 
 // --- Public API ---
