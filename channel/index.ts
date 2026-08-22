@@ -262,14 +262,24 @@ async function main() {
         body: JSON.stringify({ session_id: sessionMgr.sessionId, project_path: projectPath }),
       }).catch(() => {});
     }
-    // Refresh forum topic ID — may have changed if topic was recreated or project added after startup
-    if (forumChatId) {
-      try {
-        const rows = await sql`SELECT forum_topic_id FROM projects WHERE path = ${projectPath}`;
-        forumTopicId = rows[0]?.forum_topic_id ?? null;
-      } catch { /* non-critical */ }
-    }
   }, HEARTBEAT_INTERVAL_MS);
+
+  // Refresh forum topic ID on its own faster cadence, separate from the lease
+  // heartbeat above. `reply` (tools.ts) and permission prompts (permissions.ts)
+  // already query this fresh per call, but status.ts's getForumTarget() reads
+  // straight from the module-level cache below (its stateKey() is synchronous
+  // and used inside sync closures, so it can't await a DB query per call).
+  // A recreated/reassigned topic would otherwise leave status messages
+  // addressed to the old topic for up to HEARTBEAT_INTERVAL_MS — Telegram
+  // accepts the send and silently files it in General instead of rejecting it.
+  const FORUM_REFRESH_INTERVAL_MS = 10_000;
+  const forumRefreshTimer = setInterval(async () => {
+    if (!forumChatId) return;
+    try {
+      const rows = await sql`SELECT forum_topic_id FROM projects WHERE path = ${projectPath}`;
+      forumTopicId = rows[0]?.forum_topic_id ?? null;
+    } catch { /* non-critical */ }
+  }, FORUM_REFRESH_INTERVAL_MS);
 
   /**
    * Leave, and mean it.
@@ -302,6 +312,7 @@ async function main() {
     shuttingDown = true;
     poller.stop();
     clearInterval(heartbeatTimer);
+    clearInterval(forumRefreshTimer);
     sessionMgr.clearIdleTimer();
 
     await sessionMgr.markDisconnected();

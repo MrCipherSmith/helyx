@@ -58,10 +58,19 @@ export class PermissionHandler {
     private status: StatusManager,
   ) {}
 
-  /** Resolve forum target if configured. */
-  private getForumTarget(): { chatId: string; threadId: number; extra: Record<string, unknown> } | null {
+  /**
+   * Resolve forum target if configured. Always queries the topic id fresh
+   * from the DB — the cached forumTopicId() closure is refreshed only every
+   * 60s by the heartbeat, so a recreated/reassigned topic would otherwise
+   * cause permission prompts (with their Confirm/Deny keyboard) to land in
+   * General for up to a minute. Mirrors the fix already applied to the
+   * `reply` tool in tools.ts.
+   */
+  private async getForumTarget(): Promise<{ chatId: string; threadId: number; extra: Record<string, unknown> } | null> {
     const chatId = this.ctx.forumChatId?.();
-    const topicId = this.ctx.forumTopicId?.();
+    if (!chatId) return null;
+    const rows = await this.ctx.sql`SELECT forum_topic_id FROM projects WHERE path = ${this.ctx.projectPath}`;
+    const topicId = rows[0]?.forum_topic_id ?? null;
     if (chatId && topicId) {
       return { chatId, threadId: topicId, extra: { message_thread_id: topicId } };
     }
@@ -120,7 +129,7 @@ export class PermissionHandler {
     const token = this.ctx.token();
 
     // Resolve where to send the permission request
-    const forum = this.getForumTarget();
+    const forum = await this.getForumTarget();
     let chatId: string | null;
 
     if (forum) {

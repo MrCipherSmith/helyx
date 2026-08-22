@@ -59,6 +59,14 @@ function ordinaryWorld(
   world.db.program(DEDUP_QUERY, { rows: [] });
   world.db.program("SELECT chat_id FROM chat_sessions", { rows: [{ chat_id: CHAT_ID }] });
   world.db.program(STILL_OPEN_QUERY, { rows: [{ "?column?": 1 }] });
+  // getForumTarget() queries this fresh rather than trusting a startup
+  // snapshot — a recreated topic must be picked up without a restart. An
+  // unprogrammed query already resolves to `[]` (null topic id), which is
+  // exactly right for the "no forum" and "topic unresolved" cases below; only
+  // a real topic id needs to be programmed in.
+  if (options.forumTopicId) {
+    world.db.program("SELECT forum_topic_id FROM projects", { rows: [{ forum_topic_id: options.forumTopicId }] });
+  }
   return world;
 }
 
