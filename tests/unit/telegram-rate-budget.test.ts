@@ -111,6 +111,49 @@ describe("createLocalAllowance", () => {
       allowance.stop();
     }
   });
+
+  // T5 (flow 064 review): `acquire()` used to loop forever while the local
+  // allowance was exhausted, with no way for a caller with its own deadline
+  // — `channel/telegram.ts`'s `telegramRequest`, budgeted at MAX_TOTAL_MS —
+  // to bound the wait. Under sustained multi-subprocess contention on the
+  // shared budget, that could hang a call well past its documented timeout
+  // instead of returning the error shape `telegramRequest` already promises.
+
+  test("(e) timeoutMs: a token that arrives before the deadline still resolves normally", async () => {
+    let granted = 0;
+    const allowance = createLocalAllowance({
+      lease: async () => ({ granted }),
+      refreshIntervalMs: 10_000, // large enough that only the manual refreshNow below matters
+    });
+    try {
+      // Starts with nothing granted, so acquire(200) has to wait for a refresh.
+      const pending = allowance.acquire(200);
+      granted = 1;
+      await allowance.refreshNow(); // simulates the shared budget recovering before the deadline
+      await pending; // resolves rather than rejecting, and does not hang
+      expect(allowance.remaining()).toBe(0);
+    } finally {
+      allowance.stop();
+    }
+  });
+
+  test(
+    "(f) timeoutMs: a budget that never recovers before the deadline rejects instead of hanging forever",
+    async () => {
+      const allowance = createLocalAllowance({
+        lease: async () => ({ granted: 0 }), // simulates a shared budget starved by other subprocesses
+        refreshIntervalMs: 10_000,
+      });
+      try {
+        // Without the fix this `await` never settles, and the explicit test
+        // timeout below is what would actually catch the regression.
+        await expect(allowance.acquire(50)).rejects.toThrow(/deadline/);
+      } finally {
+        allowance.stop();
+      }
+    },
+    2_000, // fails fast (not the suite's default timeout) if acquire regresses to hanging
+  );
 });
 
 // ---------------------------------------------------------------------------

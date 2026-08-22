@@ -148,12 +148,18 @@ export interface LocalAllowanceOptions {
 
 export interface LocalAllowance {
   /**
-   * Resolves once a send has a reserved local token, spending it. Never
-   * rejects — when the local allowance is exhausted this waits for the next
-   * refresh instead of erroring, mirroring `telegramRequest`'s existing
-   * 429 wait-and-retry shape so callers don't need their own retry logic.
+   * Resolves once a send has a reserved local token, spending it. With no
+   * `timeoutMs`, never rejects — when the local allowance is exhausted this
+   * waits for the next refresh instead of erroring, mirroring
+   * `telegramRequest`'s existing 429 wait-and-retry shape so callers don't
+   * need their own retry logic.
+   *
+   * With `timeoutMs`, rejects once that many milliseconds have elapsed
+   * without a token becoming available — for callers like `telegramRequest`
+   * that have their own total-call deadline and must not hang past it just
+   * because the shared budget is starved.
    */
-  acquire(): Promise<void>;
+  acquire(timeoutMs?: number): Promise<void>;
   /** Tokens currently held locally — for tests and diagnostics. */
   remaining(): number;
   /** Run a refresh immediately. Production relies on the timer; tests call this directly instead of waiting on real time. */
@@ -204,14 +210,45 @@ export function createLocalAllowance(options: LocalAllowanceOptions): LocalAllow
     void refreshNow();
   }
 
-  function waitForRefresh(): Promise<void> {
-    return new Promise((resolve) => { waiters.push(resolve); });
+  /**
+   * Resolves on the next refresh. With `deadlineMs` given, rejects instead
+   * once that absolute timestamp passes without a refresh — and removes its
+   * own waiter so a timed-out call does not leave a dangling resolver that
+   * `wakeWaiters` would still call (harmlessly, but forever) on every future
+   * refresh.
+   */
+  function waitForRefresh(deadlineMs?: number): Promise<void> {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const wake = () => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        resolve();
+      };
+      waiters.push(wake);
+      if (deadlineMs !== undefined) {
+        const remaining = Math.max(0, deadlineMs - Date.now());
+        timer = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          const idx = waiters.indexOf(wake);
+          if (idx !== -1) waiters.splice(idx, 1);
+          reject(new Error(`rate-budget wait exceeded its ${remaining}ms deadline`));
+        }, remaining);
+      }
+    });
   }
 
-  async function acquire(): Promise<void> {
+  async function acquire(timeoutMs?: number): Promise<void> {
     ensureStarted();
+    const deadline = timeoutMs !== undefined ? Date.now() + timeoutMs : undefined;
     while (tokens <= 0) {
-      await waitForRefresh();
+      // Recomputed from the fixed `deadline` on every iteration — not
+      // `timeoutMs` again, which would keep resetting the clock and never
+      // actually time out under repeated exhaustion.
+      await waitForRefresh(deadline);
     }
     tokens -= 1;
   }
@@ -245,9 +282,14 @@ function sharedAllowance(): LocalAllowance {
  * `utils/typing.ts`'s `startTypingRaw` call before each actual outbound
  * request. Lazily starts the shared refresh timer on first use, so importing
  * this module has no side effect until a send is actually attempted.
+ *
+ * `timeoutMs`, when given, bounds the wait: rejects rather than hanging once
+ * that many milliseconds pass without the shared budget granting a slot.
+ * `telegramRequest` passes its own remaining total-call budget so a starved
+ * shared budget cannot hold a call open past its documented deadline.
  */
-export function acquireSendSlot(): Promise<void> {
-  return sharedAllowance().acquire();
+export function acquireSendSlot(timeoutMs?: number): Promise<void> {
+  return sharedAllowance().acquire(timeoutMs);
 }
 
 /**
