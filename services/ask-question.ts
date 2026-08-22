@@ -11,6 +11,7 @@
  */
 
 import type postgres from "postgres";
+import { logger } from "../logger.ts";
 import {
   allAnswered,
   parseAnswerCallback,
@@ -88,6 +89,21 @@ export async function resolveTarget(
       chatId: forumChatId,
       extra: { message_thread_id: forumTopicId },
     };
+  }
+  // Forum mode is configured but this project's topic didn't resolve. Falling
+  // through to `cs.chat_id` here is exactly how a question lands in General:
+  // in forum mode that column can hold the shared group chat_id itself (e.g.
+  // written by /add or /switch run inside a topic without forum awareness),
+  // and a send to it with no message_thread_id goes straight to General with
+  // nothing distinguishing it from an ordinary DM. Skip and log instead of
+  // guessing — matches the guard channel/status.ts already applies before
+  // sending a status update.
+  if (forumChatId) {
+    logger.warn(
+      { sessionId: row.session_id, cwd: input.cwd },
+      "ask-question: forum mode active but topic did not resolve — skipping rather than risking a send to General",
+    );
+    return null;
   }
   const chatId = (row.chat_id as string) || null;
   if (!chatId) return null;

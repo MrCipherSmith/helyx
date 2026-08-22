@@ -395,13 +395,29 @@ async function handleTelegramTool(
         // Always query DB fresh — startup snapshot may be stale (topic recreated, or project
         // added after subprocess started).
         const forumChatId = ctx.forumChatId?.();
+        const isAddressedToForum = !!(forumChatId && chatId === forumChatId);
         let forumTopicId: number | null = null;
-        if (forumChatId && chatId === forumChatId) {
+        if (isAddressedToForum) {
           const rows = await ctx.sql`SELECT forum_topic_id FROM projects WHERE path = ${ctx.projectPath}`;
           forumTopicId = rows[0]?.forum_topic_id ?? null;
         }
-        const isForumReply = !!(forumChatId && forumTopicId && chatId === forumChatId);
+        const isForumReply = !!(isAddressedToForum && forumTopicId);
         const forumExtra = isForumReply ? { message_thread_id: forumTopicId } : {};
+
+        // This reply is explicitly addressed to the forum's chat_id but the
+        // project's topic didn't resolve — falling through to the DM branch
+        // below would send with no thread_id, and since chatId here equals
+        // forumChatId, that lands the reply in General. The DB lookup already
+        // ran fresh above; a miss means the project isn't mapped right now
+        // (path mismatch, topic recreated but not yet synced, /forum_clean),
+        // not a transient cache issue a retry would fix. Skip and log.
+        if (isAddressedToForum && !isForumReply) {
+          channelLogger.error(
+            { chatId, projectPath: ctx.projectPath },
+            "reply: addressed to forum chat but this project's topic did not resolve — skipping rather than sending to General",
+          );
+          return text("Could not resolve this project's forum topic — reply held back rather than risking General. Check /forum_clean or the project's path mapping.");
+        }
 
         let activeSessionId: number | null = null;
         if (!isForumReply) {
@@ -589,10 +605,20 @@ async function handleTelegramTool(
         const captionHtml = captionRaw ? markdownToTelegramHtml(captionRaw) : undefined;
 
         const forumChatId = ctx.forumChatId?.();
+        const isAddressedToForum = !!(forumChatId && chatId === forumChatId);
         let forumTopicId: number | null = null;
-        if (forumChatId && chatId === forumChatId) {
+        if (isAddressedToForum) {
           const rows = await ctx.sql`SELECT forum_topic_id FROM projects WHERE path = ${ctx.projectPath}`;
           forumTopicId = rows[0]?.forum_topic_id ?? null;
+        }
+        // Same reasoning as the `reply` case above: addressed to the forum
+        // chat but the topic didn't resolve — skip rather than send to General.
+        if (isAddressedToForum && !forumTopicId) {
+          channelLogger.error(
+            { chatId, projectPath: ctx.projectPath },
+            "send_photo: addressed to forum chat but this project's topic did not resolve — skipping rather than sending to General",
+          );
+          return text("Could not resolve this project's forum topic — photo held back rather than risking General.");
         }
         const forumExtra = forumTopicId ? { message_thread_id: forumTopicId } : {};
         const captionExtra = captionHtml ? { parse_mode: "HTML" } : {};

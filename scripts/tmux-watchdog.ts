@@ -267,6 +267,16 @@ function resolveChat(
   if (session.forumChatId && session.forumTopicId) {
     return { chatId: session.forumChatId, forumExtra: { message_thread_id: session.forumTopicId } };
   }
+  // Forum mode is on bot-wide (forumChatId is the same non-null value for
+  // every session) but THIS session's topic didn't resolve. Falling through
+  // to session.chatId here used to be exactly how a watchdog alert landed in
+  // General with no thread_id: that column can hold the shared group
+  // chat_id itself once forum mode is active, and nothing downstream would
+  // notice. Skip and log instead of guessing.
+  if (session.forumChatId) {
+    console.error(`[watchdog] session #${session.sessionId} (${session.project}): forum mode active but topic did not resolve — skipping alert rather than risking a send to General`);
+    return null;
+  }
   if (session.chatId) {
     return { chatId: session.chatId, forumExtra: {} };
   }
