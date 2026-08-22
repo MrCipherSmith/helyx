@@ -126,7 +126,7 @@ interface SessionStats {
 }
 
 
-const SPINNER_INTERVAL_ACTIVE_MS = 5_000;   // when monitor has been active recently
+const SPINNER_INTERVAL_ACTIVE_MS = 8_000;   // when monitor has been active recently
 const SPINNER_INTERVAL_IDLE_MS   = 15_000;  // when no monitor activity for >IDLE_THRESHOLD_MS
 const IDLE_THRESHOLD_MS          = 12_000;  // switch to idle after 12s of silence
 
@@ -795,15 +795,19 @@ export class StatusManager {
    * session did anything, so a busy turn asked for an edit every two seconds —
    * thirty a minute into a group, where Telegram allows around twenty. It
    * answered with 429s carrying thirteen- and thirty-seven-second waits, and
-   * the status froze for exactly as long. Five seconds is under the limit with
-   * room for the timer's own ticks, and it is far below the rate at which an
-   * operator reads a status.
+   * the status froze for exactly as long. Five seconds was chosen to sit
+   * under that limit for one session — but the group has ~10 project topics,
+   * each running its own copy of this floor with no shared budget between
+   * them, so the same 429s came back whenever more than one was active at
+   * once. Raised to eight seconds: still far below the rate an operator
+   * reads a status at, and it buys more headroom per concurrently-active
+   * session until there's a real cross-process limiter.
    *
    * Nothing is lost to the floor: `editStatusMessage` renders the state as it
    * is when it runs, so a deferred edit shows everything that arrived while it
    * was waiting rather than a queue of stale ones.
    */
-  private static readonly MIN_EDIT_INTERVAL_MS = 5_000;
+  private static readonly MIN_EDIT_INTERVAL_MS = 8_000;
 
   /**
    * Queue the edit the floor just refused, once.
@@ -1586,11 +1590,16 @@ export class StatusManager {
   startTypingForChat(chatId: string): void {
     const key = this.stateKey(chatId);
     if (this.activeTyping.has(key)) return;
+    // Forum mode already has the status message's own spinner/stage text
+    // signalling activity in the topic. A second, independently-throttled
+    // sendChatAction stream every 4s per active session was the single
+    // largest contributor to blowing past Telegram's per-chat rate limit
+    // once more than one of the group's ~10 project topics was active at
+    // once — the limit is per chat_id, and every topic shares one.
+    if (this.getForumTarget()) return;
     const token = this.ctx.token();
     if (!token) return;
-    const forum = this.getForumTarget();
-    const effectiveChatId = forum?.chatId ?? chatId;
-    const handle = startTypingRaw(token, effectiveChatId);
+    const handle = startTypingRaw(token, chatId);
     this.activeTyping.set(key, handle);
     const existing = this.typingTimers.get(key);
     if (existing) clearTimeout(existing);
