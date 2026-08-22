@@ -81,8 +81,8 @@ describeWithDb("applied to an empty database", () => {
       "messages", "orchestration_runs", "pending_replies", "permission_requests",
       "poll_sessions", "process_health", "projects", "providers",
       "question_requests", "request_logs", "schema_versions", "sessions",
-      "skill_preprocess_log", "supervisor_incidents", "transcription_stats",
-      "voice_status_messages",
+      "skill_preprocess_log", "supervisor_incidents", "telegram_rate_budget",
+      "transcription_stats", "voice_status_messages",
         ];
 
     const rows = await db.sql<{ table_name: string }[]>`

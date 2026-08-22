@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { sendTelegramMessage } from "../../channel/telegram.ts";
 import { channelLogger } from "../../logger.ts";
+import { createLocalAllowance, setSharedAllowanceForTests } from "../../utils/telegram-rate-budget.ts";
 
 /**
  * The channel's send path must notice when an answer lands outside the topic it
@@ -19,6 +20,8 @@ const CHAT = "-1003908750902";
 let errors: Array<Record<string, unknown>>;
 let realFetch: typeof fetch;
 let realError: typeof channelLogger.error;
+let restoreAllowance: () => void;
+let testAllowance: ReturnType<typeof createLocalAllowance>;
 
 /** Reply with whatever Telegram would have returned for this call. */
 function stubTelegram(result: unknown): void {
@@ -36,11 +39,20 @@ beforeEach(() => {
   (channelLogger as any).error = (obj: unknown) => {
     errors.push((obj ?? {}) as Record<string, unknown>);
   };
+  // This file drives the real telegramRequest, which gates every send on the
+  // shared rate budget (flow 064). The production singleton talks to a real
+  // Postgres row on a ~5s lease window and is shared across the whole `bun
+  // test` process — neither of which this test cares about. Stand in an
+  // allowance that never runs out instead.
+  testAllowance = createLocalAllowance({ lease: async () => ({ granted: 1_000 }) });
+  restoreAllowance = setSharedAllowanceForTests(testAllowance);
 });
 
 afterEach(() => {
   globalThis.fetch = realFetch;
   (channelLogger as any).error = realError;
+  testAllowance.stop();
+  restoreAllowance();
 });
 
 describe("send into a forum topic", () => {

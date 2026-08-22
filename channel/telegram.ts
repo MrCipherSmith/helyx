@@ -5,6 +5,7 @@
  */
 
 import { channelLogger } from "../logger.ts";
+import { acquireSendSlot } from "../utils/telegram-rate-budget.ts";
 
 const TELEGRAM_API = "https://api.telegram.org";
 const MAX_ERROR_RETRIES = 3;  // for network errors and 5xx only
@@ -48,6 +49,22 @@ async function telegramRequest(
   while (true) {
     if (Date.now() >= deadline) {
       return { ok: false, errorBody: `telegramRequest timeout after ${MAX_TOTAL_MS}ms (method: ${method})` };
+    }
+
+    // Shared cross-process gate (flow 064) — waits for the local lease
+    // allowance rather than sending unconditionally. This runs before every
+    // actual attempt, including 429/5xx retries, since each is a real
+    // outbound call against the same shared per-chat budget. Bounded by this
+    // call's own remaining deadline (same `remaining` shape the 429 branch
+    // below computes) so a starved shared budget cannot hang this call past
+    // its documented MAX_TOTAL_MS contract.
+    try {
+      await acquireSendSlot(deadline - Date.now());
+    } catch {
+      return {
+        ok: false,
+        errorBody: `telegramRequest timeout after ${MAX_TOTAL_MS}ms waiting for a rate-limit slot (method: ${method})`,
+      };
     }
 
     let res: Response;
