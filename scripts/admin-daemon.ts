@@ -431,11 +431,32 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
           // tmux kill-window by name only kills the first match, so loop until all gone.
           await runShell(`while tmux kill-window -t "bots:${wname}" 2>/dev/null; do :; done`);
           // Use window index (not name) for send-keys to avoid race where the shell
-          // auto-renames the window before send-keys runs.
+          // auto-renames the window before send-keys runs. Also capture the pane's
+          // pid so we can cap its systemd scope right after — tmux hands each pane
+          // its own transient tmux-spawn-*.scope with no memory limit today.
           result = await runShell(
-            `idx=$(tmux new-window -t bots -n "${wname}" -c "${path}" -P -F "#{window_index}") && ` +
-            `tmux send-keys -t "bots:$idx" "${BOT_DIR}/scripts/run-cli.sh ${path}" Enter`
+            `out=$(tmux new-window -t bots -n "${wname}" -c "${path}" -P -F "#{window_index} #{pane_pid}") && ` +
+            `idx=$(echo "$out" | cut -d' ' -f1) && pid=$(echo "$out" | cut -d' ' -f2) && ` +
+            `tmux send-keys -t "bots:$idx" "${BOT_DIR}/scripts/run-cli.sh ${path}" Enter && ` +
+            `echo "PANE_PID=$pid"`
           );
+          // Best-effort per-project memory ceiling — a runaway build/test process
+          // (e.g. an uncapped vitest thread pool) dies inside its own cgroup
+          // instead of triggering a system-wide OOM sweep that drags every other
+          // project's window into swap thrash along with it. Generous on purpose:
+          // this is a circuit breaker for a genuine runaway, not a resource budget
+          // for normal heavy work in projects we haven't audited. Never fails
+          // proj_start itself if it can't be set.
+          const paneMatch = result.output.match(/PANE_PID=(\d+)/);
+          if (paneMatch) {
+            const scopeResult = await runShell(
+              `scope=$(tail -1 "/proc/${paneMatch[1]}/cgroup" | awk -F: '{print $NF}' | xargs basename) && ` +
+              `systemctl --user set-property "$scope" MemoryHigh=8G MemoryMax=14G`
+            );
+            if (!scopeResult.ok) {
+              console.warn(`[admin-daemon] proj_start: could not set memory ceiling for ${wname}: ${scopeResult.output}`);
+            }
+          }
         } else {
           result = await runCommand("up", ["-s"]);
         }

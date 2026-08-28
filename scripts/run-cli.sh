@@ -126,7 +126,24 @@ while true; do
   fi
   # --- End restart rate limiter ---
 
-  echo "[run-cli] Starting claude at $(date '+%Y-%m-%d %H:%M:%S')" | tee -a "$LOG_FILE"
+  # Resume the most recent conversation for this directory when one exists —
+  # a restart (crash, OOM-kill, proj_start) should pick up where the session
+  # left off, not start blank. --continue's "no prior session" behavior is
+  # undocumented, so this only ever passes it when a transcript already sits
+  # under ~/.claude/projects/<encoded-path>, keeping a brand-new project's
+  # very first launch on the well-defined plain-start path.
+  _claude_transcript_dir="$HOME/.claude/projects/$(echo "$HELYX_PROJECT_PATH" | tr '/' '-')"
+  CONTINUE_FLAG=""
+  if [ -d "$_claude_transcript_dir" ] && ls "$_claude_transcript_dir"/*.jsonl >/dev/null 2>&1; then
+    CONTINUE_FLAG="--continue"
+  fi
+  # Manual escape hatch: force resuming one specific transcript (e.g. recovering
+  # a session after an unrelated restart picked up the wrong "most recent" one).
+  if [ -n "${RESUME_SESSION_ID:-}" ]; then
+    CONTINUE_FLAG="--resume ${RESUME_SESSION_ID}"
+  fi
+
+  echo "[run-cli] Starting claude at $(date '+%Y-%m-%d %H:%M:%S')${CONTINUE_FLAG:+ (resuming: $CONTINUE_FLAG)}" | tee -a "$LOG_FILE"
 
   CHANNEL_LOG_FILE="/tmp/channel-${PROJECT_NAME}.log"
   export CHANNEL_LOG_FILE
@@ -134,7 +151,7 @@ while true; do
   if [ -z "$IN_TMUX" ]; then
     # Outside tmux: capture terminal output via script for monitoring
     > "$OUTPUT_FILE"  # truncate
-    script -qfc "CHANNEL_SOURCE=remote claude --dangerously-load-development-channels server:helyx-channel" "$OUTPUT_FILE"
+    script -qfc "CHANNEL_SOURCE=remote claude $CONTINUE_FLAG --dangerously-load-development-channels server:helyx-channel" "$OUTPUT_FILE"
     EXIT_CODE=$?
   else
     # Inside tmux: watch for the "development channels" warning prompt and auto-confirm.
@@ -156,7 +173,7 @@ while true; do
       done
     ) &
     CONFIRM_PID=$!
-    CHANNEL_SOURCE=remote claude --dangerously-load-development-channels server:helyx-channel
+    CHANNEL_SOURCE=remote claude $CONTINUE_FLAG --dangerously-load-development-channels server:helyx-channel
     EXIT_CODE=$?
     # Clean up the confirm watcher if Claude exited before it finished
     kill "$CONFIRM_PID" 2>/dev/null
