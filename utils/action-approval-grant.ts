@@ -226,8 +226,19 @@ export interface GrantRow extends ApprovalGrant {
   pendingPayload: Record<string, unknown>;
 }
 
-/** How long an operator grant lives before it is spent whether or not it was used. */
-export const OPERATOR_GRANT_TTL_MS = 3 * 60_000;
+/**
+ * How long an operator grant lives before it is spent whether or not it was
+ * used. 3 minutes was tuned for "long enough to read one sentence and tap"
+ * (restart-grant.ts), but of the real operator grants issued in the four
+ * days before 2026-08-31, 8 of the last 10 expired unread rather than being
+ * answered — the operator reads Telegram while doing other things, and the
+ * confirmation routinely outlives 3 minutes before they get back to it. A
+ * longer window doesn't weaken what this gates: only the same operator who
+ * issued the grant can ever consume it (issuedBy check in the `go` handler),
+ * so this only trades "how long an unread confirmation sits around" for
+ * "how often a real tap arrives to find it already expired."
+ */
+export const OPERATOR_GRANT_TTL_MS = 10 * 60_000;
 
 function randomGrantId(): string {
   return `g_${crypto.randomUUID().replace(/-/g, "").slice(0, 20)}`;
