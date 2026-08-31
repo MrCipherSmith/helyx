@@ -987,7 +987,7 @@ export class StatusManager {
         );
         // DO NOT delete pendingSendGenerations[key] — it belongs to the newer caller (or is a
         // stale residual). Deleting would cause the newer caller to see undefined and self-orphan.
-        deleteTelegramMessage(token, effectiveChatId, result.messageId!);
+        deleteTelegramMessage(token, effectiveChatId, result.messageId!, "background");
         return null;
       }
 
@@ -1060,7 +1060,7 @@ export class StatusManager {
       scheduleTick(key);
       this.pendingSendGenerations.delete(key);
       this.persistStatusMessage(key, state).catch(() => {});
-      pinTelegramMessage(token, effectiveChatId, state.messageId);
+      pinTelegramMessage(token, effectiveChatId, state.messageId, "background");
       channelLogger.info({ phase: "status", step: "created", chatId: effectiveChatId, messageId: state.messageId, tgRttMs: tgRtt }, "perf");
       return null;
     } catch (e) {
@@ -1219,9 +1219,9 @@ export class StatusManager {
     // Fire-and-forget, all three: the status has already moved, and a pin that
     // fails costs a pin, not the message. `void` says so out loud — raised in
     // review as reading like a dropped promise.
-    void unpinTelegramMessage(token, state.chatId, old);
-    void deleteTelegramMessage(token, state.chatId, old);
-    void pinTelegramMessage(token, state.chatId, res.messageId);
+    void unpinTelegramMessage(token, state.chatId, old, "background");
+    void deleteTelegramMessage(token, state.chatId, old, "background");
+    void pinTelegramMessage(token, state.chatId, res.messageId, "background");
     this.persistStatusMessage(key, state).catch(() => {});
     channelLogger.info({ chatId: state.chatId, from: old, to: res.messageId }, "status: moved below what landed after it");
   }
@@ -1504,7 +1504,7 @@ export class StatusManager {
     if (!token) return;
 
     if (diffMsgId) {
-      deleteTelegramMessage(token, state.chatId, diffMsgId);
+      deleteTelegramMessage(token, state.chatId, diffMsgId, "background");
     }
 
     const elapsed = formatElapsed(Date.now() - state.startedAt);
@@ -1541,7 +1541,7 @@ export class StatusManager {
     // what happened — the block was visible for as long as the turn ran and
     // then gone the moment it mattered least to lose it and most to keep it.
     const finalText = renderFinal(summaryText, state.stage);
-    unpinTelegramMessage(token, state.chatId, state.messageId);
+    unpinTelegramMessage(token, state.chatId, state.messageId, "background");
     let editRes = await editTelegramMessage(token, state.chatId, state.messageId, finalText, { parse_mode: "HTML" }, "background");
     // The block is the part that can fail: it is the longest, and it is the
     // only text here this class did not compose itself. Falling back to the
@@ -1552,7 +1552,7 @@ export class StatusManager {
       editRes = await editTelegramMessage(token, state.chatId, state.messageId, summaryText, { parse_mode: "HTML" }, "background");
     }
     if (!editRes.ok) {
-      deleteTelegramMessage(token, state.chatId, state.messageId);
+      deleteTelegramMessage(token, state.chatId, state.messageId, "background");
     }
 
     // Record Claude Code token usage to api_request_stats (best-effort, non-blocking)

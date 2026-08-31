@@ -149,11 +149,17 @@ export async function editTelegramMessage(
   }, priority);
 }
 
-export function deleteTelegramMessage(token: string, chatId: string, messageId: number): void {
+export function deleteTelegramMessage(
+  token: string,
+  chatId: string,
+  messageId: number,
+  /** "background" for routine status-message cleanup (channel/status.ts) — see telegram-rate-budget.ts. Defaults to "priority", same as before this parameter existed. */
+  priority?: SendPriority,
+): void {
   telegramRequest(token, "deleteMessage", {
     chat_id: Number(chatId),
     message_id: messageId,
-  }).catch(() => {});
+  }, priority).catch(() => {});
 }
 
 export async function sendTelegramPoll(
@@ -283,17 +289,19 @@ export async function setTelegramReaction(
   return { ok: res.ok, errorBody: res.errorBody };
 }
 
-export function pinTelegramMessage(token: string, chatId: string, messageId: number): void {
+/** priority: see deleteTelegramMessage's doc — same default, same "background" for routine status housekeeping. */
+export function pinTelegramMessage(token: string, chatId: string, messageId: number, priority?: SendPriority): void {
   telegramRequest(token, "pinChatMessage", {
     chat_id: Number(chatId),
     message_id: messageId,
     disable_notification: true,
-  }).catch(() => {});
+  }, priority).catch(() => {});
 }
 
-export function unpinTelegramMessage(token: string, chatId: string, messageId: number): void {
+/** priority: see deleteTelegramMessage's doc — same default, same "background" for routine status housekeeping. */
+export function unpinTelegramMessage(token: string, chatId: string, messageId: number, priority?: SendPriority): void {
   telegramRequest(token, "unpinChatMessage", {
     chat_id: Number(chatId),
     message_id: messageId,
-  }).catch(() => {});
+  }, priority).catch(() => {});
 }
