@@ -101,6 +101,12 @@ export async function handleCallbackQuery(
 ): Promise<void> {
   const data = ctx.callbackQuery?.data;
   const route = routeCallback(data);
+  // TEMPORARY (2026-08-31) — grant:go: taps have left zero trace anywhere:
+  // no admin_command, no consumed_at, no "bot error" from bot.catch(), and a
+  // live 10-minute log watch during a real tap caught nothing either. This
+  // logs unconditionally on every callback_query so the next tap proves
+  // whether it reaches this handler at all — remove once that's answered.
+  logger.info({ data, route, from: ctx.from?.id, chat: ctx.chat?.id }, "callback_query received");
   if (!route || !data) {
     await ctx.answerCallbackQuery({ text: "Unknown action" });
     return;
