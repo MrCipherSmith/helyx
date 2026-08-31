@@ -77,11 +77,19 @@ export interface BudgetLane {
   refillPerSec: number;
 }
 
-/** Everything through `telegramRequest` by default — `reply`, status edits, the rest of `channel/telegram.ts`. */
-export const PRIORITY_LANE: BudgetLane = { bucket: "global_priority", capacity: 14, refillPerSec: 14 / 60 };
+/**
+ * Everything through `telegramRequest` by default — `reply`, the
+ * response-guard alerts, the rest of `channel/telegram.ts`. Started at 14/6
+ * against BACKGROUND_LANE; raised to 17/3 within the hour on 2026-08-31 once
+ * production showed background recovering to near-full within seconds of
+ * being drained (typing + status's combined real demand fits comfortably
+ * under 3/min) while priority stayed pinned near empty at 14 — the split's
+ * ratio, not its existence, was still wrong.
+ */
+export const PRIORITY_LANE: BudgetLane = { bucket: "global_priority", capacity: 17, refillPerSec: 17 / 60 };
 
-/** `utils/typing.ts`'s tick only — the one caller proven to starve real replies. */
-export const BACKGROUND_LANE: BudgetLane = { bucket: "global_background", capacity: 6, refillPerSec: 6 / 60 };
+/** `utils/typing.ts`'s tick and `channel/status.ts`'s routine progress edits — see PRIORITY_LANE's doc for the 17/3 split. */
+export const BACKGROUND_LANE: BudgetLane = { bucket: "global_background", capacity: 3, refillPerSec: 3 / 60 };
 
 /** How often each subprocess asks Postgres for a fresh local allowance. */
 const REFRESH_INTERVAL_MS = 5_000;

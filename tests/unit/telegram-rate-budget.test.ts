@@ -240,12 +240,15 @@ describeWithDb("leaseBudget, against a real database", () => {
   // from the other in the same instant is the direct proof — if they shared
   // a row this would either double-count or contend for the same lock.
   test("draining the priority lane does not affect the background lane's balance", async () => {
-    await db.sql`UPDATE telegram_rate_budget SET tokens = 8, updated_at = now() WHERE bucket = ${BACKGROUND_LANE.bucket}`;
+    // 2 is comfortably under BACKGROUND_LANE.capacity regardless of its
+    // exact tuning (17/3 as of 2026-08-31, previously 14/6) — this test
+    // proves the two rows don't interact, not what either capacity is.
+    await db.sql`UPDATE telegram_rate_budget SET tokens = 2, updated_at = now() WHERE bucket = ${BACKGROUND_LANE.bucket}`;
 
     const drain = await leaseBudget(100, PRIORITY_LANE, db.sql);
     expect(drain.granted).toBe(10); // the priority row's own seeded balance, unaffected by the line above
 
-    const background = await leaseBudget(5, BACKGROUND_LANE, db.sql);
-    expect(background.granted).toBe(5); // background's own balance, untouched by priority's drain
+    const background = await leaseBudget(2, BACKGROUND_LANE, db.sql);
+    expect(background.granted).toBe(2); // background's own balance, untouched by priority's drain
   });
 });
