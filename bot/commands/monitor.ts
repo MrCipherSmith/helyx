@@ -9,6 +9,7 @@
 import type { Context } from "grammy";
 import { InlineKeyboard } from "grammy";
 import { sql } from "../../memory/db.ts";
+import { CONFIG } from "../../config.ts";
 import { beginRestartConfirmation } from "../restart-confirm.ts";
 
 function icon(status: string): string {
@@ -115,7 +116,9 @@ export async function handleMonitor(ctx: Context): Promise<void> {
 }
 
 export async function handleMonitorCallback(ctx: Context): Promise<void> {
-  const adminChatId = String(process.env.TELEGRAM_CHAT_ID ?? "");
+  // `TELEGRAM_CHAT_ID` (see bot/commands/restart-grant.ts's isAdmin) is never
+  // set in this deployment — was silently `false` for every caller until fixed 2026-08-31.
+  const adminChatId = CONFIG.SUPERVISOR_CHAT_ID;
   if (adminChatId && String(ctx.chat?.id) !== adminChatId) {
     await ctx.answerCallbackQuery({ text: "Unauthorized" });
     return;

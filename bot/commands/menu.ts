@@ -13,6 +13,7 @@
 
 import type { Context } from "grammy";
 import { InlineKeyboard } from "grammy";
+import { CONFIG } from "../../config.ts";
 import { getForumChatId } from "../forum-cache.ts";
 
 interface CommandDef {
@@ -25,7 +26,7 @@ interface Group {
   label: string;
   topicOnly?: boolean;   // show only in topic context
   dmOnly?: boolean;      // show only in DM context
-  adminOnly?: boolean;   // hide when TELEGRAM_CHAT_ID not set or user is not admin
+  adminOnly?: boolean;   // hide when SUPERVISOR_CHAT_ID not set or user is not admin
   commands: CommandDef[];
 }
 
@@ -158,8 +159,10 @@ async function isForumTopic(ctx: Context): Promise<boolean> {
   return forumChatId !== null && chatId === forumChatId;
 }
 
+// `TELEGRAM_CHAT_ID` (see bot/commands/restart-grant.ts's isAdmin) is never set
+// in this deployment — was silently `false` for every caller until fixed 2026-08-31.
 function isAdminCtx(ctx: Context): boolean {
-  const adminChatId = process.env.TELEGRAM_CHAT_ID;
+  const adminChatId = CONFIG.SUPERVISOR_CHAT_ID;
   if (!adminChatId) return false;
   // In DMs: chat.id === adminChatId. In forum topics: chat.id is the group id,
   // but from.id is always the user's personal id (same as DM chat id).

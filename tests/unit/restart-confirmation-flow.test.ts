@@ -22,6 +22,7 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach, afterEach, mock } from "bun:test";
 import type { Context } from "grammy";
 import { databaseAvailable, provisionTestDatabase, NO_DATABASE_MESSAGE, type TestDatabase } from "../fixtures/test-db.ts";
+import { CONFIG } from "../../config.ts";
 
 const DB_MODULE = "../../memory/db.ts";
 
@@ -60,13 +61,26 @@ if (!availability.available) {
 describeWithDb("the confirmation flow, driven through the real handlers", () => {
   let db: TestDatabase;
   let realDb: Record<string, unknown>;
+  // `as const` on CONFIG is a compile-time guarantee only; the fields are
+  // ordinary and writable. Every command handler under test (system.ts,
+  // supervisor-actions.ts, restart-grant.ts, monitor.ts, projects.ts) reads
+  // CONFIG.SUPERVISOR_CHAT_ID for its admin check (fixed 2026-08-31 from a
+  // `process.env.TELEGRAM_CHAT_ID` that was never set anywhere real — see
+  // bot/commands/restart-grant.ts's isAdmin comment). Set here rather than
+  // mock.module-ing config.ts — that was tried first and broke grant creation
+  // for reasons not worth chasing through this suite's other dynamic imports
+  // of it.
+  const mutable = CONFIG as unknown as Record<string, unknown>;
+  let realSupervisorChatId: unknown;
 
   beforeAll(async () => {
     db = await provisionTestDatabase();
-    process.env.TELEGRAM_CHAT_ID = "999";
+    realSupervisorChatId = mutable.SUPERVISOR_CHAT_ID;
+    mutable.SUPERVISOR_CHAT_ID = "999";
   });
 
   afterAll(async () => {
+    mutable.SUPERVISOR_CHAT_ID = realSupervisorChatId;
     await db?.drop();
   });
 

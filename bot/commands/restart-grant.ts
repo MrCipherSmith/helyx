@@ -19,10 +19,25 @@
 import type { Context } from "grammy";
 import { InlineKeyboard } from "grammy";
 import { sql } from "../../memory/db.ts";
+import { CONFIG } from "../../config.ts";
 import { getGrant, cancelGrant, extendGrantForExecution } from "../../utils/action-approval-grant.ts";
 
+/**
+ * Bug found 2026-08-31: this read `process.env.TELEGRAM_CHAT_ID`, a variable
+ * that has never been set anywhere — not in .env, not in docker-compose.yml,
+ * not in config.ts's schema. `isAdmin` therefore always returned false, and
+ * every `grant:go:`/`grant:cancel:` tap since (at least) 2026-08-08 was
+ * silently refused with an easy-to-miss "Admin only" toast: no exception, no
+ * admin_command, no log line anywhere, exactly what made this take so long
+ * to find. Fixed to the value this was almost certainly meant to hold —
+ * `CONFIG.SUPERVISOR_CHAT_ID`, the same admin-group identity used everywhere
+ * else in this codebase (bot/access.ts's ALLOWED_USERS check already runs on
+ * every update before this handler is reached, but that gates "may talk to
+ * the bot at all"; the chat-or-user match here is a separate, narrower "is
+ * this the admin room" check per this file's `cancel` branch comment).
+ */
 function isAdmin(ctx: Context): boolean {
-  const adminChatId = process.env.TELEGRAM_CHAT_ID;
+  const adminChatId = CONFIG.SUPERVISOR_CHAT_ID;
   if (!adminChatId) return false;
   return String(ctx.chat?.id) === adminChatId || String(ctx.from?.id) === adminChatId;
 }
@@ -50,7 +65,7 @@ export async function handleRestartGrantCallback(ctx: Context): Promise<void> {
     // Found in the second review: `go` checked the caller against
     // `issuedBy` and `cancel` did not, so any member of the admin chat could
     // cancel someone else's pending confirmation. `isAdmin` is not the check
-    // that matters here — when `TELEGRAM_CHAT_ID` is a group it passes for
+    // that matters here — when `SUPERVISOR_CHAT_ID` is a group it passes for
     // everyone in the room, and a cancellation nobody asked for is a quiet
     // denial of the approval rather than an error anyone would notice.
     const grant = await getGrant(sql, grantId);

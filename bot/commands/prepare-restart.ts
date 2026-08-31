@@ -9,6 +9,7 @@
 
 import type { Context } from "grammy";
 import { sql } from "../../memory/db.ts";
+import { CONFIG } from "../../config.ts";
 
 const SAVE_PROMPT = `SYSTEM: Pre-restart context snapshot requested by admin.
 
@@ -30,9 +31,11 @@ interface ActiveSession {
 }
 
 export async function handlePrepareRestart(ctx: Context): Promise<void> {
-  const adminChatId = process.env.TELEGRAM_CHAT_ID;
+  // `TELEGRAM_CHAT_ID` (see bot/commands/restart-grant.ts's isAdmin) is never
+  // set in this deployment — was silently `false` for every caller until fixed 2026-08-31.
+  const adminChatId = CONFIG.SUPERVISOR_CHAT_ID;
   if (!adminChatId) {
-    await ctx.reply("⚠️ TELEGRAM_CHAT_ID not set — cannot route responses back.");
+    await ctx.reply("⚠️ SUPERVISOR_CHAT_ID not set — cannot route responses back.");
     return;
   }
 
