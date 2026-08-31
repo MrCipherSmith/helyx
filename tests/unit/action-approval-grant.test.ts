@@ -118,6 +118,29 @@ describe("confirmationText — AC6", () => {
     const full = confirmationText({ half: "sessions", scope: "all", downtime: "full" });
     expect(new Set([none, brief, full]).size).toBe(3);
   });
+
+  // `proj_stop`/`tmux_stop` were gated through the same confirmation as an
+  // actual restart, and inherited "Перезапустить" (Restart) unconditionally —
+  // pressing Stop asked "Restart this project's session?", which is what the
+  // operator flagged on 2026-08-31 as confusing, and is also just wrong: a
+  // stop brings nothing back on its own.
+  test("proj_stop and tmux_stop say Остановить (Stop), not Перезапустить (Restart)", () => {
+    const projStop = confirmationText({ half: "sessions", scope: "/home/a/proj", downtime: "full" }, "proj_stop");
+    const tmuxStop = confirmationText({ half: "sessions", scope: "all", downtime: "full" }, "tmux_stop");
+    expect(projStop).toContain("Остановить");
+    expect(projStop).not.toContain("Перезапустить");
+    expect(tmuxStop).toContain("Остановить");
+    expect(tmuxStop).not.toContain("Перезапустить");
+  });
+
+  test("an actual restart command still says Перезапустить (Restart)", () => {
+    expect(confirmationText({ half: "sessions", scope: "all", downtime: "brief" }, "bounce")).toContain("Перезапустить");
+    expect(confirmationText({ half: "both", scope: "all", downtime: "full" }, "full_restart")).toContain("Перезапустить");
+  });
+
+  test("no command given keeps the old default (Перезапустить) — standing grants have none to pass", () => {
+    expect(confirmationText({ half: "sessions", scope: "all", downtime: "full" })).toContain("Перезапустить");
+  });
 });
 
 // ---------------------------------------------------------------------------

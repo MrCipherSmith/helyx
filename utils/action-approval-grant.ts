@@ -156,11 +156,28 @@ export function fingerprintsEqual(a: ActionFingerprint, b: ActionFingerprint): b
 }
 
 /**
+ * `proj_stop`/`tmux_stop` don't restart anything — nothing brings the
+ * session back until a human presses Start (`fingerprintOf`'s own
+ * `downtime: "full"` comment says as much). Before this list existed,
+ * `confirmationText` used "Перезапустить" (Restart) unconditionally, so
+ * pressing Stop on a project asked "Restart this project's session?" —
+ * confusing enough on its own, and actively misleading about what tapping
+ * confirm does.
+ */
+const STOP_COMMANDS = new Set(["proj_stop", "tmux_stop"]);
+
+/**
  * The sentence the operator sees before they answer — persisted verbatim as
  * `statedTo` so a disputed restart can be reconstructed from what was
  * actually asked, not from what the code meant (schema, `statedTo`).
+ *
+ * `command` is optional because a standing grant's fingerprint isn't tied to
+ * one pending command (`issueStandingGrant` has none to pass) — those keep
+ * the "Перезапустить" default, unchanged from before this parameter existed.
  */
-export function confirmationText(fp: ActionFingerprint): string {
+export function confirmationText(fp: ActionFingerprint, command?: string): string {
+  const verb = command !== undefined && STOP_COMMANDS.has(command) ? "Остановить" : "Перезапустить";
+
   const halfText =
     fp.half === "container"
       ? "контейнер бота"
@@ -177,7 +194,7 @@ export function confirmationText(fp: ActionFingerprint): string {
         ? "Кратковременно станет недоступно."
         : "Может занять несколько минут; всё будет недоступно.";
 
-  return `Перезапустить ${halfText}. ${downtimeText}`;
+  return `${verb} ${halfText}. ${downtimeText}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -304,7 +321,7 @@ export async function issueOperatorGrant(
   const now = params.now ?? new Date();
   const grantId = randomGrantId();
   const expiresAt = new Date(now.getTime() + (params.ttlMs ?? OPERATOR_GRANT_TTL_MS));
-  const statedTo = params.statedTo ?? confirmationText(params.fingerprint);
+  const statedTo = params.statedTo ?? confirmationText(params.fingerprint, params.pendingCommand);
 
   const [row] = await sql<DbGrantRow[]>`
     INSERT INTO action_approval_grants

@@ -54,7 +54,7 @@ export async function beginRestartConfirmation(
     return true;
   }
 
-  const statedTo = confirmationText(fingerprint);
+  const statedTo = confirmationText(fingerprint, command);
   const grant = await issueOperatorGrant(sql, {
     fingerprint,
     issuedBy,
