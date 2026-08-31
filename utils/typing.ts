@@ -1,11 +1,24 @@
 /**
  * Sends "typing" chat action repeatedly until stopped.
- * Telegram typing indicator lasts ~5 seconds, so we resend every 4s.
+ * Telegram typing indicator lasts ~5 seconds; see TYPING_INTERVAL_MS for why
+ * this resends less often than that would naively suggest.
  */
 
 import { acquireSendSlot } from "./telegram-rate-budget.ts";
 
-const TYPING_INTERVAL_MS = 4000;
+/**
+ * Telegram's real per-chat send budget is ~20/min (utils/telegram-rate-budget.ts),
+ * shared across every project's concurrent session. At a naive 4s resend, ONE
+ * actively-typing session alone costs 15 of those 20 tokens/min — cosmetic
+ * traffic structurally starving real replies with as few as 2 sessions
+ * "thinking" at once, which is what actually happened on 2026-08-31 even
+ * after TYPING_SLOT_TIMEOUT_MS stopped it from queuing forever (see below).
+ * 8s halves that to 7.5/min/session — still not free, but a session now has
+ * to fight much less hard to get a reply out from under it. The indicator
+ * itself lingers ~5s, so this trades a few seconds of "typing…" flicker for
+ * headroom the real message needs more.
+ */
+const TYPING_INTERVAL_MS = 8000;
 
 /**
  * A typing tick is cosmetic and gets resent every TYPING_INTERVAL_MS anyway,
@@ -15,8 +28,8 @@ const TYPING_INTERVAL_MS = 4000;
  * contention from ~10 concurrent sessions, wins by attrition: it never gives
  * up, so it keeps grabbing scarce tokens that a real reply — which does give
  * up after its own deadline — needed more. Skipping a tick costs nothing
- * (Telegram's own indicator lingers ~5s and the next tick is 4s away); losing
- * a reply does not get a next tick.
+ * (Telegram's own indicator lingers ~5s and the next tick is TYPING_INTERVAL_MS
+ * away); losing a reply does not get a next tick.
  */
 const TYPING_SLOT_TIMEOUT_MS = 2000;
 

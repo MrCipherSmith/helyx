@@ -65,8 +65,8 @@ describe("startTypingRaw", () => {
 
     const handle = startTypingRaw("token", "-1", 30);
     // The tick's own 30ms slot timeout must have already rejected by 60ms —
-    // well before the loop's own 4s TYPING_INTERVAL_MS would otherwise stand
-    // between "queued" and "given up" being distinguishable.
+    // well before the loop's own (much longer) TYPING_INTERVAL_MS would
+    // otherwise stand between "queued" and "given up" being distinguishable.
     await new Promise((r) => setTimeout(r, 60));
     handle.stop();
 
