@@ -5,7 +5,7 @@
  */
 
 import { channelLogger } from "../logger.ts";
-import { acquireSendSlot } from "../utils/telegram-rate-budget.ts";
+import { acquireSendSlot, type SendPriority } from "../utils/telegram-rate-budget.ts";
 
 const TELEGRAM_API = "https://api.telegram.org";
 const MAX_ERROR_RETRIES = 3;  // for network errors and 5xx only
@@ -42,6 +42,7 @@ async function telegramRequest(
   token: string,
   method: string,
   body: Record<string, unknown>,
+  priority: SendPriority = "priority",
 ): Promise<{ ok: boolean; result?: unknown; errorBody?: string; status?: number }> {
   let errorAttempt = 0;
   const deadline = Date.now() + MAX_TOTAL_MS;
@@ -59,7 +60,7 @@ async function telegramRequest(
     // below computes) so a starved shared budget cannot hang this call past
     // its documented MAX_TOTAL_MS contract.
     try {
-      await acquireSendSlot(deadline - Date.now());
+      await acquireSendSlot(deadline - Date.now(), priority);
     } catch {
       return {
         ok: false,
@@ -118,12 +119,14 @@ export async function sendTelegramMessage(
   chatId: string,
   text: string,
   extra?: Record<string, unknown>,
+  /** "background" for status/progress traffic (channel/status.ts) — see telegram-rate-budget.ts. Defaults to "priority", same as before this parameter existed. */
+  priority?: SendPriority,
 ): Promise<{ ok: boolean; messageId: number | null; errorBody?: string }> {
   const res = await telegramRequest(token, "sendMessage", {
     chat_id: Number(chatId),
     text,
     ...extra,
-  });
+  }, priority);
   if (!res.ok) return { ok: false, messageId: null, errorBody: res.errorBody };
   const result = res.result as { message_id?: number } | undefined;
   return { ok: true, messageId: result?.message_id ?? null };
@@ -135,13 +138,15 @@ export async function editTelegramMessage(
   messageId: number,
   text: string,
   extra?: Record<string, unknown>,
+  /** "background" for status/progress traffic (channel/status.ts) — see telegram-rate-budget.ts. Defaults to "priority", same as before this parameter existed. */
+  priority?: SendPriority,
 ): Promise<{ ok: boolean; errorBody?: string }> {
   return telegramRequest(token, "editMessageText", {
     chat_id: Number(chatId),
     message_id: messageId,
     text,
     ...extra,
-  });
+  }, priority);
 }
 
 export function deleteTelegramMessage(token: string, chatId: string, messageId: number): void {

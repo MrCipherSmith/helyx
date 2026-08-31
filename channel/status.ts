@@ -573,6 +573,12 @@ export class StatusManager {
         }
         if (count < 6 && !hasPendingQueue) {
           channelLogger.warn({ chatId, silentMs, stage: stageText, rearmCount: count }, "response guard: long thinking, re-arming");
+          // Deliberately left on the default "priority" lane (see the other
+          // sends below in this method, and requeueUnansweredQuestion's send)
+          // — unlike the rest of this file, a guard alert is telling the
+          // operator the session itself might be stuck, and needs the same
+          // protection from starvation as an actual reply, not the
+          // best-effort treatment the routine spinner/progress edits get.
           const guardText = `⏳ Claude думает уже 5+ мин. Последняя активность: ${silentStr} назад.\n/session — статус сессии`;
           const existing = this.guardMessages.get(key);
           if (existing) {
@@ -961,7 +967,7 @@ export class StatusManager {
         ...(forum?.extra ?? {}),
         ...(replyToMsgId ? { reply_parameters: { message_id: replyToMsgId } } : {}),
       };
-      const result = await sendTelegramMessage(token, effectiveChatId, initialText, extra);
+      const result = await sendTelegramMessage(token, effectiveChatId, initialText, extra, "background");
       const tgRtt = Date.now() - t0;
       if (!result.ok) {
         // Guard: only clean up our own entry; a concurrent newer call may have bumped the gen.
@@ -1084,12 +1090,12 @@ export class StatusManager {
     const existingId = this.diffMessages.get(key);
     if (existingId) {
       // Edit existing diff message in-place
-      const res = await editTelegramMessage(token, this.activeStatus.get(key)?.chatId ?? chatId, existingId, content, { parse_mode: "HTML", ...extra });
+      const res = await editTelegramMessage(token, this.activeStatus.get(key)?.chatId ?? chatId, existingId, content, { parse_mode: "HTML", ...extra }, "background");
       if (!res.ok && !res.errorBody?.includes("message is not modified")) {
         // Message was deleted externally — send a new one
         this.diffMessages.delete(key);
         const effectiveChatId = this.activeStatus.get(key)?.chatId ?? chatId;
-        const res2 = await sendTelegramMessage(token, effectiveChatId, content, { parse_mode: "HTML", ...extra });
+        const res2 = await sendTelegramMessage(token, effectiveChatId, content, { parse_mode: "HTML", ...extra }, "background");
         if (res2.ok && res2.messageId) {
           this.diffMessages.set(key, res2.messageId);
         }
@@ -1097,7 +1103,7 @@ export class StatusManager {
     } else {
       // Send new companion message
       const effectiveChatId = this.activeStatus.get(key)?.chatId ?? chatId;
-      const res = await sendTelegramMessage(token, effectiveChatId, content, { parse_mode: "HTML", ...extra });
+      const res = await sendTelegramMessage(token, effectiveChatId, content, { parse_mode: "HTML", ...extra }, "background");
       if (res.ok && res.messageId) {
         this.diffMessages.set(key, res.messageId);
       }
@@ -1200,7 +1206,7 @@ export class StatusManager {
 
     const extra = state.threadId ? { message_thread_id: state.threadId } : {};
     const text = this.composeStatusText(state);
-    const res = await sendTelegramMessage(token, state.chatId, text, { parse_mode: "HTML", ...extra });
+    const res = await sendTelegramMessage(token, state.chatId, text, { parse_mode: "HTML", ...extra }, "background");
     if (!res.ok || !res.messageId) return;
 
     const old = state.messageId;
@@ -1381,7 +1387,7 @@ export class StatusManager {
     const spinnerIcon = spinnerIconAt(state.spinnerFrame, state.lastUpdateAt, Date.now());
     const text = formatStatusText(state.stage, elapsed, tokenStr, state.paneSnapshot, spinnerIcon, extras);
 
-    const res = await editTelegramMessage(token, state.chatId, state.messageId, text, { parse_mode: "HTML" });
+    const res = await editTelegramMessage(token, state.chatId, state.messageId, text, { parse_mode: "HTML" }, "background");
     if (!res.ok && !res.errorBody?.includes("message is not modified")) {
       channelLogger.warn({ error: res.errorBody, messageId: state.messageId }, "editStatusMessage failed");
     }
@@ -1536,14 +1542,14 @@ export class StatusManager {
     // then gone the moment it mattered least to lose it and most to keep it.
     const finalText = renderFinal(summaryText, state.stage);
     unpinTelegramMessage(token, state.chatId, state.messageId);
-    let editRes = await editTelegramMessage(token, state.chatId, state.messageId, finalText, { parse_mode: "HTML" });
+    let editRes = await editTelegramMessage(token, state.chatId, state.messageId, finalText, { parse_mode: "HTML" }, "background");
     // The block is the part that can fail: it is the longest, and it is the
     // only text here this class did not compose itself. Falling back to the
     // summary keeps the notice the operator relies on rather than deleting the
     // message because its optional half was rejected.
     if (!editRes.ok && finalText !== summaryText) {
       channelLogger.warn({ error: editRes.errorBody, messageId: state.messageId }, "final status: work block rejected, sending summary alone");
-      editRes = await editTelegramMessage(token, state.chatId, state.messageId, summaryText, { parse_mode: "HTML" });
+      editRes = await editTelegramMessage(token, state.chatId, state.messageId, summaryText, { parse_mode: "HTML" }, "background");
     }
     if (!editRes.ok) {
       deleteTelegramMessage(token, state.chatId, state.messageId);
