@@ -29,6 +29,7 @@ import {
   detectDevChannelPrompt,
   canAlert,
   fetchActiveSessions,
+  fetchSessionsWithOpenStatus,
 } from "../../scripts/tmux-watchdog.ts";
 
 /** A permission prompt as Claude Code draws it. */
@@ -155,14 +156,16 @@ describe("not telling the operator the same thing twice", () => {
 });
 
 describe("reading the sessions to watch", () => {
-  test("rows become sessions, with the forum target carried through", () => {
+  test("rows become sessions, with the forum target and idle signal carried through", () => {
     const db = new FakeSql();
     db.program("FROM sessions s", {
       rows: [{
         session_id: 4,
+        project_id: 57,
         project: "keryx",
         project_path: "/home/altsay/keryx",
         last_active: new Date("2026-08-05T18:00:00Z"),
+        last_message_at: new Date("2026-08-05T16:00:00Z"),
         chat_id: "-100777",
         forum_topic_id: 54295,
         forum_chat_id: "-1003908750902",
@@ -173,11 +176,35 @@ describe("reading the sessions to watch", () => {
       expect(sessions).toHaveLength(1);
       expect(sessions[0]).toMatchObject({
         sessionId: 4,
+        projectId: 57,
         project: "keryx",
         forumTopicId: 54295,
         forumChatId: "-1003908750902",
       });
       expect(sessions[0]!.lastActive).toBeInstanceOf(Date);
+      expect(sessions[0]!.lastMessageAt).toBeInstanceOf(Date);
+    });
+  });
+
+  test("a session that has never had a message queued gets null, not a crash", () => {
+    const db = new FakeSql();
+    db.program("FROM sessions s", {
+      rows: [{
+        session_id: 9,
+        project_id: null,
+        project: "brand-new",
+        project_path: null,
+        last_active: new Date("2026-08-05T18:00:00Z"),
+        last_message_at: null,
+        chat_id: "-100777",
+        forum_topic_id: null,
+        forum_chat_id: null,
+      }],
+    });
+
+    return fetchActiveSessions(db.sql as never).then((sessions) => {
+      expect(sessions[0]!.lastMessageAt).toBeNull();
+      expect(sessions[0]!.projectId).toBeNull();
     });
   });
 
@@ -188,5 +215,31 @@ describe("reading the sessions to watch", () => {
     db.program("FROM sessions s", { error: new Error("connection refused") });
 
     expect(await fetchActiveSessions(db.sql as never)).toEqual([]);
+  });
+});
+
+describe("which sessions have a turn in progress", () => {
+  test("a session with an open status message is in the set", async () => {
+    const db = new FakeSql();
+    db.program("FROM active_status_messages", { rows: [{ session_id: 4 }, { session_id: 12 }] });
+
+    const inProgress = await fetchSessionsWithOpenStatus(db.sql as never);
+    expect(inProgress.has(4)).toBe(true);
+    expect(inProgress.has(12)).toBe(true);
+    expect(inProgress.has(999)).toBe(false);
+  });
+
+  test("no open status messages is an empty set, not an error", async () => {
+    const db = new FakeSql();
+    db.program("FROM active_status_messages", { rows: [] });
+
+    expect((await fetchSessionsWithOpenStatus(db.sql as never)).size).toBe(0);
+  });
+
+  test("a database that will not answer yields an empty set rather than throwing", async () => {
+    const db = new FakeSql();
+    db.program("FROM active_status_messages", { error: new Error("connection refused") });
+
+    expect((await fetchSessionsWithOpenStatus(db.sql as never)).size).toBe(0);
   });
 });

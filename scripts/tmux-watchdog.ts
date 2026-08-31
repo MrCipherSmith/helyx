@@ -2,7 +2,7 @@
  * tmux-watchdog — monitors active Claude Code sessions via tmux.
  *
  * Queries the DB every 5 s for sessions with status = 'active', finds their
- * corresponding tmux windows, and checks for four categories of problems:
+ * corresponding tmux windows, and checks for six categories of problems:
  *
  *   1. Permission prompts  — external MCP tool permission dialogs in the terminal.
  *      Sends Telegram message with Yes/Always/No buttons; feeds response back
@@ -20,6 +20,10 @@
  *
  *   5. Crash / restart    — Claude Code exited with a non-zero code and
  *      run-cli.sh is restarting it.
+ *
+ *   6. Idle                — no message queued for this session in over
+ *      IDLE_THRESHOLD_MS and no turn in progress. Alerts with a Stop button;
+ *      never stops anything on its own — see the check's own comment for why.
  *
  * Only windows that have a live 'active' session in the DB are inspected;
  * idle or terminated sessions are skipped entirely.
@@ -43,24 +47,35 @@ const TELEGRAM_API       = "https://api.telegram.org";
 // last_active is renewed every 60 s by the channel lease; alert if 2.5× stale
 const STALL_THRESHOLD_MS = 150_000; // 2.5 min
 
+// Genuinely idle, not stuck: no new message queued for this session in this
+// long, checked against message_queue rather than last_active — last_active
+// is the lease heartbeat (channel/session.ts's renewLease), renewed every
+// ~60s purely by the process being alive, so it never goes stale on its own
+// and cannot tell "idle" from "busy". A stuck/wedged session is STALL_*'s
+// job, not this one's.
+const IDLE_THRESHOLD_MS = 2 * 60 * 60_000; // 2 hours
+
 // Alert cooldowns — avoid spam for persistent conditions
 const STALL_COOLDOWN_MS      = 10 * 60_000; // re-alert every 10 min
 const EDITOR_COOLDOWN_MS     =  5 * 60_000;
 const CREDENTIAL_COOLDOWN_MS =  5 * 60_000;
 const CRASH_COOLDOWN_MS      =  3 * 60_000;
+const IDLE_COOLDOWN_MS       = 60 * 60_000; // re-alert hourly, not every 5s poll
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 interface ActiveSession {
-  sessionId:   number;
-  project:     string;       // tmux window name
-  projectPath: string | null; // absolute path — used for pane matching in split-pane mode
-  lastActive:  Date;
-  chatId:      string | null;
-  forumChatId: string | null;
-  forumTopicId:number | null;
+  sessionId:    number;
+  projectId:    number | null;  // for the Stop button's callback_data — null if this session has no `projects` row
+  project:      string;       // tmux window name
+  projectPath:  string | null; // absolute path — used for pane matching in split-pane mode
+  lastActive:   Date;
+  lastMessageAt:Date | null;  // most recent message_queue row for this session — the idle-detection signal, not lastActive
+  chatId:       string | null;
+  forumChatId:  string | null;
+  forumTopicId: number | null;
 }
 
 interface PendingPermEntry {
@@ -71,7 +86,7 @@ interface PendingPermEntry {
   resolvedAt?:  number;
 }
 
-type AlertKind = "stall" | "editor" | "credential" | "crash";
+type AlertKind = "stall" | "editor" | "credential" | "crash" | "idle";
 
 interface WindowState {
   sessionId:          number;
@@ -489,12 +504,19 @@ export async function fetchActiveSessions(sql: postgres.Sql): Promise<ActiveSess
       s.project_path,
       s.last_active,
       cs.chat_id,
+      p.id           AS project_id,
       p.forum_topic_id,
-      bc.value       AS forum_chat_id
+      bc.value       AS forum_chat_id,
+      lm.last_message_at
     FROM sessions s
     LEFT JOIN chat_sessions cs  ON cs.active_session_id = s.id
     LEFT JOIN projects p        ON p.name = s.project
     LEFT JOIN bot_config bc     ON bc.key = 'forum_chat_id'
+    LEFT JOIN LATERAL (
+      SELECT MAX(created_at) AS last_message_at
+      FROM message_queue
+      WHERE session_id = s.id
+    ) lm ON true
     WHERE s.status = 'active'
       AND s.project IS NOT NULL
       AND s.id != 0
@@ -502,13 +524,23 @@ export async function fetchActiveSessions(sql: postgres.Sql): Promise<ActiveSess
 
   return rows.map((r: any) => ({
     sessionId:    r.session_id   as number,
+    projectId:    r.project_id   as number | null,
     project:      r.project      as string,
     projectPath:  r.project_path as string | null,
     lastActive:   new Date(r.last_active),
+    lastMessageAt: r.last_message_at ? new Date(r.last_message_at) : null,
     chatId:       r.chat_id      as string | null,
     forumChatId:  (r.forum_chat_id as string) || null,
     forumTopicId: r.forum_topic_id as number | null,
   }));
+}
+
+/** Session ids that currently have an open status message — a turn in progress. */
+export async function fetchSessionsWithOpenStatus(sql: postgres.Sql): Promise<Set<number>> {
+  const rows = await sql`
+    SELECT DISTINCT session_id FROM active_status_messages WHERE session_id IS NOT NULL
+  `.catch(() => [] as any[]);
+  return new Set(rows.map((r: any) => r.session_id as number));
 }
 
 /** Write last N meaningful lines of the pane to sessions.pane_snapshot. */
@@ -542,6 +574,13 @@ async function pollWindows(
 
   const activeSessions = await fetchActiveSessions(sql);
   if (activeSessions.length === 0) return;
+
+  // One cheap query per poll cycle rather than one per session: which
+  // sessions currently have a turn in progress (an open status message).
+  // Idle-detection's `lastMessageAt` alone can't tell "operator sent
+  // something 2h ago and it's still running" from "operator sent something
+  // 2h ago and nothing has happened since" — this closes that gap.
+  const inProgressSessionIds = await fetchSessionsWithOpenStatus(sql);
 
   // Build a lookup: project name → session
   const sessionByProject = new Map<string, ActiveSession>();
@@ -677,6 +716,40 @@ async function pollWindows(
         );
         markAlerted(state, "crash");
       }
+    }
+
+    // 6. Idle — no message in >2h and no turn in progress. Alerts with a Stop
+    // button; never stops anything itself. P-2.3a (docs/requirements/
+    // keryx-adoption-2026-08-12/policies.md) requires an autonomous actor to
+    // hold a declared standing grant before acting unattended, and none
+    // exists today — this button routes through the same operator-confirmed
+    // proj_stop flow /projects already uses (bot/commands/projects.ts),
+    // fixed today to say "Остановить" and to give 10 minutes to tap it,
+    // rather than granting the watchdog its own unattended stop power.
+    if (
+      session.projectId !== null
+      && !inProgressSessionIds.has(session.sessionId)
+      && !detectSpinner(lines)
+      && (session.lastMessageAt === null || Date.now() - session.lastMessageAt.getTime() > IDLE_THRESHOLD_MS)
+    ) {
+      if (canAlert(state, "idle", IDLE_COOLDOWN_MS)) {
+        const idleFor = session.lastMessageAt
+          ? Math.round((Date.now() - session.lastMessageAt.getTime()) / 3_600_000)
+          : null;
+        console.warn(`[watchdog] idle in ${winName} (${idleFor ?? "no messages yet"}h since last message)`);
+        await sendAlert(
+          token, chat.chatId,
+          `💤 <b>${escapeHtml(winName)}</b>: idle ${idleFor !== null ? `${idleFor}h+` : "since it started"}, nothing queued.\n` +
+          `Stop it to free the slot, or leave it — this is a reminder, not an action.`,
+          chat.forumExtra,
+          [{ text: `⏹ Stop ${winName}`, callback_data: `proj:stop:${session.projectId}` }],
+        );
+        markAlerted(state, "idle");
+      }
+    } else if (state.alerts.idle !== undefined && (inProgressSessionIds.has(session.sessionId) || detectSpinner(lines))) {
+      // Activity resumed — reset so the next idle stretch alerts promptly
+      // instead of waiting out IDLE_COOLDOWN_MS from the last one.
+      state.alerts.idle = undefined;
     }
   }
 }
