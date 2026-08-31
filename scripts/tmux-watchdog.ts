@@ -736,7 +736,7 @@ async function pollWindows(
         const idleFor = session.lastMessageAt
           ? Math.round((Date.now() - session.lastMessageAt.getTime()) / 3_600_000)
           : null;
-        console.warn(`[watchdog] idle in ${winName} (${idleFor ?? "no messages yet"}h since last message)`);
+        console.warn(`[watchdog] idle in ${winName} (${idleFor !== null ? `${idleFor}h since last message` : "no messages ever queued"})`);
         await sendAlert(
           token, chat.chatId,
           `💤 <b>${escapeHtml(winName)}</b>: idle ${idleFor !== null ? `${idleFor}h+` : "since it started"}, nothing queued.\n` +
