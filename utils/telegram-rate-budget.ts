@@ -79,17 +79,29 @@ export interface BudgetLane {
 
 /**
  * Everything through `telegramRequest` by default — `reply`, the
- * response-guard alerts, the rest of `channel/telegram.ts`. Started at 14/6
- * against BACKGROUND_LANE; raised to 17/3 within the hour on 2026-08-31 once
- * production showed background recovering to near-full within seconds of
- * being drained (typing + status's combined real demand fits comfortably
- * under 3/min) while priority stayed pinned near empty at 14 — the split's
- * ratio, not its existence, was still wrong.
+ * response-guard alerts, the rest of `channel/telegram.ts`. History of this
+ * split on 2026-08-31, all same day:
+ *   14/6 — first split (typing + status's send/edit only)
+ *   17/3 — background measured underused, so raised priority's share...
+ *          ...before status.ts's pin/unpin/delete (6 more call sites) had
+ *          been moved onto it yet. Once they landed on top of a lane already
+ *          cut to 3, keryx's status started failing outright — not delayed,
+ *          failed: `sendStatusMessage failed: timeout ... waiting for a
+ *          rate-limit slot`, repeated dozens of times over ~14 minutes.
+ *   13/7 — this value. Both lanes were observed oscillating near-empty at
+ *          17/3 (not just background), which is a different signal than
+ *          either previous tuning pass saw: total real demand across all
+ *          concurrently-active sessions right now is close to Telegram's
+ *          ~20/min ceiling regardless of the split. Rebalancing narrows how
+ *          often either lane runs dry; it cannot make demand fit under
+ *          supply if the sessions using it are simply busy enough that it
+ *          doesn't. If failures like keryx's recur at this ratio, the next
+ *          question is real demand, not lane sizing.
  */
-export const PRIORITY_LANE: BudgetLane = { bucket: "global_priority", capacity: 17, refillPerSec: 17 / 60 };
+export const PRIORITY_LANE: BudgetLane = { bucket: "global_priority", capacity: 13, refillPerSec: 13 / 60 };
 
-/** `utils/typing.ts`'s tick and `channel/status.ts`'s routine progress edits — see PRIORITY_LANE's doc for the 17/3 split. */
-export const BACKGROUND_LANE: BudgetLane = { bucket: "global_background", capacity: 3, refillPerSec: 3 / 60 };
+/** `utils/typing.ts`'s tick and most of `channel/status.ts` — see PRIORITY_LANE's doc for this split's history. */
+export const BACKGROUND_LANE: BudgetLane = { bucket: "global_background", capacity: 7, refillPerSec: 7 / 60 };
 
 /** How often each subprocess asks Postgres for a fresh local allowance. */
 const REFRESH_INTERVAL_MS = 5_000;
