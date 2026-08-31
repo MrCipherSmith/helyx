@@ -39,13 +39,14 @@ beforeEach(() => {
   (channelLogger as any).error = (obj: unknown) => {
     errors.push((obj ?? {}) as Record<string, unknown>);
   };
-  // This file drives the real telegramRequest, which gates every send on the
-  // shared rate budget (flow 064). The production singleton talks to a real
-  // Postgres row on a ~5s lease window and is shared across the whole `bun
-  // test` process — neither of which this test cares about. Stand in an
-  // allowance that never runs out instead.
+  // This file drives the real telegramRequest, which defaults to the
+  // priority lane of the rate budget (flow 064; utils/telegram-rate-budget.ts).
+  // The production singleton talks to a real Postgres row on a ~5s lease
+  // window and is shared across the whole `bun test` process — neither of
+  // which this test cares about. Stand in an allowance that never runs out
+  // instead.
   testAllowance = createLocalAllowance({ lease: async () => ({ granted: 1_000 }) });
-  restoreAllowance = setSharedAllowanceForTests(testAllowance);
+  restoreAllowance = setSharedAllowanceForTests("priority", testAllowance);
 });
 
 afterEach(() => {

@@ -44,14 +44,44 @@ import postgres from "postgres";
 import { sql as defaultSql } from "../memory/db.ts";
 import { channelLogger } from "../logger.ts";
 
-/** The limit is per-chat, and there is currently exactly one chat in play. */
-const BUCKET = "global";
+/**
+ * Two lanes, not one shared pool. A single bucket let a typing tick — purely
+ * cosmetic, resent every few seconds per active session regardless of
+ * whether anyone is looking — compete on equal footing with an actual
+ * `reply` send, the one thing CLAUDE.md says the operator actually reads.
+ * Under sustained load from ~10 concurrent sessions that cosmetic traffic
+ * won the competition often enough to matter: on 2026-08-31, keryx's real
+ * answers sat undelivered for 15-30 minutes, flushed only when an unrelated
+ * bot restart happened to run `deliverPendingReplies`.
+ *
+ * Splitting the pool into a priority lane (everything through
+ * `telegramRequest` by default — replies, status edits, the rest of
+ * `channel/telegram.ts`) and a background lane (only the one caller proven
+ * to cause the starvation: `utils/typing.ts`'s tick) makes that structurally
+ * impossible for typing specifically — it has no way to touch priority's
+ * tokens, regardless of how much of it there is. Scoped to the one
+ * concretely-evidenced offender rather than every plausibly-cosmetic send:
+ * status edits already self-throttle on an 8s floor and were not shown to be
+ * the actual driver, so moving them too would be guessing at a fix for a
+ * problem not yet demonstrated to exist.
+ *
+ * The two capacities still sum to Telegram's own documented per-chat budget
+ * (flow 064 description.md: "~20/min") — this reallocates who gets to spend
+ * it, not how much there is to spend. Raising the total risks trading a
+ * graceful internal wait for a real Telegram 429, which this module exists
+ * to prevent.
+ */
+export interface BudgetLane {
+  bucket: string;
+  capacity: number;
+  refillPerSec: number;
+}
 
-/** Telegram's documented per-chat budget (flow 064 description.md: "~20/min"). */
-const CAPACITY = 20;
+/** Everything through `telegramRequest` by default — `reply`, status edits, the rest of `channel/telegram.ts`. */
+export const PRIORITY_LANE: BudgetLane = { bucket: "global_priority", capacity: 14, refillPerSec: 14 / 60 };
 
-/** Tokens/second — the bucket refills to CAPACITY once per minute. */
-const REFILL_PER_SEC = CAPACITY / 60;
+/** `utils/typing.ts`'s tick only — the one caller proven to starve real replies. */
+export const BACKGROUND_LANE: BudgetLane = { bucket: "global_background", capacity: 6, refillPerSec: 6 / 60 };
 
 /** How often each subprocess asks Postgres for a fresh local allowance. */
 const REFRESH_INTERVAL_MS = 5_000;
@@ -75,7 +105,7 @@ export interface LeaseResult {
 }
 
 /**
- * One atomic lease against the shared budget.
+ * One atomic lease against one lane's budget.
  *
  * Refills by elapsed time since `updated_at` and grants up to `n` whole
  * tokens from the result, all inside one `UPDATE ... FROM (SELECT ... FOR
@@ -88,7 +118,7 @@ export interface LeaseResult {
  * `db` defaults to this project's shared pool but takes an override so a test
  * can lease against a disposable database — same shape as `runMigrations`.
  */
-export async function leaseBudget(n: number, db: postgres.Sql = defaultSql): Promise<LeaseResult> {
+export async function leaseBudget(n: number, lane: BudgetLane, db: postgres.Sql = defaultSql): Promise<LeaseResult> {
   if (!Number.isFinite(n) || n <= 0) return { granted: 0 };
 
   const [row] = await db<{ granted: number }[]>`
@@ -99,21 +129,21 @@ export async function leaseBudget(n: number, db: postgres.Sql = defaultSql): Pro
     FROM (
       SELECT
         LEAST(
-          ${CAPACITY}::numeric,
-          tokens + GREATEST(0, EXTRACT(EPOCH FROM (now() - updated_at))) * ${REFILL_PER_SEC}::numeric
+          ${lane.capacity}::numeric,
+          tokens + GREATEST(0, EXTRACT(EPOCH FROM (now() - updated_at))) * ${lane.refillPerSec}::numeric
         ) AS available,
         FLOOR(LEAST(
           ${n}::numeric,
           LEAST(
-            ${CAPACITY}::numeric,
-            tokens + GREATEST(0, EXTRACT(EPOCH FROM (now() - updated_at))) * ${REFILL_PER_SEC}::numeric
+            ${lane.capacity}::numeric,
+            tokens + GREATEST(0, EXTRACT(EPOCH FROM (now() - updated_at))) * ${lane.refillPerSec}::numeric
           )
         )) AS grant
       FROM telegram_rate_budget
-      WHERE bucket = ${BUCKET}
+      WHERE bucket = ${lane.bucket}
       FOR UPDATE
     ) AS calc
-    WHERE b.bucket = ${BUCKET}
+    WHERE b.bucket = ${lane.bucket}
     RETURNING calc.grant::int AS granted
   `;
   return { granted: row ? Number(row.granted) : 0 };
@@ -263,48 +293,66 @@ export function createLocalAllowance(options: LocalAllowanceOptions): LocalAllow
   };
 }
 
-let shared: LocalAllowance | null = null;
+export type SendPriority = "priority" | "background";
 
-function sharedAllowance(): LocalAllowance {
-  if (!shared) {
-    shared = createLocalAllowance({
-      lease: (n) => leaseBudget(n),
+const sharedByPriority: Record<SendPriority, LocalAllowance | null> = {
+  priority: null,
+  background: null,
+};
+
+function sharedAllowance(priority: SendPriority): LocalAllowance {
+  if (!sharedByPriority[priority]) {
+    const lane = priority === "priority" ? PRIORITY_LANE : BACKGROUND_LANE;
+    sharedByPriority[priority] = createLocalAllowance({
+      lease: (n) => leaseBudget(n, lane),
       onFailOpen: (err) => {
-        channelLogger.warn({ err }, "telegram-rate-budget: leaseBudget failed — granting a conservative local allowance (fail-open)");
+        channelLogger.warn({ err, priority }, "telegram-rate-budget: leaseBudget failed — granting a conservative local allowance (fail-open)");
       },
     });
   }
-  return shared;
+  return sharedByPriority[priority]!;
 }
 
 /**
  * The gate `channel/telegram.ts`'s `telegramRequest` and
  * `utils/typing.ts`'s `startTypingRaw` call before each actual outbound
- * request. Lazily starts the shared refresh timer on first use, so importing
- * this module has no side effect until a send is actually attempted.
+ * request. Lazily starts the relevant lane's refresh timer on first use, so
+ * importing this module has no side effect until a send is actually
+ * attempted.
+ *
+ * Defaults to `"priority"` — before this parameter existed, every caller
+ * shared one pool, so defaulting to the lane closest to that prior behavior
+ * means `telegramRequest` (and everything built on it: `reply`, status
+ * edits, everything in `channel/telegram.ts`) needs no changes to keep
+ * working exactly as before. Only `startTypingRaw` — the one caller that is
+ * unambiguously cosmetic and was concretely proven to starve real replies on
+ * 2026-08-31 — opts into `"background"` explicitly. Getting this backwards
+ * (marking a real send as background) reintroduces exactly the starvation
+ * this split exists to prevent, so a new caller should stay on the default
+ * unless it is as clearly disposable as a typing tick.
  *
  * `timeoutMs`, when given, bounds the wait: rejects rather than hanging once
- * that many milliseconds pass without the shared budget granting a slot.
+ * that many milliseconds pass without that lane granting a slot.
  * `telegramRequest` passes its own remaining total-call budget so a starved
- * shared budget cannot hold a call open past its documented deadline.
+ * lane cannot hold a call open past its documented deadline.
  */
-export function acquireSendSlot(timeoutMs?: number): Promise<void> {
-  return sharedAllowance().acquire(timeoutMs);
+export function acquireSendSlot(timeoutMs?: number, priority: SendPriority = "priority"): Promise<void> {
+  return sharedAllowance(priority).acquire(timeoutMs);
 }
 
 /**
- * Stand an allowance in for the process-wide shared one; the returned
+ * Stand an allowance in for one lane's process-wide shared one; the returned
  * function puts the real one back.
  *
  * A test that drives `telegramRequest`/`startTypingRaw` end to end (a
  * stubbed `fetch`, a real call into `channel/telegram.ts`) otherwise shares
- * this module's single production singleton with every other test in the
- * same `bun test` process — including its real ~5s lease window and its
- * default DB, neither of which such a test wants to depend on. Passing
- * `null` clears back to the lazily-constructed default.
+ * this module's production singletons with every other test in the same
+ * `bun test` process — including their real ~5s lease windows and default
+ * DB, neither of which such a test wants to depend on. Passing `null` clears
+ * that lane back to its lazily-constructed default.
  */
-export function setSharedAllowanceForTests(next: LocalAllowance | null): () => void {
-  const previous = shared;
-  shared = next;
-  return () => { shared = previous; };
+export function setSharedAllowanceForTests(priority: SendPriority, next: LocalAllowance | null): () => void {
+  const previous = sharedByPriority[priority];
+  sharedByPriority[priority] = next;
+  return () => { sharedByPriority[priority] = previous; };
 }

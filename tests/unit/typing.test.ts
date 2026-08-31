@@ -45,7 +45,7 @@ afterEach(() => {
 describe("startTypingRaw", () => {
   test("a granted slot sends the typing action", async () => {
     testAllowance = createLocalAllowance({ lease: async () => ({ granted: 1_000 }) });
-    restoreAllowance = setSharedAllowanceForTests(testAllowance);
+    restoreAllowance = setSharedAllowanceForTests("background", testAllowance);
 
     const handle = startTypingRaw("token", "-1", 50);
     await new Promise((r) => setTimeout(r, 20));
@@ -61,7 +61,7 @@ describe("startTypingRaw", () => {
       lease: async () => ({ granted: 0 }),
       refreshIntervalMs: 100_000, // long enough it never fires within the test
     });
-    restoreAllowance = setSharedAllowanceForTests(testAllowance);
+    restoreAllowance = setSharedAllowanceForTests("background", testAllowance);
 
     const handle = startTypingRaw("token", "-1", 30);
     // The tick's own 30ms slot timeout must have already rejected by 60ms —
@@ -78,7 +78,7 @@ describe("startTypingRaw", () => {
       lease: async () => ({ granted: 0 }),
       refreshIntervalMs: 100_000,
     });
-    restoreAllowance = setSharedAllowanceForTests(testAllowance);
+    restoreAllowance = setSharedAllowanceForTests("background", testAllowance);
 
     const handle = startTypingRaw("token", "-1", 5_000);
     handle.stop();

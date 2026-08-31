@@ -78,12 +78,14 @@ export function startTypingRaw(
   slotTimeoutMs = TYPING_SLOT_TIMEOUT_MS,
 ): TypingHandle {
   return startTyping(async () => {
-    // Shared cross-process gate (flow 064) — the same budget
-    // channel/telegram.ts's telegramRequest gates on. Bounded: see
-    // TYPING_SLOT_TIMEOUT_MS. A timeout here throws, which the caller's
-    // existing catch-and-ignore (below, in startTyping's loop) already
-    // treats as "skip this tick, try again next interval."
-    await acquireSendSlot(slotTimeoutMs);
+    // Shared cross-process gate (flow 064). "background" pins this to its
+    // own lane, separate from telegramRequest's default "priority" — a real
+    // reply can no longer be starved by how much this one ticks, no matter
+    // how many sessions are typing at once (telegram-rate-budget.ts's module
+    // doc). Bounded: see TYPING_SLOT_TIMEOUT_MS. A timeout here throws, which
+    // the caller's existing catch-and-ignore (below, in startTyping's loop)
+    // already treats as "skip this tick, try again next interval."
+    await acquireSendSlot(slotTimeoutMs, "background");
     const res = await fetch(`https://api.telegram.org/bot${token}/sendChatAction`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

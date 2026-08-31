@@ -996,6 +996,31 @@ const migrations: Migration[] = [
       `;
     },
   },
+  {
+    version: 53,
+    name: "telegram_rate_budget — split into priority/background lanes",
+    up: async (tx) => {
+      // Single shared bucket meant every outbound send competed equally for
+      // it — including a typing tick or a status edit, neither of which the
+      // operator reads (CLAUDE.md: "the reply tool is the ONLY thing that
+      // reaches them"). Under sustained multi-session load that cosmetic
+      // traffic starved the one channel that matters: keryx's real answers
+      // were delayed 15-30 minutes on 2026-08-31, sitting in pending_replies
+      // until an unrelated bot restart happened to flush them.
+      //
+      // 'global' stays as a stale, unused row rather than being deleted —
+      // deleting a bucket a concurrently-running old process might still be
+      // mid-lease against would resurrect it via its own ON CONFLICT DO
+      // NOTHING insert; an unread row costs nothing.
+      await tx`
+        INSERT INTO telegram_rate_budget (bucket, tokens, updated_at)
+        VALUES
+          ('global_priority', 14, now()),
+          ('global_background', 6, now())
+        ON CONFLICT (bucket) DO NOTHING
+      `;
+    },
+  },
 ];
 
 // --- Public API ---

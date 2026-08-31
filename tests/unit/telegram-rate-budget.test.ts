@@ -18,7 +18,7 @@
 
 import { describe, test, expect, beforeAll, beforeEach, afterAll } from "bun:test";
 import { databaseAvailable, provisionTestDatabase, NO_DATABASE_MESSAGE, type TestDatabase } from "../fixtures/test-db.ts";
-import { leaseBudget, createLocalAllowance, type LeaseResult } from "../../utils/telegram-rate-budget.ts";
+import { leaseBudget, createLocalAllowance, PRIORITY_LANE, BACKGROUND_LANE, type LeaseResult } from "../../utils/telegram-rate-budget.ts";
 
 // ---------------------------------------------------------------------------
 // createLocalAllowance — no DB, no real timers
@@ -171,7 +171,7 @@ describeWithDb("leaseBudget, against a real database", () => {
   let db: TestDatabase;
 
   beforeAll(async () => {
-    db = await provisionTestDatabase(); // runs the project's migrations, including v52's seed row
+    db = await provisionTestDatabase(); // runs the project's migrations, including v53's two-lane seed rows
   });
 
   afterAll(async () => {
@@ -179,35 +179,37 @@ describeWithDb("leaseBudget, against a real database", () => {
   });
 
   // Every test starts from the same known balance — leaseBudget tests would
-  // otherwise depend on execution order via the shared 'global' row.
+  // otherwise depend on execution order via the shared row. Both lanes'
+  // rows exist from v53's seed; only the priority lane's balance is reset
+  // here since that's what these tests exercise.
   beforeEach(async () => {
-    await db.sql`UPDATE telegram_rate_budget SET tokens = 10, updated_at = now() WHERE bucket = 'global'`;
+    await db.sql`UPDATE telegram_rate_budget SET tokens = 10, updated_at = now() WHERE bucket = ${PRIORITY_LANE.bucket}`;
   });
 
   test("(a) normal grant/spend: a lease within the balance grants exactly what was asked", async () => {
-    const first = await leaseBudget(3, db.sql);
+    const first = await leaseBudget(3, PRIORITY_LANE, db.sql);
     expect(first.granted).toBe(3);
 
-    const second = await leaseBudget(3, db.sql);
+    const second = await leaseBudget(3, PRIORITY_LANE, db.sql);
     expect(second.granted).toBe(3);
 
-    const [row] = await db.sql<{ tokens: string }[]>`SELECT tokens FROM telegram_rate_budget WHERE bucket = 'global'`;
+    const [row] = await db.sql<{ tokens: string }[]>`SELECT tokens FROM telegram_rate_budget WHERE bucket = ${PRIORITY_LANE.bucket}`;
     // 10 - 3 - 3 = 4, plus a sliver of refill for the elapsed milliseconds —
-    // bounded well under 1 token given REFILL_PER_SEC ≈ 0.33/s.
+    // bounded well under 1 token given PRIORITY_LANE.refillPerSec ≈ 0.23/s.
     expect(Number(row!.tokens)).toBeGreaterThanOrEqual(4);
     expect(Number(row!.tokens)).toBeLessThan(4.5);
   });
 
   test("(b) exhaustion: once the balance is drained, further leases grant less (or zero), never throw", async () => {
-    const drain = await leaseBudget(100, db.sql); // asks for far more than the 10-token balance
+    const drain = await leaseBudget(100, PRIORITY_LANE, db.sql); // asks for far more than the 10-token balance
     expect(drain.granted).toBe(10); // capped by what was actually available, not by the request
 
-    const after = await leaseBudget(5, db.sql);
+    const after = await leaseBudget(5, PRIORITY_LANE, db.sql);
     expect(after.granted).toBe(0); // nothing left to grant; resolves cleanly rather than erroring
   });
 
   test("(c) AC2 — concurrent leases against the same row never grant more than the available balance combined", async () => {
-    const results = await Promise.all(Array.from({ length: 6 }, () => leaseBudget(3, db.sql)));
+    const results = await Promise.all(Array.from({ length: 6 }, () => leaseBudget(3, PRIORITY_LANE, db.sql)));
 
     for (const r of results) {
       expect(r.granted).toBeGreaterThanOrEqual(0);
@@ -221,15 +223,29 @@ describeWithDb("leaseBudget, against a real database", () => {
     // UPDATE ... FOR UPDATE) would let slip past.
     expect(total).toBeLessThanOrEqual(10);
 
-    const [row] = await db.sql<{ tokens: string }[]>`SELECT tokens FROM telegram_rate_budget WHERE bucket = 'global'`;
+    const [row] = await db.sql<{ tokens: string }[]>`SELECT tokens FROM telegram_rate_budget WHERE bucket = ${PRIORITY_LANE.bucket}`;
     expect(Number(row!.tokens)).toBeGreaterThanOrEqual(0);
   });
 
   test("granting nothing for a non-positive request never touches the row", async () => {
-    const before = await db.sql<{ tokens: string }[]>`SELECT tokens FROM telegram_rate_budget WHERE bucket = 'global'`;
-    const result = await leaseBudget(0, db.sql);
+    const before = await db.sql<{ tokens: string }[]>`SELECT tokens FROM telegram_rate_budget WHERE bucket = ${PRIORITY_LANE.bucket}`;
+    const result = await leaseBudget(0, PRIORITY_LANE, db.sql);
     expect(result.granted).toBe(0);
-    const after = await db.sql<{ tokens: string }[]>`SELECT tokens FROM telegram_rate_budget WHERE bucket = 'global'`;
+    const after = await db.sql<{ tokens: string }[]>`SELECT tokens FROM telegram_rate_budget WHERE bucket = ${PRIORITY_LANE.bucket}`;
     expect(Number(after[0]!.tokens)).toBe(Number(before[0]!.tokens));
+  });
+
+  // The whole point of the split (2026-08-31): background traffic must have
+  // no way to touch priority's tokens. Draining one lane to zero and leasing
+  // from the other in the same instant is the direct proof — if they shared
+  // a row this would either double-count or contend for the same lock.
+  test("draining the priority lane does not affect the background lane's balance", async () => {
+    await db.sql`UPDATE telegram_rate_budget SET tokens = 8, updated_at = now() WHERE bucket = ${BACKGROUND_LANE.bucket}`;
+
+    const drain = await leaseBudget(100, PRIORITY_LANE, db.sql);
+    expect(drain.granted).toBe(10); // the priority row's own seeded balance, unaffected by the line above
+
+    const background = await leaseBudget(5, BACKGROUND_LANE, db.sql);
+    expect(background.granted).toBe(5); // background's own balance, untouched by priority's drain
   });
 });
