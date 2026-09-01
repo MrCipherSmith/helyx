@@ -442,6 +442,16 @@ async function pollPermissionResponse(
   await Bun.sleep(1_000);
 
   while (Date.now() < deadline) {
+    // The window's session was swapped underneath this poll (see the
+    // session-swap check in pollWindows) — the entry was invalidated by
+    // stamping resolvedAt without going through this function's own
+    // resolution paths. Bail out without sending anything into whatever
+    // session now owns this window (F-008).
+    if (entry.resolvedAt) {
+      console.log(`[watchdog] ${entry.requestId}: invalidated by session swap — abandoning poll`);
+      return;
+    }
+
     // User responded via Telegram
     const rows = await sql`
       SELECT response FROM permission_requests
@@ -478,6 +488,13 @@ async function pollPermissionResponse(
     }
 
     await Bun.sleep(500);
+  }
+
+  // The window's session may have been swapped out on the very last tick
+  // before the deadline check above ran again — re-check before acting.
+  if (entry.resolvedAt) {
+    console.log(`[watchdog] ${entry.requestId}: invalidated by session swap — abandoning poll`);
+    return;
   }
 
   // Timeout
@@ -614,6 +631,28 @@ async function pollWindows(
 
     if (!states.has(winName)) {
       states.set(winName, { sessionId: session.sessionId, alerts: {} });
+    } else {
+      const existing = states.get(winName)!;
+      if (existing.sessionId !== session.sessionId) {
+        // The window name persisted but the session bound to it changed
+        // underneath us (crash-restart, proj_start recreating a window with
+        // the same project name, etc). A pending permission poll bound to
+        // the old session must not fire tmux send-keys into whatever new
+        // session now owns this window — invalidate it here.
+        // pollPermissionResponse checks entry.resolvedAt on every iteration
+        // and bails out without acting once it sees this (F-008).
+        if (existing.pendingPermission && !existing.pendingPermission.resolvedAt) {
+          console.warn(
+            `[watchdog] session swap detected for window "${winName}" ` +
+              `(was #${existing.sessionId}, now #${session.sessionId}) — ` +
+              `invalidating pending permission ${existing.pendingPermission.requestId}`,
+          );
+          existing.pendingPermission.resolvedAt = Date.now();
+        }
+        existing.sessionId = session.sessionId;
+        existing.pendingPermission = undefined;
+        existing.alerts = {};
+      }
     }
     const state = states.get(winName)!;
 
