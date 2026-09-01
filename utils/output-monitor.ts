@@ -60,7 +60,7 @@ async function seedTail(file: ReturnType<typeof Bun.file>, size: number): Promis
  * class was already fixed once for the primary transcript-tailing path; this
  * applies the same approach to this sibling monitor.
  */
-async function tailFile(filePath: string, lines: number): Promise<string> {
+export async function tailFile(filePath: string, lines: number): Promise<string> {
   try {
     const file = Bun.file(filePath);
     const size = file.size;
@@ -84,6 +84,16 @@ async function tailFile(filePath: string, lines: number): Promise<string> {
   } catch {
     return "";
   }
+}
+
+/** The byte offset tailFile has read up to for a path, or undefined if never polled. Exported for tests only. */
+export function _tailOffsetForTest(filePath: string): number | undefined {
+  return tailState.get(filePath)?.offset;
+}
+
+/** Forget all tracked tail state. Exported for tests only, so cases don't leak state via shared temp paths. */
+export function _resetTailStateForTest(): void {
+  tailState.clear();
 }
 
 /**

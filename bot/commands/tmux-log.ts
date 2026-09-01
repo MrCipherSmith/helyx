@@ -21,7 +21,7 @@ import { InlineKeyboard } from "grammy";
 const BOT_DIR = resolve(import.meta.dir, "../..");
 const LOG_DIR = join(BOT_DIR, "logs", "tmux-sessions");
 
-interface LogEvent {
+export interface LogEvent {
   ts: string;
   event: string;
   session?: string;
@@ -107,7 +107,8 @@ function formatEvent(ev: LogEvent): string {
   return `${time} ${icon} ${where ? `<b>${where}</b> — ` : ""}${detail}`;
 }
 
-function buildResultText(events: LogEvent[], label: string): string {
+/** Exported for the F-007 regression test — the overflow suffix's quoting is otherwise untested. */
+export function buildResultText(events: LogEvent[], label: string): string {
   if (events.length === 0) {
     return `📜 <b>Tmux Log</b> — ${label}\n\nНет событий за указанный период.`;
   }
