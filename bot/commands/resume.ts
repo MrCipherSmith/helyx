@@ -23,17 +23,33 @@ export async function handleResume(ctx: Context): Promise<void> {
 
   const projectPath = session.projectPath ?? null;
 
-  // Find the most recent summary for this project (or any session for this chat)
-  const rows = await sql`
-    SELECT content, type, created_at
-    FROM memories
-    WHERE (${projectPath ? sql`project_path = ${projectPath}` : sql`project_path IS NULL`}
-           OR chat_id = ${chatId})
-      AND type IN ('summary', 'project_context')
-      AND archived_at IS NULL
-    ORDER BY created_at DESC
-    LIMIT 1
-  `;
+  // Find the most recent summary scoped strictly to this project. Only when
+  // no project-scoped row exists do we fall back to any memory for this chat
+  // — a single OR'd query let a different project's more-recent memory win
+  // purely on recency (F-006).
+  let rows = projectPath
+    ? await sql`
+        SELECT content, type, created_at
+        FROM memories
+        WHERE project_path = ${projectPath}
+          AND type IN ('summary', 'project_context')
+          AND archived_at IS NULL
+        ORDER BY created_at DESC
+        LIMIT 1
+      `
+    : [];
+
+  if (rows.length === 0) {
+    rows = await sql`
+      SELECT content, type, created_at
+      FROM memories
+      WHERE chat_id = ${chatId}
+        AND type IN ('summary', 'project_context')
+        AND archived_at IS NULL
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+  }
 
   if (rows.length === 0) {
     await ctx.reply(
