@@ -130,6 +130,30 @@ const SPINNER_INTERVAL_ACTIVE_MS = 8_000;   // when monitor has been active rece
 const SPINNER_INTERVAL_IDLE_MS   = 15_000;  // when no monitor activity for >IDLE_THRESHOLD_MS
 const IDLE_THRESHOLD_MS          = 12_000;  // switch to idle after 12s of silence
 
+/**
+ * Backoff and cap for `maybeReopen`'s reopen-send retries.
+ *
+ * Without this, a failing reopen (most commonly `acquireSendSlot` timing out
+ * against the shared `BACKGROUND_LANE` in `utils/telegram-rate-budget.ts`) was
+ * retried on the very next monitor poll tick — as fast as 2s later — forever,
+ * for as long as the session kept producing activity. Observed in production
+ * on 2026-09-01 as a channel retrying a reopen every ~8s for 12+ hours,
+ * starving the same shared bucket that other concurrent sessions' real
+ * replies depend on. Mirrors the shape of the two capped retry paths already
+ * in this file/codebase: `responseGuardRearmCount` (capped at 6, see
+ * `armResponseGuard`) and `channel/session.ts`'s `LEASE_MAX_ATTEMPTS`.
+ */
+const REOPEN_BACKOFF_BASE_MS = 5_000;
+/** Ceiling on the exponential backoff between reopen attempts. */
+const REOPEN_BACKOFF_MAX_MS = 5 * 60_000;
+/**
+ * Consecutive reopen failures after which `maybeReopen` stops retrying for
+ * this key and logs once, instead of continuing to spend shared
+ * `BACKGROUND_LANE` tokens forever. Reset by a successful reopen or by
+ * `noteReplySent` (a new reply starts a new turn).
+ */
+const REOPEN_MAX_ATTEMPTS = 8;
+
 interface StatusExtras {
   phaseEmoji?: string;
   toolCount?: number;
@@ -267,6 +291,24 @@ export class StatusManager {
    * the orphan Telegram message instead of late-registering it in activeStatus.
    */
   private pendingSendGenerations = new Map<string, number>();
+  /**
+   * Consecutive `maybeReopen` send failures per key, and the backoff window
+   * they earn. Read and written only by `maybeReopen`/`noteReplySent` — see
+   * `REOPEN_BACKOFF_BASE_MS`/`REOPEN_MAX_ATTEMPTS` for why this exists.
+   */
+  private readonly reopenFailureCount = new Map<string, number>();
+  /** Timestamp before which `maybeReopen` will not attempt another send for this key. */
+  private readonly reopenBackoffUntil = new Map<string, number>();
+  /**
+   * Single-flight guard for `maybeReopen`, the same shape as `editInFlight`
+   * guards `editWithDrain`. Without it, a reopen send still waiting on
+   * `acquireSendSlot` (up to `MAX_TOTAL_MS` = 60s in `channel/telegram.ts`)
+   * would not stop the next monitor poll tick (2-15s later) from starting a
+   * second, concurrent `sendStatusMessage` for the same key — each one a real
+   * outbound call spending a real `BACKGROUND_LANE` token even when
+   * `pendingSendGenerations` discards the loser as a stale orphan.
+   */
+  private readonly reopenInFlight = new Set<string>();
   /**
    * Folds already written to long-term memory, by the boundary's own `tailUuid`.
    *
@@ -433,6 +475,11 @@ export class StatusManager {
   noteReplySent(chatId: string, messageId?: number): void {
     const key = this.stateKey(chatId);
     this.lastReplyAt.set(key, Date.now());
+    // A reply starts a new turn. Failures counted against the turn that just
+    // ended must not carry into it, or a `maybeReopen` give-up from a prior
+    // stuck turn would silently block reopening for a turn that never failed.
+    this.reopenFailureCount.delete(key);
+    this.reopenBackoffUntil.delete(key);
     if (messageId !== undefined) this.noteOtherMessage(chatId, messageId);
   }
 
@@ -1149,32 +1196,77 @@ export class StatusManager {
     const repliedAt = this.lastReplyAt.get(key) ?? null;
     if (repliedAt === null) return;
 
-    let pendingUserMessages = false;
-    const sessionId = this.ctx.sessionId();
-    if (sessionId !== null) {
-      const pending = await this.ctx.sql`
-        SELECT 1 FROM message_queue
-        WHERE session_id = ${sessionId} AND chat_id = ${chatId} AND delivered = false
-        LIMIT 1
-      `.catch(() => []);
-      pendingUserMessages = pending.length > 0;
+    // Single-flight: a send from an earlier poll tick may still be waiting on
+    // `acquireSendSlot` when this tick arrives 2-15s later — see
+    // `reopenInFlight`'s own comment for why letting both proceed is a real,
+    // observed way to burn shared-lane tokens on discarded orphans.
+    if (this.reopenInFlight.has(key)) return;
+
+    // Backoff: skip retrying until the window a prior failure earned has
+    // passed. Checked — and the failure cap below checked — before the DB
+    // round-trip, so a backed-off or given-up key costs nothing beyond two
+    // Map lookups on every poll tick instead of a query plus a Telegram call.
+    const backoffUntil = this.reopenBackoffUntil.get(key) ?? 0;
+    if (Date.now() < backoffUntil) return;
+    const failures = this.reopenFailureCount.get(key) ?? 0;
+    if (failures >= REOPEN_MAX_ATTEMPTS) return;
+
+    this.reopenInFlight.add(key);
+    try {
+      let pendingUserMessages = false;
+      const sessionId = this.ctx.sessionId();
+      if (sessionId !== null) {
+        const pending = await this.ctx.sql`
+          SELECT 1 FROM message_queue
+          WHERE session_id = ${sessionId} AND chat_id = ${chatId} AND delivered = false
+          LIMIT 1
+        `.catch(() => []);
+        pendingUserMessages = pending.length > 0;
+      }
+
+      const open = shouldReopen({
+        statusOpen: this.activeStatus.has(key),
+        repliedAt,
+        lastActivityAt: this.lastMonitorActivity.get(key) ?? null,
+        pendingUserMessages,
+        now: Date.now(),
+      });
+      if (!open) return;
+
+      channelLogger.info({ chatId, repliedAt }, "status: work continued past the reply — opening a continuation");
+      const failed = await this.sendStatusMessage(chatId, stage, undefined, { continuation: true });
+      // Only when there is something to guard. Raised in review: arming after a
+      // failed open leaves a guard with no status behind it, which fires a
+      // "still working?" notice about a message the operator cannot see.
+      if (failed === null && this.activeStatus.has(key)) {
+        this.reopenFailureCount.delete(key);
+        this.reopenBackoffUntil.delete(key);
+        this.armResponseGuard(chatId);
+        return;
+      }
+
+      // Failed — including a slot-acquire timeout, the common case that fed
+      // the production incident. Count it and back off exponentially so the
+      // next poll tick does not retry immediately; past REOPEN_MAX_ATTEMPTS,
+      // stop retrying for this turn and log once instead of spamming.
+      const nextFailures = failures + 1;
+      this.reopenFailureCount.set(key, nextFailures);
+      const delay = Math.min(REOPEN_BACKOFF_BASE_MS * 2 ** (nextFailures - 1), REOPEN_BACKOFF_MAX_MS);
+      this.reopenBackoffUntil.set(key, Date.now() + delay);
+      if (nextFailures >= REOPEN_MAX_ATTEMPTS) {
+        channelLogger.error(
+          { chatId, key, failures: nextFailures },
+          "status: reopen kept failing — giving up until the next reply",
+        );
+      } else {
+        channelLogger.warn(
+          { chatId, key, failures: nextFailures, backoffMs: delay },
+          "status: reopen failed — backing off",
+        );
+      }
+    } finally {
+      this.reopenInFlight.delete(key);
     }
-
-    const open = shouldReopen({
-      statusOpen: this.activeStatus.has(key),
-      repliedAt,
-      lastActivityAt: this.lastMonitorActivity.get(key) ?? null,
-      pendingUserMessages,
-      now: Date.now(),
-    });
-    if (!open) return;
-
-    channelLogger.info({ chatId, repliedAt }, "status: work continued past the reply — opening a continuation");
-    const failed = await this.sendStatusMessage(chatId, stage, undefined, { continuation: true });
-    // Only when there is something to guard. Raised in review: arming after a
-    // failed open leaves a guard with no status behind it, which fires a
-    // "still working?" notice about a message the operator cannot see.
-    if (failed === null && this.activeStatus.has(key)) this.armResponseGuard(chatId);
   }
 
   /**
