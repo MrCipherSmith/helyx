@@ -400,7 +400,10 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
   try {
     switch (row.command) {
       case "tmux_start":
-        result = await runCommand("up", ["-s"]);
+        // Windows, never `-s`. See the note on the `proj_start` fallback below:
+        // split panes put every project in one window, and one window is what
+        // `proj_start` kills.
+        result = await runCommand("up");
         break;
 
       case "tmux_stop": {
@@ -458,7 +461,15 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
             }
           }
         } else {
-          result = await runCommand("up", ["-s"]);
+          // Windows, not split panes — `-s` here cost the whole fleet on
+          // 2026-09-01. `up -s` starts all eleven projects as panes of a single
+          // window, so the branch above finds one window carrying everything and
+          // its `kill-window` loop takes the session, and with it the tmux
+          // server, down in one step. The verification in `tmuxStart` counts a
+          // window per project too, so a pane-mode start also reports failure
+          // for every project but the first — which is what got the second
+          // `proj_start` pressed in the first place.
+          result = await runCommand("up");
         }
         break;
       }

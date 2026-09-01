@@ -73,12 +73,13 @@ export async function streamToTelegram(
       for (let i = 1; i < chunks.length; i++) {
         const chunk = chunks[i];
         const htmlChunk = markdownToTelegramHtml(chunk);
+        const chunkThreadOpts = threadId ? { message_thread_id: threadId } : undefined;
         try {
-          await bot.api.sendMessage(Number(chatId), htmlChunk, { parse_mode: "HTML" });
+          await bot.api.sendMessage(Number(chatId), htmlChunk, { ...chunkThreadOpts, parse_mode: "HTML" });
         } catch {
           // Fallback to plain text
           try {
-            await bot.api.sendMessage(Number(chatId), chunk);
+            await bot.api.sendMessage(Number(chatId), chunk, chunkThreadOpts);
           } catch (e) {
             logger.warn({ err: e }, "streaming: failed to send continuation chunk");
           }

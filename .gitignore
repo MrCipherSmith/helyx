@@ -27,6 +27,22 @@ coverage/
 # graphify: generated knowledge-graph output (regenerate with /graphify)
 graphify-out/
 
+
+
+# A .metaproject created outside the repository root
+#
+# Every pattern in the keryx block above is anchored to the root, so a
+# `.metaproject` that keryx scaffolds anywhere else — because a command ran with
+# its working directory inside a subfolder — matches none of them. That has
+# already put two HMAC keys into this repository: one inside a flow package on
+# 2026-08-04, one under content/ on 2026-08-07. Both keys were rotated.
+#
+# These patterns are unanchored on purpose and live outside the managed block so
+# `keryx update` cannot drop them.
+**/.metaproject/data/**/raw/
+**/.metaproject/data/**/storage/
+**/.metaproject/runtime/
+
 # keryx:begin
 # Metaproject: keep agent-facing context versioned, ignore executable/generated internals.
 .metaproject/runtime/
@@ -49,6 +65,11 @@ graphify-out/
 .metaproject/data/tasks/logs/
 .metaproject/flows/.flow-init.lock/
 .metaproject/flows/.flow-lock-*/
+# Memory generated views, caches, reports, and atomic staging are disposable.
+.metaproject/data/memory/index/
+.metaproject/data/memory/embeddings/
+.metaproject/data/memory/artifacts/
+.metaproject/runtime/memory/
 # Security: local-only HMAC key, self-protect state, and local hash report must never be committed.
 .metaproject/data/security/raw/
 .metaproject/data/security/raw/**
@@ -56,17 +77,3 @@ graphify-out/
 .metaproject/data/security/artifacts/latest.json
 .metaproject/reports/
 # keryx:end
-
-# A .metaproject created outside the repository root
-#
-# Every pattern in the keryx block above is anchored to the root, so a
-# `.metaproject` that keryx scaffolds anywhere else — because a command ran with
-# its working directory inside a subfolder — matches none of them. That has
-# already put two HMAC keys into this repository: one inside a flow package on
-# 2026-08-04, one under content/ on 2026-08-07. Both keys were rotated.
-#
-# These patterns are unanchored on purpose and live outside the managed block so
-# `keryx update` cannot drop them.
-**/.metaproject/data/**/raw/
-**/.metaproject/data/**/storage/
-**/.metaproject/runtime/
