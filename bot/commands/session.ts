@@ -293,6 +293,10 @@ export async function handleRemove(ctx: Context): Promise<void> {
     await ctx.reply("Session not found.");
     return;
   }
+  if (session.status === "active") {
+    await ctx.reply("Cannot delete active session.");
+    return;
+  }
 
   await deleteSessionCascade(sessionId);
 

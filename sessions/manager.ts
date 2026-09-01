@@ -4,6 +4,7 @@ import { basename } from "path";
 import { broadcast } from "../mcp/notification-broadcaster.ts";
 import { logger } from "../logger.ts";
 import { transitionSession, type SessionStatus } from "./state-machine.ts";
+import { deleteSessionCascade } from "./delete.ts";
 
 export type TerminationCallback = (sessionId: number, projectPath: string | null, sessionName: string | null) => void | Promise<void>;
 let terminationCallback: TerminationCallback | null = null;
@@ -239,14 +240,14 @@ export class SessionManager {
     const isEphemeral = name?.startsWith("cli-") || !project;
 
     if (isEphemeral) {
-      await sql`DELETE FROM sessions WHERE client_id = ${clientId}`;
+      await deleteSessionCascade(id);
       await this.resetSequence();
       logger.info({ clientId }, "removed ephemeral session");
     } else {
       // Named/channel session — transition based on source
       const newStatus: SessionStatus = source === 'remote' ? 'inactive' : 'terminated';
-      await transitionSession(sql, id, newStatus, { name: name ?? source });
-      if (newStatus === 'terminated' && terminationCallback) {
+      const applied = await transitionSession(sql, id, newStatus, { name: name ?? source });
+      if (applied && newStatus === 'terminated' && terminationCallback) {
         terminationCallback(id, project_path ?? null, name ?? null);
       }
     }
@@ -361,12 +362,14 @@ export class SessionManager {
 
   /** Delete all orphaned cli-xxx sessions (no live transport) — call on startup */
   async deleteOrphanCliSessions(): Promise<number> {
-    const result = await sql`
-      DELETE FROM sessions
+    const rows = await sql`
+      SELECT id FROM sessions
       WHERE name LIKE 'cli-%' AND project IS NULL
-      RETURNING id
     `;
-    return result.length;
+    for (const row of rows) {
+      await deleteSessionCascade(row.id);
+    }
+    return rows.length;
   }
 
   private rowToSession(r: Record<string, any>): Session {
