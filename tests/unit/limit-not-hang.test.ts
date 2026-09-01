@@ -143,7 +143,7 @@ describe("the hung-session loop and a limit", () => {
   function staleSession(metadata: unknown) {
     const project = uniqueName("limit-hung");
     const db = new FakeSql();
-    db.program("JOIN active_status_messages asm", {
+    db.program("FROM active_status_messages", {
       rows: [{
         session_id: 11,
         project,

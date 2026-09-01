@@ -209,7 +209,7 @@ describe("the supervisor's hung-session loop and a fold", () => {
     // The loop's dedup map is module state and outlives a re-run of this file.
     const project = uniqueName("fold-proj");
     const db = new FakeSql();
-    db.program("JOIN active_status_messages asm", {
+    db.program("FROM active_status_messages", {
       rows: [{
         session_id: 11,
         project,

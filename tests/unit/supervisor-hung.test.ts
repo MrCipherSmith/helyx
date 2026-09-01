@@ -19,7 +19,7 @@ import { installFakeFetch, type FakeFetch } from "../fixtures/fake-fetch.ts";
 import { restartCallbackData, paneCallbackData, ackCallbackData } from "../../utils/supervisor-callbacks.ts";
 import { uniqueName } from "../fixtures/unique.ts";
 
-const SELECT_HUNG = "JOIN active_status_messages asm";
+const SELECT_HUNG = "FROM active_status_messages";
 const INSERT_INCIDENT = "INSERT INTO supervisor_incidents";
 const SEND = "sendMessage";
 const EDIT = "editMessageText";

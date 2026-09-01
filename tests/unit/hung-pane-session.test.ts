@@ -36,7 +36,7 @@ import { uniqueName } from "../fixtures/unique.ts";
 import { restartCallbackData } from "../../utils/supervisor-callbacks.ts";
 
 const SESSIONS_QUERY = "SELECT s.id";
-const HUNG_QUERY = "JOIN active_status_messages asm";
+const HUNG_QUERY = "FROM active_status_messages";
 const SEND = "sendMessage";
 const STALE_MS = 5 * 60_000;
 
