@@ -10,6 +10,7 @@
 import type { Context } from "grammy";
 import { sql } from "../../memory/db.ts";
 import { CONFIG } from "../../config.ts";
+import { isAdmin } from "../access.ts";
 
 const SAVE_PROMPT = `SYSTEM: Pre-restart context snapshot requested by admin.
 
@@ -31,13 +32,14 @@ interface ActiveSession {
 }
 
 export async function handlePrepareRestart(ctx: Context): Promise<void> {
-  // `TELEGRAM_CHAT_ID` (see bot/commands/restart-grant.ts's isAdmin) is never
-  // set in this deployment — was silently `false` for every caller until fixed 2026-08-31.
-  const adminChatId = CONFIG.SUPERVISOR_CHAT_ID;
-  if (!adminChatId) {
-    await ctx.reply("⚠️ SUPERVISOR_CHAT_ID not set — cannot route responses back.");
+  // isAdmin() fails closed on an unset SUPERVISOR_CHAT_ID, so a truthy check
+  // below is safe — this also now actually verifies the caller is the admin,
+  // which the previous "is it configured at all" check did not.
+  if (!isAdmin(ctx)) {
+    await ctx.reply("⚠️ Admin only (or SUPERVISOR_CHAT_ID not set — cannot route responses back).");
     return;
   }
+  const adminChatId = CONFIG.SUPERVISOR_CHAT_ID;
 
   const sessions = await sql<ActiveSession[]>`
     SELECT s.id, s.project, s.project_path, s.project_id, s.last_active

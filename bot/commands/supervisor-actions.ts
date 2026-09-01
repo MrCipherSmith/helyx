@@ -7,19 +7,16 @@
 import type { Context } from "grammy";
 import { InlineKeyboard } from "grammy";
 import { sql } from "../../memory/db.ts";
-import { CONFIG } from "../../config.ts";
 import { enqueueRestart } from "../../services/project-service.ts";
 import { forwardStuckMessages } from "../../scripts/supervisor.ts";
 import { parseSupervisorCallback } from "../../utils/supervisor-callbacks.ts";
 import { paneLines, escapeHtml } from "../../utils/terminal.ts";
 import { beginRestartConfirmation } from "../restart-confirm.ts";
+import { isAdmin } from "../access.ts";
 
 export async function handleSupervisorCallback(ctx: Context): Promise<void> {
   // Only the configured admin chat may trigger supervisor actions.
-  // `TELEGRAM_CHAT_ID` (see bot/commands/restart-grant.ts's isAdmin) is never
-  // set in this deployment — was silently `false` for every caller until fixed 2026-08-31.
-  const adminChatId = CONFIG.SUPERVISOR_CHAT_ID;
-  if (adminChatId && String(ctx.chat?.id) !== adminChatId) {
+  if (!isAdmin(ctx)) {
     await ctx.answerCallbackQuery({ text: "Unauthorized" });
     return;
   }

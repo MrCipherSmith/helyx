@@ -6,20 +6,11 @@
 import type { Context } from "grammy";
 import { InlineKeyboard } from "grammy";
 import { sql } from "../../memory/db.ts";
-import { CONFIG } from "../../config.ts";
 import { renderTmuxHealthLine, TMUX_HEALTH_NAME } from "../../sessions/tmux-server.ts";
 import { LEASE_EXPIRY_MS } from "../../utils/restart-lease.ts";
 import { GATED_RESTART_COMMANDS } from "../../scripts/restart-gate.ts";
 import { beginRestartConfirmation } from "../restart-confirm.ts";
-
-/** `process.env.TELEGRAM_CHAT_ID` — see bot/commands/restart-grant.ts's isAdmin for the full story: that variable has never been set anywhere real, so this was silently `false` for every caller until fixed 2026-08-31. */
-function isAdmin(ctx: Context): boolean {
-  const adminChatId = CONFIG.SUPERVISOR_CHAT_ID;
-  if (!adminChatId) return false; // fail closed — no config, no access
-  // In DMs: chat.id === adminChatId. In forum topics: chat.id is the group id,
-  // but from.id is always the user's personal id (same as DM chat id).
-  return String(ctx.chat?.id) === adminChatId || String(ctx.from?.id) === adminChatId;
-}
+import { isAdmin } from "../access.ts";
 
 async function systemStatus(): Promise<{ lines: string[]; running: boolean; pendingCmd?: string }> {
   const [active, pending, containers] = await Promise.all([

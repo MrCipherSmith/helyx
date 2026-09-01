@@ -13,8 +13,8 @@
 
 import type { Context } from "grammy";
 import { InlineKeyboard } from "grammy";
-import { CONFIG } from "../../config.ts";
 import { getForumChatId } from "../forum-cache.ts";
+import { isAdmin } from "../access.ts";
 
 interface CommandDef {
   name: string;
@@ -159,16 +159,6 @@ async function isForumTopic(ctx: Context): Promise<boolean> {
   return forumChatId !== null && chatId === forumChatId;
 }
 
-// `TELEGRAM_CHAT_ID` (see bot/commands/restart-grant.ts's isAdmin) is never set
-// in this deployment — was silently `false` for every caller until fixed 2026-08-31.
-function isAdminCtx(ctx: Context): boolean {
-  const adminChatId = CONFIG.SUPERVISOR_CHAT_ID;
-  if (!adminChatId) return false;
-  // In DMs: chat.id === adminChatId. In forum topics: chat.id is the group id,
-  // but from.id is always the user's personal id (same as DM chat id).
-  return String(ctx.chat?.id) === adminChatId || String(ctx.from?.id) === adminChatId;
-}
-
 // ── Keyboards ──────────────────────────────────────────────────────────────
 
 function groupsKeyboard(isTopic: boolean, isAdmin: boolean): InlineKeyboard {
@@ -203,7 +193,7 @@ function commandsKeyboard(group: Group): InlineKeyboard {
 
 export async function handleMenu(ctx: Context): Promise<void> {
   const topic = await isForumTopic(ctx);
-  await ctx.reply("Choose a category:", { reply_markup: groupsKeyboard(topic, isAdminCtx(ctx)) });
+  await ctx.reply("Choose a category:", { reply_markup: groupsKeyboard(topic, isAdmin(ctx)) });
 }
 
 function ignoreNotModified(err: unknown): void {
@@ -218,7 +208,7 @@ export async function handleMenuCallback(ctx: Context): Promise<void> {
   if (rest === "home") {
     const topic = await isForumTopic(ctx);
     await ctx.answerCallbackQuery();
-    await ctx.editMessageText("Choose a category:", { reply_markup: groupsKeyboard(topic, isAdminCtx(ctx)) }).catch(ignoreNotModified);
+    await ctx.editMessageText("Choose a category:", { reply_markup: groupsKeyboard(topic, isAdmin(ctx)) }).catch(ignoreNotModified);
     return;
   }
 

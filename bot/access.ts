@@ -32,3 +32,30 @@ export async function accessMiddleware(
   // Silently drop unauthorized messages
   logger.warn({ userId }, "access denied");
 }
+
+/**
+ * Is this update from the configured admin (`CONFIG.SUPERVISOR_CHAT_ID`)?
+ *
+ * Fails closed: an unset `SUPERVISOR_CHAT_ID` denies everyone, rather than
+ * (as a naive `adminChatId && …` short-circuit would) granting everyone.
+ * `SUPERVISOR_CHAT_ID` defaults to `""` and is documented as a supported
+ * "notifications disabled" state (config.ts), so this is not a hypothetical.
+ *
+ * Checks both `chat.id` and `from.id`: in DMs they're the same value, but in
+ * forum topics `chat.id` is the group's id while `from.id` is the admin's own
+ * personal id — only the latter matches `SUPERVISOR_CHAT_ID` there.
+ *
+ * Single source of truth for this check. Previously reimplemented
+ * independently in six places (bot/commands/{system,restart-grant,menu,
+ * monitor,supervisor-actions,prepare-restart}.ts); two of those copies
+ * (monitor.ts, supervisor-actions.ts) had silently drifted into a fail-open
+ * `adminChatId && chat.id !== adminChatId` shape, and two more (monitor.ts,
+ * supervisor-actions.ts again) were missing the `from.id` fallback — see
+ * review findings F-001/F-001b (security) and F-004 (architecture),
+ * 2026-09-01.
+ */
+export function isAdmin(ctx: Context): boolean {
+  const adminChatId = CONFIG.SUPERVISOR_CHAT_ID;
+  if (!adminChatId) return false; // fail closed — no config, no access
+  return String(ctx.chat?.id) === adminChatId || String(ctx.from?.id) === adminChatId;
+}
