@@ -16,7 +16,8 @@ export interface ClaudeModelUsage {
   cache_creation_tokens: number;
   cache_read_tokens: number;
   output_tokens: number;
-  cost_usd: number;
+  /** Null when `model` has no entry in ANTHROPIC_PRICES — cost is unknown, not zero. */
+  cost_usd: number | null;
 }
 
 export interface ClaudeCodeUsageSummary {
@@ -30,19 +31,45 @@ export interface ClaudeCodeUsageSummary {
   scanned_files: number;
 }
 
-// Prices per million tokens [input, cacheWrite, cacheRead, output]
+// Prices per million tokens [input, cacheWrite (5m), cacheRead, output].
+// cacheWrite/cacheRead follow Anthropic's documented ratios of the input
+// price (1.25x write, 0.1x read) unless a model publishes its own.
+// Keep this in sync with utils/context-usage.ts's WINDOWS table whenever a
+// new model id shows up there.
 const ANTHROPIC_PRICES: Record<string, [number, number, number, number]> = {
-  "claude-opus-4-6":        [15.0, 18.75, 1.50, 75.0],
+  "claude-fable-5":         [10.0, 12.5,  1.0,  50.0],
+  "claude-mythos-5":        [10.0, 12.5,  1.0,  50.0],
+  "claude-opus-5":          [5.0,  6.25,  0.50, 25.0],
+  "claude-opus-4-8":        [5.0,  6.25,  0.50, 25.0],
+  "claude-opus-4-7":        [5.0,  6.25,  0.50, 25.0],
+  "claude-opus-4-6":        [5.0,  6.25,  0.50, 25.0],
   "claude-opus-4-5":        [15.0, 18.75, 1.50, 75.0],
+  "claude-sonnet-5":        [3.0,  3.75,  0.30, 15.0],
   "claude-sonnet-4-6":      [3.0,  3.75,  0.30, 15.0],
   "claude-sonnet-4-5":      [3.0,  3.75,  0.30, 15.0],
   "claude-sonnet-4-20250514": [3.0, 3.75,  0.30, 15.0],
-  "claude-haiku-4-5":       [0.80, 1.0,   0.08, 4.0],
-  "claude-haiku-4-5-20251001": [0.80, 1.0, 0.08, 4.0],
+  "claude-haiku-4-5":       [1.0,  1.25,  0.10, 5.0],
+  "claude-haiku-4-5-20251001": [1.0, 1.25, 0.10, 5.0],
 };
 
-function calcCost(model: string, inp: number, cacheCreate: number, cacheRead: number, out: number): number {
-  const prices = ANTHROPIC_PRICES[model] ?? ANTHROPIC_PRICES["claude-sonnet-4-6"];
+// Warn at most once per unrecognized model id per process, instead of once
+// per usage entry — a busy session can otherwise flood the log.
+const warnedUnknownModels = new Set<string>();
+
+// Returns null (cost unknown) for a model id with no pricing entry, rather
+// than silently defaulting to another model's rate — a wrong-but-plausible
+// number is worse than an explicit "we don't know" for a cost report.
+function calcCost(model: string, inp: number, cacheCreate: number, cacheRead: number, out: number): number | null {
+  const prices = ANTHROPIC_PRICES[model];
+  if (!prices) {
+    if (!warnedUnknownModels.has(model)) {
+      warnedUnknownModels.add(model);
+      console.warn(
+        `[claude-usage] no pricing entry for model "${model}" — reporting cost as unknown instead of defaulting to another model's rate`,
+      );
+    }
+    return null;
+  }
   return (
     (inp / 1_000_000) * prices[0] +
     (cacheCreate / 1_000_000) * prices[1] +
@@ -89,8 +116,15 @@ export async function getClaudeCodeUsage(
           try { entry = JSON.parse(line); } catch { continue; }
 
           if (entry.type !== "assistant") continue;
-          const ts = entry.timestamp ? new Date(entry.timestamp).getTime() : 0;
-          if (cutoffMs > 0 && ts > 0 && ts < cutoffMs) continue;
+          // An entry with no (or unparseable) timestamp has no way to prove
+          // it falls inside a requested window, and must not default to
+          // being counted in it — 0/NaN previously bypassed the `ts > 0`
+          // guard entirely and such entries were always included regardless
+          // of cutoffMs. Only entries with a genuine parsed timestamp can
+          // pass a windowed (cutoffMs > 0) query now.
+          const parsedTs = entry.timestamp ? new Date(entry.timestamp).getTime() : NaN;
+          const ts = Number.isFinite(parsedTs) && parsedTs > 0 ? parsedTs : 0;
+          if (cutoffMs > 0 && (ts <= 0 || ts < cutoffMs)) continue;
 
           // Usage and model are nested under entry.message
           const msg = entry.message ?? entry;
@@ -129,7 +163,10 @@ export async function getClaudeCodeUsage(
     totalCC += m.cache_creation_tokens;
     totalCR += m.cache_read_tokens;
     totalOut += m.output_tokens;
-    totalCost += cost;
+    // Unknown-cost models are excluded from the total rather than treated as
+    // $0 — otherwise the total silently understates true spend without any
+    // indication that part of it is missing.
+    if (cost !== null) totalCost += cost;
   }
 
   byModel.sort((a, b) => b.requests - a.requests);

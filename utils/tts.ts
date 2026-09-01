@@ -430,7 +430,7 @@ async function synthesizeKokoro(text: string): Promise<Buffer | null> {
 /**
  * Convert text to speech.
  * Provider selection via TTS_PROVIDER env var:
- *   "auto"   — Piper → Yandex → Groq (Russian), Piper → Kokoro → Groq (English)
+ *   "auto"   — Piper → Yandex, then no voice (Russian — Groq is English-only), Piper → Kokoro → Groq (English)
  *   "piper"  — local Piper only (Russian, offline)
  *   "yandex" — Yandex SpeechKit only (Russian, best quality)
  *   "kokoro" — local Kokoro only (English, offline)
@@ -532,7 +532,7 @@ export async function synthesize(text: string): Promise<{ buf: Buffer; fmt: "mp3
     return synthesizeGroq(clean).then(b => wrap(b, "wav"));
   }
 
-  // auto (Russian): Piper → Yandex → Groq
+  // auto (Russian): Piper → Yandex, then no voice (Groq is English-only — never used for Russian)
   // auto (English): Piper(EN) → Kokoro → Groq
   //
   // Yandex used to be first here, for handling mixed Russian/English text
@@ -559,9 +559,21 @@ export async function synthesize(text: string): Promise<{ buf: Buffer; fmt: "mp3
           return { buf, fmt: "mp3" };
         }
       } catch (err) {
-        channelLogger.warn({ err }, "tts: Yandex failed, trying Groq");
+        channelLogger.warn({ err }, "tts: Yandex failed");
       }
     }
+
+    // Piper and Yandex are the only Russian-capable engines in this chain.
+    // Groq Orpheus below is English-only (see synthesizeGroq's docstring) —
+    // falling through to it here would speak Russian text with a voice that
+    // has no Russian phonemes. Stop and report no voice, matching the
+    // !remoteAllowed early return further down for the same "nothing left to
+    // try" situation.
+    channelLogger.warn(
+      {},
+      "tts: Russian text but Piper and Yandex both failed or are unconfigured; no Russian-capable voice available",
+    );
+    return null;
   } else {
     try {
       const buf = await synthesizePiper(clean, false);

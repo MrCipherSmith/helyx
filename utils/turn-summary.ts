@@ -72,7 +72,13 @@ export function isOperatorMessage(entry: TranscriptEntry): boolean {
   const content = entry.message?.content;
   if (typeof content === "string") return true;
   const parts = blocks(entry);
-  return parts.length > 0 && !parts.some((b) => b.type === "tool_result");
+  // A user-role entry can legitimately carry both a tool_result and real new
+  // operator text in the same content array (Claude Code sends exactly this
+  // shape — see anthropic-ollama.ts's documented `[tool_result, text]` case).
+  // Only entries that are *entirely* tool_result blocks are the transcript's
+  // way of handing a tool's output back to the model; anything with at least
+  // one non-tool_result block is the operator actually speaking.
+  return parts.some((b) => b.type !== "tool_result");
 }
 
 /** The entries since the operator last spoke — the turn that just ended. */

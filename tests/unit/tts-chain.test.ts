@@ -186,15 +186,19 @@ describe("the chain", () => {
     expect(doors.piperRuns).toBe(1); // it was tried first
   });
 
-  test("both fail and the chain still reaches the third provider", async () => {
+  test("both Russian-capable providers fail and the chain stops — it never asks the English-only third provider", async () => {
+    // F-018: Groq Orpheus is English-only. The old chain fell through to it
+    // for Russian text whenever Piper and Yandex were both down, producing
+    // garbled audio instead of a clear "no voice" outcome. Even though Groq
+    // is scripted to succeed here, it must never be reached for Russian text.
     settings.TTS_PROVIDER = "auto";
     install({ piper: "fail", yandex: "fail", groq: "ok" });
 
     const result = await synthesize(RUSSIAN);
 
-    expect(result?.fmt).toBe("wav");
-    expect([...(result?.buf ?? [])]).toEqual([4, 5, 6]); // the third provider's bytes
-    expect(doors.spoken.groq).toBeTruthy();
+    expect(result).toBeNull();
+    expect(doors.spoken.groq).toBeUndefined();
+    expect(doors.tried).not.toContain("groq");
   });
 
   test("everything fails and the answer is silence, not a crash", async () => {

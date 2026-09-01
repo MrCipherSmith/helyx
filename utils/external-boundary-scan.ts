@@ -333,7 +333,14 @@ export function redactSpans(payload: string, findings: ScanFinding[], placeholde
   const out: Buffer[] = [];
   let cursor = 0;
   for (const s of spans) {
-    if (s.start < cursor) continue; // overlapping span already covered
+    if (s.start < cursor) {
+      // Overlapping span: its head is already covered by the redaction just
+      // emitted, but it can still reach past that span's end — advance the
+      // cursor to its end too, or the tail beyond the earlier span's end is
+      // left unredacted in the output.
+      cursor = Math.max(cursor, Math.min(s.end, bytes.length));
+      continue;
+    }
     out.push(bytes.subarray(cursor, Math.min(s.start, bytes.length)));
     out.push(marker);
     cursor = Math.min(s.end, bytes.length);

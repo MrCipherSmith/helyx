@@ -100,9 +100,25 @@ function toolOf(entry: TranscriptEntry): { name: string; input: Record<string, u
  * "not working" would throw away the whole reason for asking.
  */
 export function waitingFrom(
-  facts: { lastTool: string | null; agoMs: number | null; openQuestion: boolean },
+  facts: {
+    lastTool: string | null;
+    agoMs: number | null;
+    openQuestion: boolean;
+    /**
+     * A real permission prompt is on screen right now, sourced by the caller
+     * (e.g. a pending `permission_requests` row for this session) — this
+     * module only reads the transcript, which carries no signal of its own
+     * for "blocked on approval" versus "still running". Defaults to false so
+     * every existing caller that doesn't pass it keeps today's behavior.
+     */
+    awaitingPermission?: boolean;
+  },
   idleAfterMs: number = IDLE_AFTER_MS,
 ): Waiting {
+  // Checked first: a permission prompt blocks everything else the same way
+  // an open question does, and takes priority the same way status-format.ts's
+  // resolvePhase() latches "waiting" over its other phase checks.
+  if (facts.awaitingPermission) return "permission";
   if (facts.openQuestion) return "question";
   // The hook that puts a permission prompt on screen is the last thing written
   // before everything stops, so the tool is still the newest entry.
@@ -118,6 +134,8 @@ export interface SnapshotInput {
   agents?: readonly { label: string; lines: readonly string[] }[];
   /** Is a question waiting for the operator right now? */
   openQuestion?: boolean;
+  /** Is a real permission prompt waiting for the operator right now? */
+  awaitingPermission?: boolean;
   now: number;
   idleAfterMs?: number;
 }
@@ -169,7 +187,12 @@ export function snapshotFrom(input: SnapshotInput): SessionSnapshot {
     tools,
     files: files.size,
     waiting: waitingFrom(
-      { lastTool, agoMs, openQuestion: input.openQuestion ?? false },
+      {
+        lastTool,
+        agoMs,
+        openQuestion: input.openQuestion ?? false,
+        awaitingPermission: input.awaitingPermission ?? false,
+      },
       input.idleAfterMs,
     ),
     agents,

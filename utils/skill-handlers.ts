@@ -6,7 +6,7 @@
 // Phase C extension: agent_created_skills lookup + FR-C-6 lazy on-disk
 // write + FR-C-7 use_count increment.
 
-import { mkdir, rename, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { isValidSkillName } from "./skill-format.ts";
 import {
   expandInlineShell,
@@ -34,11 +34,13 @@ async function ensureAgentSkillFile(
 ): Promise<void> {
   const dir = `${skillsDir}/${AGENT_DIR_SUBPATH}/${name}`;
   const finalPath = `${dir}/SKILL.md`;
-  const expectedSize = Buffer.byteLength(body, "utf8");
 
   try {
-    const fileStat = await stat(finalPath);
-    if (fileStat.size === expectedSize) return;
+    // Compare actual content, not just byte length — a same-length edit
+    // (typo fix, word swap) must still be written, or the on-disk copy the
+    // native loader reads goes silently stale.
+    const existing = await readFile(finalPath, "utf8");
+    if (existing === body) return;
   } catch {
     // ENOENT — fall through to create.
   }

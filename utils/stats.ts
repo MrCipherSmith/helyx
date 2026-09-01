@@ -77,7 +77,9 @@ export async function appendLog(
 
 // --- Cost estimation ---
 
-// Prices per million tokens: [input, output]
+// Prices per million tokens: [input, output].
+// Keep in sync with utils/claude-usage.ts's ANTHROPIC_PRICES and
+// utils/context-usage.ts's WINDOWS table whenever a new model id appears.
 const MODEL_PRICES: Record<string, [number, number]> = {
   // OpenRouter Gemma
   "google/gemma-4-31b-it": [0.14, 0.40],
@@ -86,16 +88,37 @@ const MODEL_PRICES: Record<string, [number, number]> = {
   "qwen/qwen3-235b-a22b:free": [0, 0],
   "qwen/qwen3.6-plus:free": [0, 0],
   // Anthropic
-  "claude-opus-4-6": [15.0, 75.0],
+  "claude-fable-5": [10.0, 50.0],
+  "claude-mythos-5": [10.0, 50.0],
+  "claude-opus-5": [5.0, 25.0],
+  "claude-opus-4-8": [5.0, 25.0],
+  "claude-opus-4-7": [5.0, 25.0],
+  "claude-opus-4-6": [5.0, 25.0],
+  "claude-sonnet-5": [3.0, 15.0],
   "claude-sonnet-4-6": [3.0, 15.0],
   "claude-sonnet-4-20250514": [3.0, 15.0],
-  "claude-haiku-4-5-20251001": [0.80, 4.0],
-  "claude-haiku-4-5": [0.80, 4.0],
+  "claude-haiku-4-5-20251001": [1.0, 5.0],
+  "claude-haiku-4-5": [1.0, 5.0],
 };
 
-function estimateCost(model: string, inputTokens: number, outputTokens: number): number {
+// Warn at most once per unrecognized model id per process rather than once
+// per stats query.
+const warnedUnknownStatsModels = new Set<string>();
+
+// Returns null (cost unknown) for an unrecognized model id instead of
+// silently reporting $0 — a bare 0 reads as "confirmed free," which is wrong
+// for any model that simply isn't in the table yet.
+function estimateCost(model: string, inputTokens: number, outputTokens: number): number | null {
   const prices = MODEL_PRICES[model];
-  if (!prices) return 0;
+  if (!prices) {
+    if (!warnedUnknownStatsModels.has(model)) {
+      warnedUnknownStatsModels.add(model);
+      console.warn(
+        `[stats] no pricing entry for model "${model}" — reporting cost as unknown instead of $0`,
+      );
+    }
+    return null;
+  }
   return (inputTokens / 1_000_000) * prices[0] + (outputTokens / 1_000_000) * prices[1];
 }
 
@@ -186,7 +209,9 @@ export async function getApiStats() {
       row.cost = estimateCost(row.model, row.input_tokens, row.output_tokens);
     }
     let totalCost = 0;
-    for (const row of byProvider) totalCost += row.cost;
+    // Skip rows whose cost is unknown (null) rather than letting them poison
+    // the sum into NaN or silently count as $0.
+    for (const row of byProvider) if (row.cost !== null) totalCost += row.cost;
     summary.estimated_cost = totalCost;
 
     results[w.label] = { summary, byProvider, bySession, byProject, byOperation };

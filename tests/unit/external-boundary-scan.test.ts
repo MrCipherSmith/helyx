@@ -141,6 +141,26 @@ describe("redactSpans", () => {
     const f: ScanFinding = { id: "x", policyId: "p", severity: "low", category: "secret", action: "block" };
     expect(redactSpans("anything", [f])).toBe("[REDACTED]");
   });
+
+  it("fully redacts a later span that overlaps but reaches past an earlier one (F-016)", () => {
+    // Two findings on the same payload: one at [10,30), a second at [20,40)
+    // that starts inside the first but extends 10 bytes beyond its end.
+    // Before the fix, the merge loop skipped the overlapping second span
+    // entirely without advancing the cursor to its own end, leaving bytes
+    // 30..40 — the flagged tail of the second finding — unredacted in the
+    // output.
+    const payload = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQR"; // 44 chars
+    const findings: ScanFinding[] = [
+      { id: "a", policyId: "p", severity: "low", category: "secret", action: "block", location: { line: 1, column: 1, start: 10, end: 30 } },
+      { id: "b", policyId: "p", severity: "low", category: "secret", action: "block", location: { line: 1, column: 1, start: 20, end: 40 } },
+    ];
+
+    const redacted = redactSpans(payload, findings);
+
+    expect(redacted).toBe("abcdefghij[REDACTED]OPQR");
+    // Bytes 30..40 are the finding-b tail this bug used to leak verbatim.
+    expect(redacted).not.toContain(payload.slice(30, 40));
+  });
 });
 
 describe("redactForInbound", () => {
