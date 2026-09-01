@@ -25,7 +25,10 @@ test.describe("GET /api/sessions", () => {
   test("sessions have required fields", async ({ request, authHeaders }) => {
     const res = await request.get(`${BASE}/api/sessions`, { headers: authHeaders });
     const sessions = await res.json();
-    if (sessions.length === 0) return;
+    // [F-002] A silent `return` here reported as an ordinary pass with zero
+    // assertions run, indistinguishable in the report from a genuine pass.
+    // test.skip() makes the empty precondition visible instead.
+    if (sessions.length === 0) test.skip();
     const s = sessions[0];
     expect(s).toHaveProperty("id");
     expect(s).toHaveProperty("status");
@@ -37,6 +40,10 @@ test.describe("GET /api/sessions", () => {
   test("excludes standalone session (id=0)", async ({ request, authHeaders }) => {
     const res = await request.get(`${BASE}/api/sessions`, { headers: authHeaders });
     const sessions = await res.json();
+    // [F-002] Array.prototype.every() on an empty array is vacuously true, so
+    // this used to pass identically whether the exclusion logic works or the
+    // deployment simply has zero sessions. Skip rather than assert nothing.
+    if (sessions.length === 0) test.skip();
     expect(sessions.every((s: any) => s.id !== 0)).toBe(true);
   });
 });
