@@ -27,13 +27,14 @@
 import type postgres from "postgres";
 import { join, resolve } from "node:path";
 import { existsSync } from "node:fs";
+import { readdir, stat, open } from "node:fs/promises";
 import { forceSummarize } from "../memory/summarizer.ts";
 import { clearCache } from "../memory/short-term.ts";
 import { ErrorWindow } from "../utils/error-stream.ts";
 import { getReviewerStatuses, type ReviewerStatus } from "../services/reviewer-service.ts";
 import { persistReviewRun, scheduledReviewDecision, type ScheduledReviewState } from "../services/review-artifacts.ts";
 import { runReviewers, gitReviewDiff } from "../services/reviewer-service.ts";
-import { TranscriptTail, resolveTranscript, claudeConfigRoot } from "../utils/transcript-locate.ts";
+import { TranscriptTail, claudeConfigRoot, declaredCwd, MAX_CANDIDATES } from "../utils/transcript-locate.ts";
 import {
   decideCrossing,
   newestContextTokens,
@@ -410,7 +411,12 @@ export async function checkHungSessions(
         s.pane_snapshot,
         s.pane_snapshot_at
       FROM sessions s
-      LEFT JOIN active_status_messages asm ON asm.session_id = s.id
+      LEFT JOIN LATERAL (
+        SELECT * FROM active_status_messages
+        WHERE session_id = s.id
+        ORDER BY updated_at DESC
+        LIMIT 1
+      ) asm ON true
       JOIN projects p ON p.id = s.project_id AND p.tmux_session_name = 'bots'
       WHERE s.status = 'active'
         AND (
@@ -969,7 +975,12 @@ export async function sendStatusBroadcast(sql: postgres.Sql, runShell: RunShell)
           WHERE mq.session_id = s.id AND mq.delivered = false
         ) AS pending_msgs
       FROM sessions s
-      LEFT JOIN active_status_messages asm ON asm.session_id = s.id
+      LEFT JOIN LATERAL (
+        SELECT * FROM active_status_messages
+        WHERE session_id = s.id
+        ORDER BY updated_at DESC
+        LIMIT 1
+      ) asm ON true
       LEFT JOIN projects p ON p.path = s.project_path
       LEFT JOIN providers pv ON pv.id = p.provider_id
       WHERE s.status = 'active' AND s.id != 0
@@ -1185,8 +1196,14 @@ export function autoCompactEnabled(): boolean {
 
 /** Reading the tail of a transcript, and summarising — the two things a test cannot do for real. */
 export interface ContextPressureDeps {
-  /** The newest context measurement for this project, or null when unknown. */
-  readContext: (projectPath: string) => Promise<ContextReading>;
+  /**
+   * The newest context measurement for this project, or null when unknown.
+   *
+   * The optional `candidates` param lets `checkContextPressure` share one
+   * transcript-directory scan across every session it checks in a tick
+   * instead of each session's read triggering its own full scan (F-001).
+   */
+  readContext: (projectPath: string, candidates?: TranscriptCandidate[]) => Promise<ContextReading>;
   /** What to run when the threshold is crossed. */
   summarize: (sessionId: number, chatId: string) => Promise<unknown>;
   /**
@@ -1224,14 +1241,112 @@ export interface ContextReading {
 /** How much of the transcript's end is read to find the newest usage. */
 const CONTEXT_TAIL_BYTES = 256 * 1024;
 
+/** One `.jsonl` transcript found under `<root>/projects`, as `scanTranscriptCandidates` sees it. */
+export interface TranscriptCandidate {
+  path: string;
+  mtimeMs: number;
+}
+
+/**
+ * Every `.jsonl` file one level below `<root>/projects`, newest first.
+ *
+ * Reimplemented locally rather than calling `resolveTranscript()` (which does
+ * this same walk internally on every call, with no sharing across calls).
+ * `checkContextPressure` used to call `readSessionContext` — and through it,
+ * this scan — once per active session inside its per-session loop, so N
+ * sessions in one tick meant N independent full readdir+stat scans of the
+ * same transcript tree (F-001). Exported so `checkContextPressure` can run
+ * this once per tick and hand the result to every session it checks that
+ * tick via `readSessionContext`'s `candidates` parameter.
+ */
+export async function scanTranscriptCandidates(root: string): Promise<TranscriptCandidate[]> {
+  const projectsDir = join(root, "projects");
+  let dirs: string[];
+  try {
+    dirs = await readdir(projectsDir);
+  } catch {
+    return [];
+  }
+
+  const out: TranscriptCandidate[] = [];
+  for (const dir of dirs) {
+    let files: string[];
+    try {
+      files = await readdir(join(projectsDir, dir));
+    } catch {
+      continue;
+    }
+    for (const file of files) {
+      if (!file.endsWith(".jsonl")) continue;
+      const path = join(projectsDir, dir, file);
+      try {
+        const info = await stat(path);
+        if (info.isFile()) out.push({ path, mtimeMs: info.mtimeMs });
+      } catch {
+        /* vanished between readdir and stat — a session that just ended */
+      }
+    }
+  }
+
+  return out.sort((a, b) => b.mtimeMs - a.mtimeMs);
+}
+
+/** The first bytes of a file, enough to hold its first line. */
+async function readTranscriptHead(path: string, bytes = 64 * 1024): Promise<string> {
+  const handle = await open(path, "r").catch(() => null);
+  if (!handle) return "";
+  try {
+    const buffer = Buffer.alloc(bytes);
+    const { bytesRead } = await handle.read(buffer, 0, bytes, 0);
+    return buffer.subarray(0, bytesRead).toString("utf8");
+  } catch {
+    return "";
+  } finally {
+    await handle.close().catch(() => {});
+  }
+}
+
+/** Trailing separators removed, so `/a/b` and `/a/b/` are the same directory. */
+function normalizeProjectPath(path: string): string {
+  return path.length > 1 ? path.replace(/\/+$/, "") : path;
+}
+
+/**
+ * The newest transcript belonging to `projectPath` among a pre-scanned
+ * candidate listing — the matching half of `resolveTranscript`, split out so
+ * the scanning half (`scanTranscriptCandidates`) can be shared across many
+ * calls in the same tick instead of repeated per call.
+ */
+async function matchTranscript(candidates: TranscriptCandidate[], projectPath: string): Promise<string | null> {
+  const wanted = normalizeProjectPath(projectPath);
+  let examined = 0;
+  for (const candidate of candidates) {
+    if (examined >= MAX_CANDIDATES) break;
+    examined++;
+    const cwd = declaredCwd(await readTranscriptHead(candidate.path));
+    if (!cwd || normalizeProjectPath(cwd) !== wanted) continue;
+    return candidate.path;
+  }
+  return null;
+}
+
 /**
  * The newest context measurement for a project, from its transcript.
  *
  * Separated from the loop because it is the only part that touches a disk, and
  * the loop's decisions are worth testing without one.
+ *
+ * `candidates`, when given (by `checkContextPressure`, once per tick), skips
+ * this call's own directory scan entirely and matches straight against the
+ * shared listing (F-001). Omitting it (any other caller) falls back to
+ * scanning fresh, so this function's standalone behaviour is unchanged.
  */
-export async function readSessionContext(projectPath: string): Promise<ContextReading> {
-  const path = await resolveTranscript(projectPath, claudeConfigRoot()).catch(() => null);
+export async function readSessionContext(
+  projectPath: string,
+  candidates?: TranscriptCandidate[],
+): Promise<ContextReading> {
+  const list = candidates ?? (await scanTranscriptCandidates(claudeConfigRoot()).catch(() => []));
+  const path = await matchTranscript(list, projectPath).catch(() => null);
   if (!path) return { tokens: null, window: null };
   const size = await Bun.file(path).size;
   // `near`, not `at`. An arbitrary byte offset is not a record boundary, and
@@ -1343,7 +1458,12 @@ export async function checkContextPressure(sql: postgres.Sql, deps: ContextPress
       s.metadata
     FROM sessions s
     LEFT JOIN projects p ON p.path = s.project_path
-    LEFT JOIN active_status_messages asm ON asm.session_id = s.id
+    LEFT JOIN LATERAL (
+      SELECT * FROM active_status_messages
+      WHERE session_id = s.id
+      ORDER BY updated_at DESC
+      LIMIT 1
+    ) asm ON true
     WHERE s.status = 'active' AND s.id != 0 AND s.project_path IS NOT NULL
   `.catch(() => [] as any[]);
 
@@ -1355,6 +1475,13 @@ export async function checkContextPressure(sql: postgres.Sql, deps: ContextPress
   // silence its summaries from its first tick.
   const seen = new Set<number>();
 
+  // One scan of the transcript tree for the whole tick, shared by every
+  // session's readContext call below, instead of each call re-scanning the
+  // same tree independently (F-001).
+  const transcriptCandidates = await scanTranscriptCandidates(claudeConfigRoot()).catch(
+    () => [] as TranscriptCandidate[],
+  );
+
   for (const row of rows as any[]) {
     const sessionId = Number(row.session_id);
     // The tmux window is named after the project — the same name
@@ -1363,7 +1490,7 @@ export async function checkContextPressure(sql: postgres.Sql, deps: ContextPress
     const chatId = row.chat_id ? String(row.chat_id) : null;
 
     const reading = await deps
-      .readContext(String(row.project_path))
+      .readContext(String(row.project_path), transcriptCandidates)
       .catch(() => ({ tokens: null, window: null }) as ContextReading);
 
     // A window, once reported, is kept: it does not change while the session
