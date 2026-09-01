@@ -362,13 +362,23 @@ type ToolDeps = {
 };
 
 /**
- * F-004: reply/send_photo/react/edit_message used to trust `chat_id` straight
- * from the tool-call arguments, with nothing checking it belonged to the
- * calling session — a session for one project could address any chat this
- * bot's single token can reach. A session's authorized chats are the shared
- * forum supergroup (a topic id, not the chat id, is what separates projects
- * there) and any DM chat currently bound to it via
- * `chat_sessions.active_session_id`.
+ * F-004: reply and send_photo used to trust `chat_id` straight from the
+ * tool-call arguments, with nothing checking it against chats this bot's
+ * fleet actually manages — a session for one project (potentially steered by
+ * attacker-controlled content it read) could address any chat the bot's
+ * single token can reach, including one it has never talked to. A chat is
+ * authorized when it is this project's forum supergroup (a topic id, not the
+ * chat id, is what separates projects there) or any chat already tracked in
+ * `chat_sessions` — a background session replying into a chat it is not
+ * currently "active" for (see `isActiveDm` below, an intentional, existing
+ * feature) is not blocked by this; only chats this bot has never registered
+ * a session against are.
+ *
+ * Not applied to `react`/`edit_message` here: both act on a `message_id`
+ * that already exists in a chat, a materially smaller exposure than
+ * `reply`/`send_photo` posting fresh content or a file's bytes into a
+ * caller-chosen destination (see mcp/tools.ts's `react`/`edit_message`
+ * cases, on the fleet-wide MCP surface, where the same check is applied).
  *
  * A session that has not been assigned yet (`sessionId === null`, e.g. an
  * early tool call before adoption/registration completes) is let through
@@ -376,12 +386,10 @@ type ToolDeps = {
  * denying it would break session bootstrap rather than protect anything.
  */
 async function isAuthorizedChat(ctx: ToolContext, sessionId: number | null, chatId: string): Promise<boolean> {
+  if (sessionId === null) return true;
   const forumChatId = ctx.forumChatId?.();
   if (forumChatId && chatId === forumChatId) return true;
-  if (sessionId === null) return true;
-  const rows = await ctx.sql`
-    SELECT 1 FROM chat_sessions WHERE active_session_id = ${sessionId} AND chat_id = ${chatId}
-  `;
+  const rows = await ctx.sql`SELECT 1 FROM chat_sessions WHERE chat_id = ${chatId}`;
   return rows.length > 0;
 }
 
@@ -429,6 +437,11 @@ async function handleTelegramTool(
         if (!token) {
           channelLogger.warn("reply: no TELEGRAM_BOT_TOKEN");
           return text("TELEGRAM_BOT_TOKEN not set");
+        }
+
+        if (!(await isAuthorizedChat(ctx, sessionId, chatId))) {
+          channelLogger.warn({ chatId, sessionId }, "reply: chat_id not tracked by this bot — refused");
+          return text(`reply: chat ${chatId} is not a chat this bot manages`);
         }
 
         // In forum mode: inject message_thread_id so reply lands in the project topic.
@@ -643,6 +656,20 @@ async function handleTelegramTool(
         const photoUrl = String(args!.url);
         const captionRaw = args!.caption ? String(args!.caption) : undefined;
         const captionHtml = captionRaw ? markdownToTelegramHtml(captionRaw) : undefined;
+
+        if (!(await isAuthorizedChat(ctx, sessionId, chatId))) {
+          channelLogger.warn({ chatId, sessionId }, "send_photo: chat_id not tracked by this bot — refused");
+          return text(`send_photo: chat ${chatId} is not a chat this bot manages`);
+        }
+
+        // F-002b: a local path is read straight off this process's disk and
+        // uploaded — confine it to this project's own directory tree or the
+        // shared projects root, the same boundary scan_project_knowledge
+        // already enforces for reading project files.
+        if (photoUrl.startsWith("/") && !isAllowedLocalPhotoPath(photoUrl, ctx.projectPath)) {
+          channelLogger.warn({ photoUrl }, "send_photo: local path outside allowed roots — refused");
+          return text(`send_photo: local path must be within the current project or ${process.env.HOST_PROJECTS_DIR ?? process.env.HOME ?? "/home"}`);
+        }
 
         const forumChatId = ctx.forumChatId?.();
         const isAddressedToForum = !!(forumChatId && chatId === forumChatId);

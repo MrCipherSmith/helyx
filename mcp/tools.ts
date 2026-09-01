@@ -12,6 +12,7 @@ import { distillSkill, listAgentSkills, approveSkill, rejectSkill, validateSkill
 import { sendSkillApprovalMessage } from "../utils/skill-approval.ts";
 import { runCurator, getCuratorRuns } from "../utils/curator.ts";
 import { validateReplyGate } from "../orchestrator/gate.ts";
+import { getForumChatId } from "../bot/forum-cache.ts";
 
 // Tool definitions for MCP registration
 export const TOOL_DEFINITIONS = [
@@ -133,19 +134,6 @@ export const TOOL_DEFINITIONS = [
         parse_mode: { type: "string", enum: ["Markdown", "MarkdownV2", "HTML"] },
       },
       required: ["chat_id", "message_id", "text"],
-    },
-  },
-  {
-    name: "send_photo",
-    description: "Send a photo to a Telegram chat. Pass a public image URL (http/https) — Telegram will download it directly. Or pass an absolute local file path (starting with /) for locally downloaded images.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        chat_id: { type: "string", description: "Telegram chat ID" },
-        url: { type: "string", description: "Public image URL (https://...) or absolute local file path (/tmp/image.jpg)" },
-        caption: { type: "string", description: "Optional caption text" },
-      },
-      required: ["chat_id", "url"],
     },
   },
   // Session tools
@@ -275,6 +263,32 @@ export const TOOL_DEFINITIONS = [
   },
 ];
 
+/**
+ * F-004: reply/react/edit_message used to trust `chat_id` straight from the
+ * tool-call arguments, with nothing checking it against chats this bot's
+ * fleet actually manages — any connected session (one project's, potentially
+ * compromised by prompt-injected content) could address any chat the bot's
+ * single token can reach, including one it has never talked to. A chat is
+ * authorized when it is the shared forum supergroup (a topic id, not the
+ * chat id, is what separates projects there) or any chat already tracked in
+ * `chat_sessions` — a session legitimately replying into a chat it is not
+ * currently "active" for (e.g. a background task finishing after the
+ * operator switched away) is not blocked by this, only chats this bot has
+ * never registered a session against are.
+ *
+ * A session that cannot be resolved at all (no `_clientId`) is let through
+ * unchanged and never touches the database for this check — the same
+ * session-less path `tests/unit/operator-channel-no-scan.test.ts` exercises
+ * deliberately without a DB double.
+ */
+async function isAuthorizedChat(sessionId: number | undefined, chatId: number): Promise<boolean> {
+  if (sessionId === undefined) return true;
+  const forumChatId = await getForumChatId();
+  if (forumChatId && String(chatId) === forumChatId) return true;
+  const rows = await sql`SELECT 1 FROM chat_sessions WHERE chat_id = ${String(chatId)}`;
+  return rows.length > 0;
+}
+
 // Tool execution
 export async function executeTool(
   name: string,
@@ -399,6 +413,11 @@ export async function executeTool(
         }
       }
 
+      if (!(await isAuthorizedChat(sessionId ?? undefined, chatId))) {
+        console.warn(`[tools] reply: chat ${chatId} is not associated with session ${sessionId} — refused`);
+        return text(`reply: chat ${args.chat_id} is not associated with this session`);
+      }
+
       const replyGate = await validateReplyGate({
         sql,
         sessionId,
@@ -447,8 +466,14 @@ export async function executeTool(
 
     case "react": {
       if (!bot) return text("Telegram bot not available");
+      const chatId = Number(args.chat_id);
+      const reactSessionId = clientId ? sessionManager.getSessionIdByClient(clientId) : undefined;
+      if (!(await isAuthorizedChat(reactSessionId, chatId))) {
+        console.warn(`[tools] react: chat ${chatId} is not associated with session ${reactSessionId} — refused`);
+        return text(`react: chat ${args.chat_id} is not associated with this session`);
+      }
       await bot.api.setMessageReaction(
-        Number(args.chat_id),
+        chatId,
         args.message_id as number,
         [{ type: "emoji", emoji: args.emoji as any }],
       );
@@ -457,30 +482,19 @@ export async function executeTool(
 
     case "edit_message": {
       if (!bot) return text("Telegram bot not available");
+      const chatId = Number(args.chat_id);
+      const editSessionId = clientId ? sessionManager.getSessionIdByClient(clientId) : undefined;
+      if (!(await isAuthorizedChat(editSessionId, chatId))) {
+        console.warn(`[tools] edit_message: chat ${chatId} is not associated with session ${editSessionId} — refused`);
+        return text(`edit_message: chat ${args.chat_id} is not associated with this session`);
+      }
       await bot.api.editMessageText(
-        Number(args.chat_id),
+        chatId,
         args.message_id as number,
         args.text as string,
         { parse_mode: args.parse_mode as any },
       );
       return text(`Edited message ${args.message_id}`);
-    }
-
-    case "send_photo": {
-      if (!bot) return text("Telegram bot not available");
-      const photoUrl = String(args.url);
-      const caption = args.caption ? String(args.caption) : undefined;
-      const chatId = Number(args.chat_id);
-      if (photoUrl.startsWith("/")) {
-        const { InputFile } = await import("grammy");
-        const file = Bun.file(photoUrl);
-        if (!(await file.exists())) return text(`File not found: ${photoUrl}`);
-        const bytes = new Uint8Array(await file.arrayBuffer());
-        const msg = await bot.api.sendPhoto(chatId, new InputFile(bytes, photoUrl.split("/").pop()), { caption });
-        return text(`Photo sent (message_id=${msg.message_id})`);
-      }
-      const msg = await bot.api.sendPhoto(chatId, photoUrl, { caption });
-      return text(`Photo sent (message_id=${msg.message_id})`);
     }
 
     // Session tools

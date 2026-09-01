@@ -143,6 +143,10 @@ export class PermissionHandler {
 
     if (!chatId) {
       channelLogger.warn({ sessionId }, "no chat for session, auto-denying");
+      await this.ctx.mcp.notification({
+        method: "notifications/claude/channel/permission",
+        params: { request_id, behavior: "deny" },
+      });
       return;
     }
 
@@ -247,7 +251,14 @@ export class PermissionHandler {
       return;
     }
 
-    if (!token) return;
+    if (!token) {
+      channelLogger.warn({ sessionId, requestId: request_id }, "no TELEGRAM_BOT_TOKEN, auto-denying");
+      await this.ctx.mcp.notification({
+        method: "notifications/claude/channel/permission",
+        params: { request_id, behavior: "deny" },
+      });
+      return;
+    }
 
     const { desc, descMain, descDiff } = this.buildDetail(toolName, input, description);
     const previewContent = this.buildPreview(toolName, input, params.input_preview ?? params.input ?? "");
