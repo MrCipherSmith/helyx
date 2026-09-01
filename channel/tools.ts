@@ -20,6 +20,7 @@ import { distillSkill, listAgentSkills, approveSkill, rejectSkill, validateSkill
 import { sendSkillApprovalMessage } from "../utils/skill-approval.ts";
 import { runCurator, getCuratorRuns } from "../utils/curator.ts";
 import { validateReplyGate } from "../orchestrator/gate.ts";
+import { containsPath } from "../utils/request-guards.ts";
 
 export interface ToolContext {
   sql: postgres.Sql;
@@ -361,6 +362,45 @@ type ToolDeps = {
 };
 
 /**
+ * F-004: reply/send_photo/react/edit_message used to trust `chat_id` straight
+ * from the tool-call arguments, with nothing checking it belonged to the
+ * calling session — a session for one project could address any chat this
+ * bot's single token can reach. A session's authorized chats are the shared
+ * forum supergroup (a topic id, not the chat id, is what separates projects
+ * there) and any DM chat currently bound to it via
+ * `chat_sessions.active_session_id`.
+ *
+ * A session that has not been assigned yet (`sessionId === null`, e.g. an
+ * early tool call before adoption/registration completes) is let through
+ * unchanged — there is no session state yet to check the chat against, and
+ * denying it would break session bootstrap rather than protect anything.
+ */
+async function isAuthorizedChat(ctx: ToolContext, sessionId: number | null, chatId: string): Promise<boolean> {
+  const forumChatId = ctx.forumChatId?.();
+  if (forumChatId && chatId === forumChatId) return true;
+  if (sessionId === null) return true;
+  const rows = await ctx.sql`
+    SELECT 1 FROM chat_sessions WHERE active_session_id = ${sessionId} AND chat_id = ${chatId}
+  `;
+  return rows.length > 0;
+}
+
+/**
+ * F-002b: `sendTelegramPhoto` reads any absolute path `Bun.file()` can open
+ * and uploads it — a session steered by attacker-controlled content (a
+ * malicious repo, a fetched page) could be made to read host-mounted
+ * credentials or another project's transcript this way. Mirrors
+ * `scan_project_knowledge`'s allowed-root check below, using `containsPath`'s
+ * separator-aware containment instead of a bare `startsWith`.
+ */
+function isAllowedLocalPhotoPath(photoPath: string, projectPath: string): boolean {
+  const allowedRoot = process.env.HOST_PROJECTS_DIR ?? process.env.HOME ?? "/home";
+  if (containsPath(allowedRoot, photoPath)) return true;
+  if (projectPath && containsPath(projectPath, photoPath)) return true;
+  return false;
+}
+
+/**
  * Everything that puts something in front of the user: replies, photos,
  * reactions, edits and polls.
  *
@@ -657,7 +697,11 @@ async function handleTelegramTool(
           const htmlText = markdownToTelegramHtml(String(args!.text));
           const htmlResult = await editTelegramMessage(token, String(args!.chat_id), Number(args!.message_id), htmlText, { parse_mode: "HTML" });
           if (!htmlResult.ok && htmlResult.errorBody?.includes("can't parse entities")) {
-            await editTelegramMessage(token, String(args!.chat_id), Number(args!.message_id), String(args!.text));
+            const plainResult = await editTelegramMessage(token, String(args!.chat_id), Number(args!.message_id), String(args!.text));
+            if (!plainResult.ok) {
+              channelLogger.warn({ error: plainResult.errorBody }, "edit_message: Telegram API error (plain-text fallback)");
+              return text(`Telegram API error: ${plainResult.errorBody}`);
+            }
           } else if (!htmlResult.ok) {
             channelLogger.warn({ error: htmlResult.errorBody }, "edit_message: Telegram API error");
             return text(`Telegram API error: ${htmlResult.errorBody}`);

@@ -303,11 +303,17 @@ async function main() {
       channelLogger.error("shutdown did not finish in time — exiting hard");
       process.exit(code);
     }, 10_000).unref();
-    shutdown().catch(() => process.exit(code));
+    shutdown(code).catch(() => process.exit(code));
   };
 
   let shuttingDown = false;
-  const shutdown = async () => {
+  // Takes the exit code the caller intended, rather than always exiting 0.
+  // `leave(1)`'s two callers (heartbeat DB error, lease lost) are error
+  // conditions that need a non-zero exit for anything watching the process
+  // to tell them apart from a clean shutdown; the signal/stdin handlers below
+  // call it with no argument, which keeps the historical "exit 0 on a normal
+  // signal-driven stop" behavior.
+  const shutdown = async (code = 0) => {
     if (shuttingDown) return;
     shuttingDown = true;
     poller.stop();
@@ -317,13 +323,13 @@ async function main() {
 
     await sessionMgr.markDisconnected();
     await sql.end();
-    process.exit(0);
+    process.exit(code);
   };
 
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
-  process.stdin.on("close", shutdown);
-  process.stdin.on("end", shutdown);
+  process.on("SIGINT", () => shutdown());
+  process.on("SIGTERM", () => shutdown());
+  process.stdin.on("close", () => shutdown());
+  process.stdin.on("end", () => shutdown());
 }
 
 main().catch(async (err) => {

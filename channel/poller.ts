@@ -134,6 +134,45 @@ function withDeadline<T>(p: Promise<T>, ms: number, label: string): Promise<T | 
   return Promise.race([guardedP, timeoutPromise]);
 }
 
+/**
+ * What a dequeued row's `delivered` flag should become once a race against the
+ * `mcp.notification` deadline is lost.
+ *
+ * A deadline exceeded is not proof of failure — `withDeadline` does not cancel
+ * the original write, it only stops waiting for it, so `notificationPromise`
+ * keeps running underneath. Resetting `delivered = false` right away would let
+ * the next poll tick (or `FOR UPDATE SKIP LOCKED` pass, possibly in this very
+ * process) re-select the same row and send it again while the original write
+ * might still land — the same content delivered to Claude twice with nothing
+ * to detect or suppress the duplicate.
+ *
+ * So the reset is deferred until `notificationPromise` itself settles: a
+ * rejection means delivery is now *confirmed* to have failed, so it is safe
+ * (and necessary, for the stuck-queue detector) to reset `delivered = false`.
+ * A late resolution means the write landed after all, just past the deadline —
+ * `delivered` was already `true` and stays that way, and requeuing it would be
+ * the duplicate this exists to prevent.
+ */
+export function settleAfterDeadline(
+  notificationPromise: Promise<unknown>,
+  sql: postgres.Sql,
+  rowId: number,
+  chatId: string,
+): void {
+  channelLogger.warn(
+    { msgId: rowId, chatId },
+    "mcp.notification deadline exceeded — waiting for it to settle before deciding whether to requeue",
+  );
+  notificationPromise
+    .then(() => {
+      channelLogger.info({ msgId: rowId, chatId }, "mcp.notification: landed after its deadline — leaving delivered=true");
+    })
+    .catch((err) => {
+      channelLogger.warn({ err, msgId: rowId, chatId }, "mcp.notification: failed after its deadline — resetting delivered=false");
+      sql`UPDATE message_queue SET delivered = false WHERE id = ${rowId}`.catch(() => {});
+    });
+}
+
 export interface PollerContext {
   sql: postgres.Sql;
   mcp: Server;
@@ -455,10 +494,7 @@ export class MessageQueuePoller {
           withDeadline(notificationPromise, 5_000, "mcp.notification")
             .then((result) => {
               if (result === DEADLINE_EXCEEDED) {
-                // Deadline fired — notification may not have reached Claude
-                // Reset delivered=false so the stuck-queue detector can catch it
-                channelLogger.warn({ msgId: row.id, chatId: row.chat_id }, "mcp.notification deadline exceeded — resetting delivered=false");
-                this.ctx.sql`UPDATE message_queue SET delivered = false WHERE id = ${row.id}`.catch(() => {});
+                settleAfterDeadline(notificationPromise, this.ctx.sql, row.id, row.chat_id);
               }
             })
             .catch((err) => channelLogger.warn({ err }, "mcp.notification failed"));
