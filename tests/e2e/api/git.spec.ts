@@ -4,7 +4,9 @@
  */
 import { test, expect } from "../fixtures";
 
-const BASE = process.env.TEST_BASE_URL ?? "https://helyx.mrciphersmith.com";
+// [F-002] See ../api/sessions.spec.ts for why this no longer defaults to the
+// live production domain.
+const BASE = process.env.TEST_BASE_URL ?? "http://localhost:3847";
 
 async function getActiveSessionId(request: any, authHeaders: Record<string, string>): Promise<number | null> {
   const res = await request.get(`${BASE}/api/sessions/active`, { headers: authHeaders });

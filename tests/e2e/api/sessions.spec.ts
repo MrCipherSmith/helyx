@@ -4,7 +4,15 @@
  */
 import { test, expect } from "../fixtures";
 
-const BASE = process.env.TEST_BASE_URL ?? "https://helyx.mrciphersmith.com";
+// [F-002] Defaulting to the live production domain meant a developer who
+// forgot to set TEST_BASE_URL silently ran these tests — with a real,
+// cryptographically valid operator JWT (see ../auth.setup.ts) — against the
+// actual bot. The default now points at the throwaway local stack proposed in
+// docs/ROADMAP.md ("GitHub Actions E2E CI — Restore the Workflow"): nothing
+// listens there unless a developer deliberately stands one up, so an
+// unconfigured run fails loudly with a connection error instead of quietly
+// touching production.
+const BASE = process.env.TEST_BASE_URL ?? "http://localhost:3847";
 
 test.describe("GET /api/sessions", () => {
   test("returns array of sessions", async ({ request, authHeaders }) => {

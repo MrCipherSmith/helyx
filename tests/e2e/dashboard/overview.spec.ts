@@ -3,7 +3,9 @@
  */
 import { test, expect } from "../fixtures";
 
-const BASE = process.env.TEST_BASE_URL ?? "https://helyx.mrciphersmith.com";
+// [F-002] See ../api/sessions.spec.ts for why this no longer defaults to the
+// live production domain.
+const BASE = process.env.TEST_BASE_URL ?? "http://localhost:3847";
 
 test.describe("API health", () => {
   test("/api/overview returns db=true", async ({ request, authHeaders }) => {
