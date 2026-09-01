@@ -50,7 +50,11 @@ export async function beginRestartConfirmation(
 
   const issuedBy = ctx.from?.id;
   if (!issuedBy) {
-    await ctx.answerCallbackQuery({ text: "No user on this request" });
+    if (ctx.callbackQuery) {
+      await ctx.answerCallbackQuery({ text: "No user on this request" });
+    } else {
+      await ctx.reply("⛔ No user on this request");
+    }
     return true;
   }
 
