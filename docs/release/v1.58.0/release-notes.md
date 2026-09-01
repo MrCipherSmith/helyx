@@ -81,14 +81,19 @@ Two Postgres migrations landed in this range (v52: the shared rate budget;
 v53: its priority/background split) — both already applied to the running
 database as of this release. No new environment variables.
 
-**This release touches all three halves.** The bot container needs a
-rebuild for the security and rate-budget fixes in `channel/telegram.ts`,
-`mcp/tools.ts`, and `bot/commands/*.ts`. CLI sessions need a bounce — the
-channel subprocess changes (rate budget, path guards, admin checks) do not
-reach a session already running on old code. The admin daemon needs its own
-restart for the tmux fleet-kill fix and the per-project memory ceiling —
-already done once during this review; the fix is live.
+**This release touches all three halves, and all three are already live.**
+The bot container was rebuilt at 15:01:59 UTC on 2026-09-01, after every
+security and rate-budget commit in this range — confirmed by checking the
+running image for `bot/access.ts`'s `isAdmin`, `mcp/tools.ts`'s
+`isAuthorizedChat`, and `channel/status.ts`'s `REOPEN_MAX_ATTEMPTS`, all
+present. CLI sessions were bounced during the incident this release also
+documents (the tmux fleet-kill fix), which happened after every other commit
+in this range, so the channel subprocesses are current too. The admin daemon
+was restarted separately at 18:47:32 UTC for the fleet-kill fix itself, the
+one change that ships only there. Nothing further to deploy for this
+release — the next rebuild/bounce/restart is for whatever ships after it.
 
 ## Note on CI
 
-`Build` is green on the release commit (`362edab`).
+`Build` is green on both commits in this release: the code tip (`362edab`)
+and the docs-only release commit (`684f94c`).
