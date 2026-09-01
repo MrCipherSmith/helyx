@@ -2,6 +2,194 @@
 
 ## Unreleased
 
+## v1.58.0
+
+### feat(telegram): a shared rate budget, split into priority and background lanes
+
+~10 project `channel.ts` subprocesses all send to the same bot token/chat_id,
+and Telegram enforces its rate limit per chat, not per topic — so each
+subprocess throttling itself (typing indicator, an 8s status-edit floor)
+never stopped combined traffic from exceeding the real per-chat budget once
+more than one topic was active. Real replies sat undelivered for 15–30
+minutes at a time in production on 2026-08-31, flushed only when an unrelated
+bot restart happened to run `deliverPendingReplies`.
+
+`utils/telegram-rate-budget.ts` now leases from a single-row Postgres token
+bucket (migration v52) shared across every subprocess, in ~5s batches rather
+than per send. `acquireSendSlot`'s wait is bounded by the caller's own
+deadline instead of looping forever, and the typing indicator backs off on
+429 and drops out entirely in forum mode.
+
+One shared bucket wasn't enough on its own: the typing indicator and
+`status.ts`'s own routine sends (the "working on…" message, the elapsed-time
+spinner edit, pin/unpin/delete on move-to-bottom) kept competing directly
+with real replies for the same pool. The budget was split into two
+Postgres rows (migration v53) — a priority lane for `reply` and the rest of
+`channel/telegram.ts`, and a background lane for typing and `status.ts`'s
+cosmetics — retuned twice against live production traffic (14/6, then
+17/3, then 13/7) as each move exposed the next bottleneck. Response-guard
+alerts ("Claude thinks 5+ min", "session may be stuck") stay on the
+priority lane deliberately: they are telling the operator something is
+broken and need the same protection a real reply gets.
+
+The last piece of the same starvation turned out to be `status.ts`'s own
+continuation-reopen retry: `maybeReopen` retried a failing reopen on every
+~2s activity-monitor poll tick forever, no backoff, no cap, no
+single-flight guard — confirmed live on 2026-09-01 retrying every ~8s for
+12+ hours straight, each attempt spending a background-lane token shared
+across every concurrently-running project. It now backs off exponentially
+(5s base, capped at 5min), gives up after 8 consecutive failures, and
+single-flights concurrent poll ticks for the same key.
+
+flow 064, PR #115, merged as `ce9b9ce`.
+
+### fix(security): admin authorization was open in one direction and broken in the other
+
+`process.env.TELEGRAM_CHAT_ID` is referenced by six admin-check functions
+across `bot/commands/*.ts` but is set nowhere in this deployment. Every
+`isAdmin()`-style check had therefore always returned `false`, silently
+rejecting every admin-gated button and command — which is what made
+"Подтвердить" on the project-stop confirmation appear to do nothing.
+
+Fixing the env var exposed the opposite bug in two more files:
+`monitor.ts` and `supervisor-actions.ts` gated their admin-only handlers
+with `if (adminChatId && chat.id !== adminChatId)`, and with
+`SUPERVISOR_CHAT_ID` unset — a documented, supported "notifications
+disabled" state — the `&&` short-circuits to `false` and the deny branch
+never runs. Every allowed user could reach `restart_daemon`,
+`restart_session`, `stack_up`, `ack`, `pane` (cross-project tmux read) and
+`force_deliver` with no authorization check at all. Root cause was six
+independent reimplementations of "is this Telegram context the admin"
+across `system.ts`, `restart-grant.ts`, `menu.ts`, `monitor.ts`,
+`supervisor-actions.ts` and `prepare-restart.ts`; extracted one
+`isAdmin(ctx)` into `bot/access.ts` and pointed all six call sites at it —
+`prepare-restart.ts` had also never checked the caller was the admin at
+all, closed as a byproduct of the shared helper.
+
+Found by `review-security-code` during a full-project review pass.
+
+### fix(security): a Telegram tool's local-path read had no trust boundary
+
+`channel/telegram.ts`'s `sendTelegramPhoto` read any absolute local path via
+`Bun.file()` with no allowlist and uploaded it to a caller-chosen chat_id,
+reachable through `channel/tools.ts`'s `send_photo` on the per-session MCP
+surface — a session steered by attacker-controlled content could be made to
+read host-mounted credentials or another project's transcript and
+exfiltrate it as a Telegram photo. Confined local paths to the current
+project's directory tree or `HOST_PROJECTS_DIR`/`HOME`, using the same
+separator-aware path check `scan_project_knowledge` already uses. The
+identical, unreachable copy of this bug in `mcp/tools.ts` (never wired up
+by `registerTools()`) was removed outright rather than patched.
+
+`reply`/`react`/`edit_message`/`send_photo` also took `chat_id` directly
+from caller arguments with no check that it belonged to a chat the bot's
+fleet actually manages — one session could address, and combined with the
+path bug above exfiltrate to, any chat the bot's single token can reach.
+Added an authorized-chat check to `reply`/`send_photo` in both tool
+surfaces. Separately, `PermissionHandler.handle()` had two exit paths
+(missing chatId, missing token) that returned without ever sending the
+deny notification a waiting MCP client is blocked on.
+
+Found by `review-security-code` during the same review pass.
+
+### fix: session lifecycle and data-integrity guards from the same review
+
+`/remove` cascade-deleted a session's DB history with no check on
+`session.status`, unlike the inline-button delete path — any user could
+wipe a live, still-running session's history out from under it.
+`sessions/manager.ts`'s `disconnect()` and `deleteOrphanCliSessions()` ran
+a raw `DELETE FROM sessions` instead of the FK-safe cascade helper used
+everywhere else; none of the eight tables referencing `sessions(id)` have
+`ON DELETE CASCADE`, so a session with so much as one referencing row threw
+an unhandled foreign-key violation on ordinary teardown. A third bug fired
+a duplicate "session terminated" notification when a second `disconnect()`
+raced `markStale()`'s sweep on an already-terminated session.
+
+`channel/poller.ts`'s 5-second delivery-deadline race didn't cancel the
+underlying write, so a late-resolving original write and its own requeue
+could both land — the same message reaching Claude twice.
+`edit_message`'s plain-text fallback ran but its result was never checked,
+so a failed fallback still reported success. `channel/index.ts`'s
+`shutdown()` always exited 0 on its happy path, discarding the exit codes
+its own error callers intended.
+
+Elsewhere: the voice-message dedup pre-check queried on the wrong column
+pair, missing the real unique index and surfacing as a hard error instead
+of a silent skip. A resume lookup OR'd project-scoped and chat-scoped
+memory into one query, letting a different project's more-recent row win
+on recency over an older row that actually matched. `tmux-watchdog.ts`
+kept polling a permission response against whatever session now owned a
+tmux window after a crash-restart recreated it with the same name, because
+`WindowState` was never invalidated on a session-id mismatch.
+`output-monitor.ts`'s `tailFile` re-read an entire captured-output file on
+every 2-second poll for the life of a session instead of tracking a byte
+offset — a cost class already fixed once for transcript-tailing but not
+applied here. And `checkHungSessions`/`checkContextPressure`/
+`sendStatusBroadcast` each joined `active_status_messages` unscoped,
+fanning a session with more than one tracked chat out into duplicate rows.
+
+Regression tests were added alongside each of these
+(`session-delete-guards.test.ts`, `poller-deadline-settle.test.ts`,
+`edit-message-fallback.test.ts`, `channel-shutdown-exit-code.test.ts`,
+`status-reopen-backoff.test.ts`, and focused coverage for the tmux-log and
+output-monitor fixes).
+
+Found by `review-architecture` and `review-highload` during the same
+review pass.
+
+### fix: seven smaller correctness findings from the same review
+
+A same-length content edit to a skill file was never rewritten — the
+on-disk comparison used byte length instead of full content.  A session's
+"awaiting permission" state was declared but never actually produced,
+leaving that branch dead. A redaction pass skipped an overlapping finding
+without advancing its cursor to that finding's own end, leaving part of a
+later span unredacted. A turn-summary check rejected any operator message
+that merely contained a `tool_result` block anywhere, even one carrying
+real operator text alongside it. The TTS "auto" pipeline's Russian branch
+fell through to an English-only voice when Piper and Yandex both failed
+instead of returning no voice. Two cost tables silently mis-priced or
+zeroed any unrecognized model id instead of logging and excluding it, and
+one of them counted untimestamped entries as always in-window instead of
+excluding them from a windowed query. A double-quoted string in
+`tmux-log.ts`'s overflow suffix sent `${events.length - 50}` to the user
+literally instead of interpolating it.
+
+Also from the same period: the project-stop confirmation dialog said
+"Restart" regardless of which command it was confirming; the
+restart-confirmation grant TTL was widened from 3 to 10 minutes after 8 of
+the last 10 real grants expired unread; a stale forum-topic cache and
+three call sites with a silent fallback-to-General (found independently,
+after the cache fix didn't explain the operator's continued reports) both
+stopped a project's messages from landing in the wrong topic; and the
+supervisor's status-broadcast now throttles its Telegram-facing
+notification to once per 20 minutes while a problem persists, instead of a
+fresh delete+send every 5-minute check indefinitely.
+
+### feat: an idle-session watchdog with a Stop button
+
+`tmux-watchdog.ts` already detected a stalled session; this adds the other
+half — a session with no queued message, no turn in progress, and no
+pane spinner for 2+ hours gets an alert with a Stop button instead of being
+left running silently. It never stops anything on its own: auto-stopping
+would need the watchdog to act unattended, which needs a declared standing
+grant this project doesn't have today. The button routes through the
+existing operator-confirmed `proj_stop` flow instead.
+
+### fix(restart): a fleet-kill fix — split-panes and the tmux server it took down
+
+`proj_start`'s fallback for a missing `bots` tmux session started the
+entire project fleet with `-s` (split-panes: every project as a pane in
+one window, not a window each). The verification step counts a window per
+project, so a pane-mode start reported failure for every project but the
+first — a false alarm that got a second `proj_start` pressed. That second
+run found the session, and its per-project `kill-window` loop killed the
+one window carrying the whole fleet, taking the tmux server down with it.
+This is exactly what happened in production on 2026-09-01, needing a
+manual `helyx up` to recover. Both `tmux_start` and the `proj_start`
+fallback now start windows only; `-s` remains available as a manual `helyx
+up` flag.
+
 ## v1.57.0
 
 ### feat(security): scan the boundary with the external world (A1)
