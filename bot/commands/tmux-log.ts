@@ -116,7 +116,7 @@ function buildResultText(events: LogEvent[], label: string): string {
   const header = `📜 <b>Tmux Log</b> — ${label} (последние ${events.length} событий)`;
   const body = lines.join("\n");
 
-  return `${header}\n\n${body}${events.length > 50 ? "\n\n<i>…ещё ${events.length - 50} событий</i>" : ""}`;
+  return `${header}\n\n${body}${events.length > 50 ? `\n\n<i>…ещё ${events.length - 50} событий</i>` : ""}`;
 }
 
 function submenuKeyboard(): InlineKeyboard {
