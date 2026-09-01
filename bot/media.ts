@@ -381,7 +381,7 @@ export async function handleVoice(ctx: Context): Promise<void> {
           const tgMsgId = String(ctx.message?.message_id ?? "");
           if (tgMsgId) {
             const dup = await sql`
-              SELECT id FROM message_queue WHERE session_id = ${route.sessionId} AND message_id = ${tgMsgId} LIMIT 1
+              SELECT id FROM message_queue WHERE chat_id = ${chatId} AND message_id = ${tgMsgId} LIMIT 1
             `;
             if (dup.length > 0) {
               appendLog(route.sessionId, chatId, "voice", `duplicate message_id=${tgMsgId}, skipping`);
