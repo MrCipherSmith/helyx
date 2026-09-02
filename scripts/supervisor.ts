@@ -1839,12 +1839,22 @@ export async function checkUnansweredMessages(sql: postgres.Sql): Promise<void> 
             AND m3.role       = 'user'
             AND m3.created_at > m.created_at
         )
-        -- No pending items in queue for this session+chat
+        -- No pending items in queue for this session+chat. A row claimed
+        -- more than 2 minutes ago (flow 065's message_queue.claimed_at,
+        -- migration v55) and still delivered=false is not "legitimately
+        -- in-flight" — the poller never reclaims a claim once taken, so a
+        -- process that crashed between claiming and mcp.notification
+        -- settling would otherwise sit here as "still pending" forever,
+        -- permanently hiding the message from this rescue path too. A
+        -- genuine live claim resolves in seconds, well inside 2 minutes.
+        -- See docs/report/helyx-telegram-delivery-incident/2026-09-02-
+        -- report.md section 10 and flow 065's review findings for T4.
         AND NOT EXISTS (
           SELECT 1 FROM message_queue mq
           WHERE mq.session_id = s.id
             AND mq.chat_id    = m.chat_id
             AND mq.delivered  = false
+            AND (mq.claimed_at IS NULL OR mq.claimed_at > NOW() - INTERVAL '2 minutes')
         )
         -- Claude is NOT actively processing this chat (ASM stale > SESSION_STALE_MS)
         AND NOT EXISTS (
@@ -1899,9 +1909,27 @@ export async function checkUnansweredMessages(sql: postgres.Sql): Promise<void> 
         "Re-injected — previous response was lost during a Claude Code disconnect. Process normally.",
       );
       try {
+        // On conflict the existing row is revived rather than inserted twice:
+        // `telegram_msg_id` above is read from the original, already-delivered
+        // row for this exact (chat_id, message_id), so a plain INSERT here
+        // always collides with `idx_queue_msgid_dedup` (memory/db.ts:478-488)
+        // and raises a duplicate-key error — silently swallowed by the catch
+        // below, so the rescue never actually happened. Same fix, same
+        // pattern as channel/status.ts's response guard (lines 748-762),
+        // which hit the identical bug.
+        //
+        // claimed_at = NULL alongside delivered (flow 065 AC8): the row being
+        // revived here was originally claimed and delivered, so it still
+        // carries the old claim timestamp — the poller's dequeue query now
+        // filters on claimed_at IS NULL, so leaving it set would make this
+        // "rescued" row invisible to every future claim pass.
         await sql`
           INSERT INTO message_queue (session_id, chat_id, from_user, content, message_id, delivered)
           VALUES (${sessionId}, ${chatId}, ${fromUser}, ${reinjectedContent}, ${telegramMsgId ? String(telegramMsgId) : null}, false)
+          ON CONFLICT (chat_id, message_id)
+            WHERE message_id IS NOT NULL AND message_id != '' AND message_id != 'tool'
+          DO UPDATE
+            SET delivered = false, claimed_at = NULL, content = EXCLUDED.content, session_id = EXCLUDED.session_id, from_user = EXCLUDED.from_user
         `;
         console.log(`[supervisor] re-injected lost message for ${project} (chat ${chatId})`);
       } catch (insertErr: any) {

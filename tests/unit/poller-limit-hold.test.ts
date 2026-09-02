@@ -20,7 +20,13 @@ import { MessageQueuePoller, type PollerContext } from "../../channel/poller.ts"
 import type { StatusManager } from "../../channel/status.ts";
 import { FakeSql } from "../fixtures/fake-sql.ts";
 
-const DEQUEUE = "UPDATE message_queue SET delivered = true";
+// The dequeue/claim statement no longer marks `delivered = true` — flow 065
+// AC8 moved that write to after `mcp.notification` actually confirms
+// delivery (see channel/poller.ts and tests/unit/poller-ack-before-delivered.test.ts).
+// Claiming now sets `claimed_at`; this constant tracks that so this file
+// keeps testing "was the dequeue statement issued at all", which is the
+// only thing it ever asserted on.
+const DEQUEUE = "UPDATE message_queue SET claimed_at = now()";
 const SELECT_METADATA = "SELECT metadata FROM sessions";
 
 /** A limit that started now and lifts in `inMs`. */

@@ -5,7 +5,7 @@ import { startMcpHttpServer } from "./mcp/server.ts";
 import { stopAllTimers } from "./memory/summarizer.ts";
 import { runCleanup } from "./cleanup/runner.ts";
 import { permissionService } from "./services/permission-service.ts";
-import { recoverStaleStatusMessages, recoverStaleVoiceStatusMessages, deliverPendingReplies } from "./channel/recovery.ts";
+import { recoverStaleStatusMessages, recoverStaleVoiceStatusMessages, deliverPendingReplies, startPendingReplyRecoveryWorker } from "./channel/recovery.ts";
 import "./adapters/index.ts"; // Register all CLI adapters at startup
 
 const DRY_RUN = process.env.DRY_RUN === "true";
@@ -31,6 +31,11 @@ async function main() {
   await recoverStaleStatusMessages(sql, CONFIG.TELEGRAM_BOT_TOKEN);
   await recoverStaleVoiceStatusMessages(sql, CONFIG.TELEGRAM_BOT_TOKEN);
   await deliverPendingReplies(sql, CONFIG.TELEGRAM_BOT_TOKEN);
+
+  // Alongside the startup-only recovery above: a bounded periodic worker so a
+  // reply that fails *after* startup no longer waits for the next restart to
+  // be retried (flow 065 AC4).
+  const pendingReplyRecoveryWorker = startPendingReplyRecoveryWorker(sql, CONFIG.TELEGRAM_BOT_TOKEN);
 
   // Security check — fail fast if no access control is configured
   if (CONFIG.ALLOWED_USERS.length === 0 && !CONFIG.ALLOW_ALL_USERS) {
@@ -122,6 +127,7 @@ async function main() {
   const shutdown = async () => {
     console.log("[main] shutting down...");
     clearInterval(cleanupTimer);
+    pendingReplyRecoveryWorker.stop();
     stopAllTimers();
 
     // Stop accepting new connections, drain in-flight requests (5s timeout)

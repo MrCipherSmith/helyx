@@ -140,18 +140,19 @@ function withDeadline<T>(p: Promise<T>, ms: number, label: string): Promise<T | 
  *
  * A deadline exceeded is not proof of failure — `withDeadline` does not cancel
  * the original write, it only stops waiting for it, so `notificationPromise`
- * keeps running underneath. Resetting `delivered = false` right away would let
+ * keeps running underneath. Marking the row delivered right away would let
  * the next poll tick (or `FOR UPDATE SKIP LOCKED` pass, possibly in this very
  * process) re-select the same row and send it again while the original write
  * might still land — the same content delivered to Claude twice with nothing
  * to detect or suppress the duplicate.
  *
- * So the reset is deferred until `notificationPromise` itself settles: a
- * rejection means delivery is now *confirmed* to have failed, so it is safe
- * (and necessary, for the stuck-queue detector) to reset `delivered = false`.
- * A late resolution means the write landed after all, just past the deadline —
- * `delivered` was already `true` and stays that way, and requeuing it would be
- * the duplicate this exists to prevent.
+ * So the outcome is deferred until `notificationPromise` itself settles: a
+ * rejection means delivery is now *confirmed* to have failed, so the row is
+ * reset — `delivered = false, claimed_at = NULL` — which is both safe and
+ * necessary for the stuck-queue detector to pick it back up. A late
+ * resolution means the write landed after all, just past the deadline, so
+ * this is the (delayed) confirmation that sets `delivered = true` — the row
+ * was only ever `claimed`, never `delivered`, until this fires.
  */
 export function settleAfterDeadline(
   notificationPromise: Promise<unknown>,
@@ -165,11 +166,12 @@ export function settleAfterDeadline(
   );
   notificationPromise
     .then(() => {
-      channelLogger.info({ msgId: rowId, chatId }, "mcp.notification: landed after its deadline — leaving delivered=true");
+      channelLogger.info({ msgId: rowId, chatId }, "mcp.notification: landed after its deadline — confirming delivered=true");
+      sql`UPDATE message_queue SET delivered = true WHERE id = ${rowId}`.catch(() => {});
     })
     .catch((err) => {
       channelLogger.warn({ err, msgId: rowId, chatId }, "mcp.notification: failed after its deadline — resetting delivered=false");
-      sql`UPDATE message_queue SET delivered = false WHERE id = ${rowId}`.catch(() => {});
+      sql`UPDATE message_queue SET delivered = false, claimed_at = NULL WHERE id = ${rowId}`.catch(() => {});
     });
 }
 
@@ -339,6 +341,16 @@ export class MessageQueuePoller {
         // chat_id != ALL(busyChats): defer delivery for chats with an open status —
         // the next user message stays delivered=false until the current turn ends, so
         // each turn gets its own status/typing cycle instead of being merged inline.
+        //
+        // Claiming sets `claimed_at`, not `delivered` — AC8 (flow 065): the old
+        // combined statement marked `delivered = true` here, before
+        // `mcp.notification` was even attempted, so a fast-rejecting
+        // notification left the row permanently (and wrongly) marked
+        // delivered. `delivered` is now only set once the notification
+        // actually succeeds — see the `.then()`/`.catch()` below and
+        // `settleAfterDeadline`. `claimed_at IS NULL` keeps a claimed row out
+        // of the next pass so it is not re-selected while its notification is
+        // still in flight.
         const busyChats = Array.from(this.status.getBusyChats());
         if (busyChats.length > 0) {
           // Track which busy chats have at least one pending message so we can
@@ -353,10 +365,10 @@ export class MessageQueuePoller {
         const rows = busyChats.length === 0
           ? await this.ctx.sql`
               UPDATE message_queue
-              SET delivered = true
+              SET claimed_at = now()
               WHERE id IN (
                 SELECT id FROM message_queue
-                WHERE session_id = ${sid} AND delivered = false
+                WHERE session_id = ${sid} AND delivered = false AND claimed_at IS NULL
                 ORDER BY created_at
                 LIMIT 10
                 FOR UPDATE SKIP LOCKED
@@ -365,10 +377,10 @@ export class MessageQueuePoller {
             `
           : await this.ctx.sql`
               UPDATE message_queue
-              SET delivered = true
+              SET claimed_at = now()
               WHERE id IN (
                 SELECT id FROM message_queue
-                WHERE session_id = ${sid} AND delivered = false
+                WHERE session_id = ${sid} AND delivered = false AND claimed_at IS NULL
                   AND chat_id != ALL(${busyChats})
                 ORDER BY created_at
                 LIMIT 10
@@ -495,9 +507,23 @@ export class MessageQueuePoller {
             .then((result) => {
               if (result === DEADLINE_EXCEEDED) {
                 settleAfterDeadline(notificationPromise, this.ctx.sql, row.id, row.chat_id);
+              } else {
+                // Notification resolved within the deadline — this is the
+                // first point delivery is actually confirmed, so this is
+                // where `delivered` becomes true (AC8: it was only ever
+                // `claimed` before now).
+                this.ctx.sql`UPDATE message_queue SET delivered = true WHERE id = ${row.id}`
+                  .catch((err) => channelLogger.warn({ err, msgId: row.id }, "mcp.notification: confirm-delivered write failed"));
               }
             })
-            .catch((err) => channelLogger.warn({ err }, "mcp.notification failed"));
+            .catch((err) => {
+              channelLogger.warn({ err }, "mcp.notification failed");
+              // Fast reject (well before the 5s deadline): confirmed failure,
+              // so the row goes back to retryable immediately rather than
+              // staying claimed forever. `settleAfterDeadline` handles the
+              // same outcome for the slow-reject path.
+              this.ctx.sql`UPDATE message_queue SET delivered = false, claimed_at = NULL WHERE id = ${row.id}`.catch(() => {});
+            });
           channelLogger.info({ phase: "poller", step: "notification-sent", msgId: row.id, chatId: row.chat_id, elapsedMs: Date.now() - tDequeue, totalFromQueueMs: Date.now() - new Date(row.created_at).getTime() }, "perf");
 
           // 3. Start progress monitor — status is now registered, updates will land

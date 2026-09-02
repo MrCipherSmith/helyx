@@ -1021,6 +1021,77 @@ const migrations: Migration[] = [
       `;
     },
   },
+  {
+    version: 54,
+    name: "pending_replies.status — pending/sending/delivered/failed/partial state machine (flow 065 P0-B)",
+    up: async (tx) => {
+      // `delivered_at` can only say "delivered" or "not yet" — there is no way
+      // to represent "currently being sent" (a crash mid-flight reads exactly
+      // like a row nothing has touched) or "some chunks got through, some
+      // didn't" (a partially-delivered multi-chunk reply also reads as fully
+      // pending). See docs/report/helyx-telegram-delivery-incident/2026-09-02-
+      // report.md section 9 and flow 065 AC5/AC7.
+      await tx`ALTER TABLE pending_replies ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending'`;
+      // No `ADD CONSTRAINT IF NOT EXISTS` in Postgres for CHECK constraints —
+      // guarded by hand so this `up` stays safe to replay against a database
+      // where the column already landed (e.g. `runMigrations` picking up a
+      // deploy that only got partway through recording `schema_versions`).
+      await tx.unsafe(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE conname = 'pending_replies_status_check'
+          ) THEN
+            ALTER TABLE pending_replies
+            ADD CONSTRAINT pending_replies_status_check
+            CHECK (status IN ('pending', 'sending', 'delivered', 'failed', 'partial'));
+          END IF;
+        END $$;
+      `);
+      // Backfill: rows already marked delivered_at keep meaning "delivered"
+      // under the new column too.
+      await tx`
+        UPDATE pending_replies SET status = 'delivered'
+        WHERE delivered_at IS NOT NULL AND status = 'pending'
+      `;
+      await tx`CREATE INDEX IF NOT EXISTS idx_pending_replies_status ON pending_replies(status)`;
+    },
+    down: async (tx) => {
+      await tx`ALTER TABLE pending_replies DROP CONSTRAINT IF EXISTS pending_replies_status_check`;
+      await tx`ALTER TABLE pending_replies DROP COLUMN IF EXISTS status`;
+    },
+  },
+  {
+    version: 55,
+    name: "message_queue.claimed_at — dequeue no longer marks delivered before mcp.notification succeeds (flow 065 P0-C / AC8)",
+    up: async (tx) => {
+      // `channel/poller.ts`'s dequeue statement used to set `delivered = true`
+      // in the very same UPDATE that claimed the row for delivery — before
+      // `mcp.notification` (the write that actually hands the message to
+      // Claude) was even attempted. A fast rejection of that notification was
+      // only logged, never reverted, so the row stayed `delivered = true`
+      // forever even though delivery had just failed. See
+      // docs/report/helyx-telegram-delivery-incident/2026-09-02-report.md
+      // section 10.1 and flow 065 AC8.
+      //
+      // `claimed_at` is the smaller, schema-consistent fix: the dequeue
+      // statement now sets `claimed_at = now()` (and filters on
+      // `claimed_at IS NULL`) instead of `delivered = true`, so a row is
+      // "claimed" without being "delivered". `delivered` is set `true` only
+      // once `mcp.notification` actually resolves; a fast reject or a
+      // deadline-settled reject both reset `delivered = false, claimed_at =
+      // NULL` so the row is retryable. This does not add owner-lease/
+      // re-claim-expiry machinery for a crash between claim and settle — that
+      // richer model is out of scope for this task (see flow 065
+      // description.md's Out of Scope section); a row stuck at
+      // claimed_at IS NOT NULL / delivered = false after a process crash is a
+      // known, documented gap, not a regression this migration introduces.
+      await tx`ALTER TABLE message_queue ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ`;
+    },
+    down: async (tx) => {
+      await tx`ALTER TABLE message_queue DROP COLUMN IF EXISTS claimed_at`;
+    },
+  },
 ];
 
 // --- Public API ---

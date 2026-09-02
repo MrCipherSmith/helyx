@@ -758,7 +758,12 @@ export class StatusManager {
         ON CONFLICT (chat_id, message_id)
           WHERE message_id IS NOT NULL AND message_id != '' AND message_id != 'tool'
         DO UPDATE
-          SET delivered = false, content = EXCLUDED.content, session_id = EXCLUDED.session_id
+          -- claimed_at = NULL alongside delivered (flow 065 AC8): the row
+          -- being revived here was originally claimed and delivered, so it
+          -- still carries the old claim timestamp. The poller's dequeue
+          -- query now filters on claimed_at IS NULL — leaving it set would
+          -- make this "retryable" row invisible to every future claim pass.
+          SET delivered = false, claimed_at = NULL, content = EXCLUDED.content, session_id = EXCLUDED.session_id
       `;
       channelLogger.warn({ chatId, sessionId }, "response guard: re-queued the unanswered question");
       return true;
