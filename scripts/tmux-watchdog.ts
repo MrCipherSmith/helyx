@@ -2,7 +2,7 @@
  * tmux-watchdog — monitors active Claude Code sessions via tmux.
  *
  * Queries the DB every 5 s for sessions with status = 'active', finds their
- * corresponding tmux windows, and checks for six categories of problems:
+ * corresponding tmux windows, and checks for seven categories of problems:
  *
  *   1. Permission prompts  — external MCP tool permission dialogs in the terminal.
  *      Sends Telegram message with Yes/Always/No buttons; feeds response back
@@ -24,6 +24,11 @@
  *   6. Idle                — no message queued for this session in over
  *      IDLE_THRESHOLD_MS and no turn in progress. Alerts with a Stop button;
  *      never stops anything on its own — see the check's own comment for why.
+ *
+ *   7. Resume-from-summary — Claude Code's own gate on `--continue` for a
+ *      large/old session ("Resuming the full session will consume...").
+ *      Auto-accepts the recommended default (resume from summary) and
+ *      notifies the operator it happened.
  *
  * Only windows that have a live 'active' session in the DB are inspected;
  * idle or terminated sessions are skipped entirely.
@@ -60,7 +65,9 @@ const STALL_COOLDOWN_MS      = 10 * 60_000; // re-alert every 10 min
 const EDITOR_COOLDOWN_MS     =  5 * 60_000;
 const CREDENTIAL_COOLDOWN_MS =  5 * 60_000;
 const CRASH_COOLDOWN_MS      =  3 * 60_000;
+const RESUME_COOLDOWN_MS     =  3 * 60_000;
 const IDLE_COOLDOWN_MS       = 60 * 60_000; // re-alert hourly, not every 5s poll
+const IDLE_MAX_REMINDERS     = 3; // stop nagging after this many ignored reminders
 
 // ---------------------------------------------------------------------------
 // Types
@@ -86,12 +93,17 @@ interface PendingPermEntry {
   resolvedAt?:  number;
 }
 
-type AlertKind = "stall" | "editor" | "credential" | "crash" | "idle";
+type AlertKind = "stall" | "editor" | "credential" | "crash" | "idle" | "resume";
 
 interface WindowState {
   sessionId:          number;
   pendingPermission?: PendingPermEntry;
   alerts:             Partial<Record<AlertKind, number>>;  // kind → last sent ms
+  // Idle reminders update one message instead of posting a new one each
+  // cooldown tick; capped at IDLE_MAX_REMINDERS so an ignored session stops
+  // nagging instead of accumulating a new "Stop it?" message every hour.
+  idleAlertMessageId?: number;
+  idleAlertCount?:     number;
 }
 
 // ---------------------------------------------------------------------------
@@ -178,6 +190,13 @@ const CRASH_RE        = /\[run-cli\] Exited with code ([1-9]\d*)/;
 // cases where the shell-side watcher times out or races with a window recreation.
 const DEV_CHANNEL_SIGNAL_RE = /dangerously-load-development-channels/i;
 const DEV_CHANNEL_CONFIRM_RE = /Enter to confirm/i;
+// "Resuming the full session will consume..." — Claude Code's own gate, shown on
+// `--continue` once a session has grown large/old enough that resuming it in full
+// would burn a lot of usage. Shares DEV_CHANNEL_CONFIRM_RE's "Enter to confirm"
+// line; option 1 ("Resume from summary") is both the default and the recommended
+// choice, so accepting it is safe to automate rather than leave the session
+// frozen until someone happens to notice and press Enter by hand.
+const RESUME_PROMPT_SIGNAL_RE = /Resuming the full session will consume/i;
 
 /**
  * Detect the "development channels" startup warning that Claude Code shows when
@@ -191,6 +210,18 @@ export function detectDevChannelPrompt(lines: string[]): boolean {
   const hasWarning = lines.some((l) => DEV_CHANNEL_SIGNAL_RE.test(l));
   const hasConfirm = lines.some((l) => DEV_CHANNEL_CONFIRM_RE.test(l));
   return hasWarning && hasConfirm;
+}
+
+/**
+ * Detect Claude Code's "resume from summary vs full session" gate. Returns true
+ * if the dialog is visible and waiting for Enter (option 1, "Resume from
+ * summary", is the default/recommended choice).
+ * Only checks the visible screen — if it scrolled away, it was already answered.
+ */
+export function detectResumePrompt(lines: string[]): boolean {
+  const hasSignal = lines.some((l) => RESUME_PROMPT_SIGNAL_RE.test(l));
+  const hasConfirm = lines.some((l) => DEV_CHANNEL_CONFIRM_RE.test(l));
+  return hasSignal && hasConfirm;
 }
 
 /** Exported for the tests, which drive them over pane text rather than a terminal. */
@@ -365,12 +396,14 @@ async function editTelegramMessage(
   chatId: string,
   messageId: number,
   text: string,
+  buttons?: Array<{ text: string; callback_data: string }>,
 ): Promise<void> {
   await telegramPost(token, "editMessageText", {
     chat_id: Number(chatId),
     message_id: messageId,
     text,
     parse_mode: "HTML",
+    ...(buttons?.length ? { reply_markup: { inline_keyboard: [buttons] } } : {}),
   });
 }
 
@@ -676,6 +709,30 @@ async function pollWindows(
       continue;
     }
 
+    // 0b. "Resume from summary vs full session" gate — Claude Code's own
+    //     --continue checkpoint on a large/old session. Left untouched, the
+    //     session just sits here until a human happens to notice and press
+    //     Enter (observed today: keryx and vantage-frontend both frozen here
+    //     for hours after an unrelated restart, looking indistinguishable
+    //     from "not responding"). Auto-accept the recommended default
+    //     (option 1, already highlighted) and tell the operator it happened,
+    //     the same way category 5 (crash/restart) reports an auto-handled
+    //     event rather than staying silent about it.
+    if (detectResumePrompt(visibleLines)) {
+      console.log(`[watchdog] resume-from-summary prompt in ${winName} — auto-confirming`);
+      await runShell(`tmux send-keys -t "${TMUX_SESSION}:${tmuxTarget}" "" Enter`);
+      const resumeChat = resolveChat(session);
+      if (resumeChat && canAlert(state, "resume", RESUME_COOLDOWN_MS)) {
+        await sendAlert(
+          token, resumeChat.chatId,
+          `🔄 <b>${escapeHtml(winName)}</b>: session hit Claude Code's "resume from summary" gate (grew large/old) — accepted the recommended option automatically, session is resuming now.`,
+          resumeChat.forumExtra,
+        );
+        markAlerted(state, "resume");
+      }
+      continue;
+    }
+
     // 1. Permission prompt (highest priority — needs immediate interaction).
     //    Use visible-only capture: dialogs in scroll-back are already answered.
     const perm = detectPermissionPrompt(visibleLines);
@@ -757,11 +814,13 @@ async function pollWindows(
       }
     }
 
-    // 6. Idle — no message in >2h and no turn in progress. Alerts with a Stop
-    // button; never stops anything itself. P-2.3a (docs/requirements/
+    // 6. Idle — no message in >2h and no turn in progress. Reminds with a
+    // Stop button, updating one message instead of posting a new one each
+    // cooldown tick, and stops nagging after IDLE_MAX_REMINDERS ignored
+    // reminders. Never stops anything itself. P-2.3a (docs/requirements/
     // keryx-adoption-2026-08-12/policies.md) requires an autonomous actor to
     // hold a declared standing grant before acting unattended, and none
-    // exists today — this button routes through the same operator-confirmed
+    // exists today — the button routes through the same operator-confirmed
     // proj_stop flow /projects already uses (bot/commands/projects.ts),
     // fixed today to say "Остановить" and to give 10 minutes to tap it,
     // rather than granting the watchdog its own unattended stop power.
@@ -771,24 +830,39 @@ async function pollWindows(
       && !detectSpinner(lines)
       && (session.lastMessageAt === null || Date.now() - session.lastMessageAt.getTime() > IDLE_THRESHOLD_MS)
     ) {
-      if (canAlert(state, "idle", IDLE_COOLDOWN_MS)) {
+      const count = state.idleAlertCount ?? 0;
+      if (count < IDLE_MAX_REMINDERS && canAlert(state, "idle", IDLE_COOLDOWN_MS)) {
         const idleFor = session.lastMessageAt
           ? Math.round((Date.now() - session.lastMessageAt.getTime()) / 3_600_000)
           : null;
-        console.warn(`[watchdog] idle in ${winName} (${idleFor !== null ? `${idleFor}h since last message` : "no messages ever queued"})`);
-        await sendAlert(
-          token, chat.chatId,
+        console.warn(`[watchdog] idle in ${winName} (${idleFor !== null ? `${idleFor}h since last message` : "no messages ever queued"}), reminder ${count + 1}/${IDLE_MAX_REMINDERS}`);
+        const text =
           `💤 <b>${escapeHtml(winName)}</b>: idle ${idleFor !== null ? `${idleFor}h+` : "since it started"}, nothing queued.\n` +
-          `Stop it to free the slot, or leave it — this is a reminder, not an action.`,
-          chat.forumExtra,
-          [{ text: `⏹ Stop ${winName}`, callback_data: `proj:stop:${session.projectId}` }],
-        );
+          `Stop it to free the slot, or leave it — this is a reminder, not an action. ` +
+          `(${count + 1}/${IDLE_MAX_REMINDERS}${count + 1 === IDLE_MAX_REMINDERS ? ", last one" : ""})`;
+        const buttons = [{ text: `⏹ Stop ${winName}`, callback_data: `proj:stop:${session.projectId}` }];
+        if (count === 0 || state.idleAlertMessageId === undefined) {
+          const res = await telegramPost(token, "sendMessage", {
+            chat_id: Number(chat.chatId),
+            text,
+            parse_mode: "HTML",
+            reply_markup: { inline_keyboard: [buttons] },
+            ...chat.forumExtra,
+          });
+          state.idleAlertMessageId = (res.result as { message_id?: number } | undefined)?.message_id;
+        } else {
+          await editTelegramMessage(token, chat.chatId, state.idleAlertMessageId, text, buttons);
+        }
+        state.idleAlertCount = count + 1;
         markAlerted(state, "idle");
       }
     } else if (state.alerts.idle !== undefined && (inProgressSessionIds.has(session.sessionId) || detectSpinner(lines))) {
       // Activity resumed — reset so the next idle stretch alerts promptly
-      // instead of waiting out IDLE_COOLDOWN_MS from the last one.
+      // instead of waiting out IDLE_COOLDOWN_MS from the last one, and starts
+      // a fresh reminder thread rather than editing the resolved one.
       state.alerts.idle = undefined;
+      state.idleAlertMessageId = undefined;
+      state.idleAlertCount = undefined;
     }
   }
 }

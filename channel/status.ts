@@ -130,6 +130,20 @@ const SPINNER_INTERVAL_ACTIVE_MS = 8_000;   // when monitor has been active rece
 const SPINNER_INTERVAL_IDLE_MS   = 15_000;  // when no monitor activity for >IDLE_THRESHOLD_MS
 const IDLE_THRESHOLD_MS          = 12_000;  // switch to idle after 12s of silence
 
+// A tick that changes nothing but the clock still produced a fresh dedup
+// signature every time, because `elapsed`/`idleMs` are formatted to the
+// second and both always advance — the spinner's own 8-15s cadence forced a
+// real Telegram edit, and its shared rate budget, on nearly every tick for as
+// long as a status stayed open. Bucketing the two into this window for the
+// signature only (never for what is actually displayed) lets a tick with no
+// real change collapse into the dedup skip instead of spending a token to
+// say the same thing 4 seconds later.
+const SIGNATURE_TIME_BUCKET_MS   = 30_000;
+
+function bucketedElapsedForSignature(ms: number): string {
+  return formatElapsed(Math.floor(ms / SIGNATURE_TIME_BUCKET_MS) * SIGNATURE_TIME_BUCKET_MS);
+}
+
 /**
  * Backoff and cap for `maybeReopen`'s reopen-send retries.
  *
@@ -1467,7 +1481,17 @@ export class StatusManager {
     // The spinner icon always changes on each call (spinnerFrame increments below),
     // so including it in the signature would make dedup permanently inert.
     // Signature captures: stage + elapsed + tokens + paneSnapshot + phase + toolCount + fileCount.
-    const contentForSig = formatStatusText(state.stage, elapsed, tokenStr, state.paneSnapshot, undefined, extras);
+    // `elapsed` and `idleMs` are bucketed here (display below stays precise) —
+    // see SIGNATURE_TIME_BUCKET_MS.
+    const sigExtras: StatusExtras = {
+      ...extras,
+      idleMs: extras.idleMs === undefined ? undefined : Math.floor(extras.idleMs / SIGNATURE_TIME_BUCKET_MS) * SIGNATURE_TIME_BUCKET_MS,
+    };
+    const contentForSig = formatStatusText(
+      state.stage,
+      bucketedElapsedForSignature(Date.now() - state.startedAt),
+      tokenStr, state.paneSnapshot, undefined, sigExtras,
+    );
     const sig = computeSignature(contentForSig);
     if (sig === state.lastSentSignature) {
       channelLogger.debug({ messageId: state.messageId }, "editStatusMessage: skipping redundant edit");
