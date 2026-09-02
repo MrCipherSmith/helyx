@@ -2,6 +2,73 @@
 
 ## Unreleased
 
+## v1.58.1
+
+### fix(telegram): stop the shared rate-budget leak, make delivery recoverable
+
+A 2026-09-02 incident investigation (`docs/report/helyx-telegram-delivery-
+incident/2026-09-02-report.md`) traced "messages disappear until a lucky bot
+restart" back to internal self-starvation of the shared Telegram rate limiter
+introduced in v1.58.0 — not a real Telegram `429`. In the observed log window:
+0 real `429`s, 43 internal "waiting for a rate-limit slot" timeouts.
+
+`utils/telegram-rate-budget.ts`'s `createLocalAllowance()` ran an
+unconditional lease every few seconds regardless of whether anything was
+waiting to send, and discarded any unspent local remainder on each refresh —
+idle subprocesses alone were draining the shared bucket. Replaced with
+on-demand, demand-gated leasing: a lease only happens once a caller has ever
+actually called `acquire()` on an instance, and a paced backoff drives
+retries while genuinely exhausted instead of a fixed timer.
+
+`pending_replies` gets an explicit `pending/sending/delivered/failed/partial`
+state machine (migration v54) plus a bounded periodic recovery worker
+(`startPendingReplyRecoveryWorker`), so a reply stuck by the above no longer
+needs a bot restart to be retried — before this, `deliverPendingReplies` ran
+only once, at bot startup. The Stop-hook path in `mcp/server.ts` now checks
+each part's Telegram send result before publishing `turn_closed`, instead of
+closing the turn as successful on a failed send.
+
+Inbound `message_queue` rows are no longer marked `delivered = true` before
+the downstream MCP notification actually succeeds (migration v55's
+`claimed_at`) — before, a fast-rejected notification left the row
+permanently `delivered = true` with the message never actually handed to
+Claude. `scripts/supervisor.ts`'s unanswered-message rescue no longer
+collides with the `(chat_id, message_id)` unique index it was silently
+failing against on every attempt.
+
+A follow-up review round (4 independent passes: logic, backend, architecture,
+testing-practices) found and fixed two further crash-recovery gaps before
+merge: a real process crash (not just a delayed resolution) could still
+permanently strand a `claimed_at` or `status = 'sending'` row, invisible to
+every recovery path including the ones this same fix added. Also closed a
+retry-amplification risk the fix's own dedup removal reintroduced under
+sustained DB latency.
+
+flow 065, PR #116, merged as `f3b5111`.
+
+### watchdog: cap idle reminders at 3, edit in place; status: stop editing on clock-only ticks
+
+`tmux-watchdog.ts`'s idle-session reminder (`💤 Xh+, nothing queued`) posted a
+new Telegram message every hour indefinitely for a session nobody touched. It
+now sends once and edits that same message for reminders 2 and 3, then stays
+quiet until activity resumes, instead of accumulating a fresh message every
+hour it stays idle. This reminder only ever offers a Stop button — it does
+not, and still does not, stop anything on its own.
+
+`channel/status.ts`'s per-turn status tick (8s active / 15s quiet-within-a-
+turn) computed its edit-worthiness signature from elapsed/idle milliseconds
+at second precision, both of which always advance — so every tick looked
+like a real change and spent a real Telegram call, even with nothing else
+different. Bucketed to 30s for the signature only (the displayed time stays
+precise); a tick with no material change now hits the existing dedup instead
+of spending a shared-budget token. Confirmed via live production logs: the
+shared rate budget was pinned near-empty for 20+ minutes with real replies
+timing out and being lost, while genuinely idle sessions (no open turn)
+already sent nothing — the drain was this old per-tick waste colliding with
+the new hard ceiling this range's other fix (above) closes at the root.
+
+`4df5176`.
+
 ## v1.58.0
 
 ### feat(telegram): a shared rate budget, split into priority and background lanes
