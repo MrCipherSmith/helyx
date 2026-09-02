@@ -367,11 +367,36 @@ export async function deliverTurnSummary(
   const target = await resolveTarget(deps.sql, { sessionId: "", cwd: projectPath });
   if (!target) return;
 
+  // `deps.send`'s result used to be awaited and never inspected — a genuinely
+  // failed Telegram send still fell through to the unconditional pg_notify
+  // below, reporting the operator's chat as "answered" when nothing reached
+  // them (flow 065 AC6). Every part now has its `.ok` checked; one failure is
+  // enough to withhold turn_closed for the whole summary.
+  let allDelivered = true;
   for (const part of summary.parts) {
-    await deps.send(deps.token, target.chatId, part, {
+    const sendRes = await deps.send(deps.token, target.chatId, part, {
       parse_mode: "HTML",
       ...target.extra,
     });
+    if (!sendRes.ok) {
+      allDelivered = false;
+      // Durable, not lost: reuse the same pending_replies state machine the
+      // reply tool's premark/unmark drives (flow 065 AC5) so the periodic
+      // recovery worker (channel/recovery.ts, flow 065 AC4) retries this part
+      // on its own, without anything here having to poll or block on it.
+      await deps.sql`
+        INSERT INTO pending_replies (session_id, chat_id, thread_id, text, status)
+        VALUES (${target.sessionId}, ${target.chatId}, ${(target.extra.message_thread_id as number) ?? null}, ${part}, 'failed')
+      `.catch(() => {});
+    }
+  }
+
+  if (!allDelivered) {
+    // A failed send is not "answered". Leave the status open — closing it
+    // here would tell the status/response-guard machinery the operator was
+    // reached when they were not; the recovery worker's retry is what
+    // actually resolves the turn once it lands.
+    return;
   }
 
   // And spoken, like a reply of the same length would be. A forwarded answer

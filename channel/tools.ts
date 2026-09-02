@@ -533,20 +533,21 @@ async function handleTelegramTool(
           // Non-fatal: continue even if DB write fails
         }
 
-        // Pre-mark as delivered before sending to Telegram — prevents recovery from
-        // resending on restart if the process dies after a successful Telegram send
-        // but before the post-send UPDATE completes (TOCTOU duplicate bug).
-        //
-        // Cleared again if the send fails (below). Marked-and-never-sent is the
-        // one state this table cannot represent: `channel/recovery.ts` looks for
-        // `delivered_at IS NULL`, so a reply that died in Telegram was buffered,
-        // stamped as delivered and never seen again.
+        // Mark 'sending' before the Telegram call — awaited, not fire-and-forget,
+        // so a crash between here and the outcome below leaves the row in an
+        // explicit, recoverable state instead of the old premark-to-'delivered'
+        // TOCTOU bug (a reply that died in Telegram used to be stamped as
+        // delivered and never seen again). See flow 065 AC5.
         if (pendingReplyId) {
-          ctx.sql`UPDATE pending_replies SET delivered_at = NOW() WHERE id = ${pendingReplyId}`.catch(() => {});
+          await ctx.sql`UPDATE pending_replies SET status = 'sending' WHERE id = ${pendingReplyId}`.catch(() => {});
         }
-        const unmarkPending = () => {
-          if (pendingReplyId) {
-            ctx.sql`UPDATE pending_replies SET delivered_at = NULL WHERE id = ${pendingReplyId}`.catch(() => {});
+        /** Drive the pending_replies row to its terminal state once the send outcome is known. */
+        const markPendingOutcome = async (outcome: "delivered" | "partial" | "failed"): Promise<void> => {
+          if (!pendingReplyId) return;
+          if (outcome === "delivered") {
+            await ctx.sql`UPDATE pending_replies SET status = 'delivered', delivered_at = NOW() WHERE id = ${pendingReplyId}`.catch(() => {});
+          } else {
+            await ctx.sql`UPDATE pending_replies SET status = ${outcome} WHERE id = ${pendingReplyId}`.catch(() => {});
           }
         };
 
@@ -578,14 +579,14 @@ async function handleTelegramTool(
           // `textChunks[0]!` used to be dereferenced regardless, and an empty
           // reply took the whole tool call down as a JSON-RPC error with the
           // status left pinned mid-stage.
-          unmarkPending();
+          await markPendingOutcome("failed");
           return text("Reply text is empty — nothing was sent.");
         }
 
         const { anchor: res, lost } = await sendReplyChunks(token, chatId, textChunks, commonExtra, forumExtra);
         if (!res.ok) {
           channelLogger.warn({ error: res.errorBody }, "reply: Telegram API error");
-          unmarkPending();
+          await markPendingOutcome("failed");
           status.deleteStatusMessage(chatId).catch(() => {});
           // The error body, not just the word "error": a model told only
           // "Telegram API error" restates the answer as plain terminal text,
@@ -595,6 +596,13 @@ async function handleTelegramTool(
         }
         if (lost) {
           channelLogger.warn({ chatId, lost, chunks: textChunks.length }, "reply: partially delivered");
+          // The anchor landed but at least one later chunk did not — 'partial',
+          // never 'delivered', so `channel/recovery.ts` can tell the two apart
+          // and a retry is not lost among the rows that really did land in
+          // full. See flow 065 AC7.
+          await markPendingOutcome("partial");
+        } else {
+          await markPendingOutcome("delivered");
         }
 
         channelLogger.info({ phase: "tools", step: "reply-sent", chatId, chunks: textChunks.length, lost, t: Date.now() }, "perf");

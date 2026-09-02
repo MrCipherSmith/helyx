@@ -775,9 +775,13 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
         // Reset in-flight messages (delivered=true but Claude not yet responded) so they
         // get re-delivered to the new session after restart. Only touches messages from
         // the last 30 min — older ones were almost certainly already processed.
+        // claimed_at is cleared alongside delivered (flow 065 AC8): the poller's
+        // dequeue query now filters on `claimed_at IS NULL`, so a row left with
+        // delivered=false but claimed_at still set from its original claim would
+        // never be re-selected — silently stuck instead of re-delivered.
         if (project_id) {
           const resetResult = await sql`
-            UPDATE message_queue SET delivered = false
+            UPDATE message_queue SET delivered = false, claimed_at = NULL
             WHERE session_id IN (
               SELECT id FROM sessions WHERE project_id = ${project_id} AND source = 'remote'
             )

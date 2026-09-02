@@ -86,15 +86,30 @@ export async function recoverStaleVoiceStatusMessages(sql: postgres.Sql, token: 
 }
 
 /**
- * Find pending_replies with no delivered_at (Telegram send failed or bot was down).
- * Retry delivery for each.
+ * Find pending_replies not yet fully delivered (status pending/failed/partial,
+ * plus 'sending' once it has sat for the same 30s bound below — see flow 065
+ * AC5 review) and retry delivery for each.
+ *
+ * 'sending' is included, not excluded: a row a live process just premarked
+ * moments ago is filtered out by the same `created_at` age bound every other
+ * status here already uses, so a genuinely in-flight send elsewhere is not
+ * double-sent. What the age bound *does* catch is the crash this flow exists
+ * to fix — a process that dies between premarking 'sending' and ever calling
+ * `markPendingOutcome` leaves the row stuck at 'sending' forever with nothing
+ * else able to move it, since no other write path ever revisits that status.
+ * See docs/report/helyx-telegram-delivery-incident/2026-09-02-report.md
+ * section 9 and flow 065's review findings for T4.
+ *
+ * Called once at bot startup (`main.ts`) and, since flow 065 AC4, again on a
+ * bounded interval by `startPendingReplyRecoveryWorker` below — a reply that
+ * lands here no longer waits for the bot to restart before it is retried.
  */
 export async function deliverPendingReplies(sql: postgres.Sql, token: string): Promise<void> {
   try {
     const rows = await sql`
       SELECT id, chat_id, thread_id, text
       FROM pending_replies
-      WHERE delivered_at IS NULL
+      WHERE status IN ('pending', 'failed', 'partial', 'sending')
         AND created_at < NOW() - INTERVAL '30 seconds'
       ORDER BY created_at ASC
     `;
@@ -119,13 +134,61 @@ export async function deliverPendingReplies(sql: postgres.Sql, token: string): P
       }
 
       if (res.ok) {
-        await sql`UPDATE pending_replies SET delivered_at = NOW() WHERE id = ${row.id}`;
+        await sql`UPDATE pending_replies SET delivered_at = NOW(), status = 'delivered' WHERE id = ${row.id}`;
         channelLogger.info({ id: row.id, chatId: row.chat_id }, "pending reply delivered");
       } else {
+        await sql`UPDATE pending_replies SET status = 'failed' WHERE id = ${row.id}`.catch(() => {});
         channelLogger.warn({ id: row.id, error: res.errorBody }, "pending reply delivery failed");
       }
     }
   } catch (err) {
     channelLogger.warn({ err }, "deliverPendingReplies error");
   }
+}
+
+/**
+ * Start a periodic worker that retries stuck `pending_replies` rows on a
+ * bounded interval, independent of bot process startup.
+ *
+ * Before flow 065 AC4, `deliverPendingReplies` only ran once, from `main.ts`'s
+ * startup sequence — a reply that landed in `pending_replies` and then failed
+ * (rate-limit timeout, transient Telegram error, process hiccup) stayed
+ * invisible until the bot happened to restart. See
+ * docs/report/helyx-telegram-delivery-incident/2026-09-02-report.md section 9
+ * and section 3's timeline: two replies sat there for 10-11 minutes.
+ *
+ * `intervalMs` defaults to something sane in production (45s — within the
+ * report's 30-60s guidance) but is overridable for tests, which need ticks far
+ * shorter than that to stay fast.
+ */
+export function startPendingReplyRecoveryWorker(
+  sql: postgres.Sql,
+  token: string,
+  options?: { intervalMs?: number },
+): { stop: () => void } {
+  const intervalMs = options?.intervalMs ?? 45_000;
+  let running = false;
+
+  const timer = setInterval(() => {
+    // A tick that finds the previous one still in flight (a slow Telegram
+    // round-trip, a burst of stale rows) skips rather than overlaps it —
+    // `deliverPendingReplies` is not designed to be re-entered concurrently
+    // against the same rows.
+    if (running) return;
+    running = true;
+    deliverPendingReplies(sql, token)
+      .catch((err) => channelLogger.warn({ err }, "startPendingReplyRecoveryWorker: tick failed"))
+      .finally(() => {
+        running = false;
+      });
+  }, intervalMs);
+
+  // Never keep the process alive solely for this timer.
+  if (typeof (timer as unknown as { unref?: () => void }).unref === "function") {
+    (timer as unknown as { unref: () => void }).unref();
+  }
+
+  return {
+    stop: () => clearInterval(timer),
+  };
 }

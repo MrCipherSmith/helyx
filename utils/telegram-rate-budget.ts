@@ -22,13 +22,14 @@
  * (`memory/db.ts`'s pool is `max: 10`, sized for occasional queries, not a
  * per-tick heartbeat times ten processes).
  *
- * Instead, each subprocess leases a small batch of tokens on a ~5s timer
- * (`REFRESH_INTERVAL_MS`) — one atomic `UPDATE ... RETURNING` — and spends
- * that local allowance in-process between refreshes. This cuts the new DB
- * call volume from 1:1-with-sends to roughly 1-per-lease-window, while still
- * enforcing one real shared budget with ~5s granularity — the same order as
- * the existing 8s status-edit floor (`channel/status.ts`'s
- * `MIN_EDIT_INTERVAL_MS`), so this does not introduce a new class of lag.
+ * Instead, each subprocess leases a small batch of tokens — one atomic
+ * `UPDATE ... RETURNING` — and spends that local allowance in-process between
+ * leases. This cuts the new DB call volume from 1:1-with-sends to roughly
+ * 1-per-lease-window, while still enforcing one real shared budget. Leases
+ * are on-demand (flow 065 P0-A), not on a periodic timer: the original
+ * design leased unconditionally every few seconds regardless of whether
+ * anything was waiting to send, which drained the shared bucket from idle
+ * subprocesses alone — see `createLocalAllowance`'s doc comment below.
  *
  * ## Why `UPDATE ... RETURNING`, not `pg_advisory_lock`
  *
@@ -103,10 +104,7 @@ export const PRIORITY_LANE: BudgetLane = { bucket: "global_priority", capacity: 
 /** `utils/typing.ts`'s tick and most of `channel/status.ts` — see PRIORITY_LANE's doc for this split's history. */
 export const BACKGROUND_LANE: BudgetLane = { bucket: "global_background", capacity: 7, refillPerSec: 7 / 60 };
 
-/** How often each subprocess asks Postgres for a fresh local allowance. */
-const REFRESH_INTERVAL_MS = 5_000;
-
-/** How many tokens a subprocess asks for per lease window. */
+/** How many tokens a subprocess asks for per on-demand lease. */
 const LEASE_REQUEST = 4;
 
 /**
@@ -116,7 +114,7 @@ const LEASE_REQUEST = 4;
  */
 const FAILOPEN_GRANT = 2;
 
-/** Guards a single `leaseBudget` call so a hung connection cannot delay the next refresh past REFRESH_INTERVAL_MS. */
+/** Guards a single `leaseBudget` call so a hung connection cannot delay the caller past this bound. */
 const LEASE_TIMEOUT_MS = 3_000;
 
 export interface LeaseResult {
@@ -225,13 +223,26 @@ export interface LocalAllowance {
  */
 export function createLocalAllowance(options: LocalAllowanceOptions): LocalAllowance {
   const leaseRequest = options.leaseRequest ?? LEASE_REQUEST;
-  const refreshIntervalMs = options.refreshIntervalMs ?? REFRESH_INTERVAL_MS;
   const failOpenGrant = options.failOpenGrant ?? FAILOPEN_GRANT;
   const leaseTimeoutMs = options.leaseTimeoutMs ?? LEASE_TIMEOUT_MS;
+  // `refreshIntervalMs` no longer drives an unconditional background timer
+  // (flow 065 P0-A — see the incident report this fixes: idle subprocesses
+  // were leasing-and-discarding tokens every REFRESH_INTERVAL_MS regardless
+  // of whether anything was waiting to send). Repurposed as the pacing
+  // between on-demand retry attempts while genuinely exhausted, clamped to a
+  // sane range so a huge test value (used elsewhere to mean "never fires on
+  // its own") doesn't turn into a multi-second real retry delay here.
+  const retryBackoffMs = Math.max(50, Math.min(1000, options.refreshIntervalMs ?? 250));
 
   let tokens = 0;
-  let timer: ReturnType<typeof setInterval> | null = null;
   let waiters: Array<() => void> = [];
+  // Set once, forever, the first time `acquire()` is ever called on this
+  // instance. This is the on-demand gate: an allowance nothing has ever
+  // actually sent through must never touch — let alone drain — the shared
+  // bucket, which is exactly what AC2/AC3 need and what the old unconditional
+  // timer broke.
+  let hasDemand = false;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
   function wakeWaiters(): void {
     const toWake = waiters;
@@ -239,25 +250,66 @@ export function createLocalAllowance(options: LocalAllowanceOptions): LocalAllow
     for (const wake of toWake) wake();
   }
 
-  async function refreshNow(): Promise<void> {
-    try {
-      const { granted } = await withTimeout(options.lease(leaseRequest), leaseTimeoutMs);
-      tokens = granted;
-    } catch (err) {
-      // Fail-open (AC4): a DB hiccup must not block every project's status
-      // updates indefinitely. A conservative local allowance keeps sends
-      // moving until the next refresh, which tries the lease again.
-      tokens = failOpenGrant;
-      options.onFailOpen?.(err);
-    } finally {
-      wakeWaiters();
-    }
+  /**
+   * Perform one on-demand lease attempt. A no-op — no DB call, no change to
+   * `tokens` — until this instance has genuine demand (AC2/AC3): idle
+   * allowances that never call `acquire()` must never move the shared row.
+   *
+   * Not deduped against a concurrently in-flight call here — a caller-driven
+   * refresh (an explicit `.refreshNow()`, or `acquire()`'s own first-ever
+   * kick) always gets its own real lease attempt, reading `options.lease`'s
+   * inputs at its own call time rather than silently reusing a stale
+   * in-flight promise's already-captured result. `scheduleRetry` below dedupes
+   * its OWN repeated auto-firing separately — see its comment for why the two
+   * need different rules.
+   */
+  function refreshNow(): Promise<void> {
+    if (!hasDemand) return Promise.resolve();
+    return (async () => {
+      try {
+        const { granted } = await withTimeout(options.lease(leaseRequest), leaseTimeoutMs);
+        // AC1 (conservation): add to whatever local remainder already
+        // exists — never replace it. The old `tokens = granted` discarded
+        // an unspent remainder on every refresh; that discarded balance is
+        // exactly what the incident report measured draining the shared
+        // bucket.
+        tokens += granted;
+      } catch (err) {
+        // Fail-open (AC4): a DB hiccup must not block every project's status
+        // updates indefinitely. A conservative local allowance keeps sends
+        // moving until the next attempt, which tries the lease again.
+        tokens += failOpenGrant;
+        options.onFailOpen?.(err);
+      } finally {
+        wakeWaiters();
+      }
+    })();
   }
 
-  function ensureStarted(): void {
-    if (timer) return;
-    timer = setInterval(() => { void refreshNow(); }, refreshIntervalMs);
-    void refreshNow();
+  // Guards scheduleRetry's OWN auto-fired lease attempts specifically —
+  // unlike `refreshNow()` itself (deliberately un-deduped, see its comment),
+  // a backoff tick that fires while the PREVIOUS auto-fired attempt is still
+  // outstanding must not start another one. Under DB latency close to or
+  // above `retryBackoffMs`, an un-deduped auto-retry would pile up a fresh
+  // real `leaseBudget` call every tick before the last one even resolves —
+  // up to `LEASE_TIMEOUT_MS / retryBackoffMs` concurrent lease attempts per
+  // waiting caller, each adding its own grant to `tokens` once it eventually
+  // resolves. That is exactly the self-inflicted-amplification shape this
+  // flow exists to close, just relocated from "always-on timer" to
+  // "triggered under load" — found in review, not by a test, since none of
+  // the existing tests sustain exhaustion across multiple backoff ticks.
+  let autoRetryInFlight = false;
+
+  /** Paces retry attempts while a caller is still exhausted, instead of a tight busy-loop now that no periodic timer drives retries. */
+  function scheduleRetry(): void {
+    if (retryTimer) return;
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      if (tokens <= 0 && waiters.length > 0 && !autoRetryInFlight) {
+        autoRetryInFlight = true;
+        void refreshNow().finally(() => { autoRetryInFlight = false; });
+      }
+    }, retryBackoffMs);
   }
 
   /**
@@ -288,11 +340,21 @@ export function createLocalAllowance(options: LocalAllowanceOptions): LocalAllow
           reject(new Error(`rate-budget wait exceeded its ${remaining}ms deadline`));
         }, remaining);
       }
+      // `scheduleRetry`'s own `if (retryTimer) return;` guard keeps this
+      // idempotent when several callers wait around the same exhaustion.
+      scheduleRetry();
     });
   }
 
   async function acquire(timeoutMs?: number): Promise<void> {
-    ensureStarted();
+    const firstEver = !hasDemand;
+    hasDemand = true;
+    if (firstEver) {
+      // One-time immediate on-demand kick, mirroring the old
+      // `ensureStarted`'s first fire — but exactly once per instance ever,
+      // never on a recurring schedule.
+      void refreshNow();
+    }
     const deadline = timeoutMs !== undefined ? Date.now() + timeoutMs : undefined;
     while (tokens <= 0) {
       // Recomputed from the fixed `deadline` on every iteration — not
@@ -308,7 +370,7 @@ export function createLocalAllowance(options: LocalAllowanceOptions): LocalAllow
     remaining: () => tokens,
     refreshNow,
     stop: () => {
-      if (timer) { clearInterval(timer); timer = null; }
+      if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
     },
   };
 }
