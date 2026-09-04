@@ -7,6 +7,7 @@
  *   bun cli.ts start          Start bot (docker compose up)
  *   bun cli.ts stop           Stop bot (docker compose down)
  *   bun cli.ts restart        Rebuild and restart bot
+ *   bun cli.ts full-restart   Rebuild bot AND bounce sessions (both halves)
  *   bun cli.ts status         Show bot health and stats
  *   bun cli.ts sessions       List active sessions
  *   bun cli.ts logs           Show bot logs
@@ -851,20 +852,40 @@ Write as self-contained sentences. Good: \`"Port 3847 serves both MCP and dashbo
     done();
   }
 
-  // Install systemd service (helyx@USER) for auto-start on boot
+  // Install systemd service (helyx@USER) for auto-start on boot.
+  //
+  // Linux-only: systemd does not exist on macOS, and `sudo cp` into
+  // /etc/systemd/system there fails the same way a missing sudo does,
+  // reporting "no sudo" for a host where sudo was never the problem.
   step("Installing systemd service");
-  const svcUser = process.env.USER ?? basename(homedir());
-  const svcSrc = resolve(BOT_DIR, "scripts/helyx.service");
-  const svcDst = `/etc/systemd/system/helyx@${svcUser}.service`;
-  const svcCopy = await run(["sudo", "cp", svcSrc, svcDst]);
-  if (svcCopy.ok) {
-    await run(["sudo", "systemctl", "daemon-reload"], { silent: true });
-    await run(["sudo", "systemctl", "enable", `helyx@${svcUser}`], { silent: true });
-    done();
+  if (process.platform !== "linux") {
+    console.log(` ${c.yellow("skipped")} (systemd is Linux-only, this host is ${process.platform})`);
   } else {
-    console.log(` ${c.yellow("skipped")} (no sudo — run manually):`);
-    console.log(`    sudo cp scripts/helyx.service ${svcDst}`);
-    console.log(`    sudo systemctl enable --now helyx@${svcUser}`);
+    const svcUser = process.env.USER ?? basename(homedir());
+    const svcSrc = resolve(BOT_DIR, "scripts/helyx.service");
+    const svcDst = `/etc/systemd/system/helyx@${svcUser}.service`;
+
+    // The checked-in template hardcodes /home/%i/bots/helyx and
+    // .../.local/bin/helyx — the default install location. HELYX_DIR (which
+    // install.sh advertises) puts the checkout somewhere else, and a unit
+    // copied verbatim would then start the wrong directory, or nothing.
+    const template = readFileSync(svcSrc, "utf8");
+    const rendered = template
+      .replaceAll("/home/%i/bots/helyx", BOT_DIR)
+      .replaceAll("/home/%i/.local/bin/helyx", `${homedir()}/.local/bin/helyx`);
+    const tmpSvc = `${tmpdir()}/helyx-${svcUser}.service`;
+    await Bun.write(tmpSvc, rendered);
+
+    const svcCopy = await run(["sudo", "cp", tmpSvc, svcDst]);
+    if (svcCopy.ok) {
+      await run(["sudo", "systemctl", "daemon-reload"], { silent: true });
+      await run(["sudo", "systemctl", "enable", `helyx@${svcUser}`], { silent: true });
+      done();
+    } else {
+      console.log(` ${c.yellow("skipped")} (no sudo — run manually):`);
+      console.log(`    sudo cp ${tmpSvc} ${svcDst}`);
+      console.log(`    sudo systemctl enable --now helyx@${svcUser}`);
+    }
   }
 
   // Register projects
@@ -2260,6 +2281,7 @@ function help() {
     bot-restart     Rebuild and restart bot container
     bot-status      Show bot health and stats
     bot-logs        Show bot logs (follow mode)
+    full-restart    Rebuild bot container AND bounce sessions (both halves)
 
   ${c.bold("Tmux (project workspaces):")}
     up [-a] [-s]    Start all projects in tmux (-a attach, -s split panes)
@@ -2335,6 +2357,43 @@ switch (command) {
     try {
       await tmuxStop();
       // Wait for the tmux session to fully terminate before starting
+      for (let i = 0; i < 10; i++) {
+        const exists = await run(["tmux", "has-session", "-t", TMUX_SESSION], { silent: true });
+        if (!exists.ok) break;
+        await Bun.sleep(500);
+      }
+      await tmuxStart();
+    } finally {
+      if (!heldByCaller) releaseRestartLease();
+    }
+    break;
+  }
+  case "full-restart": {
+    // CLI-level equivalent of admin-daemon.ts's `full_restart`: rebuild the
+    // bot container, then bounce the sessions, so a code change reaches both
+    // halves from one command. `restart` alone only does the container half
+    // and `bounce` alone only does the session half — CLAUDE.md's own warning
+    // is that neither one is "ship new code everywhere" by itself.
+    const heldByCaller = process.env.HELYX_RESTART_LEASE_HELD === "1";
+    const lease = heldByCaller ? { ok: true as const, broke: null } : takeRestartLease("cli:full-restart");
+    if (!lease.ok) {
+      console.error(`❌ ${heldMessage(lease.held)}`);
+      process.exitCode = 1;
+      break;
+    }
+    try {
+      console.log("  Rebuilding bot container...\n");
+      const build = await run(["docker", "compose", "up", "-d", "--build", "bot"], { stream: true });
+      if (!build.ok) {
+        console.log(`\n  ${c.red("build failed")} — sessions left untouched\n`);
+        process.exitCode = 1;
+        break;
+      }
+      await syncChannelToken();
+      console.log(`\n  ${c.green("done")}\n`);
+
+      console.log("  Bouncing sessions...\n");
+      await tmuxStop();
       for (let i = 0; i < 10; i++) {
         const exists = await run(["tmux", "has-session", "-t", TMUX_SESSION], { silent: true });
         if (!exists.ok) break;
