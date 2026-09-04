@@ -38,13 +38,12 @@ function rows(keyboard: { inline_keyboard: readonly (readonly { text: string; ca
 const CONFIGURED: ProviderSelection = { providerId: 7, providerName: "GLM (Z.ai)", model: "glm-5.2" };
 
 describe("renderProjectsMessage", () => {
-  test("a configured project gets two rows of controls (a 🧹 Clear row while active), and its config in the text", () => {
+  test("a configured project gets two rows of controls while active — Stop stretched alone, ⚙️ paired with 🧹 — and its config in the text", () => {
     // The info row was tried and taken out again: two buttons share a row's
     // width, and `glm-5.2` survives that but `deepseek-v4-pro` does not. The
     // text line has the full width, and provider and model are read rather
-    // than pressed. 🧹 Clear context gets its own row for the same reason —
-    // its label is long enough to risk truncating Stop/Start's if the two
-    // shared a row.
+    // than pressed. Stop gets its own row for the same reason — its label is
+    // long enough to risk truncation if it shared a row with anything else.
     const { text, keyboard } = renderProjectsMessage(
       [project({ id: 3, session_status: "active" })],
       new Map([[3, CONFIGURED]]),
@@ -52,8 +51,8 @@ describe("renderProjectsMessage", () => {
     );
 
     expect(rows(keyboard)).toEqual([
-      [["⏹ Stop helyx", "proj:stop:3"], ["⚙️", "pmchg:3:prov"]],
-      [["🧹 Clear context", "proj:clearctx:3"]],
+      [["⏹ Stop helyx", "proj:stop:3"]],
+      [["⚙️", "pmchg:3:prov"], ["🧹 Clear context", "proj:clearctx:3"]],
     ]);
     expect(text).toContain("GLM (Z.ai) / glm-5.2");
   });
@@ -163,12 +162,12 @@ describe("renderProjectsMessage", () => {
       new Map(),
     );
 
-    // One row per project, in order, plus a's extra 🧹 row since it's active —
-    // b stays a single row since it's not.
+    // a is active, so it gets two rows (Stop alone, then ⚙️+🧹 paired); b is
+    // not, so it keeps the single combined Start+⚙️ row — in project order.
     const got = rows(keyboard);
     expect(got.length).toBe(3);
-    expect(got[0]).toEqual([["⏹ Stop a", "proj:stop:1"], ["⚙️", "pmchg:1:prov"]]);
-    expect(got[1]).toEqual([["🧹 Clear context", "proj:clearctx:1"]]);
+    expect(got[0]).toEqual([["⏹ Stop a", "proj:stop:1"]]);
+    expect(got[1]).toEqual([["⚙️", "pmchg:1:prov"], ["🧹 Clear context", "proj:clearctx:1"]]);
     expect(got[2]).toEqual([["▶️ Start b", "proj:start:2"], ["⚙️", "pmchg:2:prov"]]);
   });
 });

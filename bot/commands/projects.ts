@@ -113,18 +113,21 @@ export function renderProjectsMessage(
     const { provider, model } = configLabels(selections.get(p.id));
     lines.push(`${isActive ? "🟢" : "⚪"} ${p.name}  (${p.path})  ·  ${provider} / ${model}`);
 
-    keyboard.text(isActive ? `⏹ Stop ${p.name}` : `▶️ Start ${p.name}`, `proj:${isActive ? "stop" : "start"}:${p.id}`);
-    // 🧹 only for an active session — there is no Claude Code process to send
-    // /clear to otherwise, and offering it on a stopped project would just
-    // enqueue a tmux_send_keys command with nothing on the other end. Its
-    // label is long enough that cramming it into Stop/Start's own row risks
-    // the same truncation the file's other comments already warn about, so
-    // an active project gets a second row for it instead of a third button
-    // sharing the first; an inactive project's row is unchanged.
     if (isActive) {
-      keyboard.text("⚙️", `pmchg:${p.id}:prov`).row().text("🧹 Clear context", `proj:clearctx:${p.id}`).row();
+      // Stop gets its own full-width row while active — cramming ⚙️/🧹 onto
+      // it risks the same label truncation the file's other comments already
+      // warn about, and it's the button worth reading at a glance instead of
+      // squinting at. ⚙️ and 🧹 share the row below it instead: both labels
+      // are short enough that pairing them doesn't have the same risk.
+      keyboard
+        .text(`⏹ Stop ${p.name}`, `proj:stop:${p.id}`)
+        .row()
+        .text("⚙️", `pmchg:${p.id}:prov`)
+        .text("🧹 Clear context", `proj:clearctx:${p.id}`)
+        .row();
     } else {
-      keyboard.text("⚙️", `pmchg:${p.id}:prov`).row();
+      // Inactive: unchanged from before 🧹 existed — Start + ⚙️ share one row.
+      keyboard.text(`▶️ Start ${p.name}`, `proj:start:${p.id}`).text("⚙️", `pmchg:${p.id}:prov`).row();
     }
   }
 
