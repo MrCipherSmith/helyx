@@ -1,16 +1,14 @@
 /**
  * What the /projects keyboard says about each project.
  *
- * The provider and the model used to live in the text line, as a `· Name/model`
- * tail hanging off the path — readable, but not next to the controls it
- * describes, and printed only when the project was on something other than
- * stock Claude. So the one project the operator most needed to identify at a
- * glance, the misconfigured one, looked identical to a default one.
- *
- * They are buttons now: a second row under each action row, provider on the
- * left beneath Stop/Start and model on the right beneath the gear. These
- * assert the pairing holds — including for a pending project, which has no
- * settled state to report and therefore gets no rows at all.
+ * Telegram stacks every project's buttons together below one shared text
+ * block, so a wall of "⏹"/"⚙️"/"🧹" with more than a couple of projects reads
+ * as an undifferentiated mess (screenshot-reported, 2026-09-04). Each project
+ * now gets a header row — status emoji + name, tapping it answers the same
+ * provider/model toast `pminf:` always has — followed by one compact row of
+ * icon-only controls. These assert that pairing holds, including for a
+ * pending project, which has no settled state to report and therefore gets no
+ * rows at all.
  */
 
 import { describe, test, expect } from "bun:test";
@@ -38,12 +36,7 @@ function rows(keyboard: { inline_keyboard: readonly (readonly { text: string; ca
 const CONFIGURED: ProviderSelection = { providerId: 7, providerName: "GLM (Z.ai)", model: "glm-5.2" };
 
 describe("renderProjectsMessage", () => {
-  test("a configured project gets two rows of controls while active — Stop stretched alone, ⚙️ paired with 🧹 — and its config in the text", () => {
-    // The info row was tried and taken out again: two buttons share a row's
-    // width, and `glm-5.2` survives that but `deepseek-v4-pro` does not. The
-    // text line has the full width, and provider and model are read rather
-    // than pressed. Stop gets its own row for the same reason — its label is
-    // long enough to risk truncation if it shared a row with anything else.
+  test("a configured active project gets a header row plus one icon-only control row, and its config in the text", () => {
     const { text, keyboard } = renderProjectsMessage(
       [project({ id: 3, session_status: "active" })],
       new Map([[3, CONFIGURED]]),
@@ -51,17 +44,18 @@ describe("renderProjectsMessage", () => {
     );
 
     expect(rows(keyboard)).toEqual([
-      [["⏹ Stop helyx", "proj:stop:3"]],
-      [["⚙️", "pmchg:3:prov"], ["🧹 Clear context", "proj:clearctx:3"]],
+      [["🟢 helyx", "pminf:3"]],
+      [["⏹", "proj:stop:3"], ["⚙️", "pmchg:3:prov"], ["🧹", "proj:clearctx:3"]],
     ]);
     expect(text).toContain("GLM (Z.ai) / glm-5.2");
   });
 
-  test("a project with no provider row reads as Claude on its default model", () => {
+  test("a project with no provider reads as Claude on its default model", () => {
     const { text, keyboard } = renderProjectsMessage([project({ id: 4 })], new Map(), new Map());
 
     expect(rows(keyboard)).toEqual([
-      [["▶️ Start helyx", "proj:start:4"], ["⚙️", "pmchg:4:prov"]],
+      [["⚪ helyx", "pminf:4"]],
+      [["▶️", "proj:start:4"], ["⚙️", "pmchg:4:prov"]],
     ]);
     // Spelled out, not left blank: "what is this running on" is the question
     // the line exists to answer, and an empty answer is how it fails.
@@ -75,15 +69,11 @@ describe("renderProjectsMessage", () => {
     expect(text).toContain("Ollama / default");
   });
 
-  test("nothing renders an info button any more", () => {
-    // The `pminf:` handler stays — a /projects message already in the chat
-    // still carries those buttons and outlives this deploy, and a callback
-    // nobody handles leaves Telegram spinning on it. But nothing emits one.
+  test("every settled project gets an info header button naming it", () => {
     const { keyboard } = renderProjectsMessage([project({ id: 3 })], new Map([[3, CONFIGURED]]), new Map());
 
-    for (const row of rows(keyboard)) {
-      for (const [, data] of row) expect(data.startsWith("pminf:")).toBe(false);
-    }
+    const headers = rows(keyboard).flat().filter(([, data]) => data.startsWith("pminf:"));
+    expect(headers).toEqual([["⚪ helyx", "pminf:3"]]);
   });
 
   test("a pending project gets no rows — its settled state is not known yet", () => {
@@ -162,13 +152,14 @@ describe("renderProjectsMessage", () => {
       new Map(),
     );
 
-    // a is active, so it gets two rows (Stop alone, then ⚙️+🧹 paired); b is
-    // not, so it keeps the single combined Start+⚙️ row — in project order.
+    // Each project gets a header row (name + status) then one control row —
+    // a's is ⏹/⚙️/🧹, b's is ▶️/⚙️ — in project order.
     const got = rows(keyboard);
-    expect(got.length).toBe(3);
-    expect(got[0]).toEqual([["⏹ Stop a", "proj:stop:1"]]);
-    expect(got[1]).toEqual([["⚙️", "pmchg:1:prov"], ["🧹 Clear context", "proj:clearctx:1"]]);
-    expect(got[2]).toEqual([["▶️ Start b", "proj:start:2"], ["⚙️", "pmchg:2:prov"]]);
+    expect(got.length).toBe(4);
+    expect(got[0]).toEqual([["🟢 a", "pminf:1"]]);
+    expect(got[1]).toEqual([["⏹", "proj:stop:1"], ["⚙️", "pmchg:1:prov"], ["🧹", "proj:clearctx:1"]]);
+    expect(got[2]).toEqual([["⚪ b", "pminf:2"]]);
+    expect(got[3]).toEqual([["▶️", "proj:start:2"], ["⚙️", "pmchg:2:prov"]]);
   });
 });
 

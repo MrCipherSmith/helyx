@@ -66,8 +66,14 @@ export function configLabels(cfg: ProviderSelection | undefined): { provider: st
  * rows. Both render sites (the initial reply and the post-action re-render) call
  * this, so the per-project layout lives in exactly one place.
  *
- * Each settled project gets a text line naming what it runs on, and one row of
- * controls beneath it — Stop/Start (left) | ⚙️ settings (right).
+ * Telegram renders the text block and the keyboard as two separate areas: every
+ * project's status line sits together at the top, and every project's buttons
+ * sit together, stacked, below — with nothing but row order tying a button back
+ * to the project it belongs to. With more than a handful of projects that stack
+ * reads as an undifferentiated wall of "⏹", "⚙️", "🧹" (screenshot-reported,
+ * 2026-09-04). Each project now gets a header row first — its status emoji and
+ * name, own full-width row, tapping it answers the same provider/model toast
+ * `pminf:` always has — so the eye has a name to anchor to before the icons.
  *
  * Provider and model were briefly moved out of the text and into a second row
  * of display-only buttons, one under each control. It reads well in a mockup
@@ -76,13 +82,11 @@ export function configLabels(cfg: ProviderSelection | undefined): { provider: st
  * `geekom-model-1` is truncated to something that no longer names the model.
  * The text line has the full width and does not truncate, which is the whole
  * reason it is the right place for a value the operator reads rather than
- * presses.
+ * presses. They stayed there.
  *
- * So they are back in the line and the info row is gone. The `pminf:` handler
- * below stays: a `/projects` message already sitting in the chat still carries
- * those buttons, and it outlives this deploy the same way it outlives a
- * `/project-remove` — the handler is what keeps an old message from answering
- * with a spinner that never resolves. Nothing emits `pminf:` any more.
+ * The controls themselves are icon-only now, not `⏹ Stop keryx` — the header
+ * row above already names the project, so the label was pure repetition, and
+ * dropping it is what lets Stop/⚙️/🧹 share one row instead of two.
  *
  * A pending project shows its pending marker but no controls: its settled state
  * is unknown until the command completes.
@@ -110,24 +114,20 @@ export function renderProjectsMessage(
       continue;
     }
     const isActive = p.session_status === "active";
+    const statusEmoji = isActive ? "🟢" : "⚪";
     const { provider, model } = configLabels(selections.get(p.id));
-    lines.push(`${isActive ? "🟢" : "⚪"} ${p.name}  (${p.path})  ·  ${provider} / ${model}`);
+    lines.push(`${statusEmoji} ${p.name}  (${p.path})  ·  ${provider} / ${model}`);
+
+    keyboard.text(`${statusEmoji} ${p.name}`, `pminf:${p.id}`).row();
 
     if (isActive) {
-      // Stop gets its own full-width row while active — cramming ⚙️/🧹 onto
-      // it risks the same label truncation the file's other comments already
-      // warn about, and it's the button worth reading at a glance instead of
-      // squinting at. ⚙️ and 🧹 share the row below it instead: both labels
-      // are short enough that pairing them doesn't have the same risk.
       keyboard
-        .text(`⏹ Stop ${p.name}`, `proj:stop:${p.id}`)
-        .row()
+        .text("⏹", `proj:stop:${p.id}`)
         .text("⚙️", `pmchg:${p.id}:prov`)
-        .text("🧹 Clear context", `proj:clearctx:${p.id}`)
+        .text("🧹", `proj:clearctx:${p.id}`)
         .row();
     } else {
-      // Inactive: unchanged from before 🧹 existed — Start + ⚙️ share one row.
-      keyboard.text(`▶️ Start ${p.name}`, `proj:start:${p.id}`).text("⚙️", `pmchg:${p.id}:prov`).row();
+      keyboard.text("▶️", `proj:start:${p.id}`).text("⚙️", `pmchg:${p.id}:prov`).row();
     }
   }
 
@@ -185,13 +185,9 @@ export async function handleProjectCallback(ctx: Context): Promise<void> {
   const parts = data.split(":");
 
   // pminf:<projectId> — display-only: answer with the project's current config,
-  // no state change.
-  //
-  // Nothing renders these buttons any more — provider and model went back into
-  // the text line, because two buttons sharing a row truncate a model id. This
-  // stays for the messages that were already sent: an old /projects message
-  // keeps its buttons for as long as it is on screen, and a callback with no
-  // handler leaves Telegram spinning on it.
+  // no state change. Now doubles as each project's header row (see
+  // renderProjectsMessage) — the icon-only controls below it dropped the name
+  // from their labels, so this is where a tap still gets it back.
   //
   // The absence of a row means the project is gone, not that it is on stock
   // Claude: an old /projects message outlives a `/project-remove`, and answering
