@@ -689,6 +689,18 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
           await Bun.sleep(200);
           await runShell(`tmux send-keys -t "${target}" ':q!' Enter`);
           result = { ok: true, output: `Sent :q! to ${target}` };
+        } else if (action === "clear_context") {
+          // Escape first so a partially-typed line in the pane doesn't get
+          // concatenated onto "/clear" (same reason close_editor sends it
+          // before ':q!'). No busy-check — this fires while Claude may be
+          // mid-tool-call, same as esc/interrupt above; unlike interrupt this
+          // isn't meant to be polite about it, since clearing context is a
+          // deliberate hard reset the operator confirmed via `proj:clearctx_go`
+          // (bot/commands/projects.ts) before this ever gets enqueued.
+          await runShell(`tmux send-keys -t "${target}" Escape`);
+          await Bun.sleep(200);
+          await runShell(`tmux send-keys -t "${target}" "/clear" Enter`);
+          result = { ok: true, output: `Sent /clear to ${target}` };
         } else if (action === "btw") {
           // Send /btw side question to Claude Code — does not interrupt the main task.
           // Uses Bun.spawn with args array (not runShell) to safely pass arbitrary question text.

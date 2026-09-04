@@ -113,10 +113,19 @@ export function renderProjectsMessage(
     const { provider, model } = configLabels(selections.get(p.id));
     lines.push(`${isActive ? "🟢" : "⚪"} ${p.name}  (${p.path})  ·  ${provider} / ${model}`);
 
-    keyboard
-      .text(isActive ? `⏹ Stop ${p.name}` : `▶️ Start ${p.name}`, `proj:${isActive ? "stop" : "start"}:${p.id}`)
-      .text("⚙️", `pmchg:${p.id}:prov`)
-      .row();
+    keyboard.text(isActive ? `⏹ Stop ${p.name}` : `▶️ Start ${p.name}`, `proj:${isActive ? "stop" : "start"}:${p.id}`);
+    // 🧹 only for an active session — there is no Claude Code process to send
+    // /clear to otherwise, and offering it on a stopped project would just
+    // enqueue a tmux_send_keys command with nothing on the other end. Its
+    // label is long enough that cramming it into Stop/Start's own row risks
+    // the same truncation the file's other comments already warn about, so
+    // an active project gets a second row for it instead of a third button
+    // sharing the first; an inactive project's row is unchanged.
+    if (isActive) {
+      keyboard.text("⚙️", `pmchg:${p.id}:prov`).row().text("🧹 Clear context", `proj:clearctx:${p.id}`).row();
+    } else {
+      keyboard.text("⚙️", `pmchg:${p.id}:prov`).row();
+    }
   }
 
   if (variant === "rerender") {
@@ -203,8 +212,51 @@ export async function handleProjectCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  const action = parts[1]; // "start" | "stop" | "refresh" | "start_all"
+  const action = parts[1]; // "start" | "stop" | "refresh" | "start_all" | "clearctx" | "clearctx_go" | "clearctx_cancel"
   const id = Number(parts[2]);
+
+  // 🧹 Clear context — /clear discards the ENTIRE conversation history for
+  // that project's session, not just whatever prompted the tap, so this gets
+  // its own explicit confirm/cancel step rather than firing straight from the
+  // list — the same reasoning `proj_stop` already gets a gate for, though
+  // this isn't a restart/downtime action so it doesn't go through
+  // `beginRestartConfirmation`'s fingerprint model (that module gates
+  // `half`/`scope`/`downtime`, none of which apply to clearing a transcript).
+  if (action === "clearctx" || action === "clearctx_go" || action === "clearctx_cancel") {
+    const project = await projectService.get(id);
+    if (!project) {
+      await ctx.answerCallbackQuery({ text: "Project not found" });
+      return;
+    }
+
+    if (action === "clearctx") {
+      await ctx.answerCallbackQuery();
+      const confirmKeyboard = new InlineKeyboard()
+        .text(`🧹 Yes, clear ${project.name}`, `proj:clearctx_go:${id}`)
+        .row()
+        .text("Cancel", `proj:clearctx_cancel:${id}`);
+      await ctx.editMessageText(
+        `Clear ${project.name}'s context? This sends /clear to the live session — it discards the whole conversation history, not just the last task.`,
+        { reply_markup: confirmKeyboard },
+      );
+      return;
+    }
+
+    if (action === "clearctx_cancel") {
+      await ctx.answerCallbackQuery({ text: "Cancelled" });
+      await rerenderProjects(ctx);
+      return;
+    }
+
+    // clearctx_go
+    await sql`
+      INSERT INTO admin_commands (command, payload)
+      VALUES ('tmux_send_keys', ${sql.json({ project: project.name, action: "clear_context" })})
+    `;
+    await ctx.answerCallbackQuery({ text: `🧹 Clearing ${project.name}'s context...` });
+    await rerenderProjects(ctx);
+    return;
+  }
 
   if (action === "refresh") {
     await ctx.answerCallbackQuery({ text: "Refreshed" });

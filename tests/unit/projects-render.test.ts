@@ -38,11 +38,13 @@ function rows(keyboard: { inline_keyboard: readonly (readonly { text: string; ca
 const CONFIGURED: ProviderSelection = { providerId: 7, providerName: "GLM (Z.ai)", model: "glm-5.2" };
 
 describe("renderProjectsMessage", () => {
-  test("a configured project gets one row of controls, and its config in the text", () => {
+  test("a configured project gets two rows of controls (a 🧹 Clear row while active), and its config in the text", () => {
     // The info row was tried and taken out again: two buttons share a row's
     // width, and `glm-5.2` survives that but `deepseek-v4-pro` does not. The
     // text line has the full width, and provider and model are read rather
-    // than pressed.
+    // than pressed. 🧹 Clear context gets its own row for the same reason —
+    // its label is long enough to risk truncating Stop/Start's if the two
+    // shared a row.
     const { text, keyboard } = renderProjectsMessage(
       [project({ id: 3, session_status: "active" })],
       new Map([[3, CONFIGURED]]),
@@ -51,6 +53,7 @@ describe("renderProjectsMessage", () => {
 
     expect(rows(keyboard)).toEqual([
       [["⏹ Stop helyx", "proj:stop:3"], ["⚙️", "pmchg:3:prov"]],
+      [["🧹 Clear context", "proj:clearctx:3"]],
     ]);
     expect(text).toContain("GLM (Z.ai) / glm-5.2");
   });
@@ -160,11 +163,13 @@ describe("renderProjectsMessage", () => {
       new Map(),
     );
 
-    // One row per project now, in order, and each project's config in its line.
+    // One row per project, in order, plus a's extra 🧹 row since it's active —
+    // b stays a single row since it's not.
     const got = rows(keyboard);
-    expect(got.length).toBe(2);
+    expect(got.length).toBe(3);
     expect(got[0]).toEqual([["⏹ Stop a", "proj:stop:1"], ["⚙️", "pmchg:1:prov"]]);
-    expect(got[1]).toEqual([["▶️ Start b", "proj:start:2"], ["⚙️", "pmchg:2:prov"]]);
+    expect(got[1]).toEqual([["🧹 Clear context", "proj:clearctx:1"]]);
+    expect(got[2]).toEqual([["▶️ Start b", "proj:start:2"], ["⚙️", "pmchg:2:prov"]]);
   });
 });
 
