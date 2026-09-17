@@ -1092,6 +1092,67 @@ const migrations: Migration[] = [
       await tx`ALTER TABLE message_queue DROP COLUMN IF EXISTS claimed_at`;
     },
   },
+  {
+    version: 56,
+    name: "session autostart — projects.autostart, session_state_events, host_state (flow 067)",
+    up: async (tx) => {
+      // Every path that starts the session half started every project, because
+      // `loadProjects` in cli.ts asks for the whole table and nothing narrows
+      // it. These three pieces of schema are what lets a start be narrowed:
+      //
+      //   projects.autostart    — which projects a COLD boot may bring up
+      //   host_state            — the boot id, and the snapshot of what was
+      //                           live when the last teardown began
+      //   session_state_events  — the durable record of status changes, which
+      //                           until now existed only as a mutable column
+      //                           on `sessions` that `tmuxStop` wiped wholesale
+      //
+      // The first two answer different questions and neither substitutes for
+      // the other: a cold boot must ignore whatever ran before the host went
+      // down, and a restart must ignore the autostart flag. See flow 067.
+      await tx`ALTER TABLE projects ADD COLUMN IF NOT EXISTS autostart BOOLEAN NOT NULL DEFAULT false`;
+      // Seeded only while no project carries the flag at all — i.e. the first
+      // time this runs. An operator who later turns helyx off, or turns a
+      // second project on, keeps that decision across every replay of this
+      // migration; an unconditional UPDATE would quietly undo it.
+      await tx`
+        UPDATE projects SET autostart = true
+        WHERE name = 'helyx'
+          AND NOT EXISTS (SELECT 1 FROM projects WHERE autostart)
+      `;
+
+      await tx`
+        CREATE TABLE IF NOT EXISTS host_state (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+      `;
+
+      await tx`
+        CREATE TABLE IF NOT EXISTS session_state_events (
+          id BIGSERIAL PRIMARY KEY,
+          session_id INTEGER,
+          project TEXT,
+          from_status TEXT,
+          to_status TEXT NOT NULL,
+          reason TEXT,
+          actor TEXT,
+          at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+      `;
+      // The two questions asked of this table are "what happened to this
+      // session" and "what happened recently", and neither is answerable by a
+      // sequential scan once it has months of rows in it.
+      await tx`CREATE INDEX IF NOT EXISTS idx_session_state_events_session ON session_state_events(session_id, at DESC)`;
+      await tx`CREATE INDEX IF NOT EXISTS idx_session_state_events_at ON session_state_events(at DESC)`;
+    },
+    down: async (tx) => {
+      await tx`DROP TABLE IF EXISTS session_state_events`;
+      await tx`DROP TABLE IF EXISTS host_state`;
+      await tx`ALTER TABLE projects DROP COLUMN IF EXISTS autostart`;
+    },
+  },
 ];
 
 // --- Public API ---

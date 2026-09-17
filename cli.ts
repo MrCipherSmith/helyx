@@ -21,6 +21,13 @@ import { resolve, basename, dirname } from "path";
 import { homedir, tmpdir } from "os";
 import { windowName, parseWindowNames, partitionByWindow } from "./sessions/tmux-windows.ts";
 import { decideTmuxScope, verifyStart, TMUX_SCOPE_UNIT_FILE } from "./sessions/tmux-server.ts";
+import {
+  decideStartSet,
+  encodeSnapshot,
+  decodeSnapshot,
+  HOST_STATE_BOOT_ID,
+  HOST_STATE_SNAPSHOT,
+} from "./sessions/restore-plan.ts";
 import { parseFlags, flagValue } from "./utils/cli-flags.ts";
 import { resolveMemoryMb, presetsThatFit } from "./utils/host-memory.ts";
 import { dashboardEnvLines } from "./utils/dashboard-readiness.ts";
@@ -1410,7 +1417,7 @@ async function prune() {
 
 const TMUX_SESSION = "bots";
 
-type Project = { name: string; path: string };
+type Project = { name: string; path: string; autostart: boolean };
 
 /** Run a psql query via docker compose exec, return rows as pipe-separated strings. */
 async function dbQuery(sql: string): Promise<{ ok: boolean; rows: string[] }> {
@@ -1423,12 +1430,92 @@ async function dbQuery(sql: string): Promise<{ ok: boolean; rows: string[] }> {
 }
 
 async function loadProjects(): Promise<Project[]> {
-  const { ok, rows } = await dbQuery("SELECT name, path FROM projects ORDER BY created_at");
+  const { ok, rows } = await dbQuery("SELECT name, path, autostart FROM projects ORDER BY created_at");
   if (!ok || rows.length === 0) return [];
   return rows.map(row => {
-    const [name, ...rest] = row.split("|");
-    return { name: name.trim(), path: rest.join("|").trim() };
+    // `path` is split back out rather than taken as the last field: a path may
+    // not contain `|`, but the flag is a fixed single character at the end and
+    // splitting from both ends is what keeps that assumption local.
+    const parts = row.split("|");
+    const name = (parts.shift() ?? "").trim();
+    const autostart = (parts.pop() ?? "f").trim() === "t";
+    return { name, path: parts.join("|").trim(), autostart };
   });
+}
+
+/** Single-quote escaping for the values this file interpolates into psql. */
+function sqlLiteral(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+/** Read a `host_state` value, or null when it is absent or unreadable. */
+async function hostStateGet(key: string): Promise<string | null> {
+  const { ok, rows } = await dbQuery(`SELECT value FROM host_state WHERE key = ${sqlLiteral(key)}`);
+  if (!ok || rows.length === 0) return null;
+  return rows[0] ?? null;
+}
+
+/** Write a `host_state` value. Failure is reported, never thrown at the caller. */
+async function hostStateSet(key: string, value: string): Promise<boolean> {
+  const { ok } = await dbQuery(
+    `INSERT INTO host_state (key, value, updated_at) VALUES (${sqlLiteral(key)}, ${sqlLiteral(value)}, now())
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+  );
+  return ok;
+}
+
+/**
+ * The host's boot id — new after every reboot, stable while it stays up.
+ *
+ * This is how a cold start is told from a restart; see
+ * `sessions/restore-plan.ts`. Unreadable (a non-Linux host, a locked-down
+ * /proc) returns null, which that module treats as cold on purpose.
+ */
+function readBootId(): string | null {
+  try {
+    const id = readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim();
+    return id === "" ? null : id;
+  } catch {
+    return null;
+  }
+}
+
+/** Window names tmux currently has, or null when there is no session to ask. */
+async function liveWindowNames(): Promise<string[] | null> {
+  const listed = await run(
+    ["tmux", "list-windows", "-t", TMUX_SESSION, "-F", "#{window_name}"],
+    { silent: true },
+  );
+  if (!listed.ok) return null;
+  return [...parseWindowNames(listed.output)];
+}
+
+/**
+ * Record what is live, so the next start can bring back exactly this.
+ *
+ * Taken from tmux rather than from the `sessions` table: rows there go stale
+ * in ways tmux cannot — on 2026-09-17 session 3 still read `active` hours
+ * after the host it ran on had rebooted.
+ */
+async function snapshotLiveWindows(): Promise<string[] | null> {
+  const windows = await liveWindowNames();
+  if (windows === null) return null;
+  await hostStateSet(HOST_STATE_SNAPSHOT, encodeSnapshot(windows));
+  return windows;
+}
+
+/**
+ * Record, after a start, that this boot has been started and what it is running.
+ *
+ * The boot id is what makes the *next* start a restart rather than a cold one.
+ * The snapshot is refreshed here as well so a start that was itself narrowed —
+ * `--only`, or a cold start bringing up helyx alone — leaves behind a record of
+ * what is actually live, not the larger set from before the reboot.
+ */
+async function recordStartedState(): Promise<void> {
+  const bootId = readBootId();
+  if (bootId !== null) await hostStateSet(HOST_STATE_BOOT_ID, bootId);
+  await snapshotLiveWindows();
 }
 
 
@@ -1597,6 +1684,40 @@ async function tmuxStart() {
 
   const usePanes = process.argv.includes("--split") || process.argv.includes("-s");
 
+  const present = projects.filter(p => existsSync(p.path));
+  for (const p of projects) {
+    if (!existsSync(p.path)) console.log(`  ${c.yellow("SKIP")} ${p.name} — ${p.path} not found`);
+  }
+
+  // Which of them this start may bring up. Until flow 067 the answer was "all
+  // of them", which is why a reboot handed the operator fifteen sessions and a
+  // bounce could not put back the three that had actually been running. See
+  // sessions/restore-plan.ts for how the two cases are told apart.
+  const only = flagValue(parseFlags(process.argv), "only");
+  const decision = only
+    ? {
+        // `proj_start` on a host with no tmux server takes this path: it wants
+        // one project, and used to get `up`, i.e. every project.
+        start: present.filter(p => p.name === only),
+        cold: false,
+        reason: `--only ${only}`,
+      }
+    : decideStartSet({
+        bootId: readBootId(),
+        storedBootId: await hostStateGet(HOST_STATE_BOOT_ID),
+        snapshot: decodeSnapshot(await hostStateGet(HOST_STATE_SNAPSHOT)),
+        projects: present,
+      });
+
+  if (only && decision.start.length === 0) {
+    console.log(`\n  ${c.red(`No configured project named ${only} with an existing path.`)}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  console.log(`\n  ${c.dim(decision.cold ? "Cold start" : "Restart")}: ${c.dim(decision.reason)}`);
+  const wanted = decision.start;
+
   if (exists.ok) {
     // Session already running — start any missing windows
     console.log(`\n  ${c.bold("Session")} ${c.cyan(TMUX_SESSION)} ${c.dim("already running — starting missing windows...")}\n`);
@@ -1609,12 +1730,11 @@ async function tmuxStart() {
       { silent: true },
     );
     const existingWindows = parseWindowNames(windowList.output);
-    const present = projects.filter(p => existsSync(p.path));
-    const { toStart } = partitionByWindow(present, existingWindows);
+    const { toStart } = partitionByWindow(wanted, existingWindows);
     const startNames = new Set(toStart.map(windowName));
 
     const failed: { window: string; error: string }[] = [];
-    for (const p of present) {
+    for (const p of wanted) {
       const wname = windowName(p);
       if (!startNames.has(wname)) {
         console.log(`  ${c.dim("·")} ${wname} — already running`);
@@ -1635,6 +1755,7 @@ async function tmuxStart() {
     if (reportTmuxStart(verdict)) {
       console.log(`\n  Attach: ${c.cyan(`tmux attach -t ${TMUX_SESSION}`)}`);
     }
+    await recordStartedState();
     await ensureAdminDaemon();
     await ensureOllamaProxy();
     return;
@@ -1646,12 +1767,7 @@ async function tmuxStart() {
   let paneCount = 0;
   const expected: string[] = [];
   const failed: { window: string; error: string }[] = [];
-  for (const p of projects) {
-    if (!existsSync(p.path)) {
-      console.log(`  ${c.yellow("SKIP")} ${p.name} — ${p.path} not found`);
-      continue;
-    }
-
+  for (const p of wanted) {
     const wname = windowName(p);
     expected.push(wname);
     const error = await startWindow(p, first, usePanes, paneCount);
@@ -1684,6 +1800,7 @@ async function tmuxStart() {
     }
   }
 
+  await recordStartedState();
   await ensureAdminDaemon();
   await ensureOllamaProxy();
 
@@ -1747,6 +1864,20 @@ async function tmuxAttach(dir?: string) {
 }
 
 async function tmuxStop() {
+  // Before the kill, never after. What was live is the only thing that can
+  // tell the next start which sessions to bring back, and every step below
+  // destroys it: `kill-session` takes the windows, and the UPDATE takes the
+  // `sessions` rows. Until flow 067 this ran in the opposite order, so a
+  // bounce could only ever restore "all of them".
+  step("Recording live sessions");
+  const snapshot = await snapshotLiveWindows();
+  done();
+  if (snapshot === null) {
+    console.log(`  ${c.dim("· no tmux session to record — the previous snapshot is kept")}`);
+  } else {
+    console.log(`  ${c.dim(`· ${snapshot.length} window(s) recorded for restore: ${snapshot.join(", ") || "none"}`)}`);
+  }
+
   step("Killing tmux session");
   await run(["tmux", "kill-session", "-t", TMUX_SESSION], { silent: true });
   done();
@@ -1803,7 +1934,8 @@ async function tmuxAdd(dir?: string) {
     return;
   }
   console.log(`  ${c.green("✓")} Saved: ${windowName({ name, path: projectDir })}`);
-  console.log(`\n  ${c.dim(`Run: helyx up to start all projects`)}`);
+  console.log(`\n  ${c.dim(`Run: helyx up --only ${name} to start it, or start it from Telegram`)}`);
+  console.log(`  ${c.dim(`A plain 'helyx up' starts the autostart projects, not this one — see projects.autostart`)}`);
 }
 
 async function tmuxRun(dir?: string) {
@@ -2262,9 +2394,12 @@ function help() {
     bot-logs        Show bot logs (follow mode)
 
   ${c.bold("Tmux (project workspaces):")}
-    up [-a] [-s]    Start all projects in tmux (-a attach, -s split panes)
-    down            Stop all tmux sessions + clean DB
-    bounce [-a] [-s] Restart tmux (down + up)
+    up [-a] [-s]    Start sessions in tmux (-a attach, -s split panes).
+                    After a reboot: the autostart projects only. Otherwise:
+                    whatever was live at the last teardown.
+    up --only <name>  Start that one project and nothing else
+    down            Stop all tmux sessions + clean DB (records what was live)
+    bounce [-a] [-s] Restart tmux (down + up) — restores what was live
     ps              List configured projects and status
     add [dir]       Add project (saves to config + registers in bot DB)
     run [dir]       Launch project in current terminal (full monitoring)

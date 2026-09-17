@@ -47,12 +47,18 @@ export async function transitionSession(
     return false;
   }
 
+  // `FROM sessions prev` reads the row as it was before this statement, so the
+  // status being left is returned alongside the one being taken. Without it the
+  // audit row below could only ever say where a session ended up, and "active →
+  // inactive" and "inactive → inactive" are not the same event.
   const result = await sql`
-    UPDATE sessions
+    UPDATE sessions s
     SET status = ${to}, last_active = now()
-    WHERE id = ${sessionId}
-      AND status = ANY(${validFrom})
-    RETURNING id, project, status
+    FROM sessions prev
+    WHERE prev.id = s.id
+      AND s.id = ${sessionId}
+      AND s.status = ANY(${validFrom})
+    RETURNING s.id, s.project, s.status, prev.status AS from_status
   `;
 
   if (result.length === 0) {
@@ -67,6 +73,32 @@ export async function transitionSession(
   }
 
   logger.info({ sessionId, to, ...meta }, "session transitioned");
+
+  // The durable half of the same fact. `sessions.status` is a single mutable
+  // column, and `tmuxStop` rewrites every remote row in one statement — so
+  // until flow 067 nothing survived a restart to say which sessions had been
+  // running, or who stopped them. Recorded after the UPDATE and never in front
+  // of it: an audit row for a transition that did not happen is worse than a
+  // missing one, which is also why a failed INSERT here does not fail the
+  // transition that already committed.
+  const reason = typeof meta?.reason === "string" ? meta.reason : null;
+  const actor = typeof meta?.actor === "string" ? meta.actor : null;
+  try {
+    await sql`
+      INSERT INTO session_state_events (session_id, project, from_status, to_status, reason, actor)
+      VALUES (
+        ${sessionId},
+        ${result[0].project ?? null},
+        ${result[0].from_status ?? null},
+        ${to},
+        ${reason},
+        ${actor}
+      )
+    `;
+  } catch (err) {
+    logger.warn({ sessionId, to, err }, "session transition recorded in sessions but not in session_state_events");
+  }
+
   try {
     broadcast("session-state", { id: sessionId, status: to, project: result[0].project });
   } catch {}
