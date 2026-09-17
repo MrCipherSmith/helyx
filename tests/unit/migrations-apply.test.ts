@@ -175,18 +175,29 @@ describeWithDb("applied to an empty database", () => {
     // helyx off — or turns a different project on — must keep that across the
     // next deploy, which is why the seed is guarded by "nothing is flagged yet"
     // rather than being an unconditional UPDATE.
+    //
+    // Driven by re-running the real migration, not by a copy of its UPDATE
+    // pasted here: a test that re-implements the statement it is checking
+    // passes just as happily after the migration changes underneath it.
+    // Raised in review of flow 067.
     await db.sql`
       INSERT INTO projects (name, path, tmux_session_name, autostart)
       VALUES ('seed-probe', '/tmp/seed-probe', 'seed-probe', true)
       ON CONFLICT (path) DO UPDATE SET autostart = true
     `;
-    await db.sql`
-      UPDATE projects SET autostart = true
-      WHERE name = 'helyx' AND NOT EXISTS (SELECT 1 FROM projects WHERE autostart)
-    `;
+    await db.sql`UPDATE projects SET autostart = false WHERE name = 'helyx'`;
+
+    const autostartMigration = MIGRATIONS.find((m) => m.name.includes("session autostart"));
+    expect(autostartMigration).toBeDefined();
+    await db.sql`DELETE FROM schema_versions WHERE version = ${autostartMigration!.version}`;
+    const run = await runMigrations(db.sql);
+    expect(run.applied).toEqual([autostartMigration!.name]);
+
     const flagged = await db.sql<{ name: string }[]>`SELECT name FROM projects WHERE autostart`;
     expect(flagged.map((r) => r.name)).toEqual(["seed-probe"]);
+
     await db.sql`DELETE FROM projects WHERE name = 'seed-probe'`;
+    await db.sql`UPDATE projects SET autostart = true WHERE name = 'helyx'`;
   });
 
   test("the version table records one row per migration, by name", async () => {

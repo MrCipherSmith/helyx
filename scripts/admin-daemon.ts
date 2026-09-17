@@ -334,15 +334,34 @@ async function runShell(cmd: string): Promise<{ ok: boolean; output: string }> {
  * overwriting a good snapshot with an empty one is how a restart ends up
  * restoring nothing.
  */
-async function recordLiveWindows(): Promise<string[] | null> {
+async function recordLiveWindows(
+  options: { whenNoSession?: "keep" | "empty" } = {},
+): Promise<string[] | null> {
   const listed = await runShell(`tmux list-windows -t bots -F '#{window_name}' 2>/dev/null`);
-  if (!listed.ok) return null;
-  const windows = [...parseWindowNames(listed.output)];
-  await sql`
-    INSERT INTO host_state (key, value, updated_at)
-    VALUES (${HOST_STATE_SNAPSHOT}, ${encodeSnapshot(windows)}, now())
-    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
-  `;
+  // `keep` is the default and the safe one. `empty` is for the caller that has
+  // just killed the windows itself: killing the last window of `bots` destroys
+  // the session, `list-windows` then fails, and keeping the old snapshot would
+  // restore the very project the operator asked to stop — which is what the
+  // comment on `proj_stop` claimed to prevent while the code did the opposite.
+  if (!listed.ok && options.whenNoSession !== "empty") return null;
+  const windows = listed.ok ? [...parseWindowNames(listed.output)] : [];
+  try {
+    await sql`
+      INSERT INTO host_state (key, value, updated_at)
+      VALUES (${HOST_STATE_SNAPSHOT}, ${encodeSnapshot(windows)}, now())
+      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+    `;
+  } catch (err) {
+    // Never into the command's result. This throws for a reason that has
+    // nothing to do with the command the operator ran — most plausibly
+    // `relation "host_state" does not exist`, because migration 56 runs from
+    // main.ts inside the bot container while this daemon runs on the host, so
+    // a daemon restarted before the bot was rebuilt sees a table that is not
+    // there yet. Unguarded, that aborted `tmux_stop` before its kill and
+    // reported a successful `proj_start` as failed.
+    console.warn("[admin-daemon] could not record the session snapshot:", err);
+    return listed.ok ? windows : null;
+  }
   return windows;
 }
 
@@ -472,10 +491,18 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
         await recordLiveWindows();
         result = await runShell("tmux kill-session -t bots 2>&1 || true");
         // Mark all remote sessions as inactive in DB
+        // `FOR UPDATE` in the CTE for the reason given in
+        // sessions/state-machine.ts: without the lock a concurrent update can
+        // leave the audit row naming a status the session no longer had.
         const stopped = await sql`
+          WITH prev AS (
+            SELECT id, status FROM sessions
+            WHERE source = 'remote' AND status <> 'inactive'
+            FOR UPDATE
+          )
           UPDATE sessions s SET status = 'inactive'
-          FROM sessions prev
-          WHERE prev.id = s.id AND s.source = 'remote' AND s.status <> 'inactive'
+          FROM prev
+          WHERE s.id = prev.id
           RETURNING s.id, s.project, prev.status AS from_status
         ` as unknown as { id: number; project: string | null; from_status: string | null }[];
         await recordSessionEvents(stopped, "inactive", "tmux_stop", "admin-daemon");
@@ -489,7 +516,15 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
         if (!/^[a-zA-Z0-9/_.-]+$/.test(path)) {
           result = { ok: false, output: `invalid path: ${path}` }; break;
         }
-        const name = path.split("/").pop() ?? path;
+        // The configured name, not the directory's. `helyx add . --name
+        // work-session` stores a name of the operator's choosing, and
+        // `tmuxStart` names windows — and matches the restore snapshot —
+        // by that name. Taking the basename here produced a window the restore
+        // could never match, so a project started this way was silently dropped
+        // by the next bounce. Basename stays as the fallback for a path that is
+        // not in `projects` at all.
+        const [configured] = await sql`SELECT name FROM projects WHERE path = ${path}`;
+        const name = (configured?.name as string | undefined) ?? path.split("/").pop() ?? path;
         // Add window to existing tmux session or start a new session
         const hasSession = await runShell("tmux has-session -t bots 2>/dev/null");
         if (hasSession.ok) {
@@ -538,7 +573,9 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
           // The operator asked for one, on a host whose session half is down —
           // which, after flow 067, is exactly the state a reboot leaves behind,
           // so this branch stopped being the rare one.
-          result = await runCommand("up", ["--only", name]);
+          // Matched by path, which is what this payload carries and what is
+          // unambiguous — two projects may share a name.
+          result = await runCommand("up", ["--only", path]);
         }
         // The window set changed either way; record it so a restart brings this
         // project back with the others.
@@ -882,22 +919,35 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
         result = { ok: true, output: killResult.output };
         const stoppedProject = (project_id
           ? await sql`
+              WITH prev AS (
+                SELECT id, status FROM sessions
+                WHERE project_id = ${project_id} AND source = 'remote' AND status <> 'inactive'
+                FOR UPDATE
+              )
               UPDATE sessions s SET status = 'inactive'
-              FROM sessions prev
-              WHERE prev.id = s.id AND s.project_id = ${project_id} AND s.source = 'remote' AND s.status <> 'inactive'
+              FROM prev
+              WHERE s.id = prev.id
               RETURNING s.id, s.project, prev.status AS from_status
             `
           : await sql`
+              WITH prev AS (
+                SELECT id, status FROM sessions
+                WHERE project = ${name} AND source = 'remote' AND status <> 'inactive'
+                FOR UPDATE
+              )
               UPDATE sessions s SET status = 'inactive'
-              FROM sessions prev
-              WHERE prev.id = s.id AND s.project = ${name} AND s.source = 'remote' AND s.status <> 'inactive'
+              FROM prev
+              WHERE s.id = prev.id
               RETURNING s.id, s.project, prev.status AS from_status
             `) as unknown as { id: number; project: string | null; from_status: string | null }[];
         await recordSessionEvents(stoppedProject, "inactive", "proj_stop", "admin-daemon");
         // After the windows are gone, so the snapshot no longer carries this
         // project: a stop the operator asked for must survive the next restart,
-        // which is the whole point of stopping it.
-        await recordLiveWindows();
+        // which is the whole point of stopping it. `whenNoSession: "empty"`
+        // because this branch may have killed the last window in `bots` and
+        // taken the session with it — keeping the old snapshot there would
+        // restore the project that was just stopped.
+        await recordLiveWindows({ whenNoSession: "empty" });
         break;
       }
 

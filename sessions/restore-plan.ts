@@ -140,6 +140,70 @@ export function decideStartSet(env: StartSetEnv): StartSetDecision {
   };
 }
 
+export interface PostStartEnv {
+  /** Whether the start that just ran was judged a cold one. */
+  cold: boolean;
+  /** Whether it was narrowed to a single project with `--only`. */
+  only: boolean;
+  /**
+   * Window names live after the start, or `null` when there is no tmux session
+   * at all — i.e. the start brought up nothing.
+   */
+  windows: readonly string[] | null;
+}
+
+export interface PostStartRecord {
+  /** Snapshot to store, or `null` to leave whatever is stored alone. */
+  snapshot: string[] | null;
+  /** Whether to store the current boot id as "this boot has been started". */
+  recordBootId: boolean;
+  /** Why, in one line. */
+  reason: string;
+}
+
+/**
+ * What a start should write down about itself, once it is over.
+ *
+ * Two traps live here, both found in review of the first version.
+ *
+ * The first: a cold start that brings up nothing — the session failed to
+ * create, or the only flagged project's path is gone — used to record the new
+ * boot id anyway while leaving the *previous boot's* snapshot in place. The
+ * operator's next attempt then counted as a restart and dutifully restored the
+ * whole pre-reboot fleet, which is the exact outcome this feature exists to
+ * prevent. So the boot id is recorded only when something is actually running,
+ * and a cold start that ran with nothing to show for it clears the snapshot
+ * rather than leaving a stale one to be restored.
+ *
+ * The second: `up --only <project>` is a single-project start, not the boot's
+ * start. Recording the boot id from it would mark the boot as started and turn
+ * every later `stack_up` into a restore of that one project — so the autostart
+ * set, helyx included, would never come up at all.
+ */
+export function decideRecordAfterStart(env: PostStartEnv): PostStartRecord {
+  if (env.windows === null) {
+    return env.cold
+      ? {
+          snapshot: [],
+          recordBootId: false,
+          reason: "cold start brought nothing up — clearing the previous boot's snapshot, boot id not recorded",
+        }
+      : {
+          snapshot: null,
+          recordBootId: false,
+          reason: "no tmux session after the start — keeping the stored snapshot",
+        };
+  }
+
+  return {
+    snapshot: [...env.windows],
+    recordBootId: !env.only,
+    reason: env.only
+      ? `recorded ${env.windows.length} live window(s); boot id left alone — --only is not this boot's start`
+      : `recorded ${env.windows.length} live window(s) and this boot's id`,
+  };
+}
+
 /** Serialize a snapshot for `host_state.value`. */
 export function encodeSnapshot(windows: readonly string[]): string {
   return JSON.stringify(windows);

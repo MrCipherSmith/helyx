@@ -10,6 +10,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   decideStartSet,
+  decideRecordAfterStart,
   encodeSnapshot,
   decodeSnapshot,
   BOOTSTRAP_PROJECT,
@@ -162,6 +163,46 @@ describe("decideStartSet — restart inside the same boot", () => {
       projects: [],
     });
     expect(d.start).toEqual([]);
+  });
+});
+
+describe("decideRecordAfterStart — what a finished start writes down", () => {
+  test("a cold start that brought nothing up clears the snapshot and does not claim the boot", () => {
+    // The review finding this exists for: recording the boot id while leaving
+    // the previous boot's snapshot made the operator's *next* attempt a
+    // restart, and it restored the whole pre-reboot fleet.
+    const r = decideRecordAfterStart({ cold: true, only: false, windows: null });
+    expect(r.snapshot).toEqual([]);
+    expect(r.recordBootId).toBe(false);
+  });
+
+  test("a restart that brought nothing up keeps the stored snapshot", () => {
+    // Nothing started, so nothing is known — and the snapshot is the only
+    // record of what should come back. Clearing it here would lose the fleet.
+    const r = decideRecordAfterStart({ cold: false, only: false, windows: null });
+    expect(r.snapshot).toBeNull();
+    expect(r.recordBootId).toBe(false);
+  });
+
+  test("a start that worked records the live windows and the boot id", () => {
+    const r = decideRecordAfterStart({ cold: true, only: false, windows: ["helyx"] });
+    expect(r.snapshot).toEqual(["helyx"]);
+    expect(r.recordBootId).toBe(true);
+  });
+
+  test("--only records the windows but not the boot id — it is not this boot's start", () => {
+    // Otherwise a single-project start right after a reboot consumes the cold
+    // start, and the autostart set never comes up at all.
+    const r = decideRecordAfterStart({ cold: false, only: true, windows: ["keryx"] });
+    expect(r.snapshot).toEqual(["keryx"]);
+    expect(r.recordBootId).toBe(false);
+  });
+
+  test("the snapshot it returns is a copy — the caller cannot mutate tmux's answer into the record", () => {
+    const live = ["helyx"];
+    const r = decideRecordAfterStart({ cold: true, only: false, windows: live });
+    live.push("keryx");
+    expect(r.snapshot).toEqual(["helyx"]);
   });
 });
 

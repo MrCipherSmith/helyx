@@ -23,6 +23,7 @@ import { windowName, parseWindowNames, partitionByWindow } from "./sessions/tmux
 import { decideTmuxScope, verifyStart, TMUX_SCOPE_UNIT_FILE } from "./sessions/tmux-server.ts";
 import {
   decideStartSet,
+  decideRecordAfterStart,
   encodeSnapshot,
   decodeSnapshot,
   HOST_STATE_BOOT_ID,
@@ -1496,26 +1497,45 @@ async function liveWindowNames(): Promise<string[] | null> {
  * Taken from tmux rather than from the `sessions` table: rows there go stale
  * in ways tmux cannot — on 2026-09-17 session 3 still read `active` hours
  * after the host it ran on had rebooted.
+ *
+ * Returns what was recorded, or null when there was no session to ask and
+ * nothing was written. The write's own success is returned too: the first
+ * version ignored it and printed "recorded for restore" after a failed write,
+ * so a restart would quietly restore an older snapshot while the log said
+ * otherwise.
  */
-async function snapshotLiveWindows(): Promise<string[] | null> {
+async function snapshotLiveWindows(): Promise<{ windows: string[]; stored: boolean } | null> {
   const windows = await liveWindowNames();
   if (windows === null) return null;
-  await hostStateSet(HOST_STATE_SNAPSHOT, encodeSnapshot(windows));
-  return windows;
+  const stored = await hostStateSet(HOST_STATE_SNAPSHOT, encodeSnapshot(windows));
+  return { windows, stored };
 }
 
 /**
- * Record, after a start, that this boot has been started and what it is running.
+ * Record, after a start, what is running and whether this boot has been started.
  *
- * The boot id is what makes the *next* start a restart rather than a cold one.
- * The snapshot is refreshed here as well so a start that was itself narrowed —
- * `--only`, or a cold start bringing up helyx alone — leaves behind a record of
- * what is actually live, not the larger set from before the reboot.
+ * The judgement is in `decideRecordAfterStart` — a failed cold start must not
+ * leave the previous boot's snapshot behind a freshly recorded boot id, and an
+ * `--only` start must not consume the boot's cold start. Both were review
+ * findings against the first version, and both end with the whole fleet coming
+ * back or helyx never starting.
  */
-async function recordStartedState(): Promise<void> {
-  const bootId = readBootId();
-  if (bootId !== null) await hostStateSet(HOST_STATE_BOOT_ID, bootId);
-  await snapshotLiveWindows();
+async function recordStartedState(opts: { cold: boolean; only: boolean }): Promise<void> {
+  const record = decideRecordAfterStart({
+    cold: opts.cold,
+    only: opts.only,
+    windows: await liveWindowNames(),
+  });
+
+  if (record.snapshot !== null) {
+    const stored = await hostStateSet(HOST_STATE_SNAPSHOT, encodeSnapshot(record.snapshot));
+    if (!stored) console.log(`  ${c.yellow("!")} could not record the session snapshot — the next restart will use an older one`);
+  }
+  if (record.recordBootId) {
+    const bootId = readBootId();
+    if (bootId !== null) await hostStateSet(HOST_STATE_BOOT_ID, bootId);
+  }
+  console.log(`  ${c.dim(`· ${record.reason}`)}`);
 }
 
 
@@ -1698,7 +1718,13 @@ async function tmuxStart() {
     ? {
         // `proj_start` on a host with no tmux server takes this path: it wants
         // one project, and used to get `up`, i.e. every project.
-        start: present.filter(p => p.name === only),
+        //
+        // Matched on the path as well as the name, because they are not the
+        // same thing: `helyx add . --name work-session` stores a name that is
+        // not the directory's, and the daemon has the path. Name-only matching
+        // failed such a project outright — a regression against the old `up`,
+        // which at least started it among the rest.
+        start: present.filter(p => p.name === only || p.path === only),
         cold: false,
         reason: `--only ${only}`,
       }
@@ -1710,7 +1736,7 @@ async function tmuxStart() {
       });
 
   if (only && decision.start.length === 0) {
-    console.log(`\n  ${c.red(`No configured project named ${only} with an existing path.`)}`);
+    console.log(`\n  ${c.red(`No configured project matching ${only} (by name or path) with an existing directory.`)}`);
     process.exitCode = 1;
     return;
   }
@@ -1755,7 +1781,7 @@ async function tmuxStart() {
     if (reportTmuxStart(verdict)) {
       console.log(`\n  Attach: ${c.cyan(`tmux attach -t ${TMUX_SESSION}`)}`);
     }
-    await recordStartedState();
+    await recordStartedState({ cold: decision.cold, only: only !== undefined });
     await ensureAdminDaemon();
     await ensureOllamaProxy();
     return;
@@ -1800,7 +1826,7 @@ async function tmuxStart() {
     }
   }
 
-  await recordStartedState();
+  await recordStartedState({ cold: decision.cold, only: only !== undefined });
   await ensureAdminDaemon();
   await ensureOllamaProxy();
 
@@ -1874,8 +1900,13 @@ async function tmuxStop() {
   done();
   if (snapshot === null) {
     console.log(`  ${c.dim("· no tmux session to record — the previous snapshot is kept")}`);
+  } else if (!snapshot.stored) {
+    // Said out loud rather than logged as success: the restart that follows
+    // will restore an older snapshot, and the operator is the only one who can
+    // notice that before it happens.
+    console.log(`  ${c.yellow(`! ${snapshot.windows.length} window(s) found but the snapshot could not be written — the restart will use an older one`)}`);
   } else {
-    console.log(`  ${c.dim(`· ${snapshot.length} window(s) recorded for restore: ${snapshot.join(", ") || "none"}`)}`);
+    console.log(`  ${c.dim(`· ${snapshot.windows.length} window(s) recorded for restore: ${snapshot.windows.join(", ") || "none"}`)}`);
   }
 
   step("Killing tmux session");
@@ -2396,8 +2427,12 @@ function help() {
   ${c.bold("Tmux (project workspaces):")}
     up [-a] [-s]    Start sessions in tmux (-a attach, -s split panes).
                     After a reboot: the autostart projects only. Otherwise:
-                    whatever was live at the last teardown.
-    up --only <name>  Start that one project and nothing else
+                    whatever was live at the last teardown. Restore is per
+                    window, so -s (one window, many panes) restores only the
+                    project the window is named after.
+    up --only <name|path>  Start that one project and nothing else. Does not
+                    count as this boot's start, so the autostart set still
+                    comes up on the next plain up.
     down            Stop all tmux sessions + clean DB (records what was live)
     bounce [-a] [-s] Restart tmux (down + up) — restores what was live
     ps              List configured projects and status
