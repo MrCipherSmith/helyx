@@ -1,0 +1,172 @@
+[
+  {
+    "id": "F-001",
+    "reviewer": "claude-opus-5 (scripts/review.ts reviewer pipeline)",
+    "severity": "major",
+    "problem": "A cold start that brought nothing up recorded the new boot id while leaving the previous boot's snapshot in place.",
+    "impact": "The operator's next `up` counted as a restart and restored the entire pre-reboot fleet — the exact outcome flow 067 exists to prevent.",
+    "suggested_fix": "Record the boot id only when a session actually exists; on a cold start with nothing live, clear the snapshot.",
+    "evidence": "Reviewer traced stack_up -> up -> startWindow failure -> recordStartedState writing HOST_STATE_BOOT_ID unconditionally while snapshotLiveWindows returned null.",
+    "confidence": "high",
+    "file": "cli.ts",
+    "symbol": "recordStartedState",
+    "class_scope": {
+      "sites": [
+        "cli.ts:1536 — the only write of HOST_STATE_BOOT_ID (recordStartedState)",
+        "cli.ts:1531 — the snapshot write in the same function, the half that was skipped when tmux had no session",
+        "cli.ts:1510 — the other snapshot writer (snapshotLiveWindows, used by tmuxStop), which does not write the boot id",
+        "scripts/admin-daemon.ts:350 — the daemon's snapshot write, which also never writes the boot id"
+      ],
+      "enumeration_method": "`keryx ctx rg 'HOST_STATE_BOOT_ID|HOST_STATE_SNAPSHOT|host_state' --glob '!node_modules' --glob '!.metaproject/**'` over the whole repository: four write sites in two files, plus the constants in sessions/restore-plan.ts, the reads in cli.ts:1733-1734 and the DDL in memory/db.ts. Exhaustive because every access goes through the two exported key constants."
+    },
+    "global_id": "2026-09-17-ingest-647106e-r02#F-001",
+    "disposition": {
+      "state": "acted-on",
+      "evidence": "commit 57f8c1fe93804b41d316275753887c44d7ff23be (PR #118) — decideRecordAfterStart in sessions/restore-plan.ts, covered by tests/unit/restore-plan.test.ts 'a cold start that brought nothing up clears the snapshot and does not claim the boot'"
+    }
+  },
+  {
+    "id": "F-002",
+    "reviewer": "claude-opus-5 (scripts/review.ts reviewer pipeline)",
+    "severity": "major",
+    "problem": "The daemon's snapshot write was not guarded; a DB error propagated into the command result.",
+    "impact": "tmux_stop threw before its kill-session and never stopped anything; a proj_start that had already started the project was reported as failed, inviting a second press whose kill-window loop takes the fresh session down. Most likely trigger is deploy order: migration 56 runs inside the bot container while the daemon runs on the host, so a daemon restarted first sees no host_state table.",
+    "suggested_fix": "Wrap the write in try/catch and log, the way recordSessionEvents does.",
+    "evidence": "Reviewer followed the throw to the outer catch in processCommand which sets result.ok = false.",
+    "confidence": "high",
+    "file": "scripts/admin-daemon.ts",
+    "symbol": "recordLiveWindows",
+    "class_scope": {
+      "sites": [
+        "scripts/admin-daemon.ts:349-353 — the unguarded host_state upsert (the defect)",
+        "scripts/admin-daemon.ts recordSessionEvents — the sibling write, already guarded, which is the shape the fix copies",
+        "cli.ts:1459-1465 hostStateSet — the other process's writer, guarded by dbQuery returning ok instead of throwing"
+      ],
+      "enumeration_method": "Same repository-wide search for host_state writers, intersected with the two processes that own a database handle: the daemon (`sql`, throws) and cli.ts (`dbQuery`, returns ok). Every daemon-side write of flow 067 data is listed; the sibling and the cross-process counterpart are included even though they were already correct."
+    },
+    "global_id": "2026-09-17-ingest-647106e-r02#F-002",
+    "disposition": {
+      "state": "acted-on",
+      "evidence": "commit 57f8c1fe93804b41d316275753887c44d7ff23be (PR #118) — try/catch around the host_state upsert in recordLiveWindows, with the deploy-order reason recorded in the comment"
+    }
+  },
+  {
+    "id": "F-003",
+    "reviewer": "claude-opus-5 (scripts/review.ts reviewer pipeline)",
+    "severity": "minor",
+    "problem": "Stopping the last window destroys the bots session, so list-windows failed, recordLiveWindows returned null, and the stopped project stayed in the snapshot.",
+    "impact": "The next tmux_start or stack_up in the same boot restored the project the operator had just stopped — the opposite of what the code comment claimed.",
+    "suggested_fix": "In proj_stop treat 'no session' as an empty snapshot and write it; this caller killed the windows itself.",
+    "evidence": "Reviewer walked the single-project case: snapshot ['keryx'], proj_stop keryx, session gone, snapshot unchanged.",
+    "confidence": "high",
+    "file": "scripts/admin-daemon.ts",
+    "symbol": "proj_stop",
+    "global_id": "2026-09-17-ingest-647106e-r02#F-003",
+    "disposition": {
+      "state": "acted-on",
+      "evidence": "commit 57f8c1fe93804b41d316275753887c44d7ff23be (PR #118) — recordLiveWindows({ whenNoSession: 'empty' }) in the proj_stop branch"
+    }
+  },
+  {
+    "id": "F-004",
+    "reviewer": "claude-opus-5 (scripts/review.ts reviewer pipeline)",
+    "severity": "minor",
+    "problem": "proj_start derived the window name from the directory basename while tmuxStart names windows and matches the restore snapshot by projects.name.",
+    "impact": "A project added with `helyx add . --name <other>` failed the new --only path outright (a regression against the old `up`), and any window it did create could never be matched by the restore.",
+    "suggested_fix": "Send project_id or the stored name, or have --only match on path.",
+    "evidence": "Reviewer compared admin-daemon's `path.split('/').pop()` with tmuxStart's `p.name === only`.",
+    "confidence": "high",
+    "file": "scripts/admin-daemon.ts",
+    "symbol": "proj_start",
+    "global_id": "2026-09-17-ingest-647106e-r02#F-004",
+    "disposition": {
+      "state": "acted-on",
+      "evidence": "commit 57f8c1fe93804b41d316275753887c44d7ff23be (PR #118) — the daemon reads projects.name for the path, and --only matches name or path in cli.ts"
+    }
+  },
+  {
+    "id": "F-005",
+    "reviewer": "claude-opus-5 (scripts/review.ts reviewer pipeline)",
+    "severity": "minor",
+    "problem": "The --only path skipped decideStartSet but still recorded the boot id.",
+    "impact": "A single-project start right after a reboot consumed the cold start, so every later stack_up counted as a restart of that one project and the autostart set — helyx included — never came up.",
+    "suggested_fix": "Skip the boot id on the --only path, or start the autostart set alongside it.",
+    "evidence": "Reviewer traced proj_start -> up --only keryx -> recordStartedState on a fresh boot.",
+    "confidence": "high",
+    "file": "cli.ts",
+    "symbol": "tmuxStart --only",
+    "global_id": "2026-09-17-ingest-647106e-r02#F-005",
+    "disposition": {
+      "state": "acted-on",
+      "evidence": "commit 57f8c1fe93804b41d316275753887c44d7ff23be (PR #118) — decideRecordAfterStart returns recordBootId: false for --only, covered by tests/unit/restore-plan.test.ts"
+    }
+  },
+  {
+    "id": "F-006",
+    "reviewer": "claude-opus-5 (scripts/review.ts reviewer pipeline)",
+    "severity": "minor",
+    "problem": "With split panes every project is a pane of one window named after the first project, so the snapshot holds one name.",
+    "impact": "A bounce started with `up -s` restores one project where it previously restarted all of them.",
+    "suggested_fix": "Record panes, or document that restore does not work with -s.",
+    "evidence": "Reviewer read startWindow's usePanes branch against snapshotLiveWindows.",
+    "confidence": "high",
+    "file": "cli.ts",
+    "symbol": "tmuxStart -s",
+    "global_id": "2026-09-17-ingest-647106e-r02#F-006",
+    "disposition": {
+      "state": "dismissed-out-of-scope",
+      "evidence": "decided-by: operator (aleks.zeitler@gmail.com), 2026-09-17, asked explicitly and answered 'close as out of scope': the daemon never passes -s (the 2026-09-01 incident), and the limit is documented in help() by commit 57f8c1fe93804b41d316275753887c44d7ff23be (PR #118). Pane-level restore is a separate change."
+    }
+  },
+  {
+    "id": "F-007",
+    "reviewer": "claude-opus-5 (scripts/review.ts reviewer pipeline)",
+    "severity": "info",
+    "problem": "`UPDATE ... FROM sessions prev` re-checks the target row against its new version under a concurrent update while the joined copy holds the statement-start version.",
+    "impact": "The audit row can name a status the row no longer had. The status change itself stays correct.",
+    "suggested_fix": "Lock the row first with a CTE using FOR UPDATE.",
+    "evidence": "Reviewer cited Postgres re-check semantics for concurrent UPDATE.",
+    "confidence": "high",
+    "file": "sessions/state-machine.ts",
+    "symbol": "transitionSession",
+    "global_id": "2026-09-17-ingest-647106e-r02#F-007",
+    "disposition": {
+      "state": "acted-on",
+      "evidence": "commit 57f8c1fe93804b41d316275753887c44d7ff23be (PR #118) — WITH prev AS (SELECT ... FOR UPDATE) in transitionSession and in both admin-daemon mass updates"
+    }
+  },
+  {
+    "id": "F-008",
+    "reviewer": "claude-opus-5 (scripts/review.ts reviewer pipeline)",
+    "severity": "info",
+    "problem": "tmuxStop printed 'recorded for restore' without checking whether hostStateSet succeeded.",
+    "impact": "A failed write left the restart using an older snapshot while the log claimed the new one was recorded.",
+    "suggested_fix": "Return the write result and say so when it failed.",
+    "evidence": "Reviewer noted the ignored return value of hostStateSet.",
+    "confidence": "high",
+    "file": "cli.ts",
+    "symbol": "tmuxStop",
+    "global_id": "2026-09-17-ingest-647106e-r02#F-008",
+    "disposition": {
+      "state": "acted-on",
+      "evidence": "commit 57f8c1fe93804b41d316275753887c44d7ff23be (PR #118) — snapshotLiveWindows returns { windows, stored } and tmuxStop warns when stored is false"
+    }
+  },
+  {
+    "id": "F-009",
+    "reviewer": "claude-opus-5 (scripts/review.ts reviewer pipeline)",
+    "severity": "info",
+    "problem": "The seed test re-ran a copy of migration 56's UPDATE instead of the migration.",
+    "impact": "The migration and its test could drift apart without the test failing.",
+    "suggested_fix": "Delete the version row and re-run runMigrations.",
+    "evidence": "Reviewer compared the test body with migration 56.",
+    "confidence": "high",
+    "file": "tests/unit/migrations-apply.test.ts",
+    "symbol": "autostart seed test",
+    "global_id": "2026-09-17-ingest-647106e-r02#F-009",
+    "disposition": {
+      "state": "acted-on",
+      "evidence": "commit 57f8c1fe93804b41d316275753887c44d7ff23be (PR #118) — the test deletes schema_versions for migration 56 and asserts runMigrations re-applies exactly it"
+    }
+  }
+]
