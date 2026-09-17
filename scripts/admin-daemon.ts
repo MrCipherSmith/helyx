@@ -21,6 +21,7 @@ import { restartDockerHalf } from "./restart-docker.ts";
 import { startHostIngress } from "./host-ingress.ts";
 import { summarizeTmuxHost, parseScopeState, TMUX_HEALTH_NAME } from "../sessions/tmux-server.ts";
 import { parseWindowNames } from "../sessions/tmux-windows.ts";
+import { encodeSnapshot, HOST_STATE_SNAPSHOT } from "../sessions/restore-plan.ts";
 import { runCurator, getLastCuratorRun } from "../utils/curator.ts";
 import { takeRestartLease, releaseRestartLease, heldMessage } from "../utils/restart-lease.ts";
 import { sendCuratorSummary } from "../utils/skill-approval.ts";
@@ -321,6 +322,58 @@ async function runShell(cmd: string): Promise<{ ok: boolean; output: string }> {
   return { ok: proc.exitCode === 0, output: (stdout + stderr).trim() };
 }
 
+/**
+ * Record which windows tmux has right now, for the next start to restore.
+ *
+ * The same record `cli.ts` writes, under the same key and encoding (see
+ * `sessions/restore-plan.ts`) — the daemon has its own database handle and its
+ * own shell, but the knowledge of what a snapshot *is* stays in one place.
+ *
+ * Returns null when there is no session to ask, and writes nothing in that
+ * case: "tmux is gone" is not evidence that nothing should come back, and
+ * overwriting a good snapshot with an empty one is how a restart ends up
+ * restoring nothing.
+ */
+async function recordLiveWindows(): Promise<string[] | null> {
+  const listed = await runShell(`tmux list-windows -t bots -F '#{window_name}' 2>/dev/null`);
+  if (!listed.ok) return null;
+  const windows = [...parseWindowNames(listed.output)];
+  await sql`
+    INSERT INTO host_state (key, value, updated_at)
+    VALUES (${HOST_STATE_SNAPSHOT}, ${encodeSnapshot(windows)}, now())
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+  `;
+  return windows;
+}
+
+/**
+ * Audit rows for status changes this daemon makes with its own UPDATE.
+ *
+ * `sessions/state-machine.ts` records the transitions that go through it; the
+ * two mass updates here (`tmux_stop`, `proj_stop`) do not, and they are exactly
+ * the ones that decide what a later restart may bring back. A failed INSERT is
+ * logged and swallowed — the status change has already committed, and an
+ * audit trail is not worth failing an operator's stop over.
+ */
+async function recordSessionEvents(
+  rows: readonly { id: number; project: string | null; from_status: string | null }[],
+  to: string,
+  reason: string,
+  actor: string,
+): Promise<void> {
+  if (rows.length === 0) return;
+  try {
+    for (const r of rows) {
+      await sql`
+        INSERT INTO session_state_events (session_id, project, from_status, to_status, reason, actor)
+        VALUES (${r.id}, ${r.project}, ${r.from_status}, ${to}, ${reason}, ${actor})
+      `;
+    }
+  } catch (err) {
+    console.warn(`[admin-daemon] could not record ${rows.length} session_state_events row(s) for ${reason}:`, err);
+  }
+}
+
 async function processCommand(row: { id: bigint; command: string; payload: any }): Promise<void> {
   // postgres.js may return JSONB as string — normalize
   const payload: Record<string, any> = typeof row.payload === "string" ? JSON.parse(row.payload) : row.payload;
@@ -412,9 +465,20 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
         // approval and mutual exclusion are different questions (P-2.6).
         const authorized = await authorizeOrRefuse();
         if (!authorized.ok) { result = authorized.result; break; }
+        // Before the kill. This command means "put the sessions down", not
+        // "forget which were up": the `stack_up` that follows it in the same
+        // boot is a restore, symmetric with `bounce`. Taking the snapshot
+        // afterwards would record an empty session and restore nothing.
+        await recordLiveWindows();
         result = await runShell("tmux kill-session -t bots 2>&1 || true");
         // Mark all remote sessions as inactive in DB
-        await sql`UPDATE sessions SET status = 'inactive' WHERE source = 'remote'`;
+        const stopped = await sql`
+          UPDATE sessions s SET status = 'inactive'
+          FROM sessions prev
+          WHERE prev.id = s.id AND s.source = 'remote' AND s.status <> 'inactive'
+          RETURNING s.id, s.project, prev.status AS from_status
+        ` as unknown as { id: number; project: string | null; from_status: string | null }[];
+        await recordSessionEvents(stopped, "inactive", "tmux_stop", "admin-daemon");
         break;
       }
 
@@ -469,8 +533,16 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
           // window per project too, so a pane-mode start also reports failure
           // for every project but the first — which is what got the second
           // `proj_start` pressed in the first place.
-          result = await runCommand("up");
+          //
+          // `--only` because a bare `up` here starts every configured project.
+          // The operator asked for one, on a host whose session half is down —
+          // which, after flow 067, is exactly the state a reboot leaves behind,
+          // so this branch stopped being the rare one.
+          result = await runCommand("up", ["--only", name]);
         }
+        // The window set changed either way; record it so a restart brings this
+        // project back with the others.
+        await recordLiveWindows();
         break;
       }
 
@@ -808,11 +880,24 @@ async function processCommand(row: { id: bigint; command: string; payload: any }
         // Kill ALL windows for this project — tmux only kills the first match per call.
         const killResult = await runShell(`count=0; while tmux kill-window -t "bots:${name}" 2>/dev/null; do count=$((count+1)); done; echo "killed $count window(s)"`);
         result = { ok: true, output: killResult.output };
-        if (project_id) {
-          await sql`UPDATE sessions SET status = 'inactive' WHERE project_id = ${project_id} AND source = 'remote'`;
-        } else {
-          await sql`UPDATE sessions SET status = 'inactive' WHERE project = ${name} AND source = 'remote'`;
-        }
+        const stoppedProject = (project_id
+          ? await sql`
+              UPDATE sessions s SET status = 'inactive'
+              FROM sessions prev
+              WHERE prev.id = s.id AND s.project_id = ${project_id} AND s.source = 'remote' AND s.status <> 'inactive'
+              RETURNING s.id, s.project, prev.status AS from_status
+            `
+          : await sql`
+              UPDATE sessions s SET status = 'inactive'
+              FROM sessions prev
+              WHERE prev.id = s.id AND s.project = ${name} AND s.source = 'remote' AND s.status <> 'inactive'
+              RETURNING s.id, s.project, prev.status AS from_status
+            `) as unknown as { id: number; project: string | null; from_status: string | null }[];
+        await recordSessionEvents(stoppedProject, "inactive", "proj_stop", "admin-daemon");
+        // After the windows are gone, so the snapshot no longer carries this
+        // project: a stop the operator asked for must survive the next restart,
+        // which is the whole point of stopping it.
+        await recordLiveWindows();
         break;
       }
 

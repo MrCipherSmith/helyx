@@ -1,0 +1,338 @@
+{
+  "schemaVersion": 2,
+  "gates": {
+    "tasks": true,
+    "review": true
+  },
+  "id": "067",
+  "slug": "session-autostart-cold-boot-brings-up-on",
+  "title": "Session autostart: cold boot brings up only helyx, a restart restores what was live",
+  "status": "in-progress",
+  "createdAt": "2026-09-17T07:50:57.777Z",
+  "updatedAt": "2026-09-17T08:03:54.288Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:b0cc7dae4c0131eefaf2547958a8a3a3527f71d3c89acd8352b4f71bbc0978bd",
+  "acConfirmed": {},
+  "pr": {
+    "url": null
+  },
+  "baseBranch": "main",
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "origin": "scaffold",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "origin": "scaffold",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "skipped",
+      "dispositionReason": "superseded by T5, T6, T8, T9, T10 — the implementation is split per file"
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "origin": "scaffold",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "skipped",
+      "dispositionReason": "superseded by T7"
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "origin": "scaffold",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "skipped",
+      "dispositionReason": "superseded by T11; completion outcome is chosen by the operator at Phase 4, no PR assumed"
+    },
+    {
+      "id": "T5",
+      "title": "Migration: projects.autostart, session_state_events, host_state",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 1,
+        "log": [
+          {
+            "at": "2026-09-17T07:53:08.729Z",
+            "outcome": "started",
+            "detail": "inline implementation by flow-orchestrator"
+          }
+        ]
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T6",
+      "title": "sessions/restore-plan.ts: decideStartSet + snapshot codec",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T7",
+      "title": "Unit tests for decideStartSet and the snapshot codec",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T8",
+      "title": "cli.ts: snapshot before kill, start only the decided set, record boot id",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T9",
+      "title": "admin-daemon: proj_start/proj_stop audit + single-project fallback",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T10",
+      "title": "state-machine: durable session_state_events row per transition",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T11",
+      "title": "Verification gate: typecheck, unit tests, dupes",
+      "kind": "review",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T12",
+      "title": "DB-backed tests for session_state_events (AC6)",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-09-17T07:50:57.777Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-09-17T07:52:29.693Z",
+      "event": "task-added",
+      "detail": "T5: Migration: projects.autostart, session_state_events, host_state"
+    },
+    {
+      "at": "2026-09-17T07:52:29.916Z",
+      "event": "task-added",
+      "detail": "T6: sessions/restore-plan.ts: decideStartSet + snapshot codec"
+    },
+    {
+      "at": "2026-09-17T07:52:30.138Z",
+      "event": "task-added",
+      "detail": "T7: Unit tests for decideStartSet and the snapshot codec"
+    },
+    {
+      "at": "2026-09-17T07:52:30.350Z",
+      "event": "task-added",
+      "detail": "T8: cli.ts: snapshot before kill, start only the decided set, record boot id"
+    },
+    {
+      "at": "2026-09-17T07:52:30.573Z",
+      "event": "task-added",
+      "detail": "T9: admin-daemon: proj_start/proj_stop audit + single-project fallback"
+    },
+    {
+      "at": "2026-09-17T07:52:30.789Z",
+      "event": "task-added",
+      "detail": "T10: state-machine: durable session_state_events row per transition"
+    },
+    {
+      "at": "2026-09-17T07:52:31.014Z",
+      "event": "task-added",
+      "detail": "T11: Verification gate: typecheck, unit tests, dupes"
+    },
+    {
+      "at": "2026-09-17T07:52:36.501Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-09-17T07:52:36.619Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-09-17T07:52:36.734Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-09-17T07:52:36.852Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-09-17T07:52:49.119Z",
+      "event": "frozen",
+      "detail": "8 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-09-17T07:52:49.240Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-09-17T07:53:08.729Z",
+      "event": "task-attempt",
+      "detail": "T5: started (attempt 1) — inline implementation by flow-orchestrator"
+    },
+    {
+      "at": "2026-09-17T07:54:14.706Z",
+      "event": "task-done",
+      "detail": "T5: Migration: projects.autostart, session_state_events, host_state"
+    },
+    {
+      "at": "2026-09-17T07:54:14.822Z",
+      "event": "task-done",
+      "detail": "T6: sessions/restore-plan.ts: decideStartSet + snapshot codec"
+    },
+    {
+      "at": "2026-09-17T07:54:59.386Z",
+      "event": "task-done",
+      "detail": "T7: Unit tests for decideStartSet and the snapshot codec"
+    },
+    {
+      "at": "2026-09-17T07:56:57.605Z",
+      "event": "task-done",
+      "detail": "T8: cli.ts: snapshot before kill, start only the decided set, record boot id"
+    },
+    {
+      "at": "2026-09-17T07:57:14.050Z",
+      "event": "task-done",
+      "detail": "T10: state-machine: durable session_state_events row per transition"
+    },
+    {
+      "at": "2026-09-17T07:58:56.577Z",
+      "event": "task-done",
+      "detail": "T9: admin-daemon: proj_start/proj_stop audit + single-project fallback"
+    },
+    {
+      "at": "2026-09-17T08:02:30.844Z",
+      "event": "task-done",
+      "detail": "T11: Verification gate: typecheck, unit tests, dupes"
+    },
+    {
+      "at": "2026-09-17T08:03:06.568Z",
+      "event": "task-added",
+      "detail": "T12: DB-backed tests for session_state_events (AC6)"
+    },
+    {
+      "at": "2026-09-17T08:03:54.288Z",
+      "event": "task-done",
+      "detail": "T12: DB-backed tests for session_state_events (AC6)"
+    }
+  ]
+}

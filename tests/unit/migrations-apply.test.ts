@@ -77,10 +77,10 @@ describeWithDb("applied to an empty database", () => {
     const expected = [
       "action_approval_grants", "active_status_messages", "admin_commands", "agent_created_skills", "api_request_stats",
       "autonomous_actions", "aux_llm_invocations", "bot_config", "chat_sessions", "curator_pending_actions",
-      "curator_runs", "matrix_violations", "memories", "message_queue",
+      "curator_runs", "host_state", "matrix_violations", "memories", "message_queue",
       "messages", "orchestration_runs", "pending_replies", "permission_requests",
       "poll_sessions", "process_health", "projects", "providers",
-      "question_requests", "request_logs", "schema_versions", "sessions",
+      "question_requests", "request_logs", "schema_versions", "session_state_events", "sessions",
       "skill_preprocess_log", "supervisor_incidents", "telegram_rate_budget",
       "transcription_stats", "voice_status_messages",
         ];
@@ -150,6 +150,43 @@ describeWithDb("applied to an empty database", () => {
     expect(has("projects", "model")).toBe(true);
     expect(has("message_queue", "forwarded_at")).toBe(true);
     expect(has("question_requests", "expired_at")).toBe(true);
+    expect(has("projects", "autostart")).toBe(true);
+  });
+
+  test("autostart defaults to off for a project nobody flagged (flow 067)", async () => {
+    // The flag decides what a cold boot brings up. A default of true would put
+    // every newly added project back into the fleet that flow 067 exists to
+    // stop starting, and it would do it silently — the operator adds a project
+    // now and finds a session for it after the next reboot.
+    await db.sql`
+      INSERT INTO projects (name, path, tmux_session_name)
+      VALUES ('autostart-default-probe', '/tmp/autostart-default-probe', 'autostart-default-probe')
+      ON CONFLICT (path) DO NOTHING
+    `;
+    const [row] = await db.sql<{ autostart: boolean }[]>`
+      SELECT autostart FROM projects WHERE name = 'autostart-default-probe'
+    `;
+    expect(row?.autostart).toBe(false);
+    await db.sql`DELETE FROM projects WHERE name = 'autostart-default-probe'`;
+  });
+
+  test("the autostart seed does not overwrite an operator's choice on replay (flow 067)", async () => {
+    // The seed runs on every replay of migration 56. An operator who turns
+    // helyx off — or turns a different project on — must keep that across the
+    // next deploy, which is why the seed is guarded by "nothing is flagged yet"
+    // rather than being an unconditional UPDATE.
+    await db.sql`
+      INSERT INTO projects (name, path, tmux_session_name, autostart)
+      VALUES ('seed-probe', '/tmp/seed-probe', 'seed-probe', true)
+      ON CONFLICT (path) DO UPDATE SET autostart = true
+    `;
+    await db.sql`
+      UPDATE projects SET autostart = true
+      WHERE name = 'helyx' AND NOT EXISTS (SELECT 1 FROM projects WHERE autostart)
+    `;
+    const flagged = await db.sql<{ name: string }[]>`SELECT name FROM projects WHERE autostart`;
+    expect(flagged.map((r) => r.name)).toEqual(["seed-probe"]);
+    await db.sql`DELETE FROM projects WHERE name = 'seed-probe'`;
   });
 
   test("the version table records one row per migration, by name", async () => {
