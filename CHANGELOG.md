@@ -2,6 +2,77 @@
 
 ## Unreleased
 
+## v1.59.0
+
+### feat(sessions): a reboot brings back one session, a restart brings back yours
+
+Every path that started the session half started every project. `tmuxStart`
+read the whole `projects` table and nothing narrowed it, so a host reboot, a
+code deploy and a recovery button were the same event: fifteen Claude Code
+sessions, whichever of them the operator wanted. And a restart could not do
+better, because `tmuxStop` killed the tmux session and *then* marked every
+remote row inactive — the answer to "what was running" was destroyed by the act
+of stopping it.
+
+Two records now answer two different questions. `projects.autostart` says what
+a **cold** boot may bring up: `helyx` alone, seeded once and never overwritten
+on replay, with the rest started on demand from Telegram. A snapshot in
+`host_state`, written by `tmuxStop` **before** the kill, says what a **restart**
+must bring back — `bounce`, `full_restart`, `host_restart`, and the `stack_up`
+that follows a `tmux_stop` restore exactly the windows that were live when the
+teardown began. Cold is told from restart by the host boot id, which is new
+after every reboot and stable while the machine stays up.
+
+`decideStartSet` (`sessions/restore-plan.ts`) makes that choice as a pure
+function, and never returns the empty set: an empty, missing or undecodable
+snapshot falls back to the autostart set, because a restart that brings up
+nothing is the 2026-08-05 outage.
+
+Session status changes are recorded durably in `session_state_events`, with the
+status being left as well as the one taken — "ended up inactive" and "went from
+active to inactive" are different facts, and only the second says a session was
+stopped.
+
+Also fixed, one size down: `proj_start` on a host with no tmux server fell
+through to `up` and started every project. It now starts the one that was
+asked for.
+
+Migration 56 adds `projects.autostart`, `host_state` and `session_state_events`.
+It runs from `main.ts` inside the bot container, so **rebuild the bot before
+restarting the host daemon** — a daemon that comes up first finds no
+`host_state` table.
+
+### fix(sessions): six ways a restart could still bring back the wrong set
+
+Review of the above found the decision module sound and the callers not. A cold
+start that brought nothing up recorded the new boot id while keeping the
+previous boot's snapshot, so the next attempt counted as a restart and restored
+the whole pre-reboot fleet; `up --only` did the reverse, consuming the boot's
+cold start so the autostart set never came up at all. The daemon's snapshot
+write was unguarded and threw into the command result — aborting `tmux_stop`
+before its kill, and reporting a `proj_start` that had already succeeded as
+failed. `proj_stop` killing the last window destroys the `bots` session, so the
+stopped project stayed in the snapshot and came back. `proj_start` named the
+window after the directory while the restore matches on `projects.name`, so a
+project added with `--name` was unmatchable.
+
+Both audit updates now lock the row in a CTE before reading the status being
+left, `tmuxStop` no longer reports a snapshot it failed to write, and
+`transitionSession` states that it needs an autocommit connection.
+
+Known limit, documented rather than fixed: `up -s` (split panes) puts every
+project in one window, so the snapshot holds one name and a restart brings back
+one project. The daemon never uses `-s`.
+
+### feat(projects): 🧹 Clear context, and a button row that fits
+
+A per-project 🧹 Clear context action sends Escape then `/clear` to the live
+session through the existing `tmux_send_keys` path, with its own confirm step
+and shown only while the project is active — there is nothing to clear
+otherwise. The `/projects` keyboard also stops being a wall of buttons: a
+header row, icon-only controls, Stop/Start alone on its row while active, and
+⚙️ paired with 🧹 below it.
+
 ## v1.58.1
 
 ### fix(telegram): stop the shared rate-budget leak, make delivery recoverable
