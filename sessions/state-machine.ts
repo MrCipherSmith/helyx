@@ -30,6 +30,13 @@ export function canTransition(from: SessionStatus, to: SessionStatus): boolean {
  * Atomically transition a session to a new status.
  * Only applies the UPDATE if the current status allows the transition.
  * Returns true if the transition was applied, false if blocked or session not found.
+ *
+ * Pass an autocommit connection, not a transaction. The audit write below
+ * catches its own failure so a broken `session_state_events` cannot fail a
+ * status change that already committed — but inside a transaction a failed
+ * INSERT aborts the whole transaction, and the caught error would then hide a
+ * rolled-back status change behind a `true` return. Raised in review of flow
+ * 067; every caller today passes the module-level `sql`.
  */
 export async function transitionSession(
   sql: postgres.Sql,
@@ -47,17 +54,24 @@ export async function transitionSession(
     return false;
   }
 
-  // `FROM sessions prev` reads the row as it was before this statement, so the
-  // status being left is returned alongside the one being taken. Without it the
-  // audit row below could only ever say where a session ended up, and "active →
-  // inactive" and "inactive → inactive" are not the same event.
+  // The status being left is returned alongside the one being taken: the audit
+  // row below would otherwise only ever say where a session ended up, and
+  // "active → inactive" and "inactive → inactive" are not the same event.
+  //
+  // `FOR UPDATE` inside the CTE, not a bare `FROM sessions prev`. Under a
+  // concurrent update Postgres re-checks the target row against its new
+  // version while the joined copy still holds the version this statement
+  // started with — so the audit could record a status the row no longer had.
+  // Locking the row first removes the window. Raised in review of flow 067.
   const result = await sql`
+    WITH prev AS (
+      SELECT id, status FROM sessions WHERE id = ${sessionId} FOR UPDATE
+    )
     UPDATE sessions s
     SET status = ${to}, last_active = now()
-    FROM sessions prev
-    WHERE prev.id = s.id
-      AND s.id = ${sessionId}
-      AND s.status = ANY(${validFrom})
+    FROM prev
+    WHERE s.id = prev.id
+      AND prev.status = ANY(${validFrom})
     RETURNING s.id, s.project, s.status, prev.status AS from_status
   `;
 
