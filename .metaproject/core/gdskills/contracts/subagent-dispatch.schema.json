@@ -79,18 +79,114 @@
         "max_prompt_tokens": { "type": ["integer", "null"], "minimum": 1000 },
         "max_output_tokens": { "type": ["integer", "null"], "minimum": 500 },
         "max_runtime_ms": { "type": ["integer", "null"], "minimum": 1000 },
-        "max_findings": { "type": ["integer", "null"], "minimum": 1 }
+        "max_findings": { "type": ["integer", "null"], "minimum": 1, "default": 10, "description": "Findings a reviewer may report. Per reviewer, not per review: a global cap on a fan-out is spent by whichever reviewer runs first. Blockers and merge-blocking findings are exempt and consume no budget. Applies to reported findings only, never to dismissal or refutation records - truncating those would rebuild the triage-survivor corpus that made precision unmeasurable." }
       }
     },
     "model": {
+      "description": "Which model runs this dispatch. Skills declare a `tier`; at dispatch time src/gdskills/model-tier.ts DISCOVERS the models runtime provider detection reported for the active provider, ranks them by size markers in their names, and places the tier relative to the session's own model — `standard` is the session model, `deep` a discovered model ranked above it, `light` one ranked below. No table of model ids exists anywhere in the resolution. When the candidates cannot be ranked, every tier keeps the session's model. `provider`/`model` remain available for an explicit lateral selection, and an omitted block inherits the parent verbatim. Two things fill this block. The interactive `spawn_subagent` tool does it in code: it builds the tier map with `buildTierMap` from its host's detection result, hands it to `resolveChildModel`, and records the outcome on the dispatch's run trace. An orchestrator authoring a dispatch document RUNS `keryx review tier`, which takes the §4.4 signals as flags and prints exactly the fields below, ready to paste (`--json` prints this object alone). It is a command rather than a documented function call because an orchestrator is an agent following prose and cannot call a TypeScript function: told to `decideDispatchModel`, it computed the tier in its head from a table, which is the mechanical step that belongs in code. When nothing can be worked out the command emits `inherit: true` instead of `provider`/`model` — the dispatch runs on the caller's own model, never a downgrade. Neither path is enforced by a reader — nothing validates a recorded resolution against the model that actually ran — so these fields are a record, not a gate.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
         "provider": { "type": "string", "minLength": 1 },
         "model": { "type": "string", "minLength": 1 },
-        "tier": { "type": "string", "minLength": 1 },
-        "inherit": { "type": "boolean" }
+        "tier": {
+          "description": "`light` is mechanical, verifiable work (pre-filter, class_scope existence checks, comment collection, formatting a reply); `standard` is ordinary reviewing and implementation and is the default; `deep` is genuinely hard reasoning (regression review across a blast radius, a strategy change after a failed loop, synthesis across many findings). An ENUM, not a free string, and that is the enforcement: a skill cannot write a model name into this field. The older `cheap` spelling frozen into docs/requirements/keryx-multi-agent-engine/schemas/child-model-selection.schema.json is still READ by parseModelTier, but is not accepted here — new dispatches use the three names above.",
+          "type": "string",
+          "enum": ["light", "standard", "deep"]
+        },
+        "tier_reasons": {
+          "description": "The ordered rule ids `assignTier` applied, e.g. [\"base:standard\", \"floor:blast-radius\"]. Produced by `keryx review tier` from the signals passed as flags, never written by hand: a reason list an author composes records the story they tell about the tier rather than the rules that produced it. Recorded so a tier can be explained after the run instead of re-derived from a state nobody kept. Ids rather than prose, because they are compared across runs.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "tier_resolution": {
+          "description": "Which of three outcomes produced the model, as `resolveTierModel` reports it on `TierResolution.source`. `discovered` — a model reported by runtime provider detection was assigned to this tier. `session-ranked` — ranking WORKED and placed the tier at the session's own model (always so for `standard`; for `light`/`deep` when nothing discovered ranks below/above the session). `session-fallback` — ranking was refused, or the ranking carried no rank for the session model, so the session's model is used because nothing could be worked out. Collapsing the last two would hide whether the environment was understood. Recorded, never read back: it explains a finished run and gates nothing.",
+          "type": "string",
+          "enum": ["discovered", "session-ranked", "session-fallback"]
+        },
+        "model_discovery": {
+          "description": "What was on the table when the tier was resolved: which models runtime detection reported for the active provider, how the size-marker hints ordered them, and — when ranking was refused — why. `tier_resolution` alone says a fallback happened and never says what it fell back FROM.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["provider", "candidates", "ranked", "session_rank", "fallback_reason"],
+          "properties": {
+            "provider": {
+              "description": "The provider whose catalogue was consulted. Always the session's own: candidates are never taken from a provider the parent holds no grant for.",
+              "type": "string"
+            },
+            "candidates": {
+              "description": "Every model discovered for that provider, de-duplicated, in the order detection reported it. Empty when nothing was discovered.",
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 }
+            },
+            "ranked": {
+              "description": "The subset the hints could place, best first. A candidate absent from this list carried no size marker and was therefore not orderable — recorded by its absence rather than by a guessed rank.",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["model", "rank"],
+                "properties": {
+                  "model": { "type": "string", "minLength": 1 },
+                  "rank": { "description": "Ordinal only. Absolute values mean nothing; only comparisons between candidates are read.", "type": "integer" }
+                }
+              }
+            },
+            "session_rank": {
+              "description": "Where the session's own model sits in the same ordering, or null when the hints could not place it — which is itself a refusal to rank, because nothing can be called above or below an unplaced anchor.",
+              "type": ["integer", "null"]
+            },
+            "fallback_reason": {
+              "description": "Why ranking was refused, or null when it was not. Prose, because it is read by a person reconstructing a run and never compared across runs.",
+              "type": ["string", "null"]
+            }
+          }
+        },
+        "inherit": {
+          "description": "Adaptive: the host picks the model. `keryx review tier` writes it — in place of `provider`/`model`, never alongside them — whenever it does not name a model other than the session's: no session was named by the caller (flags or KERYX_SESSION_PROVIDER/KERYX_SESSION_MODEL), the catalogue or the session model could not be ranked, or the tier resolved to the session's own model. The host resolves the accompanying `tier` against the models its own dispatch tool offers: `standard` on its session model, `deep` on its most capable class, `light` on its lighter class — each falling back to the session model when the host offers no choice. The alternative, an empty or stale `provider`/`model` pair, is schema-invalid or pins a model the runner may not have.",
+          "type": "boolean"
+        }
       }
+    },
+    "runtime": {
+      "description": "Which child runtime executes this dispatch (flow 176; docs/requirements/keryx-external-agent-runtime). Additive and optional: an absent block means the native keryx runtime, so every dispatch authored before this package stays valid. Constraints this schema cannot express — the agent resolving in the registry, the sandbox appearing in that agent's supported modes, and read-only versus allowed_actions — are enforced fail-closed by the pure validator in src/harness/external/dispatch.ts.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "description": "`keryx` runs the in-process agent loop; `external` spawns a vendor CLI subprocess.",
+          "type": "string",
+          "enum": ["keryx", "external"]
+        },
+        "agent": {
+          "description": "Registry id of the external agent. Required when kind is `external`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "sandbox": {
+          "description": "Permission level for the external child. `worktree-write` is schema-valid but refused at runtime in the read-only release, with a reason distinguishable from an unsupported-by-this-agent refusal.",
+          "type": "string",
+          "enum": ["read-only", "worktree-write"]
+        },
+        "model": {
+          "description": "Model id passed to the external CLI. Omit or null to let the CLI resolve its own default under the operator's active subscription — keryx never pins a model the account may not be entitled to.",
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "timeoutMs": { "type": ["integer", "null"], "minimum": 1000 },
+        "maxCostUnits": { "type": ["number", "null"], "exclusiveMinimum": 0 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "external" } }, "required": ["kind"] },
+          "then": { "required": ["agent", "sandbox"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "keryx" } }, "required": ["kind"] },
+          "then": { "not": { "required": ["agent"] } }
+        }
+      ]
     },
     "provenance": {
       "type": "object",

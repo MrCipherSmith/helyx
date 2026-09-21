@@ -1,25 +1,25 @@
 ---
 name: review-backend
+model_tier: standard
 description: |
   Use when: reviewing NestJS backend changes — API design, service layer, DTO validation,
-  database patterns, and TypeScript correctness. Covers "review backend", "backend review",
-  "review API", "review NestJS", or dispatched by review-orchestrator with --backend flag.
+  database patterns, and TypeScript correctness. Dispatched by review-orchestrator
+  with the --backend flag.
   NOT for: frontend patterns, MobX, React components, general security vulnerabilities
   (use review-security-code for XSS/injection/auth-bypass), or performance profiling
   (use review-performance).
-version: "1.0.0"
 triggers:
-  - "review backend"
   - "backend review"
-  - "review API"
+  - "api review"
+  - "service review"
   - "review NestJS"
-  - "review --backend"
 metadata:
   author: "MrCipherSmith"
   version: "1.0.0"
   category: "review"
+  compatible_harnesses: "cursor,codex,zed,opencode,claude"
+  stack_requires: "nestjs,prisma"
 license: "MIT"
-compatibility: "cursor,codex,zed,opencode,claude"
 ---
 
 # Review — Backend (NestJS / API / DB)
@@ -35,7 +35,7 @@ performance checks — those belong to `review-security-code` and `review-perfor
 ```
 review-backend Progress:
 - [ ] Step 1: Read Job Context (if CONTEXT_PATH provided)
-- [ ] Step 2: Determine git scope (merge-base) — see skills/shared/git-merge-base.md
+- [ ] Step 2: Determine git scope (merge-base) — see .metaproject/skills/gdskills/shared/git-merge-base.md
 - [ ] Step 3: Collect diff and changed file list
 - [ ] Step 4: NestJS patterns check
 - [ ] Step 5: API design check
@@ -59,7 +59,7 @@ review-backend Progress:
 
 ## Scope Detection
 
-See shared script: `skills/shared/git-merge-base.md`
+See shared script: `.metaproject/skills/gdskills/shared/git-merge-base.md`
 
 Run that script to determine `BASE_SHA` before collecting the diff.
 
@@ -175,28 +175,61 @@ Only review files changed in scope. Do not comment on legacy code outside the di
 - No `as any` or unsafe casts (`as unknown as T`) without a comment explaining why
 - `@ts-ignore` / `@ts-expect-error` without explanation comment — flag as `minor`
 
+  **This is the one severity for this condition, repo-wide.** It was previously
+  `minor` here and `major` in `review-strict`, which is deleted. `minor` is what
+  the canonical rubric returns: a suppressed compiler error names no trigger and
+  no observable wrong outcome — the code does exactly what it did before the
+  comment was added. What it costs is the next reader, who cannot tell what was
+  suppressed or whether it is still needed. That is the definition of `minor`.
+  It becomes `major` only when you can name the input the suppressed error was
+  hiding and the wrong value it produces — at which point the finding is about
+  that bug, not about the comment.
+
 ---
 
 ## Iron Laws
 
-| Condition | Severity |
-|-----------|----------|
-| Missing DTO validation on an endpoint accepting user input | **blocker** |
-| `REQUEST`-scoped provider injected into `Singleton` | **blocker** |
-| Leaking stack trace / raw ORM error to API response | **blocker** |
-| Unhandled promise rejection in controller method | **blocker** |
-| String interpolation in raw SQL query | **blocker** |
-| N+1 query (relation loaded in a loop) | **major** (minimum) |
-| Missing transaction on multi-step atomic mutation | **major** |
-| Business logic in controller | **major** |
-| Missing pagination on unbounded list endpoint | **major** |
-| `NOT NULL` column added without default to populated table (migration) | **blocker** |
+### Shared laws (every reviewer)
+
+1. **A claim of runtime harm with no reproducible path is `info`.** If you cannot
+   name the input, call, or condition that reaches the code, you have an
+   observation, not a finding. Report it as `info` and say what would settle it.
+2. **Never flag the theoretical.** The path you describe must exist in the code
+   under review. Do not report a safe API because it could be misused, or a
+   pattern because it is often wrong elsewhere.
+3. **One finding per class, not one per occurrence.** When the same shape appears
+   at several sites, report it once and list every site. Ten findings that are one
+   finding hide the other nine problems.
+
+Severity levels are defined once, in `review-orchestrator/SKILL.md` →
+**Severity (canonical)**. This reviewer does not restate them: `blocker` is the
+four merge-blocking shapes named there and nothing else, and the `major`/`minor`
+boundary is the trigger-and-outcome test.
+
+### Backend conditions
+
+Where this reviewer's recurring conditions land under the canonical rubric. Not a
+second rubric — each `blocker` names which of the four merge-blocking shapes it
+is, and a condition that cannot name one is not a `blocker`.
+
+| Condition | Severity | Shape |
+|---|---|---|
+| Missing DTO validation on an endpoint accepting user input | `blocker` | Exploitable vulnerability |
+| String interpolation in raw SQL query | `blocker` | Exploitable vulnerability |
+| Leaking stack trace / raw ORM error to API response | `blocker` | Exploitable vulnerability (information disclosure) |
+| `REQUEST`-scoped provider injected into a `Singleton` | `blocker` | Data corruption — one request's state is served to another |
+| Unhandled promise rejection in a controller method | `blocker` | Crash |
+| `NOT NULL` column added without a default to a populated table | `blocker` | Data loss — the migration fails or truncates |
+| N+1 query (relation loaded in a loop) | `major` (minimum) | Named trigger and outcome; degradation, not an outage. Same rating as `review-highload` |
+| Missing transaction on a multi-step atomic mutation | `major` — `blocker` where a partial write corrupts persisted state | The outcome decides |
+| Business logic in a controller | `major` | Layer violation. Same rating as `review-architecture` |
+| Missing pagination on an unbounded list endpoint | `major` — `blocker` where an attacker-reachable request exhausts memory | Degradation vs. crash/DoS |
 
 ---
 
 ## Orchestrated Review Contract
 
-When dispatched by `review-orchestrator`, follow the provided `reviewer-input.schema.json` payload. Return a `REVIEW_RESULT` object compatible with `skills/review-orchestrator/reviewer-finding.schema.json`, then a concise markdown summary. Keep findings evidence-based, include concrete `suggested_fix` for every blocker/major, and return `NEEDS_CONTEXT` instead of guessing when required context is missing.
+When dispatched by `review-orchestrator`, follow the provided `reviewer-input.schema.json` payload. Return a `REVIEW_RESULT` object compatible with `.metaproject/skills/gdskills/review/review-orchestrator/reviewer-finding.schema.json`, then a concise markdown summary. Keep findings evidence-based, include concrete `suggested_fix` for every blocker/major, and return `NEEDS_CONTEXT` instead of guessing when required context is missing.
 
 ---
 

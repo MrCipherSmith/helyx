@@ -1,19 +1,16 @@
 ---
 name: interview
-description: "Use before implementation, design, or migration when requirements are unclear and targeted clarifying questions are needed to gather precise context."
+description: "Use to clarify implementation-specific ambiguities AFTER context has already been collected and the goal is known — the questions that sharpen a plan, not the ones that scope the request. This is the `implement`-intent interview job-orchestrator runs at 0.3. NOT for: pinning down a vague request before any context is gathered — use `interviewer` instead."
 triggers:
-  - "/interview"
-  - "Interview"
-  - "Clarify requirements"
-  - "Ask questions first"
-  - "What do you need to know"
-  - "Gather requirements"
+  - "implementation interview"
+  - "interview before implementation"
+  - "clarify implementation"
 metadata:
   author: "MrCipherSmith"
   version: "1.0.0"
-  category: "analysis"
+  category: "planning"
+  compatible_harnesses: "cursor,codex,zed,opencode,claude"
 license: "MIT"
-compatibility: "cursor,codex,zed,opencode,claude"
 ---
 
 <SUBAGENT-STOP>
@@ -185,3 +182,28 @@ The interview skill is designed to be composable — any skill that needs user i
 - ALWAYS adapt subsequent questions based on previous answers
 - If the user seems impatient or says "just do it" — stop interviewing, document remaining unknowns as assumptions, and proceed
 - One question at a time — never dump all questions at once
+
+## Red Flags
+
+Stop and re-read this skill if you are thinking:
+
+| Rationalization | Rebuttal |
+|---|---|
+| "They said 'sounds good', so the whole summary is approved." | A single agreeable noise is not confirmation of a list of decisions, constraints, assumptions and risks. The Assumptions block is labelled "please verify" for a reason — if the user did not address an assumption, it stays an assumption in the output contract, not a confirmed decision. |
+| "The user said 'just do it', so I can drop the unknowns." | Impatience ends the interview; it does not resolve anything. Every remaining uncertainty zone becomes an entry in `assumptions` with the risk it carries. Dropping it hides the guess from the skill that will act on it. |
+| "This is an interesting question, so it belongs in the interview." | The bar is impact: the answer must change the implementation. Questions derivable from the codebase, or whose answers change nothing, spend the user's limited patience on nothing and push the real question past the 7-question ceiling. |
+| "The user picked D) Need more context, so this question is unanswered — move on." | D is a request, not an answer. Explain or run a mini `/brainstorm --quick` on that point, then re-ask. Silently skipping it leaves the highest-uncertainty question the least answered. |
+| "The caller gave me `context`, so I should confirm what it says with the user." | Re-asking what the context already answers is the failure the Phase 2 skip rule names. Read `context` and `known_facts` first; ask only about what neither settles. |
+| "I was dispatched as a subagent with a task, and the task is ambiguous, so I'll interview." | See the SUBAGENT-STOP block at the top: a dispatched subagent proceeds with its assigned task. There is no user on the other end of a dispatch to answer. |
+
+## Verification
+
+Before returning, all of these must hold:
+
+- The output contract has all five keys — `decisions`, `constraints`, `assumptions`, `risks`, `refined_goal` — and none is a placeholder.
+- Every entry in `decisions` carries an `impact` of `high` or `medium` and traces to a question the user actually answered.
+- Anything the user skipped, deferred, or did not address is in `assumptions`, not in `decisions`.
+- No more than 7 questions were asked, one at a time, and none duplicated what `context` or `known_facts` already stated.
+- `refined_goal` is unambiguous enough that a downstream skill could act on it without re-reading the transcript.
+- The Interview Summary was shown and the user was asked "Does this look right?" — and any correction they gave is reflected in the returned contract.
+- In standalone mode, the handoff names the next skill rather than ending with the summary.

@@ -1,6 +1,7 @@
 {
-  "generatedAt": "2026-08-03T10:49:15.024Z",
-  "entryCount": 3,
+  "catalogVersion": 1,
+  "sourceFingerprint": "c853d7189125cb361137e1fd10475ad91b7fa81624f1c4d6ae703508d16f0949",
+  "entryCount": 4,
   "entries": [
     {
       "path": "known-mistakes/comment-asserts-more-than-code.md",
@@ -33,9 +34,24 @@
       }
     },
     {
-      "path": "task-notes/coverage-programme-state.md",
+      "path": "task-notes/coverage-programme-state-2026-08-05.md",
       "type": "task-note",
       "status": "accepted",
+      "confidence": "high",
+      "title": "Coverage programme: the blocker is closed and the numbers are exact",
+      "updated": "2026-08-05",
+      "tags": [],
+      "scopes": {
+        "module": "scripts, mcp, bot, utils, memory",
+        "entity": "coverage, quality gate, test fixtures",
+        "files": [],
+        "skills": []
+      }
+    },
+    {
+      "path": "task-notes/coverage-programme-state.md",
+      "type": "task-note",
+      "status": "superseded",
       "confidence": "high",
       "title": "Coverage programme: what is done, what is open, what is next",
       "updated": "2026-08-03",

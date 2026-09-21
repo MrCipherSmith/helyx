@@ -32,13 +32,23 @@ If the first line is not `STATUS: <STATUS>`, the orchestrator MUST treat the res
 
 ---
 
-## The Four Statuses
+## The Five Statuses
+
+Four of them are for **skill workers** — the subagents an orchestrator dispatches
+from `.metaproject/skills/`. The fifth, `FAILED`, belongs to a different worker
+family and is documented at the end of this section.
 
 ### `DONE`
 Task fully complete. All acceptance criteria met. Orchestrator can continue the pipeline.
 
 ### `DONE_WITH_CONCERNS`
 Task complete, but the orchestrator should know something before continuing. This is NOT a failure — it is a completed task that carries information the orchestrator needs to make a good decision.
+
+"Complete" here means the bar in `rules/core/definition-of-done.mdc`, which owns
+what `DONE` costs and is not restated here. `DONE_WITH_CONCERNS` reports
+information *about work that cleared that bar*; it is never a lower bar. If a
+clause of the bar fails — an unmet acceptance criterion, a gate that did not
+run, an uncommitted diff — the status is `BLOCKED`, not this one.
 
 Use when:
 - Implementation required a meaningful interpretation of ambiguous criteria
@@ -54,6 +64,7 @@ Use when:
 - Two valid approaches exist with significantly different tradeoffs and the subagent cannot choose alone
 - A command failed in a way that requires orchestrator-level intervention (not a self-fixable error)
 - The task scope needs to be clarified before proceeding
+- An acceptance criterion is unmet, or another clause of `rules/core/definition-of-done.mdc` fails, and you cannot close it yourself
 
 Do NOT use `BLOCKED` for errors you can fix yourself. Self-fix first (up to your retry limit), then report `BLOCKED` if still stuck.
 
@@ -65,6 +76,28 @@ Use when:
 - Module patterns, library docs, or API signatures are needed but weren't provided
 - The task references files or components that don't exist and no context explains them
 - Acceptance criteria use terms not defined anywhere in the provided context
+
+### `FAILED` — harness child workers only
+
+**Do not emit `FAILED` as a skill worker.** A skill worker that cannot finish
+reports `BLOCKED`; `task-implementer` maps its own internal `failed` to
+`STATUS: BLOCKED` for exactly this reason.
+
+`FAILED` exists in `subagent-result.schema.json` because a **different** worker
+family uses it: external child processes launched through the harness. Their
+`STATUS:` line is parsed by `parseChildResult` in `src/harness/child/contract.ts`
+— which mirrors this enum as `CanonicalSubagentStatus` — and is wired into
+production at `src/harness/extension/execute.ts`. `spawn.test.ts` pins the
+behaviour it guarantees: a `FAILED` child disposition must reach the parent's
+gate as a *failed* completion, **never as a false `completed`**.
+
+So the enum has five values and this document previously described four, which
+made `FAILED` look unreachable. It is not. It is unreachable *from a skill
+worker*, and load-bearing for the child-process layer.
+
+Orchestrators dispatching skill workers may therefore treat a `FAILED` reply as
+a protocol violation and re-request. Orchestrators reading harness child results
+must handle it as a real terminal failure.
 
 ---
 
@@ -160,10 +193,10 @@ The following thoughts indicate a subagent is about to violate the protocol. Rej
 
 - **"I'll add a note at the end instead of BLOCKED"** — Notes at the end are invisible to automated orchestrators. If you are blocked, the status must be `BLOCKED`. The note goes in the `## Reason` field.
 
-- **"It's mostly done, DONE_WITH_CONCERNS feels like admitting failure"** — `DONE_WITH_CONCERNS` is not a failure status. It is a success status with an attached signal. Use it freely when something is worth the orchestrator knowing.
+- **"It's mostly done, DONE_WITH_CONCERNS feels like admitting failure"** — `DONE_WITH_CONCERNS` is not a failure status. It is a success status with an attached signal, for work that already cleared the bar in `rules/core/definition-of-done.mdc`. Use it freely when something is worth the orchestrator knowing — and not at all when the bar was not cleared.
 
 - **"NEEDS_CONTEXT would slow things down, I'll just guess"** — Guessing propagates errors downstream. One `NEEDS_CONTEXT` and a re-dispatch is cheaper than four tasks built on a wrong assumption.
 
-- **"I didn't meet one criterion but I'll say DONE and mention it in notes"** — If an acceptance criterion is not met, the status is not `DONE`. Use `DONE_WITH_CONCERNS` and name the unmet criterion in the concerns section.
+- **"I didn't meet one criterion but I'll say DONE and mention it in notes"** — If an acceptance criterion is not met, the status is not `DONE` — and it is not `DONE_WITH_CONCERNS` either. An unmet criterion is incomplete work, not information about complete work: report `BLOCKED`, name the criterion in `## Reason`, and say in `## What I need from orchestrator` what would let you meet it. Per `rules/core/definition-of-done.mdc`, which owns that ruling.
 
 - **"The orchestrator will figure it out from my explanation"** — The orchestrator reads `STATUS:` on line 1. Everything else is secondary. Do not make the orchestrator parse free text to determine the outcome.

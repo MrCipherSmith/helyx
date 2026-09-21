@@ -1,28 +1,27 @@
 ---
 name: review-clean-code
+model_tier: standard
 description: |
   Use when: reviewing code against Clean Code principles (Uncle Bob) and SOLID at the
   function/class level — meaningful names, small functions, single level of abstraction,
   argument count, error handling, DRY, comment quality, and SOLID (SRP, OCP, LSP, ISP, DIP)
   as applied to individual classes and functions.
-  Triggered by: "review clean code", "check clean code", "Uncle Bob review", "SOLID review",
-  "review --clean-code", or dispatched by review-orchestrator.
+  Dispatched by review-orchestrator.
   NOT for: architectural layer violations (review-architecture), naming convention formatting
   (review-style), logic correctness bugs (review-logic), or security (review-security-code).
-version: "1.0.0"
 triggers:
-  - "review clean code"
+  - "clean code review"
+  - "functions do too much"
+  - "solid review"
+  - "maintainability"
   - "check clean code"
   - "Uncle Bob review"
-  - "SOLID review"
-  - "review --clean-code"
-  - dispatched by review-orchestrator
 metadata:
   author: "MrCipherSmith"
   version: "1.0.0"
   category: "review"
+  compatible_harnesses: "cursor,codex,zed,opencode,claude"
 license: "MIT"
-compatibility: "cursor,codex,zed,opencode,claude"
 ---
 
 # Review: Clean Code + SOLID
@@ -66,7 +65,7 @@ Clean Code Review Progress:
 
 ## Scope Detection
 
-See shared script: `skills/shared/git-merge-base.md`
+See shared script: `.metaproject/skills/gdskills/shared/git-merge-base.md`
 
 Run the script to determine `BASE_SHA`, then collect the diff:
 
@@ -84,9 +83,35 @@ worsens them.
 
 ## Iron Laws
 
+### Shared laws (every reviewer)
+
+1. **A claim of runtime harm with no reproducible path is `info`.** If you cannot
+   name the input, call, or condition that reaches the code, you have an
+   observation, not a finding. Report it as `info` and say what would settle it.
+2. **Never flag the theoretical.** The path you describe must exist in the code
+   under review. Do not report a safe API because it could be misused, or a
+   pattern because it is often wrong elsewhere.
+3. **One finding per class, not one per occurrence.** When the same shape appears
+   at several sites, report it once and list every site. Ten findings that are one
+   finding hide the other nine problems.
+
+Severity levels are defined once, in `review-orchestrator/SKILL.md` →
+**Severity (canonical)**. This reviewer does not restate them: `blocker` is the
+four merge-blocking shapes named there and nothing else, and the `major`/`minor`
+boundary is the trigger-and-outcome test.
+
+### Clean Code laws
+
 1. **Findings without a specific `file:line` from the diff are not valid findings.** Never cite general observations about the codebase.
-2. **Max severity for a naming issue is `major`.** Pure naming never rises to `blocker` — reserved for issues that break correctness.
-3. **DRY violations require at least 3 repetitions before becoming `major`.** Two occurrences can be accidental; three is a pattern.
+2. **A naming issue is `minor`.** It reaches `major` only when the name has
+   already produced an observable wrong outcome at a call site you can name — a
+   caller misusing the API because of what it is called. "A future reader might
+   misread it" is the maintenance cost that makes it `minor`, not a trigger.
+   Naming is never a `blocker`. (`review-style` carries the identical rule.)
+3. **DRY violations need at least 3 repetitions before they are worth reporting,
+   and they are `minor`.** Two occurrences can be accidental; three is a pattern.
+   Duplication is a cost to whoever edits it next, which is `minor` by the
+   canonical test — report it once, listing every site, per shared law 3.
 4. **SOLID opinions without a named principle and a concrete violation description are `info` only.** State the principle (e.g., SRP), the two responsibilities, and the impact.
 5. **Do not flag language idioms or framework conventions as Clean Code violations.** If it is the standard way to do something in TypeScript / NestJS / React, it is not a violation.
 
@@ -185,8 +210,40 @@ Flags:
 
 Flags:
 - Redundant comment restating the code — **minor**
-- Stale comment contradicting the code — **major** (actively misleads readers)
+- Stale comment contradicting the code — **minor** (misleads the next reader; it
+  names no runtime trigger, so the canonical rubric puts it here. It was
+  **major** in this file until that was reconciled against
+  `review-orchestrator/SKILL.md` → **Severity (canonical)**, which reviewers may
+  not override. If the comment's inaccuracy *causes* a defect — someone relied on
+  it and the code does otherwise — that defect is the finding, at its own severity)
 - Commented-out code block — **minor** (use git history, not comments, to preserve old code)
+
+#### C1a. Documentation drift — the shapes worth searching for
+
+Stale comments are not found by reading comments; they are found by reading each
+comment **against the statement it sits above**. Three shapes recur, and they are
+the cheapest real findings in a multi-round review:
+
+- **A doc describing the rule a later round replaced.** A prop's JSDoc says the
+  tooltip drops the split "unless both are known"; the live rule is that both must
+  be greater than zero. The behaviour changed, the sentence did not. Check every
+  doc comment on every symbol the diff touched, not only the ones the diff edited.
+- **A comment detached from its statement.** A `const` gets inserted between a
+  comment and the expression it explained, so the comment now reads as an
+  explanation of the insertion. The text is unchanged and is now wrong. Look for
+  this wherever the diff adds a line inside an existing block.
+- **Two files documenting one field oppositely.** One says a cell is the valid
+  percentage, another computes `100 - cell` and calls it the invalid percentage.
+  Only one is right, and the diff just made the field load-bearing.
+
+Where an issue or PR is cited, check that it is the right one and still says what
+the comment claims — a closed *issue* cited in place of the *PR* that shipped the
+work sends the next reader to the wrong page.
+
+A comment that describes a behaviour with **no code path at all** — including one
+left behind by a review finding that was later withdrawn — is the same class: it
+should state the defensiveness it actually provides, not assert a path that does
+not exist.
 
 #### C2. Comments That Compensate for Bad Names
 
@@ -341,7 +398,7 @@ Flags:
 
 ## Orchestrated Review Contract
 
-When dispatched by `review-orchestrator`, follow the provided `reviewer-input.schema.json` payload. Return a `REVIEW_RESULT` object compatible with `skills/review-orchestrator/reviewer-finding.schema.json`, then a concise markdown summary. Keep findings evidence-based, include concrete `suggested_fix` for every blocker/major, and return `NEEDS_CONTEXT` instead of guessing when required context is missing.
+When dispatched by `review-orchestrator`, follow the provided `reviewer-input.schema.json` payload. Return a `REVIEW_RESULT` object compatible with `.metaproject/skills/gdskills/review/review-orchestrator/reviewer-finding.schema.json`, then a concise markdown summary. Keep findings evidence-based, include concrete `suggested_fix` for every blocker/major, and return `NEEDS_CONTEXT` instead of guessing when required context is missing.
 
 ---
 
@@ -387,14 +444,25 @@ observation is theatre, not rigour.
   ```
 ```
 
-Severity guide for this reviewer:
+Severity comes from **Severity (canonical)** in `review-orchestrator/SKILL.md`.
+This reviewer keeps no table of its own; what follows is where its recurring
+conditions land under that rubric, not a second rubric.
 
-| Severity | When to use |
-|----------|------------|
-| `blocker` | Swallowed exception (silent failure); constructor performing I/O that prevents testing; LSP violation breaking substitutability at runtime |
-| `major` | Function >40 lines; ≥4 parameters without options object; boolean flag arg; class with two distinct responsibilities; `new ConcreteService()` bypassing DI |
-| `minor` | Poor naming; redundant comment; magic number; 20–40 line function; minor OCP/ISP smell; log+rethrow |
-| `info` | Stylistic opinion; potential future issue with no current concrete violation |
+| Condition | Severity | Why, under the canonical rubric |
+|---|---|---|
+| Swallowed exception hiding a failed operation | `major` — `blocker` only if the caller then persists or returns wrong data | Same wording as `review-logic`, deliberately. Silent failure is wrong behaviour; corruption is a different shape |
+| LSP violation that produces a wrong result or a crash at a named call site | `major`, or `blocker` on the crash/corruption outcome | The outcome decides, not the principle's name |
+| Constructor performing I/O | `major` | Named trigger (constructing it) and named outcome (the I/O runs); untestable is not one of the four shapes |
+| Function > 40 lines; ≥ 4 parameters without an options object; boolean flag argument; class with two distinct responsibilities; `new ConcreteService()` bypassing DI | `minor` | The code is correct. The cost is to whoever reads or edits it next — that is exactly `minor` |
+| Poor naming; redundant comment; magic number; 20–40 line function; OCP/ISP smell; log-and-rethrow | `minor` | Same |
+| Stylistic opinion; a future issue with no current violation | `info` | Neither trigger nor a named maintenance cost |
+
+**Clean Code findings are `minor` by default.** A long function with a named
+responsibility split is a maintenance cost, not observable wrong behaviour, and
+`major` is reserved for findings that name a trigger and an outcome. This
+reviewer previously called a 41-line function `major` and thereby forced
+`REQUEST_CHANGES` on it; that is the exact mis-ranking the canonical rubric
+exists to stop.
 
 ---
 

@@ -28,4 +28,7 @@ keryx memory check
 ## Notes
 
 - Only `accepted` entries influence skills; `draft` are advisory.
-- Markdown is the source of truth; never hand-edit generated indexes.
+- Markdown is the source of truth; generated catalogs, embeddings, and reports
+  are disposable and ignored. Default recall does not persist a report.
+- Existing legacy `data/memory/artifacts/latest.*` files are never deleted or
+  changed automatically; init/update report an advisory migration instead.

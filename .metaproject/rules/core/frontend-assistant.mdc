@@ -4,6 +4,7 @@ alwaysApply: false
 globs:
   - "src/**/*.ts"
   - "src/**/*.tsx"
+stack_requires: "react,mobx"
 ---
 
 # Frontend Assistant Guidelines

@@ -1,0 +1,79 @@
+---
+description: "When two places must agree on a format, pattern, protocol or constant, connect them with an import — not with a comment saying they agree."
+alwaysApply: false
+---
+
+# Shared Definitions
+
+## Purpose
+
+Stop one piece of knowledge from living in several places and quietly
+diverging. A comment asserting that two modules agree is not a mechanism: it
+is a claim, it is not checked, and it is read by its author as what they meant
+rather than as what the code does.
+
+## When To Apply
+
+Three situations:
+
+1. A comment refers to another module by name — "the same signals X uses",
+   "matches Y", "as Z does".
+2. A regular expression, format string or constant is added that already
+   exists somewhere in the project.
+3. Something is extracted into a shared module — in which case the question is
+   not only "does the new home work" but "is every old copy gone".
+
+## Mandatory Behavior
+
+1. **If two places must agree, connect them with an import.** One definition,
+   both consumers referencing it. This is the default and it removes the
+   possibility rather than warning about it.
+2. **If an import is genuinely impossible** — different runtime, different
+   package, a protocol shared with something outside the repository — the
+   claim needs a test that fails when the two diverge. The test names both
+   sides.
+3. **A comment is not sufficient.** Do not write "same as <module>" and stop
+   there. Either the import or the test must exist alongside it.
+4. **When extracting, search for the copies you are replacing** and remove
+   them in the same change. An extraction that leaves a second consumer on the
+   old copy has made the divergence more likely, not less: the shared version
+   will now be maintained and the leftover will not.
+5. **When a shared definition is edited, check every consumer** rather than
+   assuming the import list is the whole story — a copy that was never
+   imported will not appear in it.
+
+## Why This Is A Rule And Not Advice
+
+Review does not reliably catch it. The copies are outside the diff, so a
+reviewer reading the change sees the new shared version and not the old one
+left behind. In one repository this rule came from, a duplicated pattern
+survived eight review rounds specifically about that pattern, and was found in
+one run of a mechanical search.
+
+The failure is also quiet. Two copies that agree today behave identically, so
+nothing surfaces until one of them is edited — usually long after, by someone
+who does not know the other exists.
+
+## Output Contract
+
+When reporting on work that touched a shared definition, state:
+
+- where the single definition now lives;
+- which consumers import it;
+- for any place that could not import it, the test that pins the agreement.
+
+## Example
+
+Two modules must recognise the same terminal prompt.
+
+```ts
+// Wrong — a claim, unchecked. Four attempts to restate this rule from a
+// reading of the other module each got it wrong in a different way.
+/** Same signals the watchdog script uses. */
+const SIGNAL = /do you want to proceed\?/i;
+```
+
+```ts
+// Right — there is no second copy to get wrong.
+import { isPermissionPrompt } from "../utils/permission-prompt.ts";
+```

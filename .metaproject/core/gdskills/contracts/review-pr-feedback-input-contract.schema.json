@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://keryx.local/schemas/review-pr-feedback/input-contract.schema.json",
+  "title": "ReviewPrFeedbackInput",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "pr_url"
+  ],
+  "properties": {
+    "pr_url": {
+      "type": "string",
+      "minLength": 1,
+      "description": "GitHub PR URL (https://github.com/owner/repo/pull/123), owner/repo#123, or #123 when the git remote resolves the repository."
+    },
+    "fix": {
+      "type": "boolean",
+      "default": false,
+      "description": "Run the execution steps: dispatch flow-orchestrator with the fix plan, merge into the reviewed PR's head branch, and answer every comment. Never inferred \u2014 absent this flag the skill produces a plan and stops."
+    },
+    "context_doc": {
+      "type": "string",
+      "description": "Path to a job context document, e.g. <JOBS_ROOT>/<job>/ai/context.md. Optional and non-blocking."
+    },
+    "comment_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": [],
+      "description": "Restrict the run to these collected comment ids. Every excluded comment is still listed, with that as its reason \u2014 a filter that removes silently reads as nobody having commented."
+    },
+    "max_fix_rounds": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Ceiling on review/fix rounds, passed to flow-orchestrator as a constraint. It can only lower that skill's own attempt budget, never raise it."
+    },
+    "operator_confirmed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "confirmed_by",
+        "confirmed_at",
+        "plan_digest"
+      ],
+      "description": "REQUIRED whenever `fix` is true and this skill is running under dispatch. A subagent has no user to answer the Step 9 confirmation, and --fix merges third-party review comments into somebody's pull request: without this the run is BLOCKED, never defaulted. What `plan_digest` is worth is stated on the field itself; do not infer a replay defence from its presence here.",
+      "properties": {
+        "confirmed_by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "confirmed_at": {
+          "type": "string",
+          "minLength": 1
+        },
+        "plan_digest": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A record of WHICH plan the human said they read \u2014 not a control. Nothing in this tree computes or verifies a digest, and the schema constrains it only to a non-empty string, so an agent composing the dispatch chooses the value and a plan mutated after approval carries the same one. `operator_confirmed`'s PRESENCE is enforced; this field's VALUE is not. Making it a control means hashing the rendered plan and having the receiver recompute over what it got."
+        }
+      }
+    }
+  },
+  "if": {
+    "required": [
+      "fix"
+    ],
+    "properties": {
+      "fix": {
+        "const": true
+      }
+    }
+  },
+  "then": {
+    "required": [
+      "operator_confirmed"
+    ]
+  }
+}

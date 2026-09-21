@@ -19,7 +19,7 @@
                     ↓
   [Субагент]     → выполняет SKILL.md feature-analyzer автономно
                     ↓
-  [Результат]    → docs/analysis/<feature>-<date>/
+  [Результат]    → docs/analysis/<feature>/
 -->
 
 ## Инструкция для оркестратора
@@ -211,7 +211,7 @@ TICKET REFERENCE:
 
 Base directory: {{output.base_dir | default("<DOCS_ROOT>/analysis")}}
 Folder name:    {{output.folder_name | default("auto-generated per SKILL.md rules")}}
-Languages:      {{output.languages | default("en, ru, ai")}}
+Languages:      {{output.languages | default("en")}}
 Include metrics: {{output.include_metrics | default("true")}}
 
 ═══════════════════════════════════════════════
@@ -308,7 +308,7 @@ FOCUS AREA:
 ```javascript
 Task({
   description: "Feature analysis: pipeline-variables",
-  subagent_type: "general",
+  subagent_type: "general-purpose",
   prompt: "<сгенерированный промпт выше>"
 })
 ```

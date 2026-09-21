@@ -14,5 +14,5 @@ Responsibilities:
 
 The service is an in-process library seam (`createSecurityService().check(...)`)
 called before side-effecting writes; the CLI is a thin wrapper over it. In
-`advisory` mode `check` never throws; in `enforced`/`ci` mode a
+`advisory` mode `check` never throws; in `enforced`/`ci`/`gateway` mode a
 `fail`/`needs-approval` decision must stop the write.

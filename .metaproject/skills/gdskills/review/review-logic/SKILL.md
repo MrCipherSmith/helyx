@@ -1,5 +1,6 @@
 ---
 name: review-logic
+model_tier: standard
 description: |
   Use when: reviewing code for logic correctness, algorithmic bugs, missing error handling,
   async/await mistakes, null/undefined risks, race conditions, type contract violations,
@@ -7,26 +8,25 @@ description: |
   Also invoked directly: "review logic", "check correctness", "are there any bugs here".
   NOT for: security vulnerabilities, performance profiling, style/naming preferences,
   or architectural pattern concerns — those belong in their respective specialized reviewers.
-version: "1.0.0"
 triggers:
-  - "review logic"
+  - "logic review"
+  - "bug review"
+  - "correctness"
   - "check correctness"
   - "are there any bugs"
   - "check this for bugs"
-  - "logic review"
-  - "dispatched by review-orchestrator"
 metadata:
   author: "MrCipherSmith"
   version: "1.0.0"
   category: "review"
+  compatible_harnesses: "cursor,codex,zed,opencode,claude"
 license: "MIT"
-compatibility: "cursor,codex,zed,opencode,claude"
 ---
 
 # Review Logic
 
 Specialized reviewer for **logic correctness and algorithmic soundness**.
-Inherits from the original `code-ai-review` + `code-boss-review` correctness phases
+Inherits from the original `code-ai-review` + `code-learned-review` correctness phases
 and unifies them into a single focused pass.
 
 This reviewer does not care about formatting, naming, or architecture opinions.
@@ -64,7 +64,7 @@ Logic Review Progress:
 
 ## Scope Detection
 
-See shared script: `skills/shared/git-merge-base.md`
+See shared script: `.metaproject/skills/gdskills/shared/git-merge-base.md`
 
 Run the script to determine `BASE_SHA`, then collect the diff:
 
@@ -106,6 +106,32 @@ Do not review unrelated files.
 - [ ] Wrong return value (returns before setting state, returns old value)
 - [ ] Incorrect boolean logic (double negation, De Morgan's law violations)
 - [ ] Unreachable branches or dead code that hides a bug
+
+### The Change That Does Nothing
+
+The diff adds a prop, guard, field or branch, and nothing can reach it. The code is
+correct — which is why every reviewer asking "is this correct" passes it — and the
+work the change was written to do is not done.
+
+- [ ] A prop passed to a component that cannot act on it: the parent unmounts the
+      child rather than disabling it, or the render site the prop guards is gated by
+      a condition that is false whenever the prop is true.
+- [ ] A field added to a type, a `Pick`, or a payload and never read. Search for the
+      reads before accepting it as plumbing for a later change; if it is, say so.
+- [ ] A guard against a value its producer cannot emit — `=== undefined` against a
+      backend that stamps `0`, a status the producer writes in one place the route
+      never reaches.
+- [ ] State set on one path and cleared on none, or cleared only on paths the
+      triggering interaction cannot take.
+- [ ] A branch whose condition is unsatisfiable given the call sites in this repo.
+
+Prove it by **negative enumeration**: name the complete candidate set and why each
+member fails to apply, in `class_scope.enumeration_method` with `sites: []`. See
+**Negative enumeration** in `review-orchestrator/SKILL.md` → Finding Format.
+
+`minor` when the change is merely dead. `major` when its deadness means the defect
+it was written to fix is still live — the usual case when the change answers an
+earlier review round, because there the finding is recorded as closed and is not.
 
 ### Null / Undefined / Optional Chaining
 
@@ -174,7 +200,7 @@ Do not review unrelated files.
 
 ## Orchestrated Review Contract
 
-When dispatched by `review-orchestrator`, follow the provided `reviewer-input.schema.json` payload. Return a `REVIEW_RESULT` object compatible with `skills/review-orchestrator/reviewer-finding.schema.json`, then a concise markdown summary. Keep findings evidence-based, include concrete `suggested_fix` for every blocker/major, and return `NEEDS_CONTEXT` instead of guessing when required context is missing.
+When dispatched by `review-orchestrator`, follow the provided `reviewer-input.schema.json` payload. Return a `REVIEW_RESULT` object compatible with `.metaproject/skills/gdskills/review/review-orchestrator/reviewer-finding.schema.json`, then a concise markdown summary. Keep findings evidence-based, include concrete `suggested_fix` for every blocker/major, and return `NEEDS_CONTEXT` instead of guessing when required context is missing.
 
 ---
 
@@ -220,16 +246,44 @@ observation is theatre, not rigour.
   ```
 ```
 
-Severity guide for this reviewer:
+Severity comes from **Severity (canonical)** in `review-orchestrator/SKILL.md`.
+This reviewer keeps no table of its own; what follows is where its recurring
+conditions land under that rubric, not a second rubric.
 
-| Severity | When to use |
-|----------|------------|
-| `blocker` | Crash, data corruption, unimplemented acceptance criterion, unhandled promise rejection in critical path |
-| `major` | Silent wrong result, race condition, swallowed error, type contract broken |
-| `minor` | Edge case not handled but unlikely in practice, non-null assertion without comment |
-| `info` | Suggestion to make code more defensive, no current observable defect |
+| Condition | Severity | Why, under the canonical rubric |
+|---|---|---|
+| Unhandled promise rejection reaching the process | `blocker` | Crash |
+| Corrupted or lost persisted/returned data | `blocker` | Data loss or corruption |
+| Unimplemented acceptance criterion | `blocker` | Named shape 4 |
+| Race condition on shared mutable state | `blocker` **if** the interleaving can corrupt or lose data; otherwise `major` | The outcome decides, not the word "race" |
+| Silent wrong result on a named input | `major` | Trigger and outcome are both named |
+| Swallowed error that hides a failed operation | `major` — `blocker` only if the caller then persists or returns wrong data | Silent failure is wrong behaviour; corruption is a different shape |
+| Type contract broken (declared type is not what is returned) | `major` | Callers observe the wrong value |
+| Edge case not handled, no input that reaches it named | `minor` | No trigger; the cost is to the next editor |
+| Non-null assertion without a comment | `minor` | Behaves correctly today; the cost is to the reader |
+| "Could be more defensive", no observable defect | `info` | Neither trigger nor maintenance cost named |
 
-Iron laws:
+## Iron Laws
+
+### Shared laws (every reviewer)
+
+1. **A claim of runtime harm with no reproducible path is `info`.** If you cannot
+   name the input, call, or condition that reaches the code, you have an
+   observation, not a finding. Report it as `info` and say what would settle it.
+2. **Never flag the theoretical.** The path you describe must exist in the code
+   under review. Do not report a safe API because it could be misused, or a
+   pattern because it is often wrong elsewhere.
+3. **One finding per class, not one per occurrence.** When the same shape appears
+   at several sites, report it once and list every site. Ten findings that are one
+   finding hide the other nine problems.
+
+Severity levels are defined once, in `review-orchestrator/SKILL.md` →
+**Severity (canonical)**. This reviewer does not restate them: `blocker` is the
+four merge-blocking shapes named there and nothing else, and the `major`/`minor`
+boundary is the trigger-and-outcome test.
+
+### Logic laws
+
 - Every `blocker` MUST include a concrete reproduction scenario or a spec reference.
 - NEVER flag a style preference (naming, formatting) as a logic bug.
 - If in doubt between `major` and `blocker`, use `major` — overstating severity loses credibility.

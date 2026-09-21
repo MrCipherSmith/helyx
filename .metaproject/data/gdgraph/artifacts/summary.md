@@ -2,34 +2,35 @@
 
 ## Stats
 
-- Source files indexed: 238
+- Source files indexed: 399
 - Imported asset files indexed: 2
-- Total nodes: 240
-- Edges: 570
-- Import edges: 568
+- Total nodes: 401
+- Edges: 1018
+- Import edges: 1015
 - Asset edges: 2
-- Unresolved imports: 0
-- Import resolution: 100%
-- Skipped generated/static directories: 11
+- Unresolved imports: 1
+- Import resolution: 99.9%
+- Skipped generated/static directories: 14
 
 ## Top Modules
 
 | Module | Source Files |
 |---|---:|
-| tests | 64 |
-| utils | 40 |
+| tests | 178 |
+| utils | 63 |
+| bot | 41 |
 | dashboard | 39 |
-| bot | 37 |
-| services | 10 |
-| channel | 9 |
-| scripts | 7 |
+| scripts | 17 |
+| services | 15 |
+| channel | 10 |
+| sessions | 7 |
 | mcp | 6 |
 | memory | 6 |
-| sessions | 5 |
 | adapters | 3 |
 | orchestrator | 3 |
 | claude | 2 |
 | cleanup | 2 |
+| scratch-rlm-prototype | 2 |
 | channel.ts | 1 |
 | cli.ts | 1 |
 | config.ts | 1 |
@@ -40,10 +41,11 @@
 
 | Type | Count |
 |---|---:|
-| _none_ | 0 |
+| .ts | 1 |
 
 ## Skipped Directories
 
+- `.claude`
 - `.git`
 - `.metaproject`
 - `coverage`
@@ -52,6 +54,8 @@
 - `dashboard/public`
 - `dashboard/webapp/dist`
 - `dashboard/webapp/node_modules`
+- `docs/requirements/keryx-adoption-2026-08-12/.metaproject`
+- `docs/requirements/keryx-adoption-2026-08-12/schemas/.metaproject`
 - `logs/tmux-sessions/.metaproject`
 - `node_modules`
 - `tests/node_modules`

@@ -3,6 +3,7 @@ description: "Reference template and checklist for MobX store structure and asyn
 alwaysApply: false
 globs:
   - "**/*store*.ts"
+stack_requires: "mobx"
 ---
 
 # MobX Store Template

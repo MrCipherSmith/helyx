@@ -1,53 +1,222 @@
 ---
-description: "Model selection workflow for sub-agents. Detects available models and allows user to choose."
+description: "Adaptive model selection for sub-agent dispatches. Skills declare a tier; the tier is resolved against the models the active provider actually reports at runtime, without asking."
 alwaysApply: false
 ---
 
 # Model Selection for Sub-Agents
 
 ## Purpose
-When launching a sub-agent or skill, detect available models in the current environment and allow the user to choose.
 
-## Trigger
-When you need to launch a sub-agent/skill and want to use a different model than the current one.
+Match the model to the work. A reviewer scanning a twelve-line diff and a
+regression reviewer reasoning across a forty-file blast radius should not run on
+the same model: the cheap work pays flagship prices, and the hard work gets no
+more capability than the trivial.
 
-## Available Models Detection
+## Tiers, not model names
 
-Run to detect available models:
+A skill declares a **tier**. It never declares a model.
 
-```bash
-.metaproject/scripts/detect-models.sh
+A model name in a skill is wrong the day the provider changes and unusable for
+anyone on a different provider. There are three tiers:
+
+| Tier | For |
+|---|---|
+| `light` | mechanical, verifiable work — pre-filter, `class_scope` existence checks, comment collection, formatting a reply |
+| `standard` | ordinary reviewing and implementation — the default |
+| `deep` | genuinely hard reasoning — regression review across the blast radius, a strategy change after a failed loop, synthesis across many findings |
+
+Declared in SKILL.md frontmatter:
+
+```yaml
+---
+name: review-architecture
+model_tier: deep
+---
 ```
 
-## Current Environment Models
+An undeclared skill runs at `standard`. A skill that writes a model name into
+`model_tier` fails the guard in `src/gdskills/model-tier.test.ts`.
 
-### Codex
-- `gpt-5.2-codex` - Frontier agentic coding model (recommended)
-- `gpt-5.3-codex` - Latest frontier agentic coding model
-- `gpt-5.1-codex-max` - Codex-optimized flagship for deep reasoning
-- `gpt-5.1-codex-mini` - Cheaper, faster, less capable
-- `gpt-5.2` - Latest frontier model
+## Resolving a tier: discover, rank, fall back
 
-### Cursor
-Uses OpenAI models (GPT-4, GPT-4o, etc.)
+There is **no table of models** anywhere in the resolution, and there must not
+be. A fixed list of model ids is stale the day a provider ships anything, and it
+is wrong for every operator whose environment differs from the one it was written
+in. The candidate set is discovered at runtime.
 
-### Antigravity
-Check configuration in `~/.antigravity/`
+`src/commands/select.ts` already detects providers and every `DetectedProvider`
+carries `models: string[]`. That list — for the **session's own provider**, so a
+child never resolves onto a provider the parent holds no grant for — is the whole
+candidate set. `src/gdskills/model-tier.ts` then:
 
-### OpenCode
-Check configuration in `~/.config/opencode/`
+1. **discovers** the candidates (passed in, never looked up: the module reads no
+   network, no filesystem, no environment);
+2. **ranks** them by size markers in their names — `MODEL_RANK_HINTS`;
+3. **places the tiers relative to the session's own model**:
 
-### Zed
-Uses AI models configured in Zed settings
+| Tier | Resolves to |
+|---|---|
+| `standard` | the session's model, always |
+| `deep` | the highest-ranked discovered model **strictly above** the session's, else the session's |
+| `light` | the lowest-ranked discovered model **strictly below** the session's, else the session's |
 
-## Workflow
+Anchoring on the session model is what makes "never a downgrade" checkable
+rather than hoped for: a tier can only move away from the session model in the
+direction its own name points, and a candidate at the session's own rank is a
+lateral move and never taken.
 
-1. **Detect available models** - Run `detect-models.sh` or check known configurations
-2. **Present options** - Show user available models with descriptions
-3. **Get confirmation** - Ask user which model to use
-4. **Launch sub-agent** - Use selected model for the sub-agent
+## What the hints are, and what they are not
 
-## Mandatory Behavior
-- Always ask user before changing model for sub-agents
-- Show model descriptions to help user decide
-- Default to current model unless user explicitly chooses otherwise
+Capability cannot be derived from a bare string — `haiku` is smaller than `opus`
+and nothing about the two strings says so. `MODEL_RANK_HINTS` is that irreducible
+residue, and it is kept in the smallest shape that works:
+
+- it names **size words** (`mini`, `lite`, `flash`, `haiku`, `pro`, `opus`,
+  `max`, `ultra`, …), never models, so it claims nothing about what exists and
+  cannot go stale;
+- it is applied to whatever detection reported, so an unfamiliar vendor is still
+  ranked if its names use those words;
+- a model matching **no** hint is *unranked*, which is not the same as ranked
+  zero — it is simply not placed;
+- it is one array, overridable per call.
+
+A model whose name is a codename carrying no size is unrankable by design. That
+is the honest outcome, not a gap to be patched with folklore.
+
+## Falling back
+
+Ranking is **refused**, and every tier keeps the session's provider and model,
+when:
+
+- nothing was discovered, or the session's provider is absent from the catalogue
+  (an external CLI runtime, or detection that has not run);
+- the provider reported no models;
+- the hints cannot place the **session's own** model — with no anchor, no
+  candidate can be called larger or smaller.
+
+A refusal **never** fails a dispatch and **never** causes a silent downgrade.
+Degrading capability because discovery failed is the worst of the three outcomes.
+
+Do not "fix" a fallback by adding model ids to the code. Add a size word to the
+hints if one genuinely applies, or leave it: running on the session's model is a
+correct answer.
+
+## Where this actually runs
+
+Two places, and they are not the same shape:
+
+- **`spawn_subagent`** (`src/harness/tool/builtin/spawn-subagent-tool.ts`) takes an
+  optional `model_tier` input and does the rest in code: it builds the tier map
+  with `buildTierMap` from its host's detection result, hands it to
+  `resolveChildModel`, and records the outcome on the dispatch's run trace.
+  Omitting `model_tier` inherits the parent's model, exactly as before the field
+  existed.
+- **An orchestrator authoring a dispatch document** *runs a command*:
+  `keryx review tier`. It takes the signals below as flags and prints the `model`
+  block ready to paste — the tier, the ordered rule ids that produced it, the
+  resolved provider/model, `tier_resolution` and `model_discovery`. `--json`
+  prints the block alone.
+
+An orchestrator is an agent following prose and **cannot call a TypeScript
+function**: asked for a tier by hand it reads a table of signals and does the
+arithmetic in its head — the exact mechanical work this programme moves out of
+skills and into the code that consumes them. `keryx review tier` is that code's
+entry point; `decideDispatchModel` is what it calls.
+
+Nothing reads a recorded resolution back and checks it. These fields explain a
+finished run; they do not gate one.
+
+## Choosing the tier
+
+The tier is **computed, not judged**. Run:
+
+```bash
+keryx review tier --scope blast-radius --findings 12 --diff-lines 340 \
+                  --verifier execution --fix-attempt 2 --security \
+                  --forced-strategy-change --json
+```
+
+Every flag is a signal the orchestrator already holds before it dispatches: the
+round's scope, its own attempt counter, the diff it computed, the findings it is
+holding, the verification method it is about to ask for. None of them is a
+model's self-report — no model is ever asked to rate its own difficulty.
+
+The rules `assignTier` applies, in the order it applies them:
+
+| Signal | Flag | Effect |
+|---|---|---|
+| scope is `blast-radius` | `--scope blast-radius` | at least `deep` |
+| fix attempt >= 2 on the same finding | `--fix-attempt <n>` | raise one tier |
+| forced strategy change after the loop cap | `--forced-strategy-change` | `deep` |
+| finding count <= 3 **and** diff <= 50 lines | `--findings <n> --diff-lines <n>` | allow `light` |
+| verification method is `execution` or `site-check` | `--verifier <method>` | `light` — the evidence comes from running something, not from reasoning |
+| any security finding in scope | `--security` | never below `standard` |
+
+Floors are applied after downgrades, so "at least `deep`" means at least: a
+blast-radius round over a twelve-line diff is still a blast-radius round.
+
+The session's provider/model come from the **caller**: `--session-provider`/
+`--session-model`, else `KERYX_SESSION_PROVIDER`/`KERYX_SESSION_MODEL` exported by
+the host (`keryx shell` exports its live session to every `shell_exec` command). The selection `keryx shell` persisted is read only with
+`--from-shell-config`: it is whatever `keryx shell` was last pointed at, not the
+session running the orchestrator, and as a silent default it pinned a `keryx
+shell` model into dispatches authored from Claude Code. The candidate set comes
+from live provider detection (`--catalog` to supply it). **There is no `--tier`
+flag, and there will not be**: accepting a hand-written tier would put the
+arithmetic straight back in the caller's head.
+
+## Adaptive: `inherit: true`
+
+A model is named only when discovery assigned one **other than** the session's
+(`tier_resolution: discovered`). In every other case — no session named, ranking
+refused, or the tier resolving to the session's own model — the block carries the
+tier and `inherit: true`, and the **host** resolves it against the models its own
+dispatch tool offers:
+
+| Tier | Host dispatches on |
+|---|---|
+| `standard` | its session model |
+| `deep` | its most capable model class, else the session model |
+| `light` | its lighter/faster model class, else the session model |
+
+This is how the tier reaches runtimes keryx cannot enumerate (a Claude Code
+`Agent`, a Codex subagent). `light` there is the tier the signals assigned, not a
+fallback. Exit status is always 0.
+
+## Recording the decision
+
+The dispatch carries the tier, the ordered rule ids that produced it, which of
+the three outcomes occurred, and what was on the table when it did —
+`model.tier`, `model.tier_reasons`, `model.tier_resolution` and
+`model.model_discovery` in
+`.metaproject/core/gdskills/contracts/subagent-dispatch.schema.json`.
+
+`tier_resolution` distinguishes three facts that must not be flattened:
+
+| Value | Means |
+|---|---|
+| `discovered` | a discovered model was assigned to this tier |
+| `session-ranked` | ranking worked and placed the tier at the session's model |
+| `session-fallback` | ranking was refused; the session's model is kept |
+
+"Fell back to the session model" and "assigned the session model because it
+ranked there" are different facts. A run that cannot be explained afterwards is
+what these fields exist to prevent. Record them on every dispatch that resolves
+a tier — `keryx review tier` prints all four together as one pasteable block, so
+recording them is one copy rather than four decisions.
+
+## Mandatory behavior
+
+- Declare a tier in the skill; resolve the model at dispatch time.
+- **Run `keryx review tier` — do not work the tier out by hand.** Assigning it
+  from the table above by reading is the mechanical step this rule exists to
+  remove.
+- **Do not ask the operator which model to use per dispatch.** Asking every time
+  is what made adaptive selection impossible.
+- Never write a concrete model name into a skill, a rule, a dispatch template, or
+  the resolution code.
+- Take the candidate set from runtime detection. Never from a literal list of
+  what exists.
+- When the candidates cannot be ranked, the block is adaptive (`inherit: true`).
+  The host never goes below its session model for `standard` or `deep`, and takes
+  a lighter class only for a `light` tier.

@@ -2,18 +2,22 @@
 name: docpack-orchestrator
 description: "Use when creating or updating a Metaproject requirements package under docs/requirements: PRD, specification, README, policies/protocols/schemas, roadmap updates, verification, and package review. Use for requests like 'create requirements package', 'prepare module documentation', 'write PRD/spec for module', or 'оформи пакет документации'. Not for reverse-engineering current codebase documentation; use autodoc-orchestrator for that."
 triggers:
-  - "create requirements package"
   - "requirements package"
+  - "create requirements package"
+  - "module documentation"
+  - "documentation package for implementation"
+  - "пакет документации"
+  - "оформи пакет документации"
+  - "подготовь пакет документации"
   - "prepare module documentation"
   - "write PRD and spec"
-  - "оформи пакет документации"
   - "создай документацию модуля"
 metadata:
   author: "MrCipherSmith"
   version: "1.0.0"
   category: "planning"
+  compatible_harnesses: "cursor,codex,zed,opencode,claude"
 license: "MIT"
-compatibility: "cursor,codex,zed,opencode,claude"
 ---
 
 # docpack-orchestrator
@@ -128,6 +132,32 @@ Run a local verification pass:
 
 Use `docpack-review` for an adversarial pass. Fix blockers before
 final output. Warnings may remain only if called out clearly.
+
+## Red Flags
+
+Stop and re-read this skill if you are thinking:
+
+| Rationalization | Rebuttal |
+|---|---|
+| "README, PRD and spec agree with each other, so the implementation status is accurate." | Agreement between three documents is agreement between three documents. Iron Law 6 requires code as the proof. Open the path, or write the status as `planned`. |
+| "`docpack-review` came back with warnings only, so the package is done." | Phase 5 permits warnings to remain *only if they are called out clearly* in the Final Response. A warning that lives in the review output and not in `remaining_gaps` has been dropped, not accepted. |
+| "This package is small — a specification alone covers it." | Iron Law 4: README, PRD and specification are all required for module packages. "Small" is the most common reason a package ships with no problem statement and no document index. |
+| "I rewrote most of the doc, so the `Version` obviously moved." | Nothing bumps it for you. Iron Law 3 is checked file by file in Phase 4, and an unbumped version is what makes a stale copy indistinguishable from the current one. |
+| "The user gave me thorough notes, so Phase 1 evidence is redundant." | User notes do not contain the existing package files, `docs/requirements/roadmap.md`, or what a prior version of this package already promised. Skipping Phase 1 is how a package contradicts its own last revision. |
+| "Review is its own skill — the user can run `docpack-review` afterwards." | Iron Law 5 makes verification and review mandatory *before* final output. An unreviewed package reported as complete is the failure this pipeline exists to prevent. |
+
+## Exit Criteria
+
+Do not emit the Final Response until all of these hold:
+
+- Every required file for the package kind exists at `docs/requirements/<package_name>/`, and each was written or deliberately left unchanged — not assumed.
+- Every Markdown file in the package carries a `Version`, and every file you changed has a bumped one.
+- `README.md` links to every file in the package; the specification links to each schema it defines.
+- Every `schemas/*.json` parses as valid JSON.
+- `docs/requirements/roadmap.md` is updated when the package represents a new module or capability, or the report states why it does not.
+- No implementation claim appears that code does not support; anything unbuilt is marked planned or future.
+- `docpack-review` has been run in Phase 5 and reports zero blockers. Remaining warnings appear verbatim in `remaining_gaps`.
+- Every field of the Final Response block is filled with a real value — no placeholder, and `verification`/`review` are never reported as `pass` when the pass did not run.
 
 ## Final Response
 

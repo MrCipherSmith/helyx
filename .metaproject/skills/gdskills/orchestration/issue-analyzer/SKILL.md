@@ -1,19 +1,19 @@
 ---
 name: issue-analyzer
-description: "Use when decomposing a GitHub issue into atomic tasks for AI implementation, planning task breakdown, or preparing work for task-implementer agents."
+description: "Use when decomposing a GitHub issue into atomic tasks for AI implementation, planning task breakdown, or preparing work for task-implementer agents. NOT for: writing the code for those tasks (use task-implementer)."
 triggers:
-  - "Analyze issue"
-  - "Decompose issue"
-  - "Break down issue"
+  - "analyze issue"
+  - "decompose issue"
+  - "break down issue"
   - "Issue to tasks"
   - "Plan issue implementation"
 metadata:
   author: "MrCipherSmith"
   version: "1.1.0"
-  category: "analysis"
+  category: "orchestration"
   agent_worthy: true
+  compatible_harnesses: "cursor,codex,zed,opencode,claude"
 license: "MIT"
-compatibility: "cursor,codex,zed,opencode"
 ---
 
 # Issue Analyzer

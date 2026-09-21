@@ -80,7 +80,7 @@ Every job folder MUST contain at minimum:
     ...
 ```
 
-> **`results/` folder:** Created by `task-implementer` during Phase 6 (one file per task). The orchestrator and wave-executor never receive full task results inline — they read these files only when a task reports `DONE_WITH_CONCERNS` or `BLOCKED`. This keeps the orchestrator context bounded.
+> **`results/` folder:** Written by `task-implementer` during Phase 6.1 (one file per task), then validated with `keryx skills contracts validate … --schema task-implementer-output` and recorded with `keryx job document <job-name> --type implementation-report --file <that file>`, which refuses if the file was never written. There is no `wave-executor` agent: the orchestrator dispatches each task itself, never receives a full task result inline, and reads a `results/` file only when a task reports `DONE_WITH_CONCERNS` or `BLOCKED`. This keeps the orchestrator context bounded.
 
 ## README.md Format
 
@@ -112,7 +112,7 @@ The README is the entry point for both humans and AI agents. It MUST contain:
 1. [x] Analyze issue (issue-analyzer)
 2. [ ] Prepare feature branch
 3. [ ] Implement tasks (task-implementer)
-4. [ ] Review (code-ai-review, code-boss-review, code-style-review)
+4. [ ] Review (code-ai-review, code-learned-review, code-style-review)
 5. [ ] Fix review findings
 6. [ ] Final checks
 7. [ ] Generate report

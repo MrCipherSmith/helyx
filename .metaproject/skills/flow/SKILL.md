@@ -17,7 +17,7 @@ know CLI commands - recognize the intent and route it yourself.
 | "Заведи стори / инициализируй задачу / start a story" | init | ask for a problem description or issue link if missing, then init |
 | "Какие фло активны? / статус по фло / where are we on 003" | status | `keryx flow list` / `flow status <id>` |
 | "Отметь задачу T2 / добавь задачу в фло" | manage | [manage.md](manage.md): `flow task done/add` |
-| "Имплементация готова, PR создан" | accept implementation | [manage.md](manage.md): verify draft PR, `flow implemented --pr <url>` |
+| "Создай PR и доведи до merge" | create and merge | [manage.md](manage.md): review/fix, merge into base, then `flow implemented --pr <url>` |
 | "Заверши фло / закрой стори / finish the flow" | complete | [complete.md](complete.md): confirm ACs, `flow complete` |
 | "Фло застрял / поставь на паузу" | block | `flow block <id> --reason` / `flow unblock` |
 
@@ -30,7 +30,7 @@ the work.
 - Starting new work: [init.md](init.md) - flow-init.
 - Orchestrating/implementing an active flow: [manage.md](manage.md) -
   flow-manager (embeds into the orchestrator).
-- Finishing a flow whose draft PR exists: [complete.md](complete.md) -
+- Finishing a flow whose reviewed PR has merged: [complete.md](complete.md) -
   flow-complete.
 
 ## Hard policy (all roles)
@@ -40,4 +40,4 @@ the work.
   `keryx flow ac update <id> --reason`. Implementors NEVER touch them.
 - Status changes only through the CLI; invalid transitions are rejected.
 - Only flow-manager declares implementation complete (`flow implemented`),
-  and only when a draft PR exists.
+  and only after a reviewed PR has merged into the recorded base branch.

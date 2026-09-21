@@ -75,5 +75,5 @@
 |-------|-------|
 | Base Dir | `<DOCS_ROOT>/analysis` |
 | Folder Name | |
-| Languages | `en, ru, ai` |
+| Languages | `en` |
 | Include Metrics | `true` |

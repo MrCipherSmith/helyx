@@ -88,7 +88,14 @@
       "hooks": {
         "gitPostCommit": ".git/hooks/post-commit",
         "postUpdate": ".metaproject/hooks/post-update.d"
-      }
+      },
+      "capabilities": [
+        {
+          "id": "gdskills.external-agents",
+          "enabled": false,
+          "kind": "ceiling"
+        }
+      ]
     },
     "memory": {
       "enabled": true,
@@ -190,15 +197,48 @@
         "prePush": ".git/hooks/pre-push",
         "agent": ".claude/settings.json"
       }
+    },
+    "mcp": {
+      "enabled": true,
+      "core": ".metaproject/core/mcp",
+      "data": ".metaproject/data/mcp",
+      "manifest": ".metaproject/modules/mcp.md",
+      "config": ".metaproject/core/mcp/mcp.config.json",
+      "commands": [
+        "serve"
+      ],
+      "capabilities": [],
+      "http": {
+        "enabled": false
+      },
+      "expose": {
+        "tools": true,
+        "resources": true,
+        "modules": [
+          "gdgraph",
+          "gdctx",
+          "security",
+          "flow",
+          "memory",
+          "health",
+          "testing",
+          "wiki",
+          "standard",
+          "sac",
+          "slate",
+          "gdskills"
+        ]
+      }
     }
   },
-  "updatedAt": "2026-08-01T20:35:39.374Z",
+  "updatedAt": "2026-09-21T06:23:45.145Z",
   "agentEntrypoints": {
     "index": ".metaproject/index.md",
     "readme": ".metaproject/README.md",
     "root": [
       "AGENTS.md",
       "CLAUDE.md"
-    ]
+    ],
+    "metaproject": ".metaproject/index.md"
   }
 }

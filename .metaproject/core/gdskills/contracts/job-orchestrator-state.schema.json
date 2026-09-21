@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://keryx.local/schemas/job-orchestrator/state.schema.json",
+  "title": "Job Orchestrator State",
+  "description": "Schema for .metaproject/jobs/<job-name>/state.json — persisted orchestrator state for job resumption.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["phase", "intent", "job_name", "context", "plan"],
+  "properties": {
+    "phase": {
+      "type": "string",
+      "enum": ["CONTEXT", "PLAN", "EXECUTION", "COMPLETION"],
+      "description": "Current orchestrator phase"
+    },
+    "intent": {
+      "type": "string",
+      "enum": ["implement", "analyze", "review", "custom"]
+    },
+    "create_pr": { "type": "boolean" },
+    "job_name": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+    "context": {
+      "type": "object",
+      "properties": {
+        "issue": {
+          "type": "object",
+          "properties": {
+            "number": { "type": "integer" },
+            "title": { "type": "string" },
+            "url": { "type": "string" },
+            "type": { "type": "string" }
+          }
+        },
+        "project_dir": { "type": "string" },
+        "base_branch": { "type": "string" }
+      }
+    },
+    "branch": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "worktree_path": { "type": "string" },
+        "merge_base": { "type": "string" },
+        "package_manager": { "type": "string", "enum": ["npm", "bun", "yarn", "pnpm", "python", "go", "unknown"] },
+        "run_command": { "type": "string", "description": "Command prefix for running scripts (e.g., 'npm run', 'bun run', 'yarn')" }
+      }
+    },
+    "interview": {
+      "type": "object",
+      "description": "Results from the interview skill (Phase 0.3)",
+      "properties": {
+        "decisions": { "type": "array", "items": { "type": "object" } },
+        "constraints": { "type": "array", "items": { "type": "string" } },
+        "assumptions": { "type": "array", "items": { "type": "string" } },
+        "risks": { "type": "array", "items": { "type": "string" } },
+        "refined_goal": { "type": "string" }
+      }
+    },
+    "plan": {
+      "type": "object",
+      "required": ["steps"],
+      "properties": {
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "type", "agent", "status"],
+            "properties": {
+              "id": { "type": "string" },
+              "type": { "type": "string" },
+              "agent": { "type": "string" },
+              "depends": { "type": "array", "items": { "type": "string" } },
+              "status": {
+                "type": "string",
+                "enum": ["pending", "in_progress", "completed", "skipped", "failed"]
+              },
+              "conditional": { "type": "boolean" }
+            }
+          }
+        },
+        "current_step": { "type": "string" }
+      }
+    },
+    "analysis": {
+      "type": "object",
+      "properties": {
+        "total_tasks": { "type": "integer" },
+        "tasks": { "type": "array" },
+        "dependency_order": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "context_doc": {
+      "type": "object",
+      "properties": {
+        "path": { "type": "string" },
+        "version": { "type": "string" },
+        "status": { "type": "string", "enum": ["collected", "updated", "not-collected"] }
+      }
+    },
+    "implementation": {
+      "type": "object",
+      "properties": {
+        "task_results": { "type": "object" },
+        "all_commits": { "type": "array", "items": { "type": "string" } },
+        "all_files": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "review": {
+      "type": "object",
+      "properties": {
+        "iteration": { "type": "integer" },
+        "findings": { "type": "array" },
+        "needs_fix": { "type": "boolean" },
+        "unresolved": { "type": "array" }
+      }
+    },
+    "final_checks": {
+      "type": "object",
+      "properties": {
+        "lint": { "type": "string" },
+        "type_check": { "type": "string" },
+        "tests": { "type": "string" }
+      }
+    },
+    "documentation": {
+      "type": "object",
+      "properties": {
+        "job_path": { "type": "string" },
+        "documents_created": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "description": "Timing and token usage per step",
+      "properties": {
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "step_id": { "type": "string" },
+              "started_at": { "type": "string", "format": "date-time" },
+              "completed_at": { "type": "string", "format": "date-time" },
+              "duration_ms": { "type": "integer" },
+              "total_tokens": { "type": "integer" },
+              "status": { "type": "string" },
+              "retries": { "type": "integer" }
+            }
+          }
+        },
+        "total_duration_ms": { "type": "integer" },
+        "total_tokens": { "type": "integer" }
+      }
+    },
+    "jobs_root": {
+      "type": "string",
+      "description": "Resolved jobs root directory"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 UTC timestamp of last state update"
+    }
+  }
+}

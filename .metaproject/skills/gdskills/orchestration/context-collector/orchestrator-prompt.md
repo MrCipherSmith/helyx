@@ -58,7 +58,7 @@ IF ACTION == "update":
 You are the context-collector agent. Your task is to research and build
 a context document for the current job.
 
-Load the skill from: skills/context-collector/SKILL.md
+Load the skill from: .metaproject/skills/gdskills/orchestration/context-collector/SKILL.md
 
 DO NOT ask the user any questions. Execute all phases autonomously.
 
@@ -85,7 +85,7 @@ and return a CONTEXT_RESULT block as your final message.
 You are the context-collector agent. Your task is to update the existing
 context document for this job.
 
-Load the skill from: skills/context-collector/SKILL.md
+Load the skill from: .metaproject/skills/gdskills/orchestration/context-collector/SKILL.md
 
 DO NOT ask the user any questions. Execute the update flow autonomously.
 
@@ -111,7 +111,7 @@ CONTEXT_RESULT block as your final message.
 ```javascript
 Task({
   description: "context-collector: collect context for {{JOB_NAME}}",
-  subagent_type: "general",
+  subagent_type: "general-purpose",
   prompt: "<generated prompt from template above>"
 })
 ```

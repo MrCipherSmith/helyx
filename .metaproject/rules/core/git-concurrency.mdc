@@ -1,0 +1,101 @@
+---
+description: "Git concurrency rules: no git stash in a shared tree, explicit pathspecs instead of git add -A, git -C <absolute path> in worktrees, commit at task boundaries. Use when multiple agents or sessions share one checkout or work in parallel git worktrees."
+alwaysApply: false
+---
+
+# Git Concurrency
+
+## Purpose
+Prevent one agent's git operation from destroying or corrupting another agent's or session's in-flight work when multiple sessions or subagents share a checkout, a stash stack, or run in parallel git worktrees.
+
+## When To Apply
+Apply whenever more than one agent session or subagent may be active against the same repository — parallel `task-implementer` waves, concurrent flow workers, or any dispatch that runs inside a worktree cut for a specific task. Cited by `flow-orchestrator`, `job-orchestrator`, and `task-implementer`.
+
+---
+
+## Rules
+
+### 1. Never `git stash`, in any form, in a shared tree
+The stash stack is a single list shared by the main checkout and every worktree cut from it. A "scoped" `git stash push -- <file>` still resets that file to its last commit and pushes the diff onto the shared stack — another lane's `git stash pop` can then restore your entry over its own uncommitted work, or vice versa. This happened here: a worker's scoped `git stash push -- <file>` reset the file and briefly wiped another task's uncommitted work.
+
+BAD:
+```bash
+git stash push -- src/foo.ts   # resets the file now; the diff joins a stack every worktree can pop
+```
+
+GOOD — need a temporary revert to test a hypothesis:
+```bash
+# Make the change with the Edit tool; to undo it, edit it back the same way.
+# If you need to keep a copy while you experiment, copy the file out instead:
+cp src/foo.ts /path/to/scratch/foo.ts.bak
+```
+Never reach for `git stash` — scoped or not — to get there and back.
+
+### 2. Explicit pathspecs, never `git add -A` / `--all` / `.`
+An unscoped add stages every changed file in the tree, including another lane's in-flight edits, into a commit that has nothing to do with them. This happened here: `git add -A` staged another lane's in-flight files into an unrelated commit.
+
+BAD:
+```bash
+git add -A && git commit -m "..."
+```
+
+GOOD:
+```bash
+git add src/foo.ts src/foo.test.ts
+git commit -m "..."
+```
+
+### 3. `git -C <absolute-worktree-path>` for every git command in a worktree
+A bare `git` command runs against whatever the shell's cwd happens to be. Across a session's tool calls that cwd can silently persist from a previous command or reset out of the worktree — a bare `git restore` or `git add -A && git commit && git push` then hits the wrong tree. This happened here: it once pushed another session's work to `main`.
+
+BAD:
+```bash
+cd /path/to/worktree
+# ...several tool calls later, the cwd assumption has drifted...
+git commit -am "fix"
+```
+
+GOOD:
+```bash
+git -C /absolute/path/to/worktree status
+git -C /absolute/path/to/worktree add src/foo.ts
+git -C /absolute/path/to/worktree commit -m "fix(foo): ..."
+```
+
+### 4. Commit at every task boundary
+Uncommitted work handed between workers — "the next task can build on my uncommitted edit" — has been destroyed here by a concurrent checkout running in another lane. A task is not done until its diff is committed; leaving it uncommitted is leaving it deletable by someone else's git command.
+
+This holds whether or not the worker itself commits. When auto-commit is enabled, the worker commits its own diff before reporting. When it is disabled, the worker does not commit — but the task is still not done until the diff is committed, so it reports its exact changed-file list (see "Reporting Back" below) and the orchestrator stages and commits those paths at the task boundary. Either way, the task's diff is committed at the boundary by whoever owns commits — never left uncommitted for a later step to inherit.
+
+---
+
+## Pinning A Dispatch To Its Worktree
+
+Every dispatch into a multi-task or multi-agent run MUST pin the exact worktree before its first write:
+
+1. State the absolute worktree root in the dispatch prompt — never a relative path or "the current directory".
+2. The dispatched agent's first action is:
+   ```bash
+   cd <absolute-worktree-root> && pwd && git branch --show-current
+   ```
+   and confirms the printed path and branch match what the dispatch specified.
+3. Re-run that check immediately before the first write, not only at the start — a long-running dispatch can have its cwd reset by an unrelated tool call in between.
+4. Every git command after that uses `git -C <absolute-worktree-root>`, never a bare `git`.
+
+## Reporting Back
+
+A worker reports its **exact file list** — the paths it actually changed, nothing inferred — so "the orchestrator stages those paths only". An orchestrator that runs `git add -A` on the strength of a worker's prose summary has recreated Rule 2 at one level up; the reported file list is what makes an explicit-pathspec `git add` possible at the orchestrator level too.
+
+---
+
+## Red Flags — Stop and re-read this rule if you are thinking:
+
+| Rationalization | Why it's wrong |
+|---|---|
+| "It's a scoped stash, I'll pop it right away" | The stash stack is shared by every worktree; "right away" does not stop another lane's `pop` from landing between your push and your pop |
+| "`git add -A` is fine, I only touched my files" | `git add -A` stages whatever is dirty in the tree, not what you touched — another lane's dirty files get staged too, silently |
+| "cwd is still the worktree" | Confirm it, don't assume it — `pwd` costs nothing, and a wrong assumption here ships to the wrong branch |
+| "I'll commit everything at the end in one big commit" | Uncommitted work is exactly what a concurrent stash, add, or checkout destroys; commit at each boundary, not at the end |
+| "This repo isn't shared right now, so it's fine just this once" | The failure mode is a race: correct 99 times and destructive the 100th is still destructive, and nothing here can tell you which run you're on |
+
+**IRON LAW: NEVER `git stash` OR `git add -A`/`--all`/`.` IN A TREE ANOTHER SESSION MIGHT BE TOUCHING, AND NEVER RUN A GIT COMMAND WITHOUT PINNING IT TO AN ABSOLUTE WORKTREE PATH FIRST.**

@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "verification-claim",
+  "title": "Verifier Result and Verification Claims",
+  "description": "What `review-verifier` returns. It lives beside `reviewer-finding.schema.json` for the same reason that one does: the contract belongs to the consumer that merges it, not to the agent that emits it. The defining property of this shape is what it CANNOT express — there is no `severity`, no `problem`, no `suggested_fix`, no way to add a finding. A verifier can only delete, so the wire format it writes on has no field capable of raising anything. `additionalProperties: false` on a claim is therefore load-bearing rather than tidiness: it is where 'can only delete' stops being an instruction. The merge in src/review/verification.ts enforces the same rule again in code, because a schema is not run by every caller.",
+  "type": "object",
+  "required": ["status", "verifier", "verifications"],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["DONE", "NEEDS_CONTEXT", "BLOCKED"],
+      "description": "No DONE_WITH_CONCERNS: a verifier has no concerns of its own to report. It checked what it was given, or it could not."
+    },
+    "verifier": {
+      "type": "string",
+      "description": "The reviewer performing verification. Refused when it equals the `reviewer` of a finding it claims: a finding is never verified by the reviewer that raised it (AC9)."
+    },
+    "summary": { "type": "string" },
+    "verifications": {
+      "type": "array",
+      "description": "One claim per finding checked. A finding that was not checked simply has no claim; absence is not a verdict and never removes anything.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["finding", "verdict", "method", "evidence"],
+        "properties": {
+          "finding": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The `global_id` of the finding being checked (`<reviewId>#<id>`). The display `id` is accepted when it is unambiguous within the round, and refused when it is not — `F-001` denotes six different findings in the recorded corpus."
+          },
+          "verdict": {
+            "type": "string",
+            "enum": ["confirmed", "refuted", "unverifiable"],
+            "description": "`unverifiable` is the honest answer whenever nothing could be run, and it is expected to be the majority verdict. Only `refuted` removes anything, and only under verification_mode: filter."
+          },
+          "method": {
+            "type": "string",
+            "enum": ["execution", "site-check", "reasoning"],
+            "description": "How the verdict was reached, strongest first. `execution`: a command or test was run that FAILS IF THE FINDING IS REAL. `site-check`: the class_scope sites were searched for and either exist or do not. `reasoning`: neither was possible."
+          },
+          "evidence": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The command and its result, or the search and its hits. A verdict with nothing behind it is discarded and the finding stays as reported."
+          },
+          "verifier": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Per-claim override of the top-level verifier, for a batch produced by more than one agent. Written onto the finding so the never-self-verify rule can be audited after the fact, not only enforced at write time."
+          }
+        },
+        "if": {
+          "required": ["method"],
+          "properties": { "method": { "const": "reasoning" } }
+        },
+        "then": {
+          "properties": { "verdict": { "const": "unverifiable" } }
+        }
+      }
+    },
+    "needs_context": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "stats": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "confirmed": { "type": "integer", "minimum": 0 },
+        "refuted": { "type": "integer", "minimum": 0 },
+        "unverifiable": { "type": "integer", "minimum": 0 },
+        "not_checked": { "type": "integer", "minimum": 0 }
+      }
+    }
+  },
+  "additionalProperties": true
+}

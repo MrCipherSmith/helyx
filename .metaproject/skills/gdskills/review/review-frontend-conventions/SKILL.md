@@ -1,5 +1,6 @@
 ---
 name: review-frontend-conventions
+model_tier: standard
 description: |
   Use when reviewing frontend code against repository-local conventions commonly
   captured in CLAUDE.md or similar project guides: React/MobX boundaries,
@@ -7,10 +8,19 @@ description: |
   styling tokens, Storybook expectations, and local tooling rules. Dispatched
   by review-orchestrator for --frontend-conventions, --project-conventions,
   --all, or frontend src/**/*.ts(x) changes when local convention docs exist.
+  NOT for: generic React and MobX correctness with no local rule behind it
+  (review-frontend), what the CSS actually renders (review-layout), or naming and
+  readability as a matter of taste (review-style).
+triggers:
+  - "frontend conventions"
+  - "local frontend rules"
+  - "CLAUDE frontend"
+  - "review frontend conventions"
 metadata:
   author: "MrCipherSmith"
   version: "1.0.0"
   category: "review"
+  stack_requires: "react,mobx"
 license: "MIT"
 ---
 
@@ -95,9 +105,30 @@ project-specific guide was found.
 
 ---
 
+## Iron Laws
+
+### Shared laws (every reviewer)
+
+1. **A claim of runtime harm with no reproducible path is `info`.** If you cannot
+   name the input, call, or condition that reaches the code, you have an
+   observation, not a finding. Report it as `info` and say what would settle it.
+2. **Never flag the theoretical.** The path you describe must exist in the code
+   under review. Do not report a safe API because it could be misused, or a
+   pattern because it is often wrong elsewhere.
+3. **One finding per class, not one per occurrence.** When the same shape appears
+   at several sites, report it once and list every site. Ten findings that are one
+   finding hide the other nine problems.
+
+Severity levels are defined once, in `review-orchestrator/SKILL.md` →
+**Severity (canonical)**. This reviewer does not restate them: `blocker` is the
+four merge-blocking shapes named there and nothing else, and the `major`/`minor`
+boundary is the trigger-and-outcome test.
+
+---
+
 ## Orchestrated Review Contract
 
-When dispatched by `review-orchestrator`, follow the provided `reviewer-input.schema.json` payload. Return a `REVIEW_RESULT` object compatible with `skills/review-orchestrator/reviewer-finding.schema.json`, then a concise markdown summary. Keep findings evidence-based, include concrete `suggested_fix` for every blocker/major, and return `NEEDS_CONTEXT` instead of guessing when required context is missing.
+When dispatched by `review-orchestrator`, follow the provided `reviewer-input.schema.json` payload. Return a `REVIEW_RESULT` object compatible with `.metaproject/skills/gdskills/review/review-orchestrator/reviewer-finding.schema.json`, then a concise markdown summary. Keep findings evidence-based, include concrete `suggested_fix` for every blocker/major, and return `NEEDS_CONTEXT` instead of guessing when required context is missing.
 
 ---
 
@@ -138,7 +169,45 @@ observation is theatre, not rigour.
 - **Fix**: concrete project-aligned change
 ```
 
-Severity guidance: lost reactivity, direct storage quota risk, masked translation/error behavior,
-and violations that break CI are `blocker`/`major`; naming/story coverage is usually `minor`
-unless it breaks tooling or controls.
+Severity comes from **Severity (canonical)** in `review-orchestrator/SKILL.md`.
+This reviewer keeps no rubric of its own; what follows is where its recurring
+conditions land under that rubric.
+
+| Condition | Severity | Why, under the canonical rubric |
+|---|---|---|
+| Unguarded direct storage writes that can throw on quota | `blocker` | Crash on a reachable input |
+| Lost reactivity; masked translation or error behaviour | `major` | Named trigger and named outcome. Identical to `review-frontend`'s rating for lost reactivity, deliberately |
+| A convention violation the linter or CI already fails on | `minor` | The machine catches it; a reviewer restating it is not a merge gate |
+| Naming, story coverage, file placement | `minor` | Correct today; the cost is to the next editor |
+| A convention preference with no named consequence | `info` | Shared laws 1 and 2 |
+
+---
+
+## Red Flags
+
+| Rationalization | Why it is wrong |
+|----------------|-----------------|
+| "There is no project guide here, but I know what good React looks like." | Then you are running the neutral baseline, and you must say so in the report. A preference with no local rule and no named consequence is `info`, not a convention violation — this lane's authority comes from the project's own documents. |
+| "The guide says one thing but the newer files all do another, so that is the convention." | A pattern repeated in code is a candidate convention, not a decision. Cite the guide and name the divergence; let the team choose which one moves. |
+| "The linter already fails on this, so it is at least `major`." | The machine catches it before merge. A reviewer restating a lint error spends a merge gate on something no human can ship past, which is why the rubric above puts it at `minor`. |
+| "It is one direct `localStorage` call — the wrapper is overkill here." | The wrapper exists because the raw API throws on quota and is absent in some environments. One unguarded call is the class; enumerate the others before deciding it is small. |
+| "This component does not read observables, so it does not need the reactive wrapper." | Check what it reads through props and through the store getters it calls. Lost reactivity is silent, which is why it is rated the same here as in `review-frontend`. |
+| "The inline `style` is dynamic, so the token rule does not reach it." | Only the computed part is dynamic. Colours and spacing inside it still come from the local tokens, and mixing the two is how a theme change stops applying to one surface. |
+
+---
+
+## Verification
+
+Report done only once all of these hold:
+
+- The report names which local convention documents were found and read, or
+  states plainly that none exist and only the neutral baseline ran.
+- Every finding cites the local rule it rests on — the guide, the lint config, or
+  the baseline section above — and names `file:line`.
+- Every `blocker` and `major` carries `class_scope` with `sites` and an
+  `enumeration_method` naming the search that produced them.
+- No finding invents a severity: each lands under **Severity (canonical)** in
+  `review-orchestrator/SKILL.md`.
+- The reply is the `REVIEW_RESULT` the Orchestrated Review Contract asks for, or
+  `NEEDS_CONTEXT` naming the context that was missing — never a guess in its place.
 

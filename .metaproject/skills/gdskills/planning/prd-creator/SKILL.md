@@ -1,8 +1,10 @@
 ---
 name: prd-creator
-description: "Use when a vague or unstructured request needs to be converted into a formal, testable Product Requirements Document."
+description: "Use when a vague or unstructured request needs to be converted into a formal, testable Product Requirements Document. NOT for: exploring which option to build before requirements exist (use brainstorm)."
 triggers:
-  - "Create a PRD"
+  - "create PRD"
+  - "product requirements"
+  - "specify feature"
   - "Formulate requirements"
   - "Write a product requirements document"
   - "Draft PRD"
@@ -11,8 +13,8 @@ metadata:
   author: "MrCipherSmith"
   version: "1.0.0"
   category: "planning"
+  compatible_harnesses: "cursor,codex,zed,opencode,claude"
 license: "MIT"
-compatibility: "cursor,codex,zed,opencode"
 ---
 
 # PRD-Creator Sub-Agent
@@ -93,6 +95,8 @@ When generating the final PRD, follow this exact structure:
 ```markdown
 # PRD: {Feature Name}
 
+Version: 0.1.0
+
 ## 1. Overview
 Brief summary of the feature.
 
@@ -145,13 +149,11 @@ Then
 ## 6. Output Location & Format
 
 **Direct Mode:**
-- You MUST follow `rules/core/documentation-management.mdc` for the `requirements` category.
+- You MUST follow `rules/core/requirements-package-standard.mdc` (via `rules/core/documentation-management.mdc` for the `requirements` category).
 - Before saving, ASK the user to confirm the feature name (`<name>`) or to suggest a custom path.
-- The default target path is: `<current_project_root>/docs/requirements/<name>-<YYYY-MM-DD>/`
-- You MUST generate 3 synchronized language variants:
-  - `ru/<name>.md` (Russian for humans)
-  - `en/<name>.md` (English for humans)
-  - `ai/<name>.md` (AI-readable format, heavily using Gherkin)
+- The default target path is: `<current_project_root>/docs/requirements/<name>/prd.md` — no date-stamped folder.
+- If the requirements package (`README.md`, `prd.md`, `specification.md`) does not exist yet, create it; otherwise update `prd.md` in place and bump its `Version` field rather than creating a parallel copy.
+- Default to a single document in the project's documentation language (`en` unless the project states otherwise). Generate additional language variants only when the user explicitly asks for them, and keep any variants you create synchronized.
 - You MUST NOT create a single file in the generic `docs/` root.
 
 **Orchestrated Mode:**
@@ -184,7 +186,22 @@ Before finalizing PRD, the agent MUST verify:
 
 ---
 
-## 9. Intended Usage
+## 9. Red Flags
+
+Stop and re-read this skill if you are thinking:
+
+| Rationalization | Rebuttal |
+|---|---|
+| "The request is detailed, so there is nothing left to clarify." | Detail settles *what* to build; it almost never states non-goals, constraints, or how the result will be verified. Those are three of the six checklist items in Section 8, and a long request that omits them is exactly as ambiguous as a short one. |
+| "The missing constraint follows obviously from the stack, so I'll fill it in." | "The agent MUST NOT assume missing context" is a Section 2 prohibition, not advice. An inferred constraint reads in the finished PRD exactly like a confirmed one, and nothing downstream can tell them apart. Ask, or leave the gap visible. |
+| "The acceptance criteria describe the behaviour clearly, so Gherkin is just formatting." | Gherkin forces a concrete Given (the precondition) and a concrete Then (the observable outcome). Prose AC passes review while hiding both. Untestable criteria are a NO on the checklist and block finalization. |
+| "Five of the six checklist items are yes, so I'll finalize and note the sixth." | Any NO stops finalization. A PRD with a noted gap ships as a finished document and the note is the first thing dropped when it is summarized downstream. |
+| "A PRD for this feature already exists, so I'll write mine alongside it." | Section 6 requires updating `prd.md` in place and bumping its `Version`. Two PRDs for one feature means the implementer picks one, and it will not always be the newer. |
+| "I have asked 7 questions and ambiguity remains, so I'll write the PRD as best I can." | The 7-question limit is per iteration, not per request. Return the remaining questions to the user or orchestrator and run another round. |
+
+---
+
+## 10. Intended Usage
 
 Designed for multi-agent orchestration pipelines, such as:
 

@@ -1,0 +1,116 @@
+---
+description: "The single standing bar for calling a change done: evidence per criterion, gates that actually ran after the last edit, nothing disabled to go green, the diff committed. Use when reporting a task complete, accepting a worker's result, or deciding whether remaining work may be deferred."
+alwaysApply: false
+---
+
+# Definition Of Done
+
+## Purpose
+State, once, the bar a change must clear before any agent calls it done — so
+that "done" means the same thing to the worker that reports it and the
+orchestrator that accepts it. Six rules and two skills each state a piece of
+this bar today; this rule is the join, and it names which document owns which
+piece so the pieces cannot drift apart.
+
+## When To Apply
+Apply at the moment of reporting: before a worker writes its `STATUS:` line,
+before an orchestrator accepts a worker's result, and before a flow's
+acceptance criteria are confirmed. It applies to every change that ships —
+code, rule, skill, schema or document — not only to code with tests.
+
+---
+
+## The Bar
+
+A change is done when all five hold. Each is a fact about this working tree
+that can be checked by reading output, not a judgement about how the work felt.
+
+1. **Every acceptance criterion has named evidence.** For each criterion: the
+   command that demonstrates it, and that command's actual result. A criterion
+   whose evidence is "implemented" or "verified" has no evidence.
+2. **Every gate that applies to the changed files ran to completion, after the
+   last edit, in this tree, and passed** — lint, type-check, tests. Ran *after
+   the last edit*: a green result captured before the final change is not a
+   result about the change being reported.
+3. **A gate that did not run is not a pass.** A missing binary, a filtered
+   suite, a skipped file — each is `skipped`, never `pass`. Zero tests executed
+   is not zero failures.
+4. **Nothing was disabled to get there.** No test deleted, `.skip`ped or
+   `.only`d; no assertion removed; no threshold lowered; no suppression,
+   `eslint-disable` or `@ts-expect-error` added, unless that suppression *is*
+   the change and is stated as such in the report.
+5. **The diff is committed** at the task boundary, by whoever owns commits.
+
+If any of the five fails, the status is not `DONE`. Not `DONE` with the gap in
+a note; not `DONE_WITH_CONCERNS` with the gap as a concern. Report `BLOCKED`,
+or finish the work.
+
+---
+
+## What Each Document Owns
+
+This rule does not restate these; it points at them. When one of them changes,
+this list is what says whether the bar moved.
+
+| Document | Owns |
+|---|---|
+| `rules/core/tdd-workflow.mdc` | Clause 2 for tests specifically: the red-green-refactor sequence, and the invariant that `STATUS: DONE` requires a green suite (its Iron Law 1, and Iron Law 3 forbidding deletion of tests to get there — clause 4's test case). |
+| `.metaproject/skills/gdskills/orchestration/code-verifier/SKILL.md` | Clause 3: the gate decision, and the ruling that a check which did not run reports `status: skipped`, never `pass`. It also owns the distinction between the gate's result and the skill's own `STATUS:`. |
+| `rules/core/implementation-doc-mandate.mdc` | The shape of the evidence for clauses 1 and 2 — the Verification Gate block, the Acceptance Criteria Met list, and its Iron Law 3: the numbers must come from an independent verifier, not from self-assessment. |
+| `rules/core/subagent-status-protocol.md` | How the result is reported: `STATUS:` on line one, the five statuses, and the verification block every `DONE` response carries. |
+| `rules/core/git-concurrency.mdc` | Clause 5: a task is not done until its diff is committed, whether the worker or the orchestrator commits it. |
+| `.metaproject/skills/gdskills/orchestration/task-implementer/SKILL.md` | The worker-side reading of clause 3: skipped verification is a failed verification, and partial is not done. |
+| `rules/core/gproject-contracts.mdc` | The gproject return payload only. It is silent on clauses 2-5; that silence is not an exemption, and a gproject subagent reporting `DONE` still owes the verification block from `rules/core/subagent-status-protocol.md`. |
+| `rules/core/requirements-package-standard.mdc` | Clause 2 for a documentation package, where the gates are structural (required files, versions, links, honest status) rather than lint and tests. |
+
+Two readings of `DONE_WITH_CONCERNS` are in circulation, and this rule settles
+them: it is for information the orchestrator needs about work that **cleared
+all five clauses** — an interpretation made, a workaround for something
+non-blocking, a warning worth seeing. It is not a lower bar. An unmet
+acceptance criterion, a suite that was not run, or an uncommitted diff is not a
+concern attached to a completed task; it is an incomplete task.
+
+---
+
+## The Standing Bar And A Flow's Frozen Acceptance Criteria
+
+They are conjunctive. Neither overrides the other, and the question "which
+wins" has a definite answer in each direction:
+
+- **The frozen criteria fix the scope.** They say what must be true *of this
+  change* — and only the flow can say that. The bar cannot add a criterion, and
+  satisfying the bar does not satisfy a criterion the work never touched.
+- **The bar fixes the evidence, and is not waivable by silence.** Criteria that
+  say nothing about tests, lint or committing do not thereby excuse them. A
+  flow cannot lower the standing bar by omitting it, because the criteria were
+  frozen to stop scope drifting — not to enumerate the baseline every change
+  already owes.
+
+So: **a change that meets every frozen criterion but fails a clause of the bar
+is not done**, and a change that clears the bar while a criterion is unmet is
+not done either.
+
+When a frozen criterion genuinely conflicts with the bar — it asks for
+something that cannot be delivered without failing a clause — the criterion is
+not quietly reworded to match what was built. It changes through
+`keryx flow ac update <id> --reason "<why>"`, with the conflict as the reason,
+per `.metaproject/skills/gdskills/orchestration/flow-orchestrator/SKILL.md`.
+Rewriting a criterion to describe the work is how a flow loses the only record
+of what it set out to do.
+
+---
+
+## Red Flags — Stop and re-read this rule if you are thinking:
+
+| Rationalization | Why it's wrong |
+|---|---|
+| "Everything passed, I'll just make the last small edit and report" | Clause 2 is about *this* tree after *this* edit. A result captured before the final change is evidence about a tree that no longer exists |
+| "The test command printed no failures, so it's green" | No failures and no tests are the same output. Read the count: zero executed is clause 3, not a pass |
+| "It's done except for the one flaky test / the docs / the commit" | "Done except for" is the phrase this rule exists to delete. The exception is the part that is not done, and it decides the status |
+| "I'll report DONE_WITH_CONCERNS and name the unmet criterion as a concern" | `DONE_WITH_CONCERNS` is for information about completed work. An unmet criterion is incomplete work wearing a success status |
+| "The lint binary isn't installed here, so there is nothing to fail" | A check that cannot run has told you nothing. Say it was skipped and which one; do not convert absence of a result into a result |
+| "The orchestrator will run the gates anyway, so I don't have to" | Two agents each assuming the other verified is how a change reaches review with nothing ever having run against it |
+| "The acceptance criterion doesn't mention lint, so lint isn't in scope" | The criteria bound the scope of the work, not the evidence every change owes. Silence is not an exemption |
+
+**IRON LAW: A STEP THAT WAS SKIPPED IS A STEP THAT FAILED. "DONE EXCEPT FOR X"
+IS NOT DONE — IT IS BLOCKED ON X.**

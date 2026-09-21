@@ -2,7 +2,7 @@
 
 ## Purpose
 Reusable bash script for determining the review scope (merge-base) for review skills.
-Used by: code-ai-review, code-boss-review, code-mobx-store-review, code-style-review.
+Used by: code-ai-review, code-learned-review, code-mobx-store-review, code-style-review.
 
 ## Script
 

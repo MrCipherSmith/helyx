@@ -1,0 +1,237 @@
+---
+description: "CLI surface rules: what an exit code means (0 clean, 1 found something, 2 cannot tell), machine-readable output on stdout and diagnostics on stderr, versioned --json shapes, and renaming a flag by aliasing it with a notice rather than removing it. Use when adding, changing, or retiring a command, subcommand, flag, or --json payload that people already run."
+alwaysApply: false
+---
+
+# CLI Interface Design
+
+## Purpose
+A command-line surface is a contract the moment somebody scripts it. Once a
+script reads an exit code, pipes stdout, or parses a `--json` payload, every
+later edit is either compatible or a silent breakage in someone else's CI. This
+rule fixes what those three channels mean and how a flag leaves the surface.
+
+## When To Apply
+Apply when adding a command or subcommand, adding or renaming a flag, changing
+what a command exits with, or changing the shape of anything it prints for a
+machine. It governs keryx's own CLI (`src/cli.ts` and `src/commands/**`);
+`rules/core/api-contracts.mdc` governs HTTP surfaces, and the versioning
+discipline there is the same discipline stated for a different transport.
+
+---
+
+## Rules
+
+### 1. Three exit codes, and they mean three different things
+
+keryx already runs a three-value convention, stated where it was first needed —
+`src/commands/wiki.ts:561-570`, `keryx wiki sections resolve`:
+
+- **0** — the command ran and the answer is clean.
+- **1** — the command ran and found something the caller should act on: a
+  broken link, a failing gate, a finding, a refusal.
+- **2** — the command could not tell. The registry was unreadable; the store
+  could not be opened; the input was not parseable.
+
+The reason 2 exists is written into that code: *"a script that treats 1 as
+'gone' would otherwise read an unreadable registry as a deletion."*
+`keryx memory search` adopted it deliberately and says so
+(`src/commands/memory.ts:182-196`), calling it *"reserved for 'cannot tell',
+distinct from both a completed search and a validation error."*
+
+**Two shipped commands do not honour it, and converging them is this rule's
+reason to exist:**
+
+- `keryx health run` folds `incomplete` — *"a required check that is missing,
+  skipped, unparsed or unfinished"* — into **1**, the same code as an
+  established threshold violation (`src/commands/health.ts:120-132`, with the
+  justification at `:103-112`). "Nobody ran eslint" and "eslint found 40
+  errors" are indistinguishable to a caller reading the code.
+- `keryx review` goes the other way and exits **0** on the same class of
+  answer: `reportCrossFamilyReviewProblems` and `reportFilterStatsProblems`
+  (both in `src/commands/review.ts`; cited by name because that file moves
+  under every review change, and a line number here has already gone stale
+  once) filter `not-recorded` out before failing, on the stated grounds that an
+  absence is honest. It is honest — and it is still not a pass.
+
+Three commands, one binary, three answers to "I could not tell". A new command
+uses 0/1/2 as defined above. An existing one moves toward it only with its
+consumers named, because narrowing 1 into 1-or-2 is itself a breaking change.
+
+Two settled corollaries, both worth keeping:
+
+- **A checker that reports defects and exits 0 is a checker nothing can gate
+  on** (`src/commands/skills.ts:927-951`). That code also exits non-zero on an
+  *empty* denominator — `findings: 0` over zero skills evaluated is not a pass.
+- **A wrapper forwards its child's code unchanged.** `keryx ctx run` sets
+  `process.exitCode = result.exitCode` (`src/commands/ctx.ts:210`); a wrapper
+  that collapsed every child failure to 1 would make the wrapped command
+  unusable under `set -e`.
+
+### 2. stdout is the answer, stderr is everything else
+
+The canonical statement is `src/commands/mcp.ts:78-92`: the deprecation notice
+goes to stderr *"because a bare `keryx mcp` IS the stdio MCP server: stdout
+carries JSON-RPC frames there, and a notice written to it corrupts every client
+session rather than informing anyone."* The same file routes every consumer
+diagnostic to stderr for that reason (`:41-44`).
+
+The discipline, applied:
+
+- Structured output — `--json` payloads, rendered reports, the thing a pipe is
+  for — goes to **stdout**, alone. `keryx skills verify --bundled --json`
+  writes parseable JSON to stdout and its diagnostic to stderr, and still exits
+  1 (`src/commands/skills.ts:934-947`). Verified: stdout parses, stderr is
+  empty on the clean path.
+- Progress, warnings, deprecation notices, usage errors go to **stderr**.
+- Under `--json`, a failure is *data on stdout*, not prose on stderr:
+  `keryx memory search --json` emits `{ outcome: "store-unreadable", … }` on
+  stdout and exits 2, where the plain mode prints to stderr
+  (`src/commands/memory.ts:190-195`). A machine reader gets a discriminated
+  result either way.
+- **Where this is broken today:** an unrecognised command prints its one-line
+  diagnostic to stderr and then dumps the full help to **stdout**
+  (`src/cli.ts:147-149`, `printHelp` at `:152`). Measured: `keryx bogusverb`
+  writes 9,503 bytes of help to stdout; `keryx wiki check --bogus` writes
+  4,150. Both numbers are the help text's own size and move whenever a command
+  is added — a later reading that differs is growth, not a correction to this
+  paragraph. A caller piping stdout for JSON receives a help screen instead, and
+  only the exit code says otherwise. **Help printed because of an error belongs
+  on stderr. Help printed because `--help` was asked for belongs on stdout.**
+
+### 3. A `--json` shape is versioned, deterministic, and pinned
+
+`keryx skills export` is the worked example. Removing one boolean from its
+manifest moved the version, and the code says why
+(`src/gdskills/export.ts:167-193`): *"Removing a field is a breaking change for
+anything parsing this file, so the version moves with it: a reader that still
+expects the boolean sees `schemaVersion: 2` and knows why it is absent instead
+of reading `undefined` as `false`."* The plugin manifest is a different shape
+and stays at its own `schemaVersion: 1` (`src/gdskills/export-plugin.ts:153`) —
+versions are per-shape, not per-repo. A test pins the number
+(`src/gdskills/export-runtime-builds.test.ts:108`).
+
+`keryx modules status --json` carries the other half: a `schemaVersion`, a
+deterministic key order sorted independently of authoring order *"which is what
+makes it safe to diff and to consume from a harness"*
+(`src/commands/modules.ts:197-210`), and a test that pins the version
+(`src/commands/modules.test.ts:26`).
+
+So the standard for any new machine-readable payload is:
+
+1. A top-level **object** with a `schemaVersion`. Not an array — an array
+   cannot grow a field. `rules/core/skills-storage-workflow.mdc` has said "One
+   top-level JSON object only" since it was written.
+2. Deterministic ordering, so two runs of an unchanged tree are byte-identical.
+3. A test that asserts the version and the required keys, in the same change.
+4. Adding an optional field is compatible. **Removing or renaming one bumps the
+   version**, in the same commit as the removal.
+
+**Where this is inconsistent today:** `keryx skills` serialises internal
+TypeScript objects straight to stdout at eleven call sites
+(`src/commands/skills.ts:222`, `:288`, `:398`, `:693`, `:735`, `:785`, `:822`,
+`:883`, `:935`, `:989`, `:1101`). Three of the eleven print a type that
+declares one — `LearningProposal` (`src/gdskills/learn.ts:17`, set at `:100`)
+at `:785`, and `ProjectSkillVerificationReport` (`src/gdskills/verify.ts:25`,
+set at `:96`) at `:883` and `:989`. The other eight carry no version at all.
+
+**The gap is the envelope, and it is the worse half.** `verify --bundled
+--json` emits an unversioned object (`root`, `skills`, `documents`,
+`skillNames`, `findings`); `verify --all --json` emits a bare array — `[]` when
+the registry is empty (`:973`), a list of reports otherwise (`:989`). So
+`keryx skills verify --all --json` ships `[{ "schemaVersion": 1, … }]`: each
+element versioned, the payload a caller actually parses not. That is standard 1
+failing in the direction it warns about — an array cannot grow a field, so the
+envelope can never be versioned later without the breaking change the version
+existed to avoid, however carefully each element inside it is versioned. One
+test pins one field of one of them
+(`src/commands/skills.bundled-verify.test.ts:58` asserts `findings` is `[]`). A
+rename inside any of the eight unversioned types is a CLI breaking change that
+nothing in the repository would catch.
+
+### 4. An unknown flag is refused, never ignored
+
+`rejectUnknownFlags` (`src/commands/review.ts:307-318`) is the standard, and
+its message is the argument: *"Refused rather than ignored — a flag that is
+silently dropped writes nothing and reports success."* (`:315`) It names the
+offending flag, lists what is accepted, and refuses. Every `keryx review`
+subcommand calls it.
+
+The same rule applies to a flag's **value**, not just its name. An unknown
+`--verifier` is refused because *"an unrecognised method would silently leave
+the tier at its default"* (`src/commands/review.ts:754`), and an unknown
+`--deny-tools` name is refused with the deniable names listed, because
+*"`--deny-tools web_serch` must not leave the session with web search and a
+clear conscience"* (`src/commands/interactive-agent-tools.ts:140-156`,
+`src/commands/shell.ts:1797-1798`).
+
+**Where this is inconsistent today:** the guard is per-command, and two
+implementations exist — `rejectUnknownFlags` and `rejectUnknownOptions`
+(`src/commands/workspace.ts:296-300`). Most commands have neither. Measured on
+this tree: `keryx review scope --bogus` exits 1 with a named refusal, while
+`keryx modules status --bogus --json` and `keryx skills verify --bundled
+--bogus` both exit **0** and ignore the flag. The same binary answers the same
+typo two different ways.
+
+A new command validates its flags. A flag that takes a fixed set of values
+validates the value too.
+
+### 5. A flag is renamed by aliasing it, and removed by refusing it out loud
+
+keryx has never deleted a spelling. Three patterns, all shipped, all correct:
+
+- **Rename → alias + one notice.** `keryx mcp install|uninstall` became
+  `keryx integrate` and the old spelling still works: one module translates the
+  old argument shape and calls the new implementation, so there is *"one
+  implementation and nothing to drift"* (`src/commands/mcp.ts:1-14`). It prints
+  exactly one line, on stderr, per invocation — *"A line a reader sees three
+  times in one command is a line they learn to skip, which is how deprecation
+  notices stop working at all"* (`:78-92`). A contract test asserts the retired
+  spellings still work, still write the same files, and name the replacement
+  **once** (`src/commands/mcp-naming.test.ts:453`, `:470`, `:490`).
+- **Removal → refuse by name, with the reason.** `keryx workspace handoff
+  --from` was removed because a caller could not be allowed to state it. It is
+  refused by name rather than as a generic unknown option, *"so anyone who
+  scripted it learns why it is gone instead of reading it as a typo"*
+  (`src/commands/workspace.ts:221-231`).
+- **A wrapper's own flag is consumed, not forwarded.** `keryx ctx rg --json` is
+  keryx's flag, stripped before the child command is built, because `rg --json`
+  means something else (`src/commands/ctx.ts:213-219`). Check the namespace
+  before claiming a flag name a wrapped tool already owns.
+
+**Where this is inconsistent today:** `keryx review` accepts both `--ref` and
+`--target-ref` for the same value, `--ref` winning
+(`src/commands/review.ts:147`, `:409`). There is no notice, and `--target-ref`
+appears nowhere in `keryx review --help`. An unannounced, undocumented alias is
+indistinguishable from an accidental duplicate: nothing tells a caller to
+migrate, so nothing will ever justify retiring it.
+
+A rename therefore ships four things in one change: the new spelling, the old
+one still working through the same implementation, one stderr notice naming the
+replacement, and a test that asserts both.
+
+---
+
+## The three that are not negotiable
+
+A nonzero exit never means "I could not tell" in a command that also uses
+nonzero to mean "I found something" — pick 2 for the first. A `--json` payload
+never loses or renames a field without a `schemaVersion` bump in the same
+commit. An old flag spelling is never deleted: it is aliased with a notice, or
+refused by name with the reason.
+
+---
+
+## Red Flags — Stop and re-read this rule if you are thinking:
+
+| Rationalization | Why it's wrong |
+|---|---|
+| "Exit 1 is fine, the message explains which kind of failure it was" | Messages are for people; scripts read the code. `keryx health run` cannot distinguish "eslint was skipped" from "eslint failed" today, and that is the gap, not a style preference |
+| "Nobody parses this `--json` yet, so I can change the shape freely" | You cannot observe who parses a published CLI's output. The version field costs one line and is the only thing that lets a reader tell absence from a downgrade |
+| "I'll print the warning to stdout, it's more visible there" | stdout is the pipe. A warning there corrupts every consumer that expected data — which is why `keryx mcp` routes its notice to stderr instead |
+| "The old flag is unused, I'll just delete it" | "Unused" means "no usage you can see". Alias it with a notice, or refuse it by name with the reason — both cost less than a silent breakage in someone's CI |
+| "An unrecognised flag is harmless, the command still does the right thing" | It does less than the operator asked and reports success. That is the failure `rejectUnknownFlags` was written for |
+| "It's just a help screen on stdout, who cares" | Nine kilobytes of it, where the caller expected JSON. Error output is error output regardless of how friendly it reads |
+| "I'll add the schemaVersion when the shape actually changes" | The first change is the one that needs it, and by then the unversioned readers already exist |
+
+**IRON LAW: ONCE A COMMAND IS PUBLISHED, ITS EXIT CODE, ITS STDOUT, AND ITS `--json` SHAPE ARE A CONTRACT — CHANGE THEM THE WAY YOU WOULD CHANGE AN API, OR NOT AT ALL.**

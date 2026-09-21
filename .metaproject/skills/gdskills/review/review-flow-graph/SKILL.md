@@ -1,11 +1,19 @@
 ---
 name: review-flow-graph
+model_tier: standard
 description: |
   Use when reviewing generic ReactFlow or graph-surface abstraction changes:
   public graph surface, store subclassing, layout lifecycle, internal helper
   boundaries, selection lifecycle, and large-graph performance. Dispatched by
   review-orchestrator for --flow-graph, --project-conventions, --all, or
   src/core/flow/** / graph abstraction changes.
+  NOT for: React and MobX component structure outside the graph surface
+  (review-frontend), render cost elsewhere in the app (review-performance), or
+  the domain rules a graph happens to display (review-logic).
+triggers:
+  - "flow graph review"
+  - "graph ui review"
+  - "reactflow review"
 metadata:
   author: "MrCipherSmith"
   version: "1.0.0"
@@ -71,9 +79,30 @@ baseline.
 
 ---
 
+## Iron Laws
+
+### Shared laws (every reviewer)
+
+1. **A claim of runtime harm with no reproducible path is `info`.** If you cannot
+   name the input, call, or condition that reaches the code, you have an
+   observation, not a finding. Report it as `info` and say what would settle it.
+2. **Never flag the theoretical.** The path you describe must exist in the code
+   under review. Do not report a safe API because it could be misused, or a
+   pattern because it is often wrong elsewhere.
+3. **One finding per class, not one per occurrence.** When the same shape appears
+   at several sites, report it once and list every site. Ten findings that are one
+   finding hide the other nine problems.
+
+Severity levels are defined once, in `review-orchestrator/SKILL.md` →
+**Severity (canonical)**. This reviewer does not restate them: `blocker` is the
+four merge-blocking shapes named there and nothing else, and the `major`/`minor`
+boundary is the trigger-and-outcome test.
+
+---
+
 ## Orchestrated Review Contract
 
-When dispatched by `review-orchestrator`, follow the provided `reviewer-input.schema.json` payload. Return a `REVIEW_RESULT` object compatible with `skills/review-orchestrator/reviewer-finding.schema.json`, then a concise markdown summary. Keep findings evidence-based, include concrete `suggested_fix` for every blocker/major, and return `NEEDS_CONTEXT` instead of guessing when required context is missing.
+When dispatched by `review-orchestrator`, follow the provided `reviewer-input.schema.json` payload. Return a `REVIEW_RESULT` object compatible with `.metaproject/skills/gdskills/review/review-orchestrator/reviewer-finding.schema.json`, then a concise markdown summary. Keep findings evidence-based, include concrete `suggested_fix` for every blocker/major, and return `NEEDS_CONTEXT` instead of guessing when required context is missing.
 
 ---
 
@@ -114,6 +143,46 @@ observation is theatre, not rigour.
 - **Fix**: concrete change aligned with the shared graph surface
 ```
 
-Severity guidance: breaking the public surface or bypassing base selection/layout lifecycle is
-usually `major`; performance regressions on large graphs can be `major` or `blocker`.
+Severity comes from **Severity (canonical)** in `review-orchestrator/SKILL.md`.
+This reviewer keeps no rubric of its own; what follows is where its recurring
+conditions land under that rubric.
+
+| Condition | Severity | Why, under the canonical rubric |
+|---|---|---|
+| A graph operation that hangs or exhausts memory at a stated node/edge count | `blocker` | Crash |
+| Breaking the public graph surface; bypassing base selection or layout lifecycle | `major` | Named trigger and outcome; a broken contract is not one of the four shapes |
+| A performance regression on large graphs, with the size that makes it a cost | `major` | Degradation, not an outage — see `review-performance` for the same boundary |
+| Internal helper reaching across a boundary with no observable consequence | `minor` | Correct today; the cost is to the next editor |
+| Surface concern with no named caller | `info` | Shared law 1 |
+
+---
+
+## Red Flags
+
+| Rationalization | Why it is wrong |
+|----------------|-----------------|
+| "The domain module imports the internal shell directly, but it renders fine." | Rendering is not the contract. The public graph surface is what the next refactor of the shell is allowed to change; a consumer reaching past it is the break waiting to happen, and it is reportable today. |
+| "Only one consumer needs this helper, so exporting it from the graph surface is harmless." | An export is a promise to every future consumer. The rule in the checklist is two consumers, and one is the argument for leaving the helper internal. |
+| "This graph felt slow when I read the code." | A performance claim here is a claim about a node and edge count. Name the count at which it degrades, or the finding is `info` under shared law 1. |
+| "Deep observation on the nodes array is fine — the library is fast." | The cost is proxying every node on every write, and it scales with the array, not with the library. If you are rating it, state the array size the diff can produce. |
+| "The subclass sets up its own reactivity first; base initialisation order is an implementation detail." | The base store's state is what the base selection, click and reset behaviour reads. Initialising after it is the documented lifecycle, not a style preference. |
+| "The layout ran, so the lifecycle is intact." | Selection, expand/collapse and reset each have their own lifecycle. A layout that completes says nothing about whether a domain side effect swallowed the base selection reset. |
+
+---
+
+## Verification
+
+Report done only once all of these hold:
+
+- Every finding names `file:line` and the evidence that settles it — the import,
+  the export, the subclass member, or the measured count.
+- Every `blocker` and `major` carries `class_scope` with `sites` and an
+  `enumeration_method` naming the search that produced them — for a surface
+  finding, every consumer of the symbol, not only the one in the diff.
+- Every performance finding states the node/edge count at which the cost applies;
+  without one it is `info`.
+- No finding invents a severity: each lands under **Severity (canonical)** in
+  `review-orchestrator/SKILL.md`.
+- The reply is the `REVIEW_RESULT` the Orchestrated Review Contract asks for, or
+  `NEEDS_CONTEXT` naming the context that was missing — never a guess in its place.
 

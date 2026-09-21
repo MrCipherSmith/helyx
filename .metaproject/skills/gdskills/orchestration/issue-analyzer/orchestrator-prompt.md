@@ -62,7 +62,7 @@ Fill in the template below and launch via Task tool.
 You are running the issue-analyzer skill in AUTONOMOUS MODE.
 DO NOT ask the user any questions. Execute the full workflow end-to-end.
 
-Load the skill: issue-analyzer (from skills/issue-analyzer/SKILL.md)
+Load the skill: issue-analyzer (from skills/gdskills/orchestration/issue-analyzer/SKILL.md)
 
 ═══════════════════════════════════════════════
   INPUT PARAMETERS
@@ -135,7 +135,7 @@ DO NOT ask questions. DO NOT stop for user input. Run to completion.
 ```javascript
 Task({
   description: "Issue analysis: #4141",
-  subagent_type: "general",
+  subagent_type: "general-purpose",
   prompt: "<generated prompt from template above>"
 })
 ```

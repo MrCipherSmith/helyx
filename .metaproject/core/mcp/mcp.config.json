@@ -1,0 +1,22 @@
+{
+  "transport": "stdio",
+  "http": {
+    "host": "127.0.0.1",
+    "port": 0,
+    "enabled": false
+  },
+  "tools": {
+    "include": [
+      "*"
+    ],
+    "exclude": []
+  },
+  "resources": {
+    "roots": [
+      "artifacts",
+      "wiki",
+      "memory"
+    ]
+  },
+  "redactToolOutput": true
+}

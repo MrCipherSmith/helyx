@@ -1,19 +1,22 @@
 ---
 name: review-security-code
+model_tier: standard
 description: "Use when a code-level security review is requested, checking for injection vulnerabilities, auth gaps, insecure cryptography, secrets, and OWASP Top 10 patterns in changed code. NOT for infrastructure, deployment, or dependency audits."
 triggers:
-  - "review security"
   - "security review"
+  - "проверь безопасность"
+  - "безопасность кода"
+  - "secure code"
+  - "vulnerability"
   - "check for vulnerabilities"
   - "security check"
   - "OWASP review"
-  - dispatched by review-orchestrator
 metadata:
   author: "MrCipherSmith"
   version: "1.0.0"
   category: "review"
+  compatible_harnesses: "cursor,codex,zed,opencode,claude"
 license: "MIT"
-compatibility: "cursor,codex,zed,opencode,claude"
 ---
 
 # Review: Security Code (Code-Level Vulnerabilities)
@@ -60,7 +63,7 @@ This skill covers **code-level security only**. It does NOT audit npm/bun depend
 
 ## Scope Detection
 
-See shared script: `skills/shared/git-merge-base.md`
+See shared script: `.metaproject/skills/gdskills/shared/git-merge-base.md`
 
 Run the script from that file to determine `MERGE_BASE` (`BASE_SHA`) and `SCOPE` before proceeding.
 
@@ -211,10 +214,29 @@ Attack vector template: _"Attacker sends `filename=../../etc/passwd`, reading ar
 
 ## Iron Laws
 
-1. **Every security finding MUST state the attack vector explicitly.** Name the attacker action, the entry point, and the impact. No attack vector → no finding above INFO.
-2. **A finding without a reproducible code path is INFO, not blocker.** "Could theoretically..." = INFO. "Attacker sends X to endpoint Y, which executes Z" = blocker/major.
-3. **Never flag theoretical vulnerabilities.** The vulnerable code path must exist in the changed diff. Do not report hypothetical misuse of safe APIs.
-4. **Do not flag the same pattern twice.** If the same class of issue (e.g., missing `@UseGuards`) appears in five files, group them under one finding with all locations listed.
+### Shared laws (every reviewer)
+
+1. **A claim of runtime harm with no reproducible path is `info`.** If you cannot
+   name the input, call, or condition that reaches the code, you have an
+   observation, not a finding. Report it as `info` and say what would settle it.
+2. **Never flag the theoretical.** The path you describe must exist in the code
+   under review. Do not report a safe API because it could be misused, or a
+   pattern because it is often wrong elsewhere.
+3. **One finding per class, not one per occurrence.** When the same shape appears
+   at several sites, report it once and list every site. Ten findings that are one
+   finding hide the other nine problems.
+
+Severity levels are defined once, in `review-orchestrator/SKILL.md` →
+**Severity (canonical)**. This reviewer does not restate them: `blocker` is the
+four merge-blocking shapes named there and nothing else, and the `major`/`minor`
+boundary is the trigger-and-outcome test.
+
+### Security-specific law
+
+1. **Every security finding MUST state the attack vector explicitly.** Name the
+   attacker action, the entry point, and the impact. No attack vector → no finding
+   above `info`. This one does not generalise — a style reviewer has no attacker
+   — so it stays here and only here.
 
 ---
 
@@ -295,14 +317,24 @@ STATUS: DONE_WITH_CONCERNS
 [List categories with no findings, confirming they were checked]
 ```
 
-### Severity definitions
+### Where security conditions land
 
-| Severity | Meaning |
-|----------|---------|
-| `blocker` | Exploitable vulnerability in the current code path; must fix before merge |
-| `major` | High-likelihood risk with a plausible attack scenario; strongly recommended before merge |
-| `minor` | Hardening improvement or defense-in-depth; can ship but should be tracked |
-| `info` | Pattern worth noting; no clear attack vector in current code |
+Severity comes from **Severity (canonical)** in `review-orchestrator/SKILL.md`.
+This reviewer keeps no table of its own; what follows is where its recurring
+conditions land under that rubric, not a second rubric.
+
+| Condition | Severity | Why, under the canonical rubric |
+|---|---|---|
+| Exploitable vulnerability in the current code path, with the attack vector stated | `blocker` | Named shape 3 |
+| A real weakness whose exploitation needs a precondition the diff does not establish — an internal-only endpoint, an authenticated caller, a value not yet attacker-controlled | `major` | Trigger and outcome are named, but the path to exploitation is not complete |
+| Hardening or defence-in-depth on code that is not currently exploitable | `minor` | The code behaves correctly; the cost is to whoever hardens it later |
+| A pattern with no attack vector in the current code | `info` | Security-specific law, and shared law 1 |
+
+**"Plausible attack scenario" is not a severity.** A scenario you can state and
+reach is `blocker`; a scenario you can state but cannot reach is `major`; a
+scenario you cannot state is `info`. Being the security reviewer does not raise
+any of them — see the canonical rubric on severity being a property of the
+outcome, not of the domain.
 
 ---
 
@@ -317,7 +349,8 @@ Stop and re-read these rules if you are thinking:
 | "MD5 is used for caching keys, not passwords — it's fine" | State it as INFO, but do not silently skip it; it often drifts |
 | "I'll downgrade to minor to avoid friction" | Severity reflects real risk, not social dynamics |
 | "The code uses an ORM so SQL injection is not possible" | ORMs have raw-query escape hatches; verify parameterization |
-| "No attack vector found — I'll call it major anyway" | No attack vector = INFO only, per Iron Law 1 |
+| "No attack vector found — I'll call it major anyway" | No attack vector = `info` only, per the security-specific law |
+| "It's a security finding, so it's a blocker" | `blocker` is the four shapes in **Severity (canonical)**. An unreachable weakness is `major` however alarming its name |
 | "It's outside the diff but the pattern is clearly wrong" | Only flag changed code; flag legacy via INFO with note to track separately |
 
 ---
@@ -342,7 +375,7 @@ If the file does not exist or is not provided, proceed normally — context is o
 
 ## Orchestrated Review Contract
 
-When dispatched by `review-orchestrator`, follow the provided `reviewer-input.schema.json` payload. Return a `REVIEW_RESULT` object compatible with `skills/review-orchestrator/reviewer-finding.schema.json`, then a concise markdown summary. Keep findings evidence-based, include concrete `suggested_fix` for every blocker/major, and return `NEEDS_CONTEXT` instead of guessing when required context is missing.
+When dispatched by `review-orchestrator`, follow the provided `reviewer-input.schema.json` payload. Return a `REVIEW_RESULT` object compatible with `.metaproject/skills/gdskills/review/review-orchestrator/reviewer-finding.schema.json`, then a concise markdown summary. Keep findings evidence-based, include concrete `suggested_fix` for every blocker/major, and return `NEEDS_CONTEXT` instead of guessing when required context is missing.
 
 ---
 

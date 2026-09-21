@@ -20,7 +20,9 @@ Whoever is about to rely on a project-skill verifies it first:
 - Find it: `keryx skills route <target>`.
 - Check freshness: `keryx skills verify <module>/<skill>` (or
   `skill-verify-skill`). It classifies the skill `fresh | stale | needs-review |
-  blocked` against current code, graph, wiki, health, memory, and tests.
+  blocked` from its required files, metadata, manifest registration, target
+  path, and evidence artifacts (graph, ctx, wiki, health, memory). It does not
+  read the skill's claims or compare them with the code.
 - If not `fresh`: do NOT follow it blindly — verify each claim against the code
   and record the drift so it feeds the learn step below.
 
@@ -43,10 +45,12 @@ Flow:
    (version bump + `skill-changelog.md` with provenance, respects manual
    sections, file-locked).
 
-`learn` is bounded, mechanical synthesis. **Dispatch it as a subagent; if a
-cheaper / non-flagship model is available in this environment, use it
-(see `model-selection.mdc`), otherwise use the session model.** The flagship's
-only job here is to review the proposal before apply.
+`learn` is bounded, mechanical synthesis. **Dispatch it as a subagent at
+`model_tier: light`, resolved via `keryx review tier --findings 1 --diff-lines 0`
+per `model-selection.mdc` — do not pick a model by hand, and do not substitute
+a different `review tier` invocation (e.g. `--scope narrow`, which resolves
+heavier than `light`).** The flagship's only job here is to review the
+proposal before apply.
 
 ## Never
 

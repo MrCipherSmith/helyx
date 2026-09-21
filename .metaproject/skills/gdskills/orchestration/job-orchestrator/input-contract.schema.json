@@ -4,11 +4,25 @@
   "title": "Job Orchestrator Input Contract",
   "description": "Defines all input parameters required to run job-orchestrator. This is the top-level entry point for the AI implementation pipeline.",
   "type": "object",
-  "required": ["issue", "codebase", "automation"],
+  "required": ["intent", "codebase", "automation"],
+  "allOf": [
+    {
+      "if": { "properties": { "intent": { "enum": ["implement", "analyze"] } } },
+      "then": {
+        "required": ["issue"],
+        "description": "implement and analyze start from an issue, so one is required. review and custom have no issue and never did — requiring it unconditionally made two of the four intents unrepresentable."
+      }
+    }
+  ],
   "properties": {
+    "intent": {
+      "type": "string",
+      "enum": ["implement", "analyze", "review", "custom"],
+      "description": "What the job is for. Selects the plan (SKILL.md 1.1) and decides whether `issue` is required."
+    },
     "issue": {
       "type": "object",
-      "description": "GitHub issue identification. Provide EITHER url OR repo+number.",
+      "description": "GitHub issue identification. Required for the implement and analyze intents. Provide EITHER url OR repo+number.",
       "properties": {
         "url": {
           "type": "string",
@@ -52,8 +66,7 @@
         },
         "base_branch": {
           "type": "string",
-          "default": "develop-2",
-          "description": "Base branch to create feature branch from"
+          "description": "Base branch to create the feature branch from. NO DEFAULT, deliberately: SKILL.md 0.2 auto-detects the repository's own default branch and asks the operator to confirm it. Any value shipped here would be silently inherited by a caller that omits the field, and a branch name is never portable between projects."
         },
         "additional_codebases": {
           "type": "array",
@@ -86,43 +99,40 @@
         "skip_confirmation": {
           "type": "boolean",
           "const": true,
-          "description": "Must be true — sub-agents run without confirmation"
+          "description": "Must be true — DISPATCHED SUB-AGENTS run without per-dispatch confirmation. It does not govern the Phase 0.4 operator gate ('Proceed?'), which is a question to the human and is controlled by `plan_approval`. The two were read as contradictory only because they shared a name."
         },
         "max_review_iterations": {
           "type": "integer",
           "minimum": 1,
           "maximum": 3,
-          "default": 2,
-          "description": "Max review → fix iterations"
+          "default": 3,
+          "description": "Max review → fix iterations. Three: the same bound `task-implementer`, `flow-orchestrator` and SKILL.md 2.7 carry, pinned across all of them by src/gdskills/round-bound.test.ts. The default was 2 here, which made the contract disagree with the skill it validates."
+        },
+        "plan_approval": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the execution plan and ask the operator to approve or adjust before Phase 2 (SKILL.md 1.3). This is the automation switch for an operator question; `skip_confirmation` is not."
         },
         "auto_create_pr": {
           "type": "boolean",
           "default": false,
           "description": "Auto-create draft PR without asking user (default: ask)"
         },
-        "reviewers": {
+        "review_flags": {
           "type": "array",
-          "items": {
-            "type": "string",
-            "enum": [
-              "code-ai-review",
-              "code-boss-review",
-              "code-style-review",
-              "code-mobx-store-review"
-            ]
-          },
-          "default": ["code-ai-review", "code-boss-review", "code-style-review"],
-          "description": "Review skills to always run"
+          "items": { "type": "string" },
+          "description": "Reviewer selection passed straight to `review-orchestrator` (for example [\"--backend\", \"--security\"]). Omit to let it auto-detect from the diff. This replaces the former `reviewers`/`conditional_reviewers` pair, which named individual review skills for a hand-dispatch path SKILL.md 2.6 no longer takes: reviewers are selected by flag and gated by `keryx review stack`, not listed here."
         },
-        "conditional_reviewers": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string"
-          },
-          "default": {
-            "code-mobx-store-review": "*.store.ts"
-          },
-          "description": "Review skills to run conditionally: {skill_name: file_glob_pattern}"
+        "convention_reviewers": {
+          "type": "string",
+          "default": "ask",
+          "description": "Optional project-convention reviewers: \"ask\" (prompt the operator), \"all\", \"none\", or a comma-separated list of skill names."
+        },
+        "verification_mode": {
+          "type": "string",
+          "enum": ["off", "annotate", "filter"],
+          "default": "annotate",
+          "description": "Passed to `review-orchestrator` and to `keryx review ingest --verification-mode`. `annotate` records verifier verdicts without removing findings."
         },
         "run_final_checks": {
           "type": "boolean",

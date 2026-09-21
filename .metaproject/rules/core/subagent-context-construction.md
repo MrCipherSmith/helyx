@@ -62,7 +62,7 @@ Use this template for every subagent dispatch:
 ```
 Task({
   description: "<one-line summary for logs>",
-  subagent_type: "general",
+  subagent_type: "general-purpose",
   prompt: |
     ## Task
     <Exactly what to do — no ambiguity>

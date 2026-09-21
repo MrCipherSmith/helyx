@@ -16,4 +16,6 @@ This file is generated from the repository root agent entrypoint. Edit `AGENTS.m
 
 ---
 
-# AGENTS Instructions
+This root entrypoint delegates agent routing to `.metaproject/index.md`.
+
+Read `.metaproject/index.md` first, then follow the high-priority rules, skills, and module references listed there.

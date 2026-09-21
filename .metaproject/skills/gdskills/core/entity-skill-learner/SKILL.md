@@ -1,6 +1,6 @@
 ---
 name: entity-skill-learner
-description: Use when update project-skills from review findings, test failures, health reports, memory entries, and verifier reports.
+description: "Use when a review finding, test failure, health report, memory entry, or verifier report points at a project-skill that needs updating. NOT for: checking a skill's current accuracy with no source report driving it (see entity-skill-verifier)."
 ---
 
 # entity-skill-learner

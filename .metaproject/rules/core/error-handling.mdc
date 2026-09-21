@@ -98,17 +98,7 @@ try {
 ```
 
 ### Rule 4: No Unhandled Promise Rejections
-Every `async` call chain must end with error handling. `Promise.all` rejections must be caught. Fire-and-forget patterns must use `.catch(logger.error)`.
-
-```typescript
-// BAD
-Promise.all([fetchA(), fetchB()]); // unhandled rejection if either fails
-
-// GOOD
-const results = await Promise.allSettled([fetchA(), fetchB()]);
-const failures = results.filter(r => r.status === 'rejected');
-if (failures.length > 0) { /* handle */ }
-```
+See `async-patterns.mdc` Rule 4 ("No Unhandled Promise Rejections") for the full rule, examples, and rationale — it belongs there because it is fundamentally about promise/async control flow, not error typing.
 
 ### Rule 5: Propagate, Don't Wrap Blindly
 When catching and re-throwing, preserve the original error as `cause`:

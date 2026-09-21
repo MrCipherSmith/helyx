@@ -1,30 +1,27 @@
 ---
 name: review-highload
+model_tier: deep
 description: |
   Use when: reviewing code that will run under high concurrency or high traffic —
   race conditions, connection pool exhaustion, cache invalidation, missing indexes,
   unbounded queues, missing backpressure, retry storms, idempotency gaps,
   hot-path blocking I/O, and distributed systems anti-patterns.
-  Triggered by: "review highload", "review scalability", "highload review",
-  "review concurrency", "review --highload", or dispatched by review-orchestrator.
+  Dispatched by review-orchestrator.
   NOT for: frontend re-render performance (review-performance), general N+1 queries
   (review-performance), clean code style (review-clean-code), or NestJS module structure
   (review-architecture).
-version: "1.0.0"
 triggers:
-  - "review highload"
-  - "review scalability"
   - "highload review"
-  - "review concurrency"
+  - "concurrency review"
+  - "race condition"
+  - "review scalability"
   - "review distributed"
-  - "review --highload"
-  - dispatched by review-orchestrator
 metadata:
   author: "MrCipherSmith"
   version: "1.0.0"
   category: "review"
+  compatible_harnesses: "cursor,codex,zed,opencode,claude"
 license: "MIT"
-compatibility: "cursor,codex,zed,opencode,claude"
 ---
 
 # Review: High-Load & Scalability
@@ -69,7 +66,7 @@ High-Load Review Progress:
 
 ## Scope Detection
 
-See shared script: `skills/shared/git-merge-base.md`
+See shared script: `.metaproject/skills/gdskills/shared/git-merge-base.md`
 
 Run the script to determine `BASE_SHA`, then collect the diff:
 
@@ -86,11 +83,38 @@ Pre-existing problems in unchanged lines are out of scope unless the diff makes 
 
 ## Iron Laws
 
-1. **A race condition on shared mutable state is always a `blocker`.** There is no "it probably won't happen in practice" — race conditions manifest unpredictably under load.
-2. **An unbounded resource (connection, goroutine, thread, queue, in-memory collection) that grows with request rate is always at least `major`.** Under load it will exhaust the resource.
-3. **Missing retry idempotency is always a `blocker` where the operation has side effects.** A retried non-idempotent write is a data integrity bug.
-4. **Blocking I/O on a thread/fiber that is shared with the event loop is always at least `major`.** One slow call blocks all concurrent requests on that thread.
-5. **Architecture opinions without a named pattern violation and concrete load-related impact are `info` only.** State the failure mode, not just that "it could be better".
+### Shared laws (every reviewer)
+
+1. **A claim of runtime harm with no reproducible path is `info`.** If you cannot
+   name the input, call, or condition that reaches the code, you have an
+   observation, not a finding. Report it as `info` and say what would settle it.
+2. **Never flag the theoretical.** The path you describe must exist in the code
+   under review. Do not report a safe API because it could be misused, or a
+   pattern because it is often wrong elsewhere.
+3. **One finding per class, not one per occurrence.** When the same shape appears
+   at several sites, report it once and list every site. Ten findings that are one
+   finding hide the other nine problems.
+
+Severity levels are defined once, in `review-orchestrator/SKILL.md` →
+**Severity (canonical)**. This reviewer does not restate them: `blocker` is the
+four merge-blocking shapes named there and nothing else, and the `major`/`minor`
+boundary is the trigger-and-outcome test.
+
+### High-load laws
+
+1. **Every finding states its failure mode: what breaks, and at what load.** "OOM
+   at ~1k RPS", "pool exhausted at 500 concurrent users", "duplicate charge on the
+   first retry". This is what shared law 1 asks of a load finding — a load level
+   is the trigger.
+2. **A race condition on shared mutable state is never dismissed as unlikely.**
+   "It probably won't happen in practice" is not an argument; races manifest
+   unpredictably under load. Its *severity* still comes from its outcome — see the
+   conditions table below — but it is never dropped for improbability.
+3. **An unbounded resource that grows with request rate is never `minor`.**
+   Connections, threads, queues, in-memory collections: under load it exhausts.
+4. **Architecture opinions without a named pattern violation and a load-related
+   failure mode are `info` only.** State the failure mode, not just that "it could
+   be better".
 
 ---
 
@@ -379,7 +403,7 @@ Flags:
 
 ## Orchestrated Review Contract
 
-When dispatched by `review-orchestrator`, follow the provided `reviewer-input.schema.json` payload. Return a `REVIEW_RESULT` object compatible with `skills/review-orchestrator/reviewer-finding.schema.json`, then a concise markdown summary. Keep findings evidence-based, include concrete `suggested_fix` for every blocker/major, and return `NEEDS_CONTEXT` instead of guessing when required context is missing.
+When dispatched by `review-orchestrator`, follow the provided `reviewer-input.schema.json` payload. Return a `REVIEW_RESULT` object compatible with `.metaproject/skills/gdskills/review/review-orchestrator/reviewer-finding.schema.json`, then a concise markdown summary. Keep findings evidence-based, include concrete `suggested_fix` for every blocker/major, and return `NEEDS_CONTEXT` instead of guessing when required context is missing.
 
 ---
 
@@ -423,14 +447,21 @@ observation is theatre, not rigour.
 
 The **Failure mode** line is mandatory for this reviewer — every finding must state the load-related consequence (OOM at 1k RPS, connection exhaustion at 500 concurrent users, duplicate charges on retry, etc.).
 
-Severity guide:
+Severity comes from **Severity (canonical)** in `review-orchestrator/SKILL.md`.
+This reviewer keeps no table of its own; what follows is where its recurring
+conditions land under that rubric, not a second rubric.
 
-| Severity | When to use |
-|----------|------------|
-| `blocker` | Race condition on shared state; non-idempotent retry; unbounded in-memory queue; distributed cron with no lock; transaction holding external I/O lock |
-| `major` | Connection without pool; unbounded `Promise.all`; missing retry timeout/backoff; cache stampede on hot key; N+1 in hot path; long transaction; DLQ missing |
-| `minor` | Backoff without jitter; TTL misconfigured; per-request allocation in hot path; full-row fetch for one field |
-| `info` | Architectural note without concrete failure mode at current load |
+| Condition | Severity | Why, under the canonical rubric |
+|---|---|---|
+| Race condition on shared mutable state | `blocker` **if** the interleaving can corrupt or lose data; otherwise `major` | Same wording as `review-logic`, deliberately: the outcome decides, not the word "race" |
+| Non-idempotent retry of an operation with side effects | `blocker` | A retried write duplicates or corrupts persisted state |
+| Unbounded in-memory queue or collection growing with request rate | `blocker` | OOM is a crash; state the rate that reaches it |
+| Distributed cron or job with no lock | `blocker` | Concurrent runs duplicate side effects |
+| Transaction held open across external I/O | `blocker` | Pool exhaustion takes the service down |
+| Blocking I/O on a thread or fiber shared with the event loop | `major` | Named trigger: a request served on that thread. Named outcome: every concurrent request on it stalls behind the one slow call. Restored — the per-reviewer rubric that carried this floor was deleted and the conditions table did not pick it up, leaving the skill's own description advertising hot-path blocking I/O with no rule assigning it a severity |
+| Connection without a pool; unbounded `Promise.all`; missing retry timeout or backoff; cache stampede on a hot key; N+1 on a hot path; long transaction; missing DLQ | `major` | Named trigger (a load level) and named outcome, but the outcome is degradation, not one of the four shapes |
+| Backoff without jitter; TTL misconfigured; per-request allocation on a hot path; full-row fetch for one field | `minor` | Correct under load; the cost is to whoever tunes it next |
+| Architectural note with no failure mode at a stated load | `info` | Shared law 1 |
 
 ---
 

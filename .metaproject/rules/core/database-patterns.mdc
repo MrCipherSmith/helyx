@@ -1,6 +1,7 @@
 ---
 description: "Database access patterns: no N+1 queries, indexes before deploy, backward-compatible migrations, transaction discipline. Use when writing queries, migrations, or ORM models."
 alwaysApply: false
+stack_requires: "sql"
 ---
 
 # Database Patterns

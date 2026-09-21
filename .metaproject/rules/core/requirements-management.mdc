@@ -1,5 +1,5 @@
 ---
-description: "Rules for creating and updating requirement documents with multilingual outputs."
+description: "Rules for creating and updating requirement documents. Layout and versioning follow requirements-package-standard.mdc."
 alwaysApply: false
 ---
 
@@ -11,15 +11,20 @@ Standardize how requirement sets are created and maintained.
 ## When To Apply
 Apply when creating or updating requirement documents.
 
-## Location
-`<DOCS_ROOT>/requirements/<requirement-name>/<YYYY-MM-DD>/`
+## Location & Layout
+Follow `requirements-package-standard.mdc` for the package layout
+(`docs/requirements/<name>/{README,prd,specification}.md` plus optional
+files), the `Version: x.y.z` field, and the verification/review contracts. Do
+not restate that layout here, and do not date-stamp the folder or fork
+`ru`/`en`/`ai` copies — one set of documents, versioned in place, is the
+standard.
 
 ## Mandatory Behavior
 1. Ask for target location and requirement folder name before writing.
 2. Confirm naming convention before creation.
-3. Always create a new date-stamped subfolder; do not overwrite old sets.
-4. Generate synchronized `ru`, `en`, and `ai` versions.
-5. Document assumptions and open questions explicitly.
+3. Reuse the existing package folder for the topic; update documents in place
+   and bump their `Version` field rather than creating a parallel copy.
+4. Document assumptions and open questions explicitly.
 
 ## Output Contract
 - Use Markdown (`.md`) only.
@@ -28,8 +33,7 @@ Apply when creating or updating requirement documents.
 
 ## Workflow
 1. Capture request.
-2. Clarify folder/location.
-3. Create folder structure.
-4. Create all required language files.
-5. Validate synchronization.
-6. Ask whether to apply changes.
+2. Clarify folder/location under `docs/requirements/<name>/`.
+3. Create or update the package per `requirements-package-standard.mdc`.
+4. Document assumptions and open questions.
+5. Ask whether to apply changes.

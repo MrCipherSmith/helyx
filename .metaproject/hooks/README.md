@@ -16,13 +16,23 @@ project-owned hook lines are preserved.
 
 ## git post-commit gdgraph hook
 
-When enabled during `keryx init`, the Git `post-commit` hook detects commits that touched files relevant to the graph and prints the explicit refresh command.
+When enabled during `keryx init`, the Git `post-commit` hook detects commits that touched files relevant to the graph and rebuilds the graph by running `keryx gdgraph build`.
 
 Purpose:
 
-- prevent stale graph usage by surfacing the refresh command close to the commit;
-- avoid broad raw file search when graph context is stale;
-- avoid mutating versioned `.metaproject` artifacts after the commit is already written.
+- keep the graph in step with the committed file set, so the next agent question is not answered from the previous one;
+- avoid broad raw file search caused by a graph that silently predates the commit.
+
+Behaviour:
+
+- runs only inside a work tree, and only when the commit touched a graph-relevant path;
+- resolves `keryx` from PATH, then `$HOME/.local/bin/keryx`; if neither exists it prints the manual command and returns;
+- never blocks the commit: a failed or unsupported build prints a warning and still exits 0;
+- `KERYX_GDGRAPH_HOOK_REBUILD=0` turns the hook back into a printed reminder.
+
+This hook mutates `.metaproject` after the commit is written. In a project that versions
+`data/gdgraph/artifacts/`, expect `summary.md` and `module-map.json` to be modified in the
+working tree after a graph-relevant commit — commit them separately, or opt out.
 
 ## git post-commit gdskills hook
 

@@ -1,6 +1,6 @@
 ---
 name: entity-skill-router
-description: Use when select relevant project-skills for known modules, components, stores, services, and domain entities.
+description: "Use when a known module, component, store, service, or domain entity already has a project-skill that should be loaded instead of searched for from scratch. NOT for: scaffolding a project-skill that does not exist yet (see entity-skill-creator), checking one against current code (see entity-skill-verifier), or applying a finding to one (see entity-skill-learner)."
 ---
 
 # entity-skill-router

@@ -6,7 +6,9 @@
   Заполняется оркестратором ПЕРЕД запуском task-implementer.
   Все обязательные поля (*) должны быть заполнены.
   
-  Валидация: input-contract.schema.json
+  Валидация: keryx skills contracts validate <request.json> --schema task-implementer-input
+             (схема — input-contract.schema.json, зарегистрирована в src/gdskills/contracts.ts;
+              команда возвращает ненулевой код и называет поле и правило)
   Использование: orchestrator-prompt.md читает этот файл и формирует промпт для субагента.
 -->
 
@@ -87,8 +89,8 @@ Components in `src/pipelines/components/` use `observer()` wrapping, props inter
 
 | Field | Value |
 |-------|-------|
-| Original Task ID | |
-| Iteration | |
+| Original Task IDs | |
+| Iteration | `1`..`3` |
 
 ### Review Feedback
 
@@ -100,12 +102,16 @@ Components in `src/pipelines/components/` use `observer()` wrapping, props inter
 
 ## Automation Settings *
 
-| Setting | Value | Description |
-|---------|-------|-------------|
-| skip_confirmation * | `true` | Must be true for autonomous mode |
-| auto_commit | `true` | Commit changes after implementation |
-| verify_lint | `true` | Run ESLint |
-| verify_types | `true` | Run type-check |
-| verify_tests | `true` | Run tests |
-| verify_stories | `false` | Build storybook |
-| max_self_fix_attempts | `3` | Max self-fix attempts |
+<!-- Типы, значения по умолчанию и границы объявлены в input-contract.schema.json
+     (объект `automation`) и проверяются командой validate выше. Здесь — только
+     значения для этого запроса. -->
+
+| Setting | Value |
+|---------|-------|
+| skip_confirmation * | `true` |
+| auto_commit | `true` |
+| verify_lint | `true` |
+| verify_types | `true` |
+| verify_tests | `true` |
+| verify_stories | `false` |
+| max_self_fix_attempts | `3` |

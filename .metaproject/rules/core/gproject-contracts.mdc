@@ -33,7 +33,7 @@ Every dispatch from gproject-orchestrator MUST include:
 ```yaml
 # Required (from base protocol)
 description: "<phase>: <task>"
-subagent_type: "general"
+subagent_type: "general-purpose"
 prompt: "<structured prompt — see template below>"
 
 # gproject-specific (inside prompt)
