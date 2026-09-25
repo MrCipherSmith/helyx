@@ -221,3 +221,18 @@ cannot reach Postgres, so no button works. The way back in is `/up` sent to the
 supervisor topic: the host daemon (`scripts/host-ingress.ts`) polls Telegram
 directly whenever the bot is confirmed dead, and `/hstatus` reports what is
 running from the host's own point of view.
+
+## Claude-only rules
+
+These apply to Claude sessions in this repository. They sit outside the managed
+`keryx:index` block on purpose, and they are deliberately absent from `AGENTS.md`:
+agents that read only `AGENTS.md` must not load them.
+
+When writing a prompt, a subagent dispatch, a skill instruction, a stopping rule, or when
+auditing existing instructions for patterns written against older models, read
+`.metaproject/rules/core/opus-5-5-prompting.mdc` first.
+
+The short form, so the common case needs no file read: Claude Opus 5.5 always reasons before
+replying, so never write `think carefully`, `think step by step` or `рассуждай пошагово` — state
+the completion criterion instead. Give a task its finish line rather than hand-written steps,
+unless a step encodes a real ordering constraint or gate.
