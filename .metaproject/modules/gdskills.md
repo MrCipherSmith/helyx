@@ -16,8 +16,9 @@ Native bundled Metaproject working skills and orchestrators.
 - `entity-skill-creator`: Create canonical project-skills from a path, symbol, wiki page, module, component, store, service, or domain entity.
 - `entity-skill-learner`: Update project-skills from review findings, test failures, health reports, memory entries, and verifier reports.
 - `entity-skill-router`: Select relevant project-skills for known modules, components, stores, services, and domain entities.
-- `entity-skill-verifier`: Verify project-skills against current code, graph, wiki, health, memory, tests, and review lessons.
+- `entity-skill-verifier`: Run `keryx skills verify` to check a project-skill's required files, SKILL.md metadata, manifest registration, target-path existence, and evidence artifacts (gdgraph, gdctx, validated gdwiki, Code Health, canonical accepted memory), then classify it as fresh, needs-review, stale, or blocked. The command does not read the skill's prose or compare it against current code — that comparison is a manual agent step.
 - `metaproject-router`: Choose which Metaproject module, working skill, or project-skill should be used for a user request.
+- `reviewer-skill-creator`: Create a project-local reviewer for review-orchestrator from a rules file, review profile, or written team standard.
 
 ### orchestration
 
@@ -35,8 +36,8 @@ Native bundled Metaproject working skills and orchestrators.
 - `brainstorm`: Explore architecture, product, or implementation options with trade-offs and recommendation.
 - `docpack-orchestrator`: Create or update Metaproject requirements packages under docs/requirements with PRD, specification, README, optional protocols/schemas, verification, review, and roadmap updates. Use autodoc-orchestrator instead for reverse-engineering current codebase documentation.
 - `docpack-review`: Review Metaproject requirements packages for completeness, versioning, consistency, schema references, roadmap updates, and unsupported implementation claims.
-- `interview`: Run implementation-specific structured interview used by job-orchestrator before planning.
-- `interviewer`: Ask focused clarification questions before expensive or ambiguous work.
+- `interview`: Clarify implementation ambiguities after context is collected and the goal is known (job-orchestrator 0.3, implement intent); to scope the request itself, use interviewer.
+- `interviewer`: Scope a vague or expensive request before any context is collected (job-orchestrator 0.1.5, custom intent); for implementation specifics after context exists, use interview.
 - `prd-creator`: Convert vague requests into structured PRD and acceptance criteria.
 
 ### platform
@@ -48,9 +49,13 @@ Native bundled Metaproject working skills and orchestrators.
 
 ### quality
 
+- `api-truth`: Write dependency calls against the version installed here, and mark the ones that went out unchecked.
+- `deprecation-path`: Retire a spelling this project publishes without breaking the callers nobody can enumerate.
+- `fresh-eyes`: Doubt work still in flight from a reader who was never told why it works.
 - `metaproject-security`: Check Metaproject Security policies for prompts, external content, memory/wiki/report writes, PII, secrets, prompt injection, and data exfiltration.
 - `perf-check`: Run or summarize performance, bundle, and complexity checks.
 - `pr-issue-documenter`: Create PR descriptions and linked issue documentation from branch changes.
+- `root-cause`: Find the mechanism behind a reported defect, repair it, and leave a guard that fails without the repair.
 - `security-audit`: Run dependency and secret/security checks and normalize findings.
 - `test-gen`: Generate tests for a file or module using local patterns and existing test stack.
 - `tests-creator`: Create test scenarios before implementation from acceptance criteria and project patterns.
@@ -65,13 +70,15 @@ Native bundled Metaproject working skills and orchestrators.
 - `review-frontend`: Review frontend components, state boundaries, rendering behavior, and UI integration patterns.
 - `review-frontend-conventions`: Review frontend code against repository-local frontend conventions and agent entrypoints.
 - `review-highload`: Review concurrency, retries, queues, idempotency, resource pools, and high-traffic risks.
+- `review-layout`: Review rendered layout: flex/grid sizing, collapse and overflow, box model, logical properties and RTL, and locale-driven geometry.
 - `review-logic`: Review logic correctness, contracts, edge cases, nullability, and async behavior.
 - `review-orchestrator`: Route review requests to specialized reviewers and consolidate findings.
 - `review-performance`: Review hot paths, unnecessary work, bundle/perf regressions, blocking operations, and memory risk.
+- `review-regression`: Review the blast radius of a change — the code it can break — rather than the change itself. Scope B of a deep round.
 - `review-security-code`: Review code-level security risks, injections, authorization gaps, unsafe secrets, and data exposure.
-- `review-strict`: Perform a strict meta-review over findings, weak assumptions, and residual risk.
 - `review-style`: Review naming, readability, duplication, dead code, and maintainability.
 - `review-testing-practices`: Review test structure, coverage quality, determinism, and repository test conventions.
+- `review-verifier`: Verify reported findings by executing a check that fails if the finding is real; delete-only.
 
 ## Commands
 

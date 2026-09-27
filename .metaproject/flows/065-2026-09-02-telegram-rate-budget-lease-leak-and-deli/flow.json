@@ -1,0 +1,422 @@
+{
+  "schemaVersion": 2,
+  "gates": {
+    "tasks": true,
+    "review": true
+  },
+  "id": "065",
+  "slug": "telegram-rate-budget-lease-leak-and-deli",
+  "title": "Telegram rate-budget lease leak and delivery recoverability (P0 fixes from 2026-09-02 incident report)",
+  "status": "done",
+  "createdAt": "2026-09-02T12:14:21.755Z",
+  "updatedAt": "2026-09-02T14:26:42.722Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:fb5a9ecd0e93015d879dee6744aa27476649ca4b883e04a935d2e59a8063ea70",
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-09-02T13:34:27.721Z",
+      "note": "tests/unit/telegram-rate-budget.test.ts 'AC1 — conservation' passes: refresh with a nonzero local remainder adds the new grant instead of replacing it (utils/telegram-rate-budget.ts refreshNow(): tokens += granted)."
+    },
+    "AC2": {
+      "at": "2026-09-02T13:34:27.817Z",
+      "note": "tests/unit/telegram-rate-budget.test.ts 'AC2 — idle' passes: 12 allowances that never call acquire() leave the shared bucket row (tokens, updated_at) completely untouched across 36 explicit refreshNow() calls — hasDemand gate, set only by acquire(), makes refreshNow() a strict no-op until real demand exists."
+    },
+    "AC3": {
+      "at": "2026-09-02T13:34:27.918Z",
+      "note": "tests/unit/telegram-rate-budget.test.ts 'AC3 — fairness' passes: a real acquire() call gets a slot within 2s despite concurrent idle refreshNow() activity, since idle instances never touch the bucket at all (subsumes the original scenario — idle can't starve what it can't touch). Independently verified by review-testing-practices via revert-and-rerun."
+    },
+    "AC4": {
+      "at": "2026-09-02T13:34:28.019Z",
+      "note": "tests/unit/pending-replies-recovery-worker.test.ts passes: startPendingReplyRecoveryWorker (channel/recovery.ts) delivers a stale pending_replies row on a bounded interval independent of bot startup; wired alongside the existing startup call in main.ts."
+    },
+    "AC5": {
+      "at": "2026-09-02T13:34:28.116Z",
+      "note": "tests/unit/pending-reply-premark-crash-recovery.test.ts passes: premark/unmark around a send attempt is awaited and state-machine-driven (pending/sending/delivered/failed/partial, migration v54). Review fix: deliverPendingReplies now also recovers 'sending' rows older than 30s, closing a real-process-crash gap found in review (T4) that the test's simulated-delay scenario didn't cover."
+    },
+    "AC6": {
+      "at": "2026-09-02T13:34:28.215Z",
+      "note": "tests/unit/stop-hook-turn-closed-gate.test.ts passes: mcp/server.ts's deliverTurnSummary checks each part's send .ok and withholds turn_closed pg_notify on failure, inserting a status='failed' pending_replies row instead so the recovery worker retries it."
+    },
+    "AC7": {
+      "at": "2026-09-02T13:34:28.314Z",
+      "note": "tests/unit/reply-chunk-partial-delivery-state.test.ts passes: a second-chunk send failure sets pending_replies.status='partial', not 'delivered'; sendReplyChunks' existing lost-chunk count drives the terminal state in channel/tools.ts."
+    },
+    "AC8": {
+      "at": "2026-09-02T13:34:28.410Z",
+      "note": "tests/unit/poller-ack-before-delivered.test.ts passes: channel/poller.ts's claim query sets claimed_at (migration v55) instead of delivered=true; delivered=true is only set once mcp.notification actually resolves; a fast reject reverts delivered=false, claimed_at=NULL."
+    },
+    "AC9": {
+      "at": "2026-09-02T13:34:28.507Z",
+      "note": "tests/unit/supervisor-rescue-dedup-index.test.ts passes against real Postgres with idx_queue_msgid_dedup in place: scripts/supervisor.ts's rescue now does INSERT ... ON CONFLICT (chat_id, message_id) DO UPDATE instead of a colliding plain INSERT."
+    },
+    "AC10": {
+      "at": "2026-09-02T13:34:28.603Z",
+      "note": "bun run typecheck: clean. bun run lint: clean (0 errors, 260 pre-existing warnings unrelated to this flow). bun test tests/unit/: 2545 pass / 2 fail — both pre-existing, unrelated tts-external-boundary failures present on main before this flow, unchanged by any change in this flow including the T4 review-fix round."
+    }
+  },
+  "pr": {
+    "url": "https://github.com/MrCipherSmith/helyx/pull/116"
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "origin": "scaffold",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "origin": "scaffold",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "skipped",
+      "dispositionReason": "Superseded by granular T5-T10 (test/implement pairs per P0-A/B/C area) — generic 'implement per plan' was too coarse for a 3-area fix with distinct test surfaces."
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "origin": "scaffold",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "skipped",
+      "dispositionReason": "Superseded by granular T5-T10 (test/implement pairs per P0-A/B/C area)."
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "origin": "scaffold",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T5",
+      "title": "Write failing tests: rate-budget conservation invariant (no discard on refresh, idle process doesn't touch shared bucket, fairness under contention)",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T6",
+      "title": "Fix P0-A: remove unconditional periodic lease loop in createLocalAllowance, lease on-demand, never discard unspent local remainder",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T7",
+      "title": "Write failing tests: pending_replies periodic recovery, premark/unmark state machine, Stop-hook .ok check, partial-chunk delivery tracking",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T8",
+      "title": "Fix P0-B: bounded periodic pending_replies recovery worker, pending/sending/delivered(/failed) state machine, Stop-hook send-result check, per-chunk delivery state",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T9",
+      "title": "Write failing tests: inbound queue ack states, notification-reject retry, supervisor rescue against real unique index",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T10",
+      "title": "Fix P0-C: queued/inflight/delivered states with owner lease on message_queue, revert on notification reject, idempotent notification, supervisor rescue as UPSERT",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-09-02T12:14:21.755Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-09-02T12:15:18.887Z",
+      "event": "task-added",
+      "detail": "T5: Write failing tests: rate-budget conservation invariant (no discard on refresh, idle process doesn't touch shared bucket, fairness under contention)"
+    },
+    {
+      "at": "2026-09-02T12:15:18.983Z",
+      "event": "task-added",
+      "detail": "T6: Fix P0-A: remove unconditional periodic lease loop in createLocalAllowance, lease on-demand, never discard unspent local remainder"
+    },
+    {
+      "at": "2026-09-02T12:15:19.079Z",
+      "event": "task-added",
+      "detail": "T7: Write failing tests: pending_replies periodic recovery, premark/unmark state machine, Stop-hook .ok check, partial-chunk delivery tracking"
+    },
+    {
+      "at": "2026-09-02T12:15:19.176Z",
+      "event": "task-added",
+      "detail": "T8: Fix P0-B: bounded periodic pending_replies recovery worker, pending/sending/delivered(/failed) state machine, Stop-hook send-result check, per-chunk delivery state"
+    },
+    {
+      "at": "2026-09-02T12:15:19.268Z",
+      "event": "task-added",
+      "detail": "T9: Write failing tests: inbound queue ack states, notification-reject retry, supervisor rescue against real unique index"
+    },
+    {
+      "at": "2026-09-02T12:15:19.363Z",
+      "event": "task-added",
+      "detail": "T10: Fix P0-C: queued/inflight/delivered states with owner lease on message_queue, revert on notification reject, idempotent notification, supervisor rescue as UPSERT"
+    },
+    {
+      "at": "2026-09-02T12:15:27.674Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-09-02T12:15:40.544Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-09-02T12:15:40.638Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-09-02T12:16:32.868Z",
+      "event": "frozen",
+      "detail": "10 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-09-02T12:16:32.967Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-09-02T12:27:28.778Z",
+      "event": "task-done",
+      "detail": "T9: Write failing tests: inbound queue ack states, notification-reject retry, supervisor rescue against real unique index"
+    },
+    {
+      "at": "2026-09-02T12:31:04.902Z",
+      "event": "task-done",
+      "detail": "T7: Write failing tests: pending_replies periodic recovery, premark/unmark state machine, Stop-hook .ok check, partial-chunk delivery tracking"
+    },
+    {
+      "at": "2026-09-02T12:34:05.510Z",
+      "event": "task-done",
+      "detail": "T5: Write failing tests: rate-budget conservation invariant (no discard on refresh, idle process doesn't touch shared bucket, fairness under contention)"
+    },
+    {
+      "at": "2026-09-02T12:40:01.438Z",
+      "event": "task-done",
+      "detail": "T8: Fix P0-B: bounded periodic pending_replies recovery worker, pending/sending/delivered(/failed) state machine, Stop-hook send-result check, per-chunk delivery state"
+    },
+    {
+      "at": "2026-09-02T12:46:10.694Z",
+      "event": "task-done",
+      "detail": "T10: Fix P0-C: queued/inflight/delivered states with owner lease on message_queue, revert on notification reject, idempotent notification, supervisor rescue as UPSERT"
+    },
+    {
+      "at": "2026-09-02T13:19:26.517Z",
+      "event": "task-done",
+      "detail": "T6: Fix P0-A: remove unconditional periodic lease loop in createLocalAllowance, lease on-demand, never discard unspent local remainder"
+    },
+    {
+      "at": "2026-09-02T13:34:27.721Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: tests/unit/telegram-rate-budget.test.ts 'AC1 — conservation' passes: refresh with a nonzero local remainder adds the new grant instead of replacing it (utils/telegram-rate-budget.ts refreshNow(): tokens += granted)."
+    },
+    {
+      "at": "2026-09-02T13:34:27.817Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: tests/unit/telegram-rate-budget.test.ts 'AC2 — idle' passes: 12 allowances that never call acquire() leave the shared bucket row (tokens, updated_at) completely untouched across 36 explicit refreshNow() calls — hasDemand gate, set only by acquire(), makes refreshNow() a strict no-op until real demand exists."
+    },
+    {
+      "at": "2026-09-02T13:34:27.918Z",
+      "event": "ac-confirmed",
+      "detail": "AC3: tests/unit/telegram-rate-budget.test.ts 'AC3 — fairness' passes: a real acquire() call gets a slot within 2s despite concurrent idle refreshNow() activity, since idle instances never touch the bucket at all (subsumes the original scenario — idle can't starve what it can't touch). Independently verified by review-testing-practices via revert-and-rerun."
+    },
+    {
+      "at": "2026-09-02T13:34:28.019Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: tests/unit/pending-replies-recovery-worker.test.ts passes: startPendingReplyRecoveryWorker (channel/recovery.ts) delivers a stale pending_replies row on a bounded interval independent of bot startup; wired alongside the existing startup call in main.ts."
+    },
+    {
+      "at": "2026-09-02T13:34:28.116Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: tests/unit/pending-reply-premark-crash-recovery.test.ts passes: premark/unmark around a send attempt is awaited and state-machine-driven (pending/sending/delivered/failed/partial, migration v54). Review fix: deliverPendingReplies now also recovers 'sending' rows older than 30s, closing a real-process-crash gap found in review (T4) that the test's simulated-delay scenario didn't cover."
+    },
+    {
+      "at": "2026-09-02T13:34:28.215Z",
+      "event": "ac-confirmed",
+      "detail": "AC6: tests/unit/stop-hook-turn-closed-gate.test.ts passes: mcp/server.ts's deliverTurnSummary checks each part's send .ok and withholds turn_closed pg_notify on failure, inserting a status='failed' pending_replies row instead so the recovery worker retries it."
+    },
+    {
+      "at": "2026-09-02T13:34:28.314Z",
+      "event": "ac-confirmed",
+      "detail": "AC7: tests/unit/reply-chunk-partial-delivery-state.test.ts passes: a second-chunk send failure sets pending_replies.status='partial', not 'delivered'; sendReplyChunks' existing lost-chunk count drives the terminal state in channel/tools.ts."
+    },
+    {
+      "at": "2026-09-02T13:34:28.410Z",
+      "event": "ac-confirmed",
+      "detail": "AC8: tests/unit/poller-ack-before-delivered.test.ts passes: channel/poller.ts's claim query sets claimed_at (migration v55) instead of delivered=true; delivered=true is only set once mcp.notification actually resolves; a fast reject reverts delivered=false, claimed_at=NULL."
+    },
+    {
+      "at": "2026-09-02T13:34:28.507Z",
+      "event": "ac-confirmed",
+      "detail": "AC9: tests/unit/supervisor-rescue-dedup-index.test.ts passes against real Postgres with idx_queue_msgid_dedup in place: scripts/supervisor.ts's rescue now does INSERT ... ON CONFLICT (chat_id, message_id) DO UPDATE instead of a colliding plain INSERT."
+    },
+    {
+      "at": "2026-09-02T13:34:28.603Z",
+      "event": "ac-confirmed",
+      "detail": "AC10: bun run typecheck: clean. bun run lint: clean (0 errors, 260 pre-existing warnings unrelated to this flow). bun test tests/unit/: 2545 pass / 2 fail — both pre-existing, unrelated tts-external-boundary failures present on main before this flow, unchanged by any change in this flow including the T4 review-fix round."
+    },
+    {
+      "at": "2026-09-02T13:38:15.013Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/116"
+    },
+    {
+      "at": "2026-09-02T13:50:48.474Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-09-02T13:50:52.232Z",
+      "event": "completion-failed",
+      "detail": "tasks: not done: T4; never started since `flow init` generated them: T4 (nothing closes these on a timer — close each with a stated reason: keryx flow task done 065 T4 --disposition skipped --reason \"<why this flow did not need it>\") | review: 5 of 5 conditions failed — ingested-round (unobserved): no managed review package exists under `.metaproject/flows/065-2026-09-02-telegram-rate-budget-lease-leak-and-deli/reviews/`. A flow with no recorded review has not been reviewed cleanly; it has not been reviewed. | terminal-dispositions (unobserved): no ingested round to read findings from | head-commit (unobserved): no ingested round to compare against the PR head | external-comments (unobserved): the external-comment collection did not run: nothing records whether anyone commented on MrCipherSmith/helyx#116 (`.metaproject/reviews/pr-comments/MrCipherSmith__helyx__116.json` does not exist). Zero collected comments and no collection at all are different facts, and only one of them is clean. Run `keryx review comments collect --repo MrCipherSmith/helyx --pr 116 --sha <pr-head>`, or inject `FlowServiceDeps.externalCommentsGate` with a collector of your own. | verifier-stats (unobserved): no ingested round to read verification stats from"
+    },
+    {
+      "at": "2026-09-02T13:51:08.285Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-09-02T13:56:34.212Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/116 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-09-02T13:56:34.308Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-09-02T13:56:37.916Z",
+      "event": "completion-failed",
+      "detail": "review: 4 of 5 conditions failed — terminal-dispositions (violated): 10 finding(s) at or above `minor` are not terminal: 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3#F-001 (major, round 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3): marked fixed (`acted-on`) but its evidence names no commit SHA | 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3#F-002 (major, round 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3): marked fixed (`acted-on`) but its evidence names no commit SHA | 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3#F-003 (major, round 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3): marked fixed (`acted-on`) but its evidence names no commit SHA | 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3#F-004 (major, round 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3): `dismissed-out-of-scope` with no recorded human decision — the orchestrator may not dismiss on its own authority; the evidence must name who decided (e.g. `human: <who>` or `decided-by: <who>`) | 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3#F-005 (minor, round 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3): `dismissed-out-of-scope` with no recorded human decision — the orchestrator may not dismiss on its own authority; the evidence must name who decided (e.g. `human: <who>` or `decided-by: <who>`) | 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3#F-007 (minor, round 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3): `dismissed-deprioritised` with no recorded human decision — the orchestrator may not dismiss on its own authority; the evidence must name who decided (e.g. `human: <who>` or `decided-by: <who>`) | 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3#F-008 (minor, round 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3): `dismissed-deprioritised` with no recorded human decision — the orchestrator may not dismiss on its own authority; the evidence must name who decided (e.g. `human: <who>` or `decided-by: <who>`) | 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3#F-009 (minor, round 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3): `dismissed-deprioritised` with no recorded human decision — the orchestrator may not dismiss on its own authority; the evidence must name who decided (e.g. `human: <who>` or `decided-by: <who>`) | 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3#F-010 (minor, round 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3): marked fixed (`acted-on`) but its evidence names no commit SHA | 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3#F-012 (minor, round 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3): `dismissed-deprioritised` with no recorded human decision — the orchestrator may not dismiss on its own authority; the evidence must name who decided (e.g. `human: <who>` or `decided-by: <who>`) | head-commit (violated): the latest round ran against f3b51112cd147e374aad15c175c3284dd9c96dee, but the PR head is 1602e29e747e99929baa425658014cdd401be03e. A clean round against a stale SHA proves nothing about what will merge — re-run the round. | external-comments (violated): the external-comment record does not answer for this pull request: MrCipherSmith/helyx#116 was last collected against f3b51112cd147e374aad15c175c3284dd9c96dee (round 1), but the PR head is 1602e29e747e99929baa425658014cdd401be03e. Everything anyone said after f3b51112cd147e374aad15c175c3284dd9c96dee is missing from this record, so \"nothing outstanding\" would be a statement about a pull request that no longer exists. Re-run `keryx review comments collect --repo MrCipherSmith/helyx --pr 116 --sha <pr-head>`. | verifier-stats (violated): round `2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3` ran with `verification_mode: annotate` and received 0 claims while retaining 10 finding(s) at or above `minor` (2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3#F-001, 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3#F-002, 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3#F-003, 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3#F-004, 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3#F-005, 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3#F-007, 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3#F-008, 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3#F-009, 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3#F-010, 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3#F-012). The mode says a verifier was meant to run; the claim count says nothing was checked. Pass the verifier's output with `keryx review ingest --verifications <file|->`."
+    },
+    {
+      "at": "2026-09-02T14:25:06.424Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/116 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-09-02T14:25:06.644Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-09-02T14:25:11.056Z",
+      "event": "completion-failed",
+      "detail": "review: 1 of 5 conditions failed — terminal-dispositions (violated): 4 finding(s) at or above `minor` are not terminal: 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3#F-001 (major, round 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3): marked fixed (`acted-on`) with no verifier verdict of `refuted` — a finding that is not re-checked after the fix is a finding nobody showed had stopped reproducing | 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3#F-002 (major, round 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3): marked fixed (`acted-on`) with no verifier verdict of `refuted` — a finding that is not re-checked after the fix is a finding nobody showed had stopped reproducing | 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3#F-003 (major, round 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3): marked fixed (`acted-on`) with no verifier verdict of `refuted` — a finding that is not re-checked after the fix is a finding nobody showed had stopped reproducing | 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3#F-010 (minor, round 2026-09-02-ingest-4df5176fe0b0a6f3a9a5f87fc88459143f3d2ad3): marked fixed (`acted-on`) with no verifier verdict of `refuted` — a finding that is not re-checked after the fix is a finding nobody showed had stopped reproducing"
+    },
+    {
+      "at": "2026-09-02T14:26:37.603Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/116 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-09-02T14:26:37.848Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-09-02T14:26:42.722Z",
+      "event": "done",
+      "detail": "all gates passed"
+    }
+  ]
+}

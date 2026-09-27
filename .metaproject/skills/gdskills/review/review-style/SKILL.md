@@ -1,25 +1,24 @@
 ---
 name: review-style
+model_tier: light
 description: |
   Use when: reviewing code for style, naming conventions, readability, and DRY violations —
-  without touching logic, architecture, security, or performance. Covers "review style",
-  "style review", "check naming", "check readability", or dispatched by review-orchestrator
-  with --style flag.
+  without touching logic, architecture, security, or performance. Dispatched by
+  review-orchestrator with the --style flag.
   NOT for: logic bugs, architectural violations, security vulnerabilities, performance
   anti-patterns, or any finding that could cause a functional regression.
-version: "1.0.0"
 triggers:
-  - "review style"
   - "style review"
+  - "readability"
+  - "clean up"
   - "check naming"
   - "check readability"
-  - "review --style"
 metadata:
   author: "MrCipherSmith"
   version: "1.0.0"
   category: "review"
+  compatible_harnesses: "cursor,codex,zed,opencode,claude"
 license: "MIT"
-compatibility: "cursor,codex,zed,opencode,claude"
 ---
 
 # Review — Style, Naming & Readability
@@ -35,7 +34,7 @@ Never touches logic correctness, architecture, security, or performance.
 ```
 review-style Progress:
 - [ ] Step 1: Read Job Context (if CONTEXT_PATH provided)
-- [ ] Step 2: Determine git scope (merge-base) — see skills/shared/git-merge-base.md
+- [ ] Step 2: Determine git scope (merge-base) — see .metaproject/skills/gdskills/shared/git-merge-base.md
 - [ ] Step 3: Collect diff and changed file list
 - [ ] Step 4: Naming conventions check
 - [ ] Step 5: Dead code and imports check
@@ -61,7 +60,7 @@ review-style Progress:
 
 ## Scope Detection
 
-See shared script: `skills/shared/git-merge-base.md`
+See shared script: `.metaproject/skills/gdskills/shared/git-merge-base.md`
 
 Run that script to determine `BASE_SHA` before collecting the diff.
 
@@ -105,7 +104,7 @@ Only review code changed in scope. Do not flag style issues in lines outside the
 - File names match the primary export: `UserService` → `user.service.ts`
 - Test files: `*.spec.ts` or `*.test.ts` next to the subject file
 
-Flag naming issues as `minor` unless the name is actively misleading (e.g., `isLoading` that is actually a count), which is `major`.
+Naming severity is set by the Style laws below and by the canonical rubric in `review-orchestrator` — not here. A second ruling in the same file is the defect this flow removed from `review-highload` and `review-frontend`.
 
 ---
 
@@ -198,18 +197,38 @@ Do not flag DRY violations for code outside the diff even if legacy duplication 
 
 ## Iron Laws
 
+### Shared laws (every reviewer)
+
+1. **A claim of runtime harm with no reproducible path is `info`.** If you cannot
+   name the input, call, or condition that reaches the code, you have an
+   observation, not a finding. Report it as `info` and say what would settle it.
+2. **Never flag the theoretical.** The path you describe must exist in the code
+   under review. Do not report a safe API because it could be misused, or a
+   pattern because it is often wrong elsewhere.
+3. **One finding per class, not one per occurrence.** When the same shape appears
+   at several sites, report it once and list every site. Ten findings that are one
+   finding hide the other nine problems.
+
+Severity levels are defined once, in `review-orchestrator/SKILL.md` →
+**Severity (canonical)**. This reviewer does not restate them: `blocker` is the
+four merge-blocking shapes named there and nothing else, and the `major`/`minor`
+boundary is the trigger-and-outcome test.
+
+### Style laws
+
 | Rule | Rationale |
 |------|-----------|
-| Style findings are **never** blockers unless they cause a functional bug | Style is a quality concern, not a safety gate |
-| Maximum severity for pure style is `major` (only for actively misleading names or circular imports) | Most style is `minor` or `info` |
+| Style findings are **never** `blocker` | None of the four merge-blocking shapes is reachable from a style observation. This reviewer's finding format omits `blocker` for that reason |
+| A naming issue is `minor`; it reaches `major` only when the name has already produced an observable wrong outcome at a call site you can name | Identical to `review-clean-code` law 2, deliberately: the same condition must not carry two severities |
+| Duplication is `minor`, reported once with every site listed | Identical to `review-clean-code` law 3 |
 | Never flag issues handled by the project's autoformatter (indentation, trailing spaces, bracket style) | Linter/formatter owns that; double-flagging creates noise |
-| Do not expand scope to architectural or logic concerns | Stay in style lane; hand off to the right reviewer |
+| Do not expand scope to architectural or logic concerns | Stay in style lane; hand off to the right reviewer. A circular import that fails at runtime is `review-architecture`'s finding, not a style one |
 
 ---
 
 ## Orchestrated Review Contract
 
-When dispatched by `review-orchestrator`, follow the provided `reviewer-input.schema.json` payload. Return a `REVIEW_RESULT` object compatible with `skills/review-orchestrator/reviewer-finding.schema.json`, then a concise markdown summary. Keep findings evidence-based, include concrete `suggested_fix` for every blocker/major, and return `NEEDS_CONTEXT` instead of guessing when required context is missing.
+When dispatched by `review-orchestrator`, follow the provided `reviewer-input.schema.json` payload. Return a `REVIEW_RESULT` object compatible with `.metaproject/skills/gdskills/review/review-orchestrator/reviewer-finding.schema.json`, then a concise markdown summary. Keep findings evidence-based, include concrete `suggested_fix` for every blocker/major, and return `NEEDS_CONTEXT` instead of guessing when required context is missing.
 
 ---
 

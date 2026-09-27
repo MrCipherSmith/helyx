@@ -5,7 +5,8 @@ Local Documentation Memory service layer.
 Responsibilities:
 
 - read typed Markdown entries under `.metaproject/memory` (source of truth);
-- build a deterministic inverted index under `.metaproject/data/memory/index`;
+- optionally build a deterministic disposable catalog under
+  `.metaproject/data/memory/index` (search does not consume it);
 - rank search by relevance + recency + confidence + status + scope;
 - ingest source artifacts as `draft` entries with provenance;
 - run deterministic dedup/conflict checks.

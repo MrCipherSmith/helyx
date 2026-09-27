@@ -4,6 +4,7 @@ alwaysApply: false
 globs:
   - ".storybook/**"
   - "**/*.stories.tsx"
+stack_requires: "react"
 ---
 
 # Storybook Guidelines

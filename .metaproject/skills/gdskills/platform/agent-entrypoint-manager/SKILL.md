@@ -1,6 +1,6 @@
 ---
 name: agent-entrypoint-manager
-description: Use when maintain AGENTS.md, CLAUDE.md, and local-first Metaproject references.
+description: "Use when AGENTS.md or CLAUDE.md needs its managed Metaproject block added, refreshed, or kept idempotent. NOT for: splitting an oversized entrypoint into rules and project-skills (see agent-entrypoint-distiller)."
 ---
 
 # agent-entrypoint-manager

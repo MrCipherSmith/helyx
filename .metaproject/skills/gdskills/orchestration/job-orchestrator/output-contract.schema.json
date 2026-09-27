@@ -22,15 +22,19 @@
             "type": "string",
             "enum": [
               "Summary",
+              "Analysis",
               "Tasks",
               "Review Results",
               "Unresolved Issues",
               "Final Checks",
+              "Skill Updates",
+              "Metrics",
+              "Execution Metrics",
               "Changes Summary",
               "PR Proposal"
             ]
           },
-          "description": "Sections in the report"
+          "description": "Sections in the report. The enum matches the template in SKILL.md 2.9 — it was closed at seven values and excluded two sections the skill instructs the orchestrator to emit, so a conforming report was unrepresentable."
         }
       }
     },
@@ -47,10 +51,13 @@
             "branch_name": { "type": "string" },
             "tasks_completed": { "type": "integer" },
             "tasks_total": { "type": "integer" },
-            "review_iterations": { "type": "integer" },
+            "review_rounds": {
+              "type": "integer",
+              "description": "Managed review rounds run — each one has a package under .metaproject/reviews/."
+            },
             "final_status": {
               "type": "string",
-              "enum": ["READY FOR PR", "HAS WARNINGS", "HAS ISSUES", "FAILED"]
+              "enum": ["READY FOR PR", "HAS WARNINGS", "HAS ISSUES", "ANALYSIS ONLY", "FAILED"]
             }
           }
         },
@@ -69,14 +76,29 @@
         },
         "review_results": {
           "type": "array",
+          "description": "Per-reviewer counts, in the canonical severity vocabulary of review-finding.schema.json. The old critical/warning/info triple could not be populated from findings the reviewers actually produce.",
           "items": {
             "type": "object",
             "properties": {
               "reviewer": { "type": "string" },
-              "critical": { "type": "integer" },
-              "warning": { "type": "integer" },
+              "review_id": { "type": "string", "description": "The managed review package this round was ingested into." },
+              "blocker": { "type": "integer" },
+              "major": { "type": "integer" },
+              "minor": { "type": "integer" },
               "info": { "type": "integer" }
             }
+          }
+        },
+        "dispositions": {
+          "type": "object",
+          "description": "Terminal disposition counts recorded by `keryx review complete`. `unknown` above zero means findings were closed without anyone writing down what happened to them.",
+          "properties": {
+            "unknown": { "type": "integer" },
+            "acted-on": { "type": "integer" },
+            "dismissed-incorrect": { "type": "integer" },
+            "dismissed-wont-fix": { "type": "integer" },
+            "dismissed-out-of-scope": { "type": "integer" },
+            "dismissed-deprioritised": { "type": "integer" }
           }
         },
         "final_checks": {

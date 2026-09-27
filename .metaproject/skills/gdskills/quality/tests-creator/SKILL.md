@@ -1,8 +1,10 @@
 ---
 name: tests-creator
-description: "Use when writing test cases BEFORE implementation — converts acceptance criteria into failing test stubs that task-implementer will make pass. Mandatory step in the TDD pipeline between issue-analyzer and task-implementer."
+description: "Use when writing test cases BEFORE implementation — converts acceptance criteria into failing test stubs that task-implementer will make pass. Mandatory step in the TDD pipeline between issue-analyzer and task-implementer. NOT for adding tests to code that already exists (use `test-gen`)."
 triggers:
-  - "Create tests"
+  - "create tests first"
+  - "test scenarios"
+  - "tdd"
   - "Write tests first"
   - "Generate test specs"
   - "Tests before implementation"
@@ -11,10 +13,10 @@ triggers:
 metadata:
   author: "MrCipherSmith"
   version: "1.0.0"
-  category: "testing"
+  category: "quality"
   agent_worthy: true
+  compatible_harnesses: "cursor,codex,zed,opencode,claude"
 license: "MIT"
-compatibility: "cursor,codex,zed,opencode"
 ---
 
 # Tests Creator
@@ -63,17 +65,23 @@ Identify the test framework and conventions used in the project.
 **1.1 Detect framework:**
 
 ```bash
-# Check package.json for test dependencies
-cat <codebase_path>/package.json | grep -E '"(jest|vitest|mocha|jasmine|bun:test|pytest|go test)"'
-
-# Check for config files
-ls <codebase_path>/{vitest.config.*,jest.config.*,pytest.ini,setup.cfg}
-
-# Check existing test files for imports
-find <codebase_path>/src -name "*.test.*" -o -name "*.spec.*" | head -5
+keryx test analyze
 ```
 
-**1.2 Read 2-3 existing test files** to understand:
+Discovers the framework, test scripts, config files, and existing test file
+paths in one pass — do NOT `cat`/`grep` `package.json`, `ls` config globs, or
+`find` for test files; that is exactly what `keryx test analyze` already
+walks the project for. Read the result compactly:
+
+```bash
+keryx ctx read .metaproject/data/testing/context.md
+```
+
+On a project with no keryx testing config, fall back to the project's own
+configured way of finding its test framework and existing tests (discovered,
+not a hardcoded `cat`/`ls`/`find` invocation).
+
+**1.2 Read 2-3 existing test files** (from the `context.md` test file list) to understand:
 - Import style (`import { describe, it, expect } from 'vitest'` vs global)
 - Test file location (co-located `*.test.ts` vs `__tests__/` directory)
 - Describe/it/test nesting patterns
@@ -321,6 +329,19 @@ This ensures the TDD cycle is maintained end-to-end.
 5. **DO** follow the project's existing test conventions (discovered in Phase 1).
 6. **DO** commit the test files before reporting.
 7. Return `TEST_CASE_SPECS` as the final message to the orchestrator/caller.
+
+---
+
+## Red Flags
+
+| Rationalization | Why it is wrong |
+|---|---|
+| "The module doesn't exist, so the import breaks the whole suite — I'll create a stub module first" | That stub is implementation code, and it is exactly what Rule 1 forbids. A failing import IS the RED phase; `task-implementer` creates the module |
+| "A placeholder like `expect(true).toBe(true)` gets the file committed and the pipeline moving" | A test that passes before implementation proves nothing and goes green forever after. RED means failing (Rule 2) — use `it.todo`, or the forward-declared assertion from 3.3 |
+| "I know how this will be built, so I'll assert it calls the repository method" | That tests HOW, not WHAT (Rule 3), and it fails the moment the implementer picks a different — valid — structure. Assert observable behaviour |
+| "This acceptance criterion is too vague to test, so I'll skip it" | Every criterion needs at least one test (Rule 4). Derive from the task description, log the warning, and say in `notes` what you assumed — an untested criterion silently leaves the pipeline |
+| "`verify_red` shows the test passing already; close enough, report DONE" | A test green before implementation is a wrong test, not an early win. Fix the assertion, or report it as a concern — do not pass it downstream as covered |
+| "I'll leave the stubs uncommitted and let `task-implementer` commit everything together" | The handoff assumes committed RED files (Rule 6): the implementer's first step is to run them and confirm they fail. Uncommitted stubs make that step unverifiable |
 
 ---
 

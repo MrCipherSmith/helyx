@@ -1,26 +1,25 @@
 ---
 name: review-architecture
+model_tier: deep
 description: |
   Use when: reviewing code for architectural violations — layer violations, dependency direction
   mistakes, module boundary coupling, SOLID principle breaches, NestJS module/provider structure,
   React MVVM boundary violations, or MobX store layer misplacement.
-  Triggered by: "review architecture", "check architecture", "architectural review",
-  or dispatched by review-orchestrator with --architecture or --backend.
+  Dispatched by review-orchestrator with --architecture or --backend.
   NOT for: style/naming preferences, logic correctness bugs, or security vulnerabilities.
-version: "1.0.0"
 triggers:
-  - "review architecture"
+  - "architecture review"
+  - "boundary review"
+  - "layering"
   - "check architecture"
   - "architectural review"
-  - "architecture review"
   - "check layers"
-  - "dispatched by review-orchestrator"
 metadata:
   author: "MrCipherSmith"
   version: "1.0.0"
   category: "review"
+  compatible_harnesses: "cursor,codex,zed,opencode,claude"
 license: "MIT"
-compatibility: "cursor,codex,zed,opencode,claude"
 ---
 
 # Review Architecture
@@ -62,7 +61,7 @@ Architecture Review Progress:
 
 ## Scope Detection
 
-See shared script: `skills/shared/git-merge-base.md`
+See shared script: `.metaproject/skills/gdskills/shared/git-merge-base.md`
 
 Run the script to determine `BASE_SHA`, then collect the diff:
 
@@ -211,7 +210,7 @@ Focus on **SRP** and **DIP** — the two most commonly violated in practice.
 
 ## Orchestrated Review Contract
 
-When dispatched by `review-orchestrator`, follow the provided `reviewer-input.schema.json` payload. Return a `REVIEW_RESULT` object compatible with `skills/review-orchestrator/reviewer-finding.schema.json`, then a concise markdown summary. Keep findings evidence-based, include concrete `suggested_fix` for every blocker/major, and return `NEEDS_CONTEXT` instead of guessing when required context is missing.
+When dispatched by `review-orchestrator`, follow the provided `reviewer-input.schema.json` payload. Return a `REVIEW_RESULT` object compatible with `.metaproject/skills/gdskills/review/review-orchestrator/reviewer-finding.schema.json`, then a concise markdown summary. Keep findings evidence-based, include concrete `suggested_fix` for every blocker/major, and return `NEEDS_CONTEXT` instead of guessing when required context is missing.
 
 ---
 
@@ -257,16 +256,43 @@ observation is theatre, not rigour.
   ```
 ```
 
-Severity guide for this reviewer:
+Severity comes from **Severity (canonical)** in `review-orchestrator/SKILL.md`.
+This reviewer keeps no table of its own; what follows is where its recurring
+conditions land under that rubric, not a second rubric.
 
-| Severity | When to use |
-|----------|------------|
-| `blocker` | Circular dependency causing runtime failure; NestJS module scope mismatch causing incorrect behavior; domain importing infrastructure breaking testability entirely |
-| `major` | Clear layer violation (API call in component, business logic in controller); broken DIP; cross-module boundary coupling that will cause maintainability failures |
-| `minor` | SRP smell with clear separation path; ISP violation; component using multiple raw observables instead of computed |
-| `info` | Architectural opinion without clear violation; pattern that could be improved but works correctly |
+| Condition | Severity | Why, under the canonical rubric |
+|---|---|---|
+| Circular dependency that fails at runtime (an import resolves to `undefined` on a path the change reaches) | `blocker` | Crash |
+| Module scope mismatch that produces wrong data across requests | `blocker` | Data corruption |
+| Layer violation — API/IO call in a component, business logic in a controller, domain importing infrastructure | `major` | A named trigger and a named outcome, but structural: not a crash, data loss, vulnerability, or missing acceptance criterion. Identical to `review-frontend`'s rule for the same condition |
+| Broken DIP; cross-module coupling with a named consequence | `major` | Same |
+| SRP smell with a clear separation path; ISP violation; a component reading several raw observables instead of a computed | `minor` | The code is correct; the cost is to whoever restructures it next |
+| Architectural opinion with no named violation | `info` | Shared laws 1 and 2 |
 
-Iron laws:
+A circular import that resolves cleanly is not a `blocker` — it is `minor`, and
+if the concern is purely readability it belongs to `review-style`.
+
+## Iron Laws
+
+### Shared laws (every reviewer)
+
+1. **A claim of runtime harm with no reproducible path is `info`.** If you cannot
+   name the input, call, or condition that reaches the code, you have an
+   observation, not a finding. Report it as `info` and say what would settle it.
+2. **Never flag the theoretical.** The path you describe must exist in the code
+   under review. Do not report a safe API because it could be misused, or a
+   pattern because it is often wrong elsewhere.
+3. **One finding per class, not one per occurrence.** When the same shape appears
+   at several sites, report it once and list every site. Ten findings that are one
+   finding hide the other nine problems.
+
+Severity levels are defined once, in `review-orchestrator/SKILL.md` →
+**Severity (canonical)**. This reviewer does not restate them: `blocker` is the
+four merge-blocking shapes named there and nothing else, and the `major`/`minor`
+boundary is the trigger-and-outcome test.
+
+### Architecture laws
+
 - Only flag actual violations found **in the diff**, not pre-existing issues untouched by the change.
 - Every finding MUST cite a specific `file:line` from the diff.
 - Architecture opinions without a clear, named violation (layer, SOLID principle, pattern misuse) are `info` only — never `blocker` or `major`.

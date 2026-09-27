@@ -8,7 +8,7 @@ import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { markdownToTelegramHtml } from "../bot/format.ts";
 import type { StatusManager } from "./status.ts";
-import { sendTelegramMessage, sendRichTelegramMessage, setTelegramReaction, editTelegramMessage, editRichTelegramMessage, sendTelegramPoll, deleteTelegramMessage, sendTelegramPhoto } from "./telegram.ts";
+import { sendTelegramMessage, sendRichTelegramMessage, setTelegramReaction, editTelegramMessage, editRichTelegramMessage, sendTelegramPoll, deleteTelegramMessage, sendTelegramPhoto, sendTelegramDocument } from "./telegram.ts";
 import { splitForVoice, sendVoiceTracks } from "../utils/tts.ts";
 import { chunkMarkdown, chunkText } from "../utils/chunk.ts";
 import { asRecapQuote, shouldSummarize, summarizeForSpeech, RECAP_PREFIX } from "../utils/reply-summary.ts";
@@ -272,6 +272,19 @@ const TOOL_DEFINITIONS = [
         },
       },
       {
+        name: "send_document",
+        description: "Send a local file to a Telegram chat as a document, keeping its own file name. Use this for anything that is not an image — a PDF report, a CSV, an archive — because send_photo only reaches Telegram's image endpoint and a PDF sent that way does not arrive as a file the recipient can open. Pass an absolute local file path (starting with /).",
+        inputSchema: {
+          type: "object",
+          properties: {
+            chat_id: { type: "string", description: "Telegram chat ID" },
+            path: { type: "string", description: "Absolute local file path (/tmp/report.pdf)" },
+            caption: { type: "string", description: "Optional caption text (supports markdown, max 1024 characters)" },
+          },
+          required: ["chat_id", "path"],
+        },
+      },
+      {
         name: "send_poll",
         description: "Send a questionnaire to the user as Telegram polls. Use this when you need clarification with multiple-choice answers. The user answers each poll and clicks Submit — their answers are automatically sent back to you.",
         inputSchema: {
@@ -394,17 +407,17 @@ async function isAuthorizedChat(ctx: ToolContext, sessionId: number | null, chat
 }
 
 /**
- * F-002b: `sendTelegramPhoto` reads any absolute path `Bun.file()` can open
- * and uploads it — a session steered by attacker-controlled content (a
- * malicious repo, a fetched page) could be made to read host-mounted
- * credentials or another project's transcript this way. Mirrors
- * `scan_project_knowledge`'s allowed-root check below, using `containsPath`'s
- * separator-aware containment instead of a bare `startsWith`.
+ * F-002b: `sendTelegramPhoto` and `sendTelegramDocument` both read any
+ * absolute path `Bun.file()` can open and upload its bytes — a session steered
+ * by attacker-controlled content (a malicious repo, a fetched page) could be
+ * made to read host-mounted credentials or another project's transcript this
+ * way. Mirrors `scan_project_knowledge`'s allowed-root check below, using
+ * `containsPath`'s separator-aware containment instead of a bare `startsWith`.
  */
-function isAllowedLocalPhotoPath(photoPath: string, projectPath: string): boolean {
+function isAllowedLocalFilePath(filePath: string, projectPath: string): boolean {
   const allowedRoot = process.env.HOST_PROJECTS_DIR ?? process.env.HOME ?? "/home";
-  if (containsPath(allowedRoot, photoPath)) return true;
-  if (projectPath && containsPath(projectPath, photoPath)) return true;
+  if (containsPath(allowedRoot, filePath)) return true;
+  if (projectPath && containsPath(projectPath, filePath)) return true;
   return false;
 }
 
@@ -674,7 +687,7 @@ async function handleTelegramTool(
         // uploaded — confine it to this project's own directory tree or the
         // shared projects root, the same boundary scan_project_knowledge
         // already enforces for reading project files.
-        if (photoUrl.startsWith("/") && !isAllowedLocalPhotoPath(photoUrl, ctx.projectPath)) {
+        if (photoUrl.startsWith("/") && !isAllowedLocalFilePath(photoUrl, ctx.projectPath)) {
           channelLogger.warn({ photoUrl }, "send_photo: local path outside allowed roots — refused");
           return text(`send_photo: local path must be within the current project or ${process.env.HOST_PROJECTS_DIR ?? process.env.HOME ?? "/home"}`);
         }
@@ -704,6 +717,56 @@ async function handleTelegramTool(
           return text(`send_photo failed: ${photoRes.errorBody}`);
         }
         return text(`Photo sent (message_id=${photoRes.messageId})`);
+      }
+
+      case "send_document": {
+        const token = ctx.token();
+        if (!token) return text("TELEGRAM_BOT_TOKEN not set");
+        const chatId = String(args!.chat_id);
+        const documentPath = String(args!.path);
+        const captionRaw = args!.caption ? String(args!.caption) : undefined;
+        const captionHtml = captionRaw ? markdownToTelegramHtml(captionRaw) : undefined;
+
+        if (!(await isAuthorizedChat(ctx, sessionId, chatId))) {
+          channelLogger.warn({ chatId, sessionId }, "send_document: chat_id not tracked by this bot — refused");
+          return text(`send_document: chat ${chatId} is not a chat this bot manages`);
+        }
+
+        // F-002b's boundary, applied to documents: same reasoning as the
+        // send_photo case above — a session steered by attacker-controlled
+        // content must not be able to read and exfiltrate any file the bot
+        // process can open. Documents make this worse, not better: a config
+        // file or a key reads as a perfectly ordinary attachment.
+        if (!documentPath.startsWith("/") || !isAllowedLocalFilePath(documentPath, ctx.projectPath)) {
+          channelLogger.warn({ documentPath }, "send_document: local path outside allowed roots — refused");
+          return text(`send_document: path must be absolute and within the current project or ${process.env.HOST_PROJECTS_DIR ?? process.env.HOME ?? "/home"}`);
+        }
+
+        const forumChatId = ctx.forumChatId?.();
+        const isAddressedToForum = !!(forumChatId && chatId === forumChatId);
+        let forumTopicId: number | null = null;
+        if (isAddressedToForum) {
+          const rows = await ctx.sql`SELECT forum_topic_id FROM projects WHERE path = ${ctx.projectPath}`;
+          forumTopicId = rows[0]?.forum_topic_id ?? null;
+        }
+        // Same reasoning as the `reply` case above: addressed to the forum
+        // chat but the topic didn't resolve — skip rather than send to General.
+        if (isAddressedToForum && !forumTopicId) {
+          channelLogger.error(
+            { chatId, projectPath: ctx.projectPath },
+            "send_document: addressed to forum chat but this project's topic did not resolve — skipping rather than sending to General",
+          );
+          return text("Could not resolve this project's forum topic — document held back rather than risking General.");
+        }
+        const forumExtra = forumTopicId ? { message_thread_id: forumTopicId } : {};
+        const captionExtra = captionHtml ? { parse_mode: "HTML" } : {};
+
+        const docRes = await sendTelegramDocument(token, chatId, documentPath, captionHtml ?? captionRaw, { ...forumExtra, ...captionExtra });
+        if (!docRes.ok) {
+          channelLogger.warn({ error: docRes.errorBody }, "send_document: Telegram API error");
+          return text(`send_document failed: ${docRes.errorBody}`);
+        }
+        return text(`Document sent (message_id=${docRes.messageId})`);
       }
 
       case "react": {

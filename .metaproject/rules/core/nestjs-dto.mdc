@@ -4,6 +4,7 @@ alwaysApply: false
 globs:
   - "**/*dto*.ts"
   - "**/dto/**/*.ts"
+stack_requires: "nestjs"
 ---
 
 # NestJS DTO Rules

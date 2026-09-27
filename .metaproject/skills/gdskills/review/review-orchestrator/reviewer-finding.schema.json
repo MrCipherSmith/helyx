@@ -44,6 +44,13 @@
           "id": {
             "type": "string"
           },
+          "global_id": {
+            "title": "The finding's identity, unique across every review package",
+            "description": "`id` is per-report and collides across packages; `global_id` (`<reviewId>#<id>`) is the join key. A reviewer MINTS nothing: it emits this only when re-reporting a finding it was handed in `prior_findings`, and then it must be carried verbatim, because a re-minted key breaks the round-to-round join it exists to provide. The `pattern` enforces the shape a carried key must still have: anything else joins to nothing while looking like a key. Kept identical to src/gdskills/contracts/review-finding.schema.json. NOTE the deliberate asymmetry: that schema also declares `disposition` and this one does not, because a reviewer states what is wrong and never states what became of it — the same separation that keeps the pipeline's `classification` out of the finding record.",
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^#]+#[^#]+$"
+          },
           "severity": {
             "type": "string",
             "enum": [
@@ -53,6 +60,13 @@
               "info"
             ]
           },
+          "repo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Which repository `file` and `line` are in. Null, the default, means the repository under review. A cross-repo claim names the producer here and pins the ref it was read at in `evidence`; without this field a finding about another service's behaviour could not say where its evidence lived, so the rule that such a claim is `info` unless it has a `file:line` at a pinned ref could not be checked by anything but the reviewer's word. Kept identical to src/gdskills/contracts/review-finding.schema.json, which is stricter (additionalProperties: false) and would reject a finding carrying `repo` if the property were declared only here."
+          },
           "file": {
             "type": [
               "string",
@@ -60,11 +74,19 @@
             ]
           },
           "line": {
+            "description": "Do not count lines. Quote the code in `quote` instead and leave this null: `keryx review ingest` finds the quote in `file` and writes the line the match started on, overwriting anything reported here. A model is poor at counting lines and good at repeating text it has just read, and this asks it only for the second. Kept in the contract because a finding with nothing to quote — one about the round rather than a site — still has nowhere else to point.",
             "type": [
               "integer",
               "null"
             ],
             "minimum": 1
+          },
+          "quote": {
+            "description": "The code this finding is about, copied verbatim out of `file`. A few lines is enough — it is matched against the file at the round's head, exactly first and then with whitespace collapsed. A quote that appears in more than one place is recorded as `unlocatable` rather than anchored to the first hit, so quote enough to be unambiguous.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "problem": {
             "type": "string"

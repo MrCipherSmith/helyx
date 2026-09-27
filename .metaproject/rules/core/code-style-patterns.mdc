@@ -1,6 +1,7 @@
 ---
 description: "Code style and architecture patterns for TypeScript, React, and MobX."
 alwaysApply: false
+stack_requires: "react,mobx"
 ---
 
 # Code Style and Architecture Patterns

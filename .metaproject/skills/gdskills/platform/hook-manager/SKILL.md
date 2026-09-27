@@ -1,6 +1,6 @@
 ---
 name: hook-manager
-description: Use when create and verify lightweight git hooks for graph, health, and skill verification.
+description: "Use when a lightweight, explicitly-enabled git hook that runs graph, health, or skill verification after a commit, a checkout, or a merge needs installing or checking. NOT for: general hook design guidance not tied to these three (see hookify)."
 ---
 
 # hook-manager

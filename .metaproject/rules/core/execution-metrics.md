@@ -38,8 +38,7 @@ gdwiki enrichment, or anything that writes files) MUST also save the report:
 - Otherwise → `.metaproject/data/<primary-module>/metrics/run-<ISO-timestamp>.md`
 
 Create the directory. Use a filesystem-safe timestamp (colons → `-`). Print the
-saved path under the table. This lets the post-commit hook and future runs find
-past reports.
+saved path under the table. This lets future runs find past reports.
 
 ## Honesty rules (do not fabricate)
 

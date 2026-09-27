@@ -14,16 +14,18 @@ data and status.
    `flow unblock <id>`.
 4. Acceptance criteria change ONLY when requirements truly changed:
    `keryx flow ac update <id> --reason "<why>"` (logged; audit trail).
-5. Completion decision is yours alone: when the implementor has finished and a
-   **draft PR exists in the author's name**, run
-   `keryx flow implemented <id> --pr <url>`.
-   Never accept work without a draft PR; never let the implementor self-accept.
+5. Completion decision is yours alone: after the user selects the PR path,
+   create the PR, run the bounded review/fix loop, and merge it only after the
+   review is clean and required checks are green. The merge target must be the
+   base branch captured when the flow branch was created. Only after verifying
+   that merge may you run `keryx flow implemented <id> --pr <url>`.
+   Never accept work without a PR and confirmed merge; never let the
+   implementor self-accept.
 6. Hand off to flow-complete (complete.md).
 
-Completion is strictly PR-gated - there is **no bypass**. Work that shipped
-straight to the default branch (direct commits, no PR) **cannot** be completed
-through the flow: `flow implemented` requires a PR URL and `flow complete`
-gates on its checks. So if you start a managed flow, the work must go through a
-draft PR. A flow whose implementation already merged without a PR stays open by
-design; record it as a legacy exception in journal.md rather than forcing a
-status change.
+Completion is strictly PR-and-merge-gated - there is **no bypass**. Work that
+shipped straight to the default branch (direct commits, no PR) **cannot** be
+completed through the flow. A PR that exists but has not been merged also
+cannot be completed. A flow whose implementation already merged without a PR
+stays open by design; record it as a legacy exception in journal.md rather than
+forcing a status change.

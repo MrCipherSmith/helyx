@@ -1,6 +1,6 @@
 ---
 name: entity-skill-creator
-description: Use when create canonical project-skills from a path, symbol, wiki page, module, component, store, service, or domain entity.
+description: "Use when no project-skill exists yet for a target module, component, store, service, or domain entity, or one needs scaffolding, importing, or refreshing from its origin. NOT for: loading a project-skill that already exists (see entity-skill-router)."
 ---
 
 # entity-skill-creator
@@ -16,14 +16,21 @@ Create canonical project-skills from a path, symbol, wiki page, module, componen
 - new entity skill
 - создай скил
 - создай скилл для <path>
+- import skill
+- import skills from
+- update skill from
+- подтяни скилы
+- обнови скил
 
 ## Workflow
 
 1. Normalize the target into module, entity, files, symbols, and wiki references.
 2. Collect evidence from gdgraph, gdctx, gdwiki, health, and memory when available.
 3. Run `keryx skills create <target> --module <module> --name <skill-name>`; infer module/name from the target when the user did not provide them.
-4. Run `keryx skills route <target>` and `keryx skills inspect <module>/<skill-name>` to confirm registration and routing.
-5. Run `keryx skills verify <module>/<skill-name>` and finish with `keryx skills status`.
+4. When the user points at an existing SKILL.md, a folder of them, or a GitHub SKILL.md URL, run `keryx skills import --from <that> --module <module>` instead of scaffolding an empty skill.
+5. To refresh a project-skill from its Origin (or a new file), run `keryx skills update <module>/<name> [--from <origin>]`.
+6. Run `keryx skills route <target>` and `keryx skills inspect <module>/<skill-name>` to confirm registration and routing.
+7. Run `keryx skills verify <module>/<skill-name>` and finish with `keryx skills status`.
 
 ## Agent Command Contract
 

@@ -31,7 +31,11 @@ line is `STATUS:` (`.metaproject/rules/core/subagent-status-protocol.md`). Set
 5. If hard requirements are ambiguous, dispatch `interviewer`: focused
    questions with options and a recommendation. Do not guess hard requirements.
 6. Break work into tasks: `keryx flow task add <id> --title ... --kind
-   context|implement|test|review|docs` (defaults T1-T4 already exist; adjust).
+   context|implement|test|review|docs`. The four `origin: "scaffold"` rows
+   T1-T4 already exist as a default checklist — work them, or close the ones
+   your plan supersedes with
+   `keryx flow task done <id> <Tn> --disposition skipped --reason "<why>"`.
+   Nothing closes them on a timer; leaving them open blocks `flow complete`.
 7. Write acceptance-criteria.md: hard, verifiable `- ACn:` criteria grounded in
    the collected evidence.
 8. Re-verify the whole package, then freeze and hand off:

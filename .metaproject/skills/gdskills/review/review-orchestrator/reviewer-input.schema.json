@@ -7,7 +7,7 @@
     "review_context",
     "reviewer",
     "scope_mode",
-    "model_class",
+    "model",
     "budget"
   ],
   "properties": {
@@ -36,14 +36,58 @@
         "null"
       ]
     },
-    "model_class": {
-      "type": "string",
-      "enum": [
-        "simple",
-        "normal",
-        "complex",
-        "current-session"
-      ]
+    "model": {
+      "description": "The `model` block `keryx review tier` printed for this dispatch (Step 6) — pasted verbatim, never composed by hand. `tier` is the mechanical vocabulary the command emits (`light`/`standard`/`deep`), never a model name. `provider`/`model` are present when the command resolved a concrete model; `inherit: true` replaces them when it could not, meaning the dispatch runs on the caller's own model. Field naming matches `model` in `contracts/subagent-dispatch.schema.json` and the object `keryx review tier --json` prints under its own `model` key.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tier",
+        "tier_reasons",
+        "tier_resolution",
+        "model_discovery"
+      ],
+      "properties": {
+        "tier": {
+          "type": "string",
+          "enum": [
+            "light",
+            "standard",
+            "deep"
+          ]
+        },
+        "tier_reasons": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "inherit": {
+          "type": "boolean",
+          "description": "Run this dispatch on the caller's own model. Present in place of `provider`/`model`, never alongside them, when `keryx review tier` could not resolve a concrete model."
+        },
+        "tier_resolution": {
+          "type": "string",
+          "enum": [
+            "discovered",
+            "session-ranked",
+            "session-fallback"
+          ]
+        },
+        "model_discovery": {
+          "type": "object",
+          "description": "What `keryx review tier` discovered and how it ranked it, as printed. Not re-validated field by field here — that contract lives in `contracts/subagent-dispatch.schema.json`.",
+          "additionalProperties": true
+        }
+      }
     },
     "budget": {
       "type": "object",

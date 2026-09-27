@@ -1,6 +1,6 @@
 ---
 name: skill-catalog-manager
-description: Use when generate `.metaproject/skills/catalog.md` and machine-readable skill registry.
+description: "Use when `.metaproject/skills/catalog.md` or the machine-readable skill registry is missing or out of date with bundled and project-local skill metadata. NOT for: turning skills into runtime artifacts (see skill-runtime-exporter) or pushing them to local runtimes (see skill-sync)."
 ---
 
 # skill-catalog-manager

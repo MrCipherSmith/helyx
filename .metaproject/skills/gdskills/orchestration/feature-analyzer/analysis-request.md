@@ -57,6 +57,6 @@
 | Field | Value |
 |-------|-------|
 | Base Dir | `.metaproject/jobs/<job-name>/ai/analysis` |
-| Folder Name | `async-search-current-state` |
-| Languages | `en, ru, ai` |
+| Folder Name | `async-search` |
+| Languages | `en` |
 | Include Metrics | `true` |

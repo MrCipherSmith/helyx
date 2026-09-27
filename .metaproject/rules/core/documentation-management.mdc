@@ -1,5 +1,5 @@
 ---
-description: "Manage project documentation in <PROJECT_DIR>/docs (default) or $GDMETAPRO_DOCS_ROOT with synchronized multilingual outputs."
+description: "Manage project documentation in <PROJECT_DIR>/docs (default) or $GDMETAPRO_DOCS_ROOT. Language variants are opt-in, not mandatory."
 alwaysApply: false
 ---
 
@@ -11,16 +11,28 @@ Define how the agent creates and updates documentation under `<DOCS_ROOT>` (`<PR
 ## When To Apply
 Apply when the user asks to create or update documentation, plans, requirements, communication notes, reports, or review artifacts.
 
+## Requirements Packages
+Anything under `docs/requirements/<name>/` (README, PRD, specification, and
+their optional companions, including `implementation-plan.md`) follows
+`requirements-package-standard.mdc`. Do not restate or diverge from that
+layout here: no date-stamped subfolders, no mandatory `ru`/`en`/`ai` variants —
+the `Version: x.y.z` field on each document is the versioning mechanism.
+
 ## Mandatory Behavior
 1. Ask for target location and folder name before writing any doc.
-2. Use date-stamped folders; never overwrite previous doc sets.
-3. Keep language variants synchronized.
+2. Do not date-stamp folders. Write into `<category>/<name>/` and update
+   documents in place, bumping their `Version` field where the category's
+   standard defines one (requirements packages always do).
+3. Default to `en` output. Add other language variants only when the user
+   explicitly asks for them, and keep any variants you do create synchronized.
 4. Update `<DOCS_ROOT>/README.md` after doc changes.
 5. Ask whether to apply changes (branch/commit/PR) after edits.
 
 ## Required Locations
 - Root: `<DOCS_ROOT>` (default: `<PROJECT_DIR>/docs`)
-- Standard pattern: `<DOCS_ROOT>/<category>/<name>-<YYYY-MM-DD>/`
+- Standard pattern: `<DOCS_ROOT>/<category>/<name>/`
+- Requirements packages: `<DOCS_ROOT>/requirements/<name>/` per
+  `requirements-package-standard.mdc` (no date folder).
 
 ## DOCS_ROOT Resolution
 
@@ -40,45 +52,27 @@ DOCS_ROOT="${GDMETAPRO_DOCS_ROOT:-$PROJECT_DIR/docs}"
 
 | Category | Path pattern | Description |
 |----------|-------------|-------------|
-| `requirements` | `docs/requirements/<name>/<YYYY-MM-DD>/` | Feature requirements (iterations grouped by name) |
-| `plans` | `docs/plans/<name>/<YYYY-MM-DD>/` | Standalone implementation plans |
-| `report` | `docs/report/<name>/<YYYY-MM-DD>/` | Standalone review/audit reports |
-| `review-testing` | `docs/review-testing/<name>/<YYYY-MM-DD>/` | QA and testing artifacts |
-| `communication` | `docs/communication/<name>/<YYYY-MM-DD>/` | Communication and context docs |
-| `analysis` | `docs/analysis/<name>/<YYYY-MM-DD>/` | Feature/branch analysis (see below) |
+| `requirements` | `docs/requirements/<name>/` | See `requirements-package-standard.mdc`. |
+| `plans` | `docs/plans/<name>/` | Standalone implementation plans not tied to a requirements package. A plan that belongs to one lives inside that package as `implementation-plan.md` instead — see `requirements-package-standard.mdc` and `implementation-plans.mdc`. |
+| `report` | `docs/report/<name>/` | Standalone review/audit reports |
+| `review-testing` | `docs/review-testing/<name>/` | QA and testing artifacts |
+| `communication` | `docs/communication/<name>/` | Communication and context docs |
+| `analysis` | `docs/analysis/<name>/` | Feature/branch analysis (see below) |
 
 ## Analysis Category Structure
 
 The `analysis` category is used by the `feature-analyzer` skill and any branch/feature analysis tasks.
 
 ```
-docs/analysis/<feature-name>/<YYYY-MM-DD>/
-  report/
-    ru/
-      report.md
-    en/
-      report.md
-    ai/
-      report.md
-  plans/
-    ru/
-      implementation-plan.md
-    en/
-      implementation-plan.md
-    ai/
-      implementation-plan.md
+docs/analysis/<feature-name>/
+  report.md
+  implementation-plan.md
 ```
 
-- `report/` — detailed analysis of changes, ticket, cross-repo findings
-- `plans/` — actionable implementation plan derived from the analysis
-- Each subfolder contains `ru/`, `en/`, `ai/` language variants (all three are mandatory)
-
-## Language Matrix
-- Requirements: `ru`, `en`, `ai`
-- Implementation plans: `ru`, `en`, `ai`
-- Communication docs: `ru`, `en`, `ai`
-- Analysis (`report/` + `plans/`): `ru`, `en`, `ai` (mandatory)
-- Other categories: follow explicit user request; default to at least `en`.
+- `report.md` — detailed analysis of changes, ticket, cross-repo findings
+- `implementation-plan.md` — actionable implementation plan derived from the analysis
+- Add `ru`/`en`/`ai` variants only if the user explicitly asks for them; the
+  default is the single `en` files shown above.
 
 ## Naming Rules
 - Ask user for `<name>` first.
@@ -100,7 +94,8 @@ Standalone skill invocations continue to use `docs/analysis/`. Only orchestrator
 See `core/jobs-documentation.mdc` for the `jobs/` system.
 
 ## Prohibited
-- Single-language output when the category requires `ru+en+ai`.
-- Partial language updates.
+- Date-stamped folders anywhere under `<DOCS_ROOT>`.
+- Language variants the user did not ask for.
+- Partial updates to language variants that do exist.
 - Writing docs outside the requested category path without confirmation.
-- Mixing `report/` and `plans/` content in the same file.
+- Mixing `report`/`implementation-plan` content in the same file.

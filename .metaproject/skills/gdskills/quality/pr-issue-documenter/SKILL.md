@@ -1,20 +1,22 @@
 ---
 name: pr-issue-documenter
-description: "Use when documenting PR changes, adding a PR description, creating a linked issue for a PR, or updating an existing issue body."
+description: "Use when documenting PR changes, adding a PR description, creating a linked issue for a PR, or updating an existing issue body. NOT for opening the pull request in the first place (use `pr`)."
 triggers:
+  - "document PR"
+  - "PR description"
+  - "create issue for PR"
   - "Add PR description"
   - "Document PR changes"
   - "Describe what was done in PR"
-  - "Create issue for PR"
   - "Update PR and issue"
   - "Add description to PR"
   - "Write PR summary"
 metadata:
   author: "MrCipherSmith"
   version: "1.0.0"
-  category: "documentation"
+  category: "quality"
+  compatible_harnesses: "cursor,codex,zed,opencode,claude"
 license: "MIT"
-compatibility: "cursor,codex,zed,opencode"
 ---
 
 # PR & Issue Documenter
@@ -362,6 +364,27 @@ Always present contradictions to user before making changes.
 8. **DO NOT** create issues without user confirmation
 9. **DO NOT** modify PR title unless explicitly asked
 10. **DO NOT** write comments on GitHub PRs/issues (only edit body)
+
+## Red Flags
+
+| Rationalization | Why it is wrong |
+|---|---|
+| "The existing issue body is stale and mine is better — replace it" | That body is someone's written record, and the parts you think are stale may be the parts they argued for. Present the contradictions, offer the three choices in Step 5.1, apply what the user picks |
+| "The diff is huge; the commit messages describe it well enough" | Commit subjects and the diff disagree constantly — a rename half-finished, a "refactor" that changed behavior. Never write a change you have not seen in `gh pr diff` |
+| "No issue is linked and this clearly deserves one, so I'll create it" | Issue creation needs the user's confirmation every time (Rule 8). An unasked-for issue is noise someone else has to triage and close |
+| "The PR title is wrong too — fixing it while I'm in here is a favour" | Title changes are out of scope unless asked (Rule 9). The author chose it, and a silent retitle is invisible in the notification a reviewer gets |
+| "Leaving a comment is less destructive than editing the body" | This skill edits bodies and never comments (Rule 10). A comment is a notification to every subscriber and does not update the description anyone reads first |
+| "The diff has a hardcoded value, but that's the author's business" | Temporary and hardcoded values get marked for follow-up in the description — that is where the next reader looks, and where it otherwise disappears |
+
+## Verification
+
+Do not report done until all of the following hold:
+
+- `gh pr view {number} --json body` returns the new body, with Summary, Changes and Key Files present, plus `Closes #N` when an issue is linked
+- Every statement in the body maps to something visible in `gh pr diff {number}` — nothing invented, nothing carried over from a stale description
+- If an issue was created or updated, `gh issue view {number} --json body` shows it; if it is a sub-issue, the parent issue body now contains its link
+- Every contradiction found in Step 5.1 was presented to the user and resolved by their choice — none resolved silently
+- The final report lists every PR and issue URL touched, as in Step 7
 
 ## Job Context Awareness
 

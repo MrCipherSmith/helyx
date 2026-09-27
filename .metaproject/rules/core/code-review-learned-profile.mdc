@@ -1,0 +1,81 @@
+---
+description: "Learned review profile: a review checklist this project built from its own pull-request comments, not a style shipped with the tool."
+alwaysApply: false
+---
+
+# Learned Review Profile
+
+## What This Rule Is
+
+This is a **dynamic rule**. It carries no conventions of its own, and it ships
+empty of them on purpose.
+
+Every other review rule in `rules/core/` states what to flag. This one states
+**where the things to flag come from**: the pull-request comments left on this
+project, by the people this project named, applied to this project's own code.
+Nothing here describes a reviewer, a team, or a stack — because a rule that
+described one would be wrong for the next project that installed it.
+
+The checklist a reader wants lives in the project, in a project skill under
+`.metaproject/project-skills/<module>/<skill>/SKILL.md`. That file is written by
+`keryx review learn` proposing and `keryx skills learn apply` applying, and it
+never travels back into the tool.
+
+## Where The Content Comes From
+
+```
+keryx review comments collect   →  the durable record: who commented, and what they said
+keryx review learn              →  keeps the configured authors, writes a proposal
+keryx skills learn apply        →  writes the lesson into the project skill, bumps its version
+```
+
+`.metaproject/review-learning.config.json` names the three things the join needs:
+the local skill to teach, the repository to read, and the comment authors whose
+text counts. A project without that file does not learn — that is a supported
+state, not an error.
+
+`keryx review learn` reads the record `collect` already wrote; it does not talk
+to GitHub. An author the config does not name contributes nothing: their text
+reaches no proposal and no `SKILL.md`.
+
+## Two Boundaries That Are Enforced In Code, Not Advised Here
+
+- **Proposing never writes.** `keryx review learn` writes a proposal under
+  `.metaproject/data/gdskills/proposals/` and changes no skill. `keryx skills
+  learn apply` is the only writer, it refuses a proposal it has already applied,
+  and it records what it did in `skill-changelog.md`.
+- **Learned content cannot leave the project.** `applyLearningProposal` resolves
+  the target and refuses any path outside `.metaproject/project-skills/`. A
+  project that misconfigures its skill path cannot write into the shipped
+  templates under `src/gdskills/bundled/`; the apply fails instead.
+
+Both are assertions about code that exists. Neither is a request to be careful.
+
+## When To Apply
+
+Apply when the project has a learned review skill and the reader wants that
+project's accumulated review conventions rather than a generic pass. If the
+project has no learned skill yet, prefer `review-orchestrator` and its
+domain reviewers — an empty learned profile has nothing to say and should say
+nothing.
+
+## Response Format
+
+1. Verdict in one line — the canonical verdict vocabulary (same set as
+   `core/code-review-ai-assistant.mdc`):
+   - `APPROVE` — no blocking issues; changes accepted as-is
+   - `APPROVE WITH SUGGESTIONS` — accepted but improvements noted for follow-up
+   - `REQUEST CHANGES` — has issues that must be fixed before merge
+   - `COMMENT` — informational findings only; no blocking action required
+2. Top 1-3 blocking findings, each traceable to a line in the learned skill.
+3. Concrete replacement/fix path.
+
+## Guardrails
+
+- Cite the learned lesson a finding rests on. A finding with no line behind it in
+  the project skill is a generic review finding and belongs to the reviewer that
+  owns it.
+- Do not restate a lesson as a rule about people. The record says a comment was
+  left; it does not license a claim about who is usually right.
+- No personal attacks. No empty nitpicks. Keep recommendations lint-safe and
+  scoped.

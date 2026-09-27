@@ -45,9 +45,10 @@ refreshed by `update` without touching `data/security`.
 - Git pre-push gate (`.git/hooks/pre-push`, opt out with `--no-security-hook`):
   runs `keryx security scan` over the changed/committable content. Blocking
   follows `security.config.json` `mode`: `advisory` (default) warns and allows
-  the push; `enforced`/`ci` block the push (non-zero exit) on a secret/critical
-  finding. Installed as a `# keryx:security-pre-push` managed block that
-  coexists with the testing pre-push block and any user-authored hook content.
+  the push; `enforced`/`ci`/`gateway` block the push (non-zero exit) on a
+  failing or needs-approval gate (not only a secret or critical finding).
+  Installed as a `# keryx:security-pre-push` managed block that coexists with
+  the testing pre-push block and any user-authored hook content.
 - Agent guard (`.claude/settings.json`, opt out with `--no-security-agent-hook`):
   adds `UserPromptSubmit` → `keryx security check-input` and
   `PreToolUse`(Write|Edit) → `keryx security check-output`. Merged under a
@@ -84,5 +85,6 @@ refreshed by `update` without touching `data/security`.
 - `update` refreshes service files (this manifest, core README, config if
   missing) without touching `data/security`.
 - Raw retention defaults to `off`; the module operates without persisting raw
-  content. A `configChecksum` mismatch or a mode downgrade is always surfaced
-  as a finding plus an incident entry (self-protection, specification.md §14).
+  content. A `configChecksum` mismatch is surfaced as a finding plus an
+  incident entry; a mode downgrade or a disabled policy is surfaced as a
+  warning plus an incident entry (self-protection, specification.md §14).

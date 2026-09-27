@@ -23,6 +23,58 @@
         "object",
         "null"
       ],
+      "description": "The pull request under review, when there is one. `body` is the author's own statement of what the change does, and it is checkable against the diff — it is typed here rather than left to convention because the Context Pack prose told reviewers to read `pr.body` while the schema declared no such field, so nothing carried it and nothing could tell a body that was never fetched from one that was empty.",
+      "properties": {
+        "number": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "body": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Fetched, not assumed: `gh pr view <n> --json title,body`. Null means the fetch did not happen or returned nothing; an empty string means the author wrote no description, which is a different fact and a reportable one."
+        },
+        "state": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "open",
+            "merged",
+            "closed",
+            null
+          ]
+        },
+        "base": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "head": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
       "additionalProperties": true
     },
     "scope": {
@@ -69,6 +121,129 @@
       "type": "array",
       "items": {
         "type": "string"
+      }
+    },
+    "cross_repo": {
+      "type": "array",
+      "description": "Contracts owned by another service that this diff consumes — a payload shape, a status enum, a timeout, a permission, a default. Each entry is one reading of the producer, shared by every reviewer, so that a later round can tell a contract that moved from a reviewer that misread it. An entry is a RECORD OF READING: an unavailable producer is a result and belongs here as `state: unavailable`, whereas an assumed one belongs nowhere.",
+      "items": {
+        "type": "object",
+        "required": [
+          "repo",
+          "reason",
+          "facts",
+          "state"
+        ],
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "description": "What this diff needs from the producer, in one line."
+          },
+          "facts": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            },
+            "description": "What the producer actually says, read at the pinned ref. A claim about another service's behaviour with no `file:line` behind it at a pinned ref is `info`, not `major`, however confident — both failure modes are recorded: a finding the producer disproves, and a defect missed because the producer's real default was assumed rather than read."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "merged",
+              "open",
+              "unavailable"
+            ],
+            "description": "Where the contract lives right now. `merged` is on the producer's own base branch and is pinned by `sha`. `open` is a parallel pull request that has not landed: its branch will be rebased or squashed, so a sha pinned today names a commit that will not exist after the merge, and the contract itself can still change. `unavailable` means the producer could not be read."
+          },
+          "sha": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The commit the facts were read at. Required when `state` is `merged`."
+          },
+          "pr": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The producer's pull request, when the contract is not merged yet."
+          },
+          "branch": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "merge_order": {
+            "type": "string",
+            "enum": [
+              "producer_first",
+              "consumer_first",
+              "independent",
+              "unknown"
+            ],
+            "default": "unknown",
+            "description": "Which side has to ship first for production to stay correct. `producer_first` on a `state: open` entry is the case where merging THIS change first breaks production, and it is a blocker rather than the `minor` filed for a missing deploy note."
+          },
+          "facts_pinned_round": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "The review round the facts were read in."
+          },
+          "revalidated_round": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "The last round the producer was re-read. An entry with `state: open` that was pinned in round 1 and never revalidated is stale by round 3: a parallel pull request is precisely the thing that moves between rounds."
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "merged"
+                }
+              },
+              "required": [
+                "state"
+              ]
+            },
+            "then": {
+              "required": [
+                "sha"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "open"
+                }
+              },
+              "required": [
+                "state"
+              ]
+            },
+            "then": {
+              "required": [
+                "pr"
+              ]
+            }
+          }
+        ],
+        "additionalProperties": true
       }
     },
     "memory": {
@@ -189,12 +364,8 @@
             "strategy": {
               "type": "string",
               "enum": [
-                "current",
                 "ask",
-                "adaptive",
-                "economy",
-                "per-group",
-                "current-session"
+                "adaptive"
               ]
             },
             "current_model": {

@@ -1,5 +1,5 @@
 ---
-description: "Workflow for adding or editing rules in the AGENTS.mdc + rules/core structure."
+description: "Workflow for adding or editing rules in the AGENTS.md + rules/core structure."
 alwaysApply: false
 ---
 
@@ -12,10 +12,19 @@ Define a deterministic workflow for adding, editing, and syncing rules.
 Apply when user asks to create, update, move, reorganize, or sync rules.
 
 ## Source of Truth
-- Repository source: `.metaproject/rules`
-- Root always-on file (plain): `AGENTS.md`
-- Root always-on file (Cursor): `AGENTS.mdc` (frontmatter wrapper around AGENTS.md)
-- Thematic files: `.metaproject/rules/core/*.mdc`
+- Keryx's own shipped rules: `src/gdskills/bundled/rules/core/*.mdc` in the
+  keryx repository — installed into `.metaproject/rules/core/*.mdc` by `keryx
+  init`/`keryx update` (the installed copy is regenerated wholesale on every
+  run; edit the source, not the installed copy). There is no `keryx install`
+  command.
+- A project's own instructions: the project's root `AGENTS.md`/`CLAUDE.md`.
+  Edit those files directly, then run `keryx rules sync` (or `keryx rules
+  distill` for a large entrypoint) to import them into
+  `.metaproject/rules/<name>.md` (e.g. `agents-md.md`, `claude-md.md`) and
+  refresh the routing index. A project-owned rule never lives under
+  `.metaproject/rules/core/` — that tree mirrors only keryx's own shipped
+  rules and is overwritten wholesale by `keryx init`/`keryx update`.
+- Root always-on file: `AGENTS.md`
 
 ## Mandatory Clarification Step
 Before creating or editing any rule, the agent MUST ask and confirm:
@@ -25,24 +34,30 @@ Before creating or editing any rule, the agent MUST ask and confirm:
 4. Rule scope and trigger conditions
 
 ## Mandatory Behavior
-1. Update or create thematic rule files only under `rules/core`.
+1. Update or create keryx's shipped thematic rule files only under
+   `src/gdskills/bundled/rules/core/` (installed to `.metaproject/rules/core/`).
+   A project's own instructions belong in its root `AGENTS.md`/`CLAUDE.md`,
+   imported via `keryx rules sync`/`keryx rules distill`.
 2. Keep all rule files in English.
 3. Keep frontmatter valid YAML.
-4. If core files changed, update `AGENTS.md` catalog (and keep AGENTS.mdc in sync).
+4. If core files changed, keep `AGENTS.md` consistent and re-run synchronization.
 5. Run synchronization only after source files are updated.
 
 ## How to Run Synchronization
-After editing rules under `.metaproject/rules/` or `AGENTS.md`, sync to all targets:
+After editing rules under `src/gdskills/bundled/rules/`, run `keryx update`
+(or `keryx init` on a fresh project) to regenerate the installed copy at
+`.metaproject/rules/`. This stays inside the project — it never writes to a
+home-directory (`~`) location.
+
+After editing the project's own root `AGENTS.md`/`CLAUDE.md`, run:
 
 ```bash
-keryx update
+keryx rules sync
 ```
 
-### Sync Targets
-- `~/.cursor/rules/AGENTS.md` — Cursor global rules
-- `~/.codex/AGENTS.md` — Codex global rules
-- `~/.config/zed/AGENTS.md` — Zed global rules
-- `~/.config/opencode/AGENTS.md` — OpenCode global rules
+This imports the root `AGENTS.md`/`CLAUDE.md` into `.metaproject/rules/` and
+refreshes the routing index. It is also project-local and writes no
+home-directory (`~`) path.
 
 ## Rule File Standard
 Every core rule MUST include:

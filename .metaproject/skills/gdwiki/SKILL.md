@@ -5,6 +5,59 @@ description: Use FIRST for conceptual questions - how something works, why, arch
 
 # gdwiki Skill
 
+## Before you trust a page: check whether it is current
+
+A wiki page is a claim about code that may have moved since anyone checked.
+Reading a stale page and generating against it is the failure this whole
+mechanism exists to prevent, so consult freshness BEFORE treating a page as
+context, not after being wrong.
+
+- MCP: `wiki_freshness` (read-only; pass `page` to ask about one).
+- CLI: `keryx wiki freshness` — or read
+  `.metaproject/data/wiki/freshness/latest.json` directly, which is one file
+  and costs nothing.
+
+How to read the answer:
+
+- A page listed `stale-reference` has a Reference block that no longer matches
+  the graph. Its **prose may still be sound**; its API list is not. Say so
+  rather than quoting the list as current.
+- A page listed `stale-prose` may describe behaviour that changed. Quote it
+  with the caveat, and prefer reading the code it names.
+- A page listed `unknown` has never been verified. That is NOT the same as
+  stale, and NOT the same as fresh — nobody has checked.
+- **An empty finding list with a non-empty `limitations` does not mean the
+  wiki is fresh.** It means the check could not run: the graph was not built,
+  the symbol layer was unavailable, or there is no git history. Read
+  `limitations` first, every time.
+
+Repairing is a separate act from reading, and it belongs to a person:
+`keryx wiki refresh` regenerates Reference blocks deterministically without a
+model, and `keryx wiki verify --page <p>` records that someone reviewed a
+page. Do not stamp provenance on a human's behalf — the field means a person
+looked.
+
+## A page count is not coverage
+
+`keryx wiki status` prints `total pages: N`, `keryx wiki index` reports
+`(N pages)`, and the orientation block injected each turn opens with
+`pages: N`. Every one of those is a **count of files**, not a completeness
+claim: none of them knows which questions the wiki cannot answer, so **it is
+not a completeness measure** and must never be quoted as one.
+
+What to read instead:
+
+- The **per-type** breakdown under `## Pages by type`. A type at `0` means no
+  page of that kind exists at all — on this repository, `business-rule`,
+  `user-scenario`, `domain-model`, `service` and `integration` have all
+  been `0` while the total read `50`.
+- The page's own `## Questions this page must close` table, where each
+  question is `covered`, `partial`, `unknown` or `not-applicable` with a
+  basis. A filled heading is not an answer.
+- `keryx wiki ask`'s status. `no-match` and `insufficient-evidence` are
+  answers about the corpus; treat them as "the wiki does not cover this", not
+  as a gap in your own reading.
+
 Use this skill for project knowledge that is not a literal code detail:
 architecture, domain models, business rules, user scenarios, service/component
 responsibilities, integrations, and known decisions. The user does not need to

@@ -135,7 +135,7 @@ Claude Code's `settings.json` registers `channel.ts` as an MCP server named `hel
 
 **Secondary flow (tool calls):** Claude Code → reply, remember, recall, permissions, TTS, polls
 
-Tools exposed: `reply`, `remember`, `recall`, `forget`, `update_status`, `list_memories`, `search_project_context`, `scan_project_knowledge`, `react`, `edit_message`, `send_photo`, `send_poll`, `skill_view`, `propose_skill`, `save_skill`, `list_agent_skills`, `curator_run`, `curator_status` (18 tools total).
+Tools exposed: `reply`, `remember`, `recall`, `forget`, `update_status`, `list_memories`, `search_project_context`, `scan_project_knowledge`, `react`, `edit_message`, `send_photo`, `send_document`, `send_poll`, `skill_view`, `propose_skill`, `save_skill`, `list_agent_skills`, `curator_run`, `curator_status` (19 tools total).
 
 Permission gating runs exclusively on this transport: when Claude Code is about to perform a destructive operation, it emits a `notifications/claude/channel/permission_request` notification. `PermissionHandler` intercepts it, checks auto-approve patterns, and if no match, sends an interactive Telegram message with `✅ Yes / ✅ Always / ❌ No` buttons and polls `permission_requests` at 500 ms until the user responds.
 

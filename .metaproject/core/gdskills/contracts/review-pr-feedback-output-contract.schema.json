@@ -1,0 +1,375 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://keryx.local/schemas/review-pr-feedback/output-contract.schema.json",
+  "title": "ReviewPrFeedbackOutput",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "mode",
+    "pr",
+    "head_sha",
+    "collected",
+    "verdicts",
+    "plan_items",
+    "summary",
+    "screen_status",
+    "screened",
+    "excluded_for_injection",
+    "filtered"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": [
+        "DONE",
+        "DONE_WITH_CONCERNS",
+        "NEEDS_CONTEXT",
+        "BLOCKED"
+      ]
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "analyze",
+        "fix"
+      ]
+    },
+    "pr": {
+      "type": "string",
+      "description": "<owner>/<repo>#<n>"
+    },
+    "head_sha": {
+      "type": "string",
+      "description": "The commit the collection and every verdict are true of. A run that cannot name it is stale, never fresh."
+    },
+    "collected": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "filtered": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "comment",
+          "reason"
+        ],
+        "properties": {
+          "comment": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "Everything the collection or comment_ids removed, with the reason. Never empty by omission."
+    },
+    "verdicts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "valid": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "valid-wider": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "already-fixed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "not-reproducible": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "disagree": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "out-of-scope": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "needs-clarification": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unverified": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "plan_items": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "fix": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "description": "Present in fix mode only. Null in analyze mode: no branch, no PR, no merge, no reply.",
+      "required": [
+        "flow_id",
+        "flow_status",
+        "merged_into",
+        "operator_confirmed"
+      ],
+      "properties": {
+        "flow_id": {
+          "type": "string"
+        },
+        "flow_status": {
+          "type": "string",
+          "enum": [
+            "initialized",
+            "in_progress",
+            "implemented",
+            "done",
+            "blocked",
+            "failed"
+          ]
+        },
+        "fix_pr_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "merged_into": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The reviewed PR's head branch. Any other value is a fix that did not land inside the pull request it answers."
+        },
+        "merge_sha": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The merge commit. Its presence is what makes the round's exit condition enforceable: a recorded merge REQUIRES remaining_findings.blocker/major/minor to be 0. The threshold was prose in two skills and nothing refused an output that merged over three blockers."
+        },
+        "review_rounds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "remaining_findings": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "blocker": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "major": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "minor": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "info": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "description": "A merge requires blocker, major and minor to be zero. info does not hold the loop."
+        },
+        "operator_confirmed": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "confirmed_by",
+            "confirmed_at",
+            "plan_digest"
+          ],
+          "description": "Who authorised the merge and the replies, and against which plan. REQUIRED in fix mode and NOT nullable: the field exists to separate an approved run from an assumed one, and both an omitted field and a null one are the assumed run wearing the approved one's shape. An interactive run records the operator it asked; there is no merge without somebody behind it.",
+          "properties": {
+            "confirmed_by": {
+              "type": "string",
+              "minLength": 1
+            },
+            "confirmed_at": {
+              "type": "string",
+              "minLength": 1
+            },
+            "plan_digest": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "if": {
+        "required": [
+          "merge_sha"
+        ],
+        "properties": {
+          "merge_sha": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "remaining_findings": {
+            "required": [
+              "blocker",
+              "major",
+              "minor"
+            ],
+            "properties": {
+              "blocker": {
+                "const": 0
+              },
+              "major": {
+                "const": 0
+              },
+              "minor": {
+                "const": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    "replies": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "description": "Present in fix mode only, after the merge.",
+      "properties": {
+        "posted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "escalated": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "backlog": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      }
+    },
+    "action_items": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "learning_proposal": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Path to the proposal keryx review learn wrote. Proposed, never applied \u2014 applying is the caller's step."
+    },
+    "needs_context": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "summary": {
+      "type": "string"
+    },
+    "screened": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Comments passed through `keryx security check-input`. REQUIRED: absent and 0 are different claims. Whether the screen ran at all is `screen_status`, not this \u2014 a fallback run reports `screened: 0` with `screen_status: unavailable`, and that pairing is enforced."
+    },
+    "excluded_for_injection": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": [],
+      "description": "Comment ids carrying a prompt-injection finding. They produce no plan item and skip Steps 6 and 7; they are still answered in Step 10."
+    },
+    "screen_status": {
+      "type": "string",
+      "enum": [
+        "ran",
+        "unavailable"
+      ],
+      "description": "Whether the injection screen ran at all. REQUIRED, because `screened: 0` is ambiguous on its own: the documented fallback path \u2014 keryx CLI unavailable \u2014 screens nothing and would otherwise emit exactly what a run that screened and found nothing emits. `unavailable` obliges the report to carry the line saying so."
+    }
+  },
+  "if": {
+    "required": [
+      "mode"
+    ],
+    "properties": {
+      "mode": {
+        "const": "fix"
+      }
+    }
+  },
+  "then": {
+    "required": [
+      "fix"
+    ],
+    "properties": {
+      "fix": {
+        "type": "object"
+      }
+    }
+  },
+  "else": {
+    "properties": {
+      "fix": {
+        "type": "null"
+      },
+      "replies": {
+        "type": "null"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "screen_status"
+        ],
+        "properties": {
+          "screen_status": {
+            "const": "unavailable"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "screened": {
+            "const": 0
+          },
+          "excluded_for_injection": {
+            "maxItems": 0
+          }
+        }
+      }
+    }
+  ]
+}

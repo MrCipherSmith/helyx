@@ -224,25 +224,15 @@ grep -r "focus_keyword" --include="*.spec.ts" --include="*.test.ts" src/
 
 ### Output for Mode B
 
-Generate **Feature Specification Document** instead of Change Analysis:
+Generate **Feature Specification Document** instead of Change Analysis, using the same flat analysis-category layout as Mode A:
 
 ```
-<DOCS_ROOT>/analysis/<feature>-current-state-<date>/
-├── README.md
-├── specification/
-│   ├── en/feature-specification.md
-│   ├── ru/feature-specification.md
-│   └── ai/feature-specification.md
-├── architecture/
-│   ├── data-flow.md
-│   ├── component-diagram.md
-│   └── api-contracts.md
-├── usage/
-│   ├── examples.md
-│   └── patterns.md
-└── tests/
-    └── test-coverage.md
+<DOCS_ROOT>/analysis/<feature-name>/
+├── report.md                    # Feature specification: purpose, API contracts, business logic, data flow, architecture, usage examples, test coverage
+└── implementation-plan.md       # Only if formalization surfaces follow-up implementation work
 ```
+
+No date-stamped folder, no `-current-state-<date>` suffix, and no mandatory `en`/`ru`/`ai` split — add language variants only if the user explicitly asks.
 
 ---
 
@@ -397,7 +387,7 @@ Analyzing only new changes...
       "branch": "feature-name",
       "sha": "abc123",
       "base_sha": "def456",
-      "path": "feature-name-2024-01-15",
+      "path": "feature-name",
       "created_at": "2024-01-15T10:00:00Z",
       "updated_at": "2024-01-15T10:00:00Z",
       "status": "complete",
@@ -526,7 +516,7 @@ git log --oneline "${BASE_SHA}..HEAD"
 
 ## Step 10: Gherkin Output Format (Full)
 
-The AI-readable format in `report/ai/report.md` and `plans/ai/implementation-plan.md` uses Gherkin-style scenarios.
+Gherkin-style scenarios in `report.md` (and its `ai` language variant, when one is generated) make analysis results parseable by other AI agents. The same applies to `implementation-plan.md` for Phase scenarios.
 
 **Purpose**: Enable other AI agents to parse analysis results programmatically.
 
@@ -633,7 +623,7 @@ Feature: [Concise Feature Name]
     And the risk level is "[Low/Medium/High]"
 ```
 
-### 7. Implementation Plan (in plans/ai/)
+### 7. Implementation Plan (in implementation-plan.md)
 ```gherkin
 Feature: Implementation Plan for [Feature Name]
   Background:
@@ -711,7 +701,7 @@ Feature: Implementation Plan for [Feature Name]
 
 ## Step 13: Full Metrics and Complexity Score
 
-Track and report in `metrics/analysis-metrics.md`:
+Track and report in the `## Analysis Metrics` section of `report.md`:
 
 ```markdown
 ## Analysis Metrics

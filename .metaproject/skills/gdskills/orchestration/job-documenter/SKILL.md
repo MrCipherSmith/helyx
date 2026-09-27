@@ -1,17 +1,20 @@
 ---
 name: job-documenter
-description: "Use when a job folder needs to be initialized, or analysis/report/review documents need to be created or updated in jobs/."
+model_tier: light
+description: "Use when a job folder needs to be initialized, or analysis/report/review documents need to be created or updated in jobs/. NOT for: producing the analysis or report content itself — this skill persists what the orchestrator hands it (use job-orchestrator)."
 triggers:
-  - "Document job"
+  - "job docs"
+  - "document job"
+  - "persistent job documentation"
   - "Initialize job folder"
   - "Save job report"
   - "Add job document"
 metadata:
   author: "MrCipherSmith"
   version: "1.0.0"
-  category: "documentation"
+  category: "orchestration"
+  compatible_harnesses: "cursor,codex,zed,opencode,claude"
 license: "MIT"
-compatibility: "cursor,codex,zed,opencode"
 ---
 
 <SUBAGENT-STOP>
@@ -344,7 +347,7 @@ When the orchestrator dispatches this skill as a sub-agent, it should use this p
 ```
 You are the job-documenter agent. Your task is to manage job documentation.
 
-Load the skill from: skills/job-documenter/SKILL.md
+Load the skill from: .metaproject/skills/gdskills/orchestration/job-documenter/SKILL.md
 Follow the rules from: rules/core/jobs-documentation.mdc
 
 ACTION: <action>
@@ -371,3 +374,41 @@ Execute the action and return a DOCUMENTER_RESULT block.
 8. **DO NOT** delete or overwrite existing documents without explicit instruction.
 9. **DO NOT** modify files in other job folders.
 10. **DO NOT** interact with the user directly — all communication goes through the orchestrator.
+
+---
+
+## Red Flags
+
+Stop and re-read this skill if you are thinking:
+
+| Rationalization | Rebuttal |
+|---|---|
+| "The write call raised no error, so the file is there." | Rule 3 requires verifying existence after every write. A missing parent directory, a `JOBS_ROOT` that does not exist, or a path assembled from a truncated job name all fail in ways that look like success until the orchestrator reads back nothing. |
+| "`JOBS_ROOT` wasn't in the dispatch, so `.metaproject/jobs/` is the obvious default." | The JOBS_ROOT note forbids resolving it yourself, with no fallback. A missing `JOBS_ROOT` is a `status: error` result — writing to a guessed root scatters a job's documents where the orchestrator will never look for them. |
+| "The README table already lists this document, so the directory must match it." | The README is what you wrote; the directory is what exists. `finalize` cross-checks every table entry against a real listing precisely because those two drift, and the drift is invisible from either side alone. |
+| "A document with this name already exists, so the new content replaces it." | Rule 8: no overwrite without explicit instruction. The existing file is a previous phase's record; the orchestrator asked to ADD a document, not to erase the trail it is keeping. |
+| "The file operation failed, so I should stop and surface the exception." | Rule: never throw. The orchestrator has a decision to make (retry, continue, abort) and can only make it from a structured `DOCUMENTER_RESULT` with `status: error` and `error_details`. A crash gives it nothing to route on. |
+| "The payload the orchestrator sent is thin — I'll ask the user what to put in the report." | Rule 10: no direct user contact. Persist exactly what was handed over; an incomplete payload is reported as a discrepancy, not filled in from a conversation this skill is not part of. |
+| "The job is basically finished, so I'll set the README status to completed." | Only the `finalize` action, with an explicit `FINAL_STATUS`, may set it. Marking a job complete from inside `add-document` reports an outcome the orchestrator has not reached. |
+
+---
+
+## Verification
+
+Report `STATUS: <TOKEN>` as the first line of the response, followed by the `DOCUMENTER_RESULT` block:
+
+```
+STATUS: DONE                — the action completed and every written path was verified to exist
+STATUS: DONE_WITH_CONCERNS  — the action completed, but the README/directory cross-check found discrepancies
+STATUS: BLOCKED             — cannot proceed: JOBS_ROOT missing from the dispatch, job folder absent for a non-init action
+STATUS: FAILED              — a file operation failed and could not be recovered; error_details says what
+```
+
+Before reporting `DONE`, all of these must hold:
+
+- Every path named in `DOCUMENTER_RESULT` was listed or read back after writing, not inferred from the write succeeding.
+- Every document written carries its metadata block and an ISO 8601 UTC timestamp.
+- `README.md`'s Documents tables and the real contents of `man/` and `ai/` agree entry for entry; any mismatch is reported in `verification`, never quietly corrected in only one of the two.
+- No file was created, modified or deleted outside `<JOBS_ROOT>/<JOB_NAME>/`.
+- The `DOCUMENTER_RESULT` block names the action actually performed and has every field that action's contract defines; `status: error` always carries `error_details`.
+- For `finalize`: README Status equals the given `FINAL_STATUS`, `total_documents` matches the real file count, and the summary is present.

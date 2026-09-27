@@ -1,20 +1,20 @@
 ---
 name: review-frontend
+model_tier: standard
 description: "Use when a frontend review is requested, checking React component patterns, MobX state management (observer, actions, computed, reactions, lifecycle), View-Store boundaries, and TypeScript safety in changed frontend code. NOT for backend patterns, security vulnerabilities, performance bottlenecks, or cross-layer architecture."
 triggers:
-  - "review frontend"
   - "frontend review"
+  - "component review"
+  - "ui review"
   - "review React"
-  - "review MobX"
-  - "review store"
   - "review components"
-  - dispatched by review-orchestrator
 metadata:
   author: "MrCipherSmith"
   version: "1.1.0"
   category: "review"
+  compatible_harnesses: "cursor,codex,zed,opencode,claude"
+  stack_requires: "react,mobx"
 license: "MIT"
-compatibility: "cursor,codex,zed,opencode,claude"
 ---
 
 # Review: Frontend (React + MobX + TypeScript)
@@ -57,17 +57,48 @@ This skill consolidates what was previously split between `code-style-review` (f
 
 ## Iron Laws
 
-1. **Every observable mutation outside an action or `runInAction` is at minimum a `major` finding.** No exception for "small stores" or "simple assignments".
-2. **Missing `observer()` on a component that reads MobX observables is always a `blocker`.** The component will not react to state changes — this is a silent, runtime correctness bug.
-3. **An API call in a component is always a `blocker`.** API/IO belongs in private store methods, not in JSX, hooks, or event handlers within the component file.
-4. **`public` keyword on any class member is always an error.** The ESLint rule `@typescript-eslint/explicit-member-accessibility` with `"no-public"` forbids it.
-5. **Inter-store callbacks (`onChangeX`, `handleX`, `syncX`) without `private` are always a `major`.** Ask: "Is this called from JSX?" If no — it must be `private`.
+### Shared laws (every reviewer)
+
+1. **A claim of runtime harm with no reproducible path is `info`.** If you cannot
+   name the input, call, or condition that reaches the code, you have an
+   observation, not a finding. Report it as `info` and say what would settle it.
+2. **Never flag the theoretical.** The path you describe must exist in the code
+   under review. Do not report a safe API because it could be misused, or a
+   pattern because it is often wrong elsewhere.
+3. **One finding per class, not one per occurrence.** When the same shape appears
+   at several sites, report it once and list every site. Ten findings that are one
+   finding hide the other nine problems.
+
+Severity levels are defined once, in `review-orchestrator/SKILL.md` →
+**Severity (canonical)**. This reviewer does not restate them: `blocker` is the
+four merge-blocking shapes named there and nothing else, and the `major`/`minor`
+boundary is the trigger-and-outcome test.
+
+### Frontend / MobX laws
+
+These say what is **always reported**. What severity each carries is the
+conditions table under Finding Format, and it is the canonical rubric applied —
+not a second opinion.
+
+1. **Every observable mutation outside an action or `runInAction` is reported.**
+   No exception for "small stores" or "simple assignments".
+2. **Missing `observer()` on a component that reads MobX observables is
+   reported.** The component will not react to state changes — a silent runtime
+   correctness bug, and silence is exactly why nobody else will find it.
+3. **An API call in a component is reported.** API/IO belongs in private store
+   methods, not in JSX, hooks, or event handlers within the component file.
+4. **`public` on a class member is reported.** The ESLint rule
+   `@typescript-eslint/explicit-member-accessibility` with `"no-public"` forbids
+   it — so the machine already catches it, which is why it is `minor` here rather
+   than a merge gate.
+5. **Inter-store callbacks (`onChangeX`, `handleX`, `syncX`) without `private` are
+   reported.** Ask: "Is this called from JSX?" If no — it must be `private`.
 
 ---
 
 ## Scope Detection
 
-See shared script: `skills/shared/git-merge-base.md`
+See shared script: `.metaproject/skills/gdskills/shared/git-merge-base.md`
 
 Run the script from that file to determine `MERGE_BASE` (`BASE_SHA`) and `SCOPE` before proceeding.
 
@@ -114,7 +145,7 @@ Extract and note:
 - Any patterns explicitly declared as project standard — follow them, do NOT flag as violations
 - Any patterns explicitly declared as anti-patterns — flag them even if not in this skill's generic checklist
 
-**Resolution rule:** When a project CLAUDE.md pattern conflicts with this skill's generic checklist, the CLAUDE.md pattern wins — unless it violates an Iron Law.
+**Resolution rule:** When a project CLAUDE.md pattern conflicts with this skill's generic checklist, the CLAUDE.md pattern wins — unless it violates an Iron Law. It never overrides the canonical severity rubric: a project convention decides what is reported, not how merge-blocking it is.
 
 If no CLAUDE.md is found, proceed normally. CLAUDE.md is optional and non-blocking.
 
@@ -132,7 +163,7 @@ If no CLAUDE.md is found, proceed normally. CLAUDE.md is optional and non-blocki
 - [ ] Conditional reading of observables is still observable access — `if (store.isLoaded)` triggers tracking; wrapper is required regardless of conditionality
 
 Flags:
-- Component reads `store.*` or `useLocalObservable` result but is not wrapped in `observer` — **blocker**
+- Component reads `store.*` or `useLocalObservable` result but is not wrapped in `observer` — **major** (stale UI; not one of the four merge-blocking shapes)
 - `observer` applied inside another HOC wrapper instead of outside — **major**
 
 #### A2. MVVM Boundary (Business Logic in Store, Not Component)
@@ -143,7 +174,7 @@ Flags:
 - [ ] Computed/derived values MUST be `@computed` getters in the store, not inline derivations in the component body
 
 Flags:
-- `fetch()` / `axios` / `httpClient` call directly in component (hook or handler) — **blocker**
+- `fetch()` / `axios` / `httpClient` call directly in component (hook or handler) — **major** (layer violation; `review-architecture` rates the same condition `major`)
 - Business logic (conditionals, transformations, validation) inside a component event handler instead of a store method — **major**
 - Derived value computed inline in component that could be a `@computed` getter — **minor**
 
@@ -157,7 +188,7 @@ Flags:
 
 Flags:
 - `useEffect` calls `store.init()` or `store.loadX()` — **major**
-- `useEffect` contains `fetch()` or IO — **blocker** (API in component)
+- `useEffect` contains `fetch()` or IO — **major** (API in component)
 - `useEffect` contains business logic / state derivation — **major**
 - `useEffect` creates a subscription/timer/listener with no cleanup return — **major** (memory leak)
 
@@ -196,8 +227,8 @@ Flags:
 - [ ] `@observable.ref` is preferred for large external objects or objects that manage their own reactivity
 
 Flags:
-- `makeObservable(this)` missing from constructor — **blocker**
-- Observable state missing `@observable` decorator — **blocker**
+- `makeObservable(this)` missing from constructor — **major** (nothing is reactive; stale UI, not corrupted state)
+- Observable state missing `@observable` decorator — **major**
 - Derived value in plain method instead of `@computed` — **minor**
 
 #### B2. Member Ordering
@@ -229,7 +260,7 @@ Correct accessibility:
 Decision rule for inter-store callbacks: ask "Is this called from JSX or a React event handler?" If NO — it is `private`.
 
 Flags:
-- `public` keyword on any member — **blocker** (ESLint error)
+- `public` keyword on any member — **minor** (ESLint `no-public` already fails CI; a reviewer restating a lint rule is not a merge gate)
 - `onChangeX`, `onFireX`, `handleX`, `syncX` without `private` — **major**
 - Missing `private` on internal state or helper methods — **major**
 - Missing `private readonly` on injected dependencies — **minor**
@@ -243,7 +274,7 @@ Flags:
 Flags:
 - `IObservableArray` field reassigned instead of using `.replace()` — **major**
 - `ObservableMap` field reassigned instead of `.replace()` or `.merge()` — **major**
-- Observable mutation outside `runInAction` in async context — **blocker** (Iron Law 1)
+- Observable mutation outside `runInAction` in async context — **major**, or **blocker** where the interleaving can corrupt persisted state (frontend law 1)
 
 #### B5. Reactions and Disposers
 
@@ -276,7 +307,7 @@ Flags:
 - Public UI method missing `@action.bound` — **major**
 - Public helper method marked `@action.bound` but does not mutate state — **minor**
 - Public async action doing API/IO directly instead of delegating to private — **major**
-- State mutation after `await` outside `runInAction` — **blocker** (Iron Law 1)
+- State mutation after `await` outside `runInAction` — **major**, or **blocker** where the interleaving can corrupt persisted state (frontend law 1)
 - Missing `try/catch/finally` on private async method owning loading flags — **major**
 - `catch (err: any)` instead of `catch (err: unknown)` — **minor**
 
@@ -303,7 +334,7 @@ Flags:
 When two stores synchronize state in both directions, at least one direction MUST have an equality guard (`if (newValue !== currentValue)`) before writing to the other store. Without this, changes bounce indefinitely.
 
 Flags:
-- Bidirectional store sync without equality guard — **blocker**
+- Bidirectional store sync without equality guard — **blocker** (unbounded update loop: the render hangs)
 - Store A writes to Store B in a callback from Store B without `!==` check — **blocker**
 - Truthy guard (`if (value)`) on optional/nullable field instead of equality check in sync logic — **major**
 
@@ -315,7 +346,7 @@ Flags:
 
 Flags:
 - API call inside a public `@action.bound` method body — **major**
-- API call in a component (hook, handler, useEffect) — **blocker** (Iron Law 3)
+- API call in a component (hook, handler, useEffect) — **major** (frontend law 3)
 
 #### B10. Lifecycle Initialization and Disposal
 
@@ -540,14 +571,22 @@ STATUS: DONE_WITH_CONCERNS
 [List checklist sections with no findings, confirming they were checked]
 ```
 
-### Severity definitions
+### Where frontend conditions land
 
-| Severity | Meaning |
-|----------|---------|
-| `blocker` | Silent correctness bug or Iron Law violation; component will not behave correctly or store will corrupt state |
-| `major` | Pattern violation that will cause bugs under realistic usage or future changes |
-| `minor` | Convention deviation or defensive gap; does not cause immediate bugs but reduces maintainability |
-| `info` | Observation worth noting; no concrete bug in current code |
+Severity comes from **Severity (canonical)** in `review-orchestrator/SKILL.md`.
+This reviewer keeps no table of its own; what follows is where its recurring
+conditions land under that rubric, not a second rubric.
+
+| Condition | Severity | Why, under the canonical rubric |
+|---|---|---|
+| A store mutation that corrupts or loses persisted state | `blocker` | Data corruption |
+| A render path that throws on an input the change admits | `blocker` | Crash |
+| Missing `observer()` on a component that reads observables | `major` | Named trigger (the observable changes) and named outcome (the UI does not update). Stale UI is not a crash, data loss, vulnerability, or missing acceptance criterion |
+| Observable mutation outside an action or `runInAction` | `major` — `blocker` only where the interleaving can corrupt persisted state | Same wording as `review-logic` and `review-highload` for a race: the outcome decides |
+| API/IO call in a component | `major` | Layer violation. Identical to `review-architecture`'s rule for the same condition, which previously called it `major` while this file called it `blocker` |
+| `useState` for store-managed state; `useMemo` for a derived store value; a store constructed in the component body | `major` | Named trigger (a re-render) and named outcome (state lost or recreated) |
+| `public` on a class member; `useCallback` around a store method; a store created with `useMemo` instead of `useLocalObservable`; an unprivate inter-store callback | `minor` | The code behaves correctly. A lint rule that fails CI is caught by the machine, not by a reviewer, and the cost is to the next editor |
+| Observation with no concrete bug | `info` | Shared laws 1 and 2 |
 
 ---
 
@@ -557,11 +596,11 @@ Stop and re-read these rules if you are thinking:
 
 | Rationalization | Why it's wrong |
 |---|---|
-| "The store is small, no need for full observer wrapping" | Missing observer() is a blocker regardless of store size — Iron Law 2 |
-| "The mutation happens in a non-async method, so runInAction isn't needed" | Mutations outside action/runInAction are always at least major — Iron Law 1 |
-| "I'll mark the API call in component as minor to avoid friction" | API in component is always a blocker — Iron Law 3 |
-| "The `public` keyword is just a style issue, I'll call it minor" | It's an ESLint error that will fail CI — it is a blocker |
-| "This inter-store callback works fine as public" | Iron Law 5: if it's not called from JSX, it must be private |
+| "The store is small, no need for full observer wrapping" | Missing `observer()` is reported regardless of store size — frontend law 2. It is `major`, not `blocker`: stale UI is not one of the four shapes |
+| "The mutation happens in a non-async method, so runInAction isn't needed" | Mutations outside action/runInAction are always at least `major` — frontend law 1 |
+| "I'll mark the API call in component as minor to avoid friction" | API in a component is `major`, never `minor` — frontend law 3, and the same severity `review-architecture` gives it |
+| "The `public` keyword is just a style issue, I'll call it minor" | It is `minor` — but still reported. The linter fails CI on it, which is why a reviewer does not need to block merge on it too |
+| "This inter-store callback works fine as public" | Frontend law 5: if it is not called from JSX, it must be `private` |
 | "No spec compliance check needed for this skill" | Correct — this skill covers Stage 2 (code quality) only; spec compliance is handled by the orchestrator or review-logic |
 | "I can suggest adding useCallback everywhere for safety" | With MobX+observer, useCallback is rarely needed and adds noise; only flag when concretely justified |
 | "The bidirectional sync looks fine, no equality guard needed" | Bidirectional sync without equality guard is a blocker — infinite loop risk |
@@ -589,7 +628,7 @@ If the file does not exist or is not provided, proceed normally — context is o
 
 ## Orchestrated Review Contract
 
-When dispatched by `review-orchestrator`, follow the provided `reviewer-input.schema.json` payload. Return a `REVIEW_RESULT` object compatible with `skills/review-orchestrator/reviewer-finding.schema.json`, then a concise markdown summary. Keep findings evidence-based, include concrete `suggested_fix` for every blocker/major, and return `NEEDS_CONTEXT` instead of guessing when required context is missing.
+When dispatched by `review-orchestrator`, follow the provided `reviewer-input.schema.json` payload. Return a `REVIEW_RESULT` object compatible with `.metaproject/skills/gdskills/review/review-orchestrator/reviewer-finding.schema.json`, then a concise markdown summary. Keep findings evidence-based, include concrete `suggested_fix` for every blocker/major, and return `NEEDS_CONTEXT` instead of guessing when required context is missing.
 
 ---
 

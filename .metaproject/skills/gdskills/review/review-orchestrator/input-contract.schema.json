@@ -46,11 +46,10 @@
     "model_strategy": {
       "type": "string",
       "enum": [
-        "current",
         "ask",
         "adaptive"
       ],
-      "default": "current"
+      "default": "adaptive"
     },
     "token_budget": {
       "type": "object",

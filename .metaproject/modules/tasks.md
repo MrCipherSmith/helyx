@@ -5,7 +5,8 @@ Version: 0.1.0
 ## Purpose
 
 Agent-first flow lifecycle: initialization with frozen acceptance criteria,
-strict status state machine, draft-PR completion gates, and tracker reporting.
+strict status state machine, reviewed-and-merged PR completion gates, and
+tracker reporting.
 
 ## Commands
 

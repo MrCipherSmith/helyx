@@ -16,10 +16,124 @@
   ],
   "properties": {
     "id": { "type": "string" },
+    "global_id": {
+      "title": "The finding's identity, unique across every review package",
+      "description": "`id` is the DISPLAY form (`F-001`) and is per-report: 15 of 43 distinct ids in the recorded corpus appear in more than one package, and `F-001` denotes six different findings, so joining a finding to a commit, a ledger row or a flow journal by `id` is unsafe for two thirds of it. `global_id` is the join key: `<reviewId>#<id>`, minted once when the finding is first recorded and CARRIED VERBATIM thereafter, so a finding re-reported in round N+1 keeps the key it was minted under in round N. Uniqueness comes from `reviewId` being a package directory name rather than from a registry, which is what makes the key recomputable from disk with no new state. Optional because 83 findings predate it and read back without one; a record written by the current pipeline always carries it. The `pattern` is not decoration: `mintGlobalFindingId` is the only writer inside this repository, but a producer outside it may supply any string, and a `global_id` that is not `<reviewId>#<id>` joins to nothing while looking like a key — the measurement in scripts/review-precision-baseline.ts splits on the separator to reach the package.",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^#]+#[^#]+$"
+    },
     "reviewer": { "type": "string" },
+    "disposition": {
+      "title": "What became of this finding, and the evidence for saying so",
+      "description": "Declared HERE and deliberately NOT in the bundled reviewer-finding.schema.json: a reviewer states what is wrong, it never states what became of the finding. The measured reason this exists: precision = acted-on / (acted-on + dismissed-incorrect) computed over the recorded corpus returned 53/53 = 100%, not because the reviewers were right but because nothing on disk could express a wrong finding. `classification` looked like a validity verdict and was assigned from the ingest MODE; decisions.md said the same sentence for every finding. Only `acted-on` and `dismissed-incorrect` say anything about reviewer accuracy, which is why the three non-accuracy dismissals are separate states rather than one `dismissed` bucket — collapsing them is what makes a dismissal rate meaningless.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "unknown",
+            "acted-on",
+            "dismissed-incorrect",
+            "dismissed-wont-fix",
+            "dismissed-out-of-scope",
+            "dismissed-deprioritised",
+            "answered-disagree"
+          ],
+          "default": "unknown",
+          "description": "`unknown` is the default and the reading of an absent `disposition`: nobody recorded an outcome. It is never counted as valid — an unknown counted as acted-on inflates the very figure this field exists to make measurable."
+        },
+        "evidence": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Where the outcome is written down: the commit that closed it, the test that went red, the decision that dismissed it. A disposition without this is an assertion, and assertions are what produced a corpus whose findings all appear correct. `answered-disagree` is the one state that is NOT a dismissal: it records that our verifier refuted an external comment, which settles the code and settles nothing about the person who asked — the reply is still owed."
+        }
+      },
+      "if": {
+        "required": ["state"],
+        "properties": { "state": { "const": "unknown" } }
+      },
+      "else": { "required": ["evidence"] }
+    },
+    "verification": {
+      "title": "What an independent check found when it went looking for this finding",
+      "description": "Declared HERE and deliberately NOT in the bundled reviewer-finding.schema.json, on the same basis as `disposition`: a reviewer states what is wrong, and whether someone else could reproduce it is not something the reviewer knows. The rule is sharper for this field than for `disposition`, because the reviewer that raised a finding is the ONE actor forbidden to answer it (AC9) — declaring the property in the shape reviewers emit would put the forbidden field next to `severity` in every reviewer's output. This replaces `review-strict`, which re-read findings and adjusted severity with no new evidence: intrinsic self-correction is measured to degrade accuracy (GPT-4 on GSM8K 95.5 -> 91.5 -> 89.0 across rounds; GPT-3.5 on CommonSenseQA 75.8 -> 38.1; Huang et al., ICLR 2024, arXiv:2310.01798). An ABSENT verification means nobody checked — which is true of all 83 pre-contract findings on disk — and is never a reason to drop a finding.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verdict", "method", "evidence"],
+      "properties": {
+        "verdict": {
+          "type": "string",
+          "enum": ["confirmed", "refuted", "unverifiable"],
+          "description": "`unverifiable` is not a failure state; it is the honest majority answer when nothing could be run. Only `refuted` removes anything, and only under verification_mode: filter."
+        },
+        "method": {
+          "type": "string",
+          "enum": ["execution", "site-check", "reasoning"],
+          "description": "Strongest first. `execution` ran a command or test that FAILS IF THE FINDING IS REAL — verification that executes rejects 85-96% of false reports against 4-15% unaided while finding 30-44% more true bugs (AnyPoC, arXiv:2604.11950). `site-check` confirmed the class_scope sites exist. `reasoning` is the residual, and it is capped: see the conditional below."
+        },
+        "evidence": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The command that ran and what it returned, or the search that enumerated the sites. A verdict with nothing behind it is the operation this replaces."
+        },
+        "verifier": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Who checked. Beyond the three properties AC7 names, and present because AC9 is otherwise untraceable after the fact: the merge refuses a claim whose verifier equals the finding's `reviewer`, but a record that does not say who verified cannot be audited for that rule — the same defect as `reviewer` being hardcoded to `review-orchestrator` on all 83 recorded findings."
+        }
+      },
+      "if": {
+        "required": ["method"],
+        "properties": { "method": { "const": "reasoning" } }
+      },
+      "then": {
+        "properties": { "verdict": { "const": "unverifiable" } },
+        "description": "Reasoning alone produces no new evidence, so it can never reach `confirmed` (AC7). It cannot reach `refuted` either, and that extension is deliberate: `refuted` is the only verdict with a destructive consequence, so granting it to the weakest method would reinstate review-strict with the sign flipped. Anything checkable is `site-check` or `execution`; `reasoning` is what is left when nothing was run."
+      }
+    },
     "severity": { "type": "string", "enum": ["blocker", "major", "minor", "info"] },
+    "repo": {
+      "type": ["string", "null"],
+      "description": "Which repository `file` and `line` are in. Null, the default, means the repository under review. A cross-repo claim names the producer here and pins the ref it was read at in `evidence`; without this field a finding about another service's behaviour could not say where its evidence lived, so the rule that such a claim is `info` unless it has a `file:line` at a pinned ref could not be checked by anything but the reviewer's word. Declared in BOTH this schema and skills/review/review-orchestrator/reviewer-finding.schema.json: this one is additionalProperties:false, so a finding carrying `repo` is rejected here if only the reviewer-side schema knows about it."
+    },
     "file": { "type": ["string", "null"] },
-    "line": { "type": ["integer", "null"], "minimum": 1 },
+    "line": {
+      "title": "Where the finding points — DERIVED when the finding quotes code",
+      "description": "Reported by the reviewer only when there is nothing to quote. When `quote` is present this field is OUTPUT: `review ingest` finds the quote in `file` at the round's head and writes the line the match started on, overwriting whatever the reviewer said and recording both in `locator`. The reason is the failure it replaces — nothing compared a reported line to anything, so a number that had drifted travelled into findings.json, into the report, and into the disposition recorded against it. On a fix round the file has moved under the finding by construction, which is when the reported number is least trustworthy and most acted upon.",
+      "type": ["integer", "null"],
+      "minimum": 1
+    },
+    "quote": {
+      "title": "The code this finding is about, copied verbatim out of `file`",
+      "description": "What replaces asking the model for a line number: a model is poor at counting lines and good at repeating text it has just read. The quote is matched against `file` at the round's head — exactly first, then with whitespace collapsed, then not at all. A quote that matches in more than one place is `unlocatable` rather than anchored to the first hit, because choosing among them would be a guess wearing a line number. Absent for a finding that is about the round rather than a site.",
+      "type": ["string", "null"]
+    },
+    "locator": {
+      "title": "How `line` was arrived at",
+      "description": "Present exactly when the finding carries a quote. `derived` means the quote was found and `line` is where; `unlocatable` means it was not, and then `line` is null rather than a number nobody checked. `reported_line` keeps what the reviewer said, so a round can measure how far the claims drifted from the code — which is the only way to know whether deriving them repaired anything or is insurance.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": { "type": "string", "enum": ["derived", "unlocatable"] },
+        "method": { "type": "string", "enum": ["exact", "whitespace-normalised"] },
+        "reason": { "type": ["string", "null"] },
+        "reported_line": { "type": ["integer", "null"], "minimum": 1 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "state": { "const": "derived" } }, "required": ["state"] },
+          "then": { "required": ["method"] }
+        },
+        {
+          "if": { "properties": { "state": { "const": "unlocatable" } }, "required": ["state"] },
+          "then": { "required": ["reason"] }
+        }
+      ]
+    },
     "symbol": { "type": ["string", "null"] },
     "problem": { "type": "string" },
     "impact": { "type": "string" },
@@ -30,6 +144,36 @@
     "blocking_merge": { "type": "boolean", "default": false },
     "related_skill": { "type": ["string", "null"] },
     "learning_candidate": { "type": "boolean", "default": false },
+    "source": {
+      "title": "Who raised this finding: one of our reviewers, or somebody on the pull request",
+      "type": "string",
+      "enum": ["internal", "external"],
+      "default": "internal",
+      "description": "Absent reads as `internal`, which is every reviewer-emitted finding and all 83 pre-contract records; it is written only for `external`, on the same rule as `disposition` — a property present on every record says nothing. The value is not descriptive: three mechanisms branch on it. An external finding cannot be removed by the verifier (a machine deciding a human's question was invalid is not an answer), is not truncated by the per-reviewer findings cap, and blocks `flow complete` while it has no reply. A finding that lost this property would quietly acquire all three of the behaviours the criteria forbid."
+    },
+    "external_ref": {
+      "title": "The GitHub comment this finding is the record of",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "author", "url", "submitted_at"],
+      "description": "Every property here exists to make ONE operation possible after a session restart: replying in the right place, to the right person, exactly once. `id` is namespaced (`review-comment:12`) because the three GitHub endpoints number independently and a bare integer collides across them.",
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "author": { "type": "string", "minLength": 1 },
+        "url": { "type": "string", "minLength": 1 },
+        "path": { "type": ["string", "null"] },
+        "line": { "type": ["integer", "null"], "minimum": 1 },
+        "thread_id": {
+          "type": ["string", "null"],
+          "description": "The root comment of the review thread. Null for a review submission body and for a PR-level comment, neither of which has a thread — which is why the reply for those is a new top-level comment and is recorded as such rather than pretending to be threaded."
+        },
+        "submitted_at": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What decides whether a later reply from someone else makes an already-handled comment new again."
+        }
+      }
+    },
     "class_scope": {
       "title": "Every site of this shape, and how the set was derived",
       "description": "A finding anchored to one file:line is a claim about one site. Repeatedly, a fix repaired that site and left its siblings — one writer of five, one operator instruction of four, six readers of eight — and the next review round found them. Required for blocker and major; optional below, because enumerating the class for every info finding is theatre.",
@@ -55,5 +199,16 @@
     "required": ["severity"],
     "properties": { "severity": { "enum": ["blocker", "major"] } }
   },
-  "then": { "required": ["class_scope"] }
+  "then": { "required": ["class_scope"] },
+  "allOf": [
+    {
+      "title": "An external finding must say which comment it is the record of",
+      "description": "Kept in `allOf` rather than merged into the root `if`/`then` above, because that pair is pinned identical to the bundled reviewer-finding schema by review-finding-class-scope.test.ts — and `external_ref` deliberately does NOT belong there. A reviewer never emits an external finding; only the comment collector does. A `source: external` without a ref is a finding that can never be replied to, which is the one outcome AC13 calls unacceptable.",
+      "if": {
+        "required": ["source"],
+        "properties": { "source": { "const": "external" } }
+      },
+      "then": { "required": ["external_ref"] }
+    }
+  ]
 }

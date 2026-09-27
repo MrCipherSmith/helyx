@@ -34,7 +34,7 @@ Skip gdgraph only when the request is clearly unrelated to project files, asks f
 1. Check whether `.metaproject/modules/gdgraph.md` exists.
 2. If the task requires finding relevant project files or understanding relationships, use graph context before any `rg` or reading many files. When you do need a text/symbol search, run it as `keryx ctx rg`, not raw `rg`.
 3. Do not rebuild the graph on every user question. Prefer existing graph storage and curated artifacts.
-4. Run build only when graph storage is missing, obviously stale, or the user explicitly asks to refresh it:
+4. Run build when graph storage is missing, when the file set changed since the last build (you added, renamed, deleted or moved files; `keryx gdgraph context` reports uncommitted code files), or when the user asks to refresh it. The freshness contract is `modules/gdgraph.md` (Freshness & Refresh):
 
 ```bash
 keryx gdgraph build
@@ -86,11 +86,24 @@ degrades to file-level otherwise).
 
 ## Refresh Policy
 
-Graph refresh should happen through one of these paths:
+The graph answers from the last `keryx gdgraph build`, never from the working
+tree, and a stale answer looks exactly like a fresh one. Refresh happens through
+one of these paths:
 
-- user or agent explicitly runs `keryx gdgraph build`;
-- Git `post-commit` hook refreshes graph after relevant file changes;
+- you or the user run `keryx gdgraph build` — required before you rely on a graph
+  answer after adding, renaming, deleting or moving files in this session, or when
+  `keryx gdgraph context` ends with `freshness: N uncommitted code file(s) may not
+  be reflected`;
+- the optional Git `post-commit` hook rebuilds the graph after a commit that
+  touched graph-relevant paths. It resolves `keryx` from PATH then
+  `$HOME/.local/bin/keryx`, never blocks the commit (a failed build only warns),
+  and is turned back into a printed reminder by `KERYX_GDGRAPH_HOOK_REBUILD=0`.
+  In a project that versions `data/gdgraph/artifacts/`, the rebuild leaves those
+  files modified after the commit;
 - graph storage is missing and the task needs graph context.
+
+If you cannot rebuild, say the graph predates your changes rather than quoting it
+as current. The full contract is `modules/gdgraph.md` (Freshness & Refresh).
 
 ## Always-on orientation (optional)
 

@@ -105,6 +105,7 @@ describe("fake telegram — restoring puts the real module back", () => {
     // Replacing a module wholesale leaves every export the fixture does not
     // name as undefined, for everyone.
     expect(typeof mod.sendTelegramPhoto).toBe("function");
+    expect(typeof mod.sendTelegramDocument).toBe("function");
     expect(typeof mod.pinTelegramMessage).toBe("function");
     restore();
   });

@@ -225,7 +225,7 @@
         },
         "folder_name": {
           "type": "string",
-          "description": "Custom folder name. Defaults to <feature>-<date> for Mode A, <feature>-current-state-<date> for Mode B"
+          "description": "Custom folder name. Defaults to <feature-name> (no date suffix) for both Mode A and Mode B"
         },
         "languages": {
           "type": "array",
@@ -233,13 +233,13 @@
             "type": "string",
             "enum": ["en", "ru", "ai"]
           },
-          "default": ["en", "ru", "ai"],
-          "description": "Which report languages to generate. ai = Gherkin format for AI agents"
+          "default": ["en"],
+          "description": "Which report languages to generate. Defaults to a single 'en' document; add 'ru'/'ai' only when the user explicitly asks for them. ai = Gherkin format for AI agents"
         },
         "include_metrics": {
           "type": "boolean",
           "default": true,
-          "description": "Include analysis-metrics.md in output"
+          "description": "Include an Analysis Metrics section in report.md"
         }
       }
     }

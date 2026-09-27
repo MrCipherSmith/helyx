@@ -1,0 +1,191 @@
+{
+  "schemaVersion": 2,
+  "id": "064",
+  "slug": "shared-telegram-rate-limiter-across-conc",
+  "title": "Shared Telegram rate limiter across concurrent project channel.ts sessions",
+  "status": "in-progress",
+  "createdAt": "2026-08-22T09:33:23.375Z",
+  "updatedAt": "2026-08-22T10:22:55.844Z",
+  "source": {
+    "type": "description",
+    "ref": null
+  },
+  "acChecksum": "sha256:43c8f0463cb88c99b8cd94a2c8624f741e62a7a25c6160b18a44e07df7270f5b",
+  "acConfirmed": {
+    "AC1": {
+      "at": "2026-08-22T10:22:50.574Z",
+      "note": "channel/telegram.ts:58 telegramRequest() and utils/typing.ts:55 startTypingRaw() both call acquireSendSlot() before every network attempt (incl. 429/5xx retries) — confirmed by direct code read + 2 independent review passes."
+    },
+    "AC2": {
+      "at": "2026-08-22T10:22:50.662Z",
+      "note": "tests/unit/telegram-rate-budget.test.ts: 6 concurrent leaseBudget() calls against a real Postgres instance (pool max:2, tests/fixtures/test-db.ts), asserts sum(granted) <= configured capacity. Atomic UPDATE...FROM(SELECT...FOR UPDATE)...RETURNING confirmed race-safe by code-reviewer pass."
+    },
+    "AC4": {
+      "at": "2026-08-22T10:22:50.754Z",
+      "note": "createLocalAllowance's refreshNow() catches both a rejecting and a hanging DB lease call (withTimeout), always grants a small conservative fail-open allowance and logs a warning rather than blocking. tests/unit/telegram-rate-budget.test.ts cases (d) cover both failure modes."
+    },
+    "AC5": {
+      "at": "2026-08-22T10:22:50.847Z",
+      "note": "bun run typecheck: clean. bun test tests/unit/: 2476 pass, 2 fail (both pre-existing tts-external-boundary.test.ts env-dependent failures, unrelated, present on the base branch before this flow)."
+    }
+  },
+  "pr": {
+    "url": "https://github.com/MrCipherSmith/helyx/pull/115"
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Collect remaining context",
+      "kind": "context",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T2",
+      "title": "Implement per plan",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T3",
+      "title": "Add/adjust tests and make them pass",
+      "kind": "test",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T4",
+      "title": "Self-review and prepare draft PR",
+      "kind": "review",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    },
+    {
+      "id": "T5",
+      "title": "Fix: acquireSendSlot() not deadline-bound in telegramRequest, breaks documented MAX_TOTAL_MS contract under sustained budget contention",
+      "kind": "implement",
+      "status": "done",
+      "dependsOn": [],
+      "attempts": {
+        "count": 0,
+        "log": []
+      },
+      "acRefs": [],
+      "evidenceRefs": [],
+      "budget": {},
+      "disposition": "completed"
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-22T09:33:23.375Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-08-22T09:34:34.055Z",
+      "event": "frozen",
+      "detail": "5 criteria; checksum recorded"
+    },
+    {
+      "at": "2026-08-22T09:46:54.955Z",
+      "event": "started"
+    },
+    {
+      "at": "2026-08-22T09:49:35.899Z",
+      "event": "task-done",
+      "detail": "T1: Collect remaining context"
+    },
+    {
+      "at": "2026-08-22T10:03:39.047Z",
+      "event": "task-done",
+      "detail": "T2: Implement per plan"
+    },
+    {
+      "at": "2026-08-22T10:03:39.168Z",
+      "event": "task-done",
+      "detail": "T3: Add/adjust tests and make them pass"
+    },
+    {
+      "at": "2026-08-22T10:12:08.504Z",
+      "event": "task-added",
+      "detail": "T5: Fix: acquireSendSlot() not deadline-bound in telegramRequest, breaks documented MAX_TOTAL_MS contract under sustained budget contention"
+    },
+    {
+      "at": "2026-08-22T10:16:57.468Z",
+      "event": "task-done",
+      "detail": "T5: Fix: acquireSendSlot() not deadline-bound in telegramRequest, breaks documented MAX_TOTAL_MS contract under sustained budget contention"
+    },
+    {
+      "at": "2026-08-22T10:16:57.555Z",
+      "event": "task-done",
+      "detail": "T4: Self-review and prepare draft PR"
+    },
+    {
+      "at": "2026-08-22T10:22:32.999Z",
+      "event": "implemented",
+      "detail": "draft PR: https://github.com/MrCipherSmith/helyx/pull/115 (warning: PR is not a draft)"
+    },
+    {
+      "at": "2026-08-22T10:22:50.574Z",
+      "event": "ac-confirmed",
+      "detail": "AC1: channel/telegram.ts:58 telegramRequest() and utils/typing.ts:55 startTypingRaw() both call acquireSendSlot() before every network attempt (incl. 429/5xx retries) — confirmed by direct code read + 2 independent review passes."
+    },
+    {
+      "at": "2026-08-22T10:22:50.662Z",
+      "event": "ac-confirmed",
+      "detail": "AC2: tests/unit/telegram-rate-budget.test.ts: 6 concurrent leaseBudget() calls against a real Postgres instance (pool max:2, tests/fixtures/test-db.ts), asserts sum(granted) <= configured capacity. Atomic UPDATE...FROM(SELECT...FOR UPDATE)...RETURNING confirmed race-safe by code-reviewer pass."
+    },
+    {
+      "at": "2026-08-22T10:22:50.754Z",
+      "event": "ac-confirmed",
+      "detail": "AC4: createLocalAllowance's refreshNow() catches both a rejecting and a hanging DB lease call (withTimeout), always grants a small conservative fail-open allowance and logs a warning rather than blocking. tests/unit/telegram-rate-budget.test.ts cases (d) cover both failure modes."
+    },
+    {
+      "at": "2026-08-22T10:22:50.848Z",
+      "event": "ac-confirmed",
+      "detail": "AC5: bun run typecheck: clean. bun test tests/unit/: 2476 pass, 2 fail (both pre-existing tts-external-boundary.test.ts env-dependent failures, unrelated, present on the base branch before this flow)."
+    },
+    {
+      "at": "2026-08-22T10:22:54.266Z",
+      "event": "completing"
+    },
+    {
+      "at": "2026-08-22T10:22:55.844Z",
+      "event": "completion-failed",
+      "detail": "acceptance-criteria: unconfirmed: AC3 | pull-request: PR checks not green"
+    }
+  ]
+}
