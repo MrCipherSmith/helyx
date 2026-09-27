@@ -39,7 +39,8 @@ camelCase as an earlier version of this doc claimed.
 | `reply` | `chat_id`, `text`, `parse_mode?` | Send a message to the Telegram chat. `parse_mode`: `Markdown`, `MarkdownV2`, `HTML`. |
 | `react` | `chat_id`, `message_id`, `emoji` | Set an emoji reaction on a Telegram message. |
 | `edit_message` | `chat_id`, `message_id`, `text`, `parse_mode?` | Edit a previously sent bot message. |
-| `send_photo` | `chat_id`, `url`, `caption?` | Send a photo to a Telegram chat. `url` is a public image URL or an absolute local file path. |
+| `send_photo` | `chat_id`, `url`, `caption?` | Send a photo to a Telegram chat. `url` is a public image URL or an absolute local file path. Telegram's image endpoint only — see `send_document` for anything that is not an image. |
+| `send_document` | `chat_id`, `path`, `caption?` | Send an absolute local file path as a Telegram document, keeping its own file name (`report.pdf`, not a nameless attachment). Use for PDFs, CSVs, archives. Caption max 1024 characters. |
 
 ### Skills & Knowledge
 

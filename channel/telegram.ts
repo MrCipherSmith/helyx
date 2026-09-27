@@ -11,6 +11,10 @@ const TELEGRAM_API = "https://api.telegram.org";
 const MAX_ERROR_RETRIES = 3;  // for network errors and 5xx only
 const FETCH_TIMEOUT_MS = 10_000; // 10 s per individual fetch — prevents infinite hang
 const MAX_TOTAL_MS = 60_000;     // 60 s total budget per call (covers 429 retries too)
+// An upload carries a whole file, so the per-fetch cap a JSON send uses would
+// turn a large document on a slow uplink into a false timeout.
+const UPLOAD_FETCH_TIMEOUT_MS = 120_000;
+const UPLOAD_TOTAL_MS = 300_000;  // total budget per upload, covering 429 retries
 
 /** Low-level request with retry on 429 (rate limit) and 5xx errors.
  * Each fetch is capped at FETCH_TIMEOUT_MS.
@@ -101,6 +105,91 @@ async function telegramRequest(
     }
 
     // Server error — retry with backoff up to MAX_ERROR_RETRIES
+    if (res.status >= 500 && errorAttempt < MAX_ERROR_RETRIES) {
+      await Bun.sleep(1000 * (errorAttempt + 1));
+      errorAttempt++;
+      continue;
+    }
+
+    const errorBody = await res.text().catch(() => String(res.status));
+    return { ok: false, errorBody, status: res.status };
+  }
+}
+
+/**
+ * Multipart upload — the only path that sends bytes rather than a JSON body.
+ *
+ * It shares `telegramRequest`'s contract rather than calling `fetch` directly,
+ * and that is the point: the same cross-process rate budget (flow 064), the
+ * same 429/5xx retry shape, and the same `reportThreadMiss` check that catches
+ * a send filed into General because the topic it named had been deleted. A
+ * bare `fetch` gets none of the three.
+ */
+async function telegramUpload(
+  token: string,
+  method: string,
+  field: string,
+  file: { bytes: ArrayBuffer; filename: string; mime: string },
+  params: Record<string, unknown>,
+  priority: SendPriority = "priority",
+): Promise<{ ok: boolean; result?: unknown; errorBody?: string; status?: number }> {
+  let errorAttempt = 0;
+  const deadline = Date.now() + UPLOAD_TOTAL_MS;
+
+  while (true) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      return { ok: false, errorBody: `telegramUpload timeout after ${UPLOAD_TOTAL_MS}ms (method: ${method})` };
+    }
+
+    try {
+      await acquireSendSlot(remaining, priority);
+    } catch {
+      return {
+        ok: false,
+        errorBody: `telegramUpload timeout after ${UPLOAD_TOTAL_MS}ms waiting for a rate-limit slot (method: ${method})`,
+      };
+    }
+
+    // Rebuilt per attempt: a FormData body is consumed by the fetch it is
+    // handed, so a retry that re-sent the same one would upload nothing.
+    const form = new FormData();
+    for (const [key, value] of Object.entries(params)) {
+      if (value === undefined || value === null || value === "") continue;
+      form.append(key, String(value));
+    }
+    form.append(field, new Blob([file.bytes], { type: file.mime }), file.filename);
+
+    let res: Response;
+    try {
+      res = await fetch(`${TELEGRAM_API}/bot${token}/${method}`, {
+        method: "POST",
+        body: form,
+        signal: AbortSignal.timeout(UPLOAD_FETCH_TIMEOUT_MS),
+      });
+    } catch (err) {
+      if (errorAttempt >= MAX_ERROR_RETRIES) return { ok: false, errorBody: String(err) };
+      await Bun.sleep(1000 * (errorAttempt + 1));
+      errorAttempt++;
+      continue;
+    }
+
+    if (res.ok) {
+      const data = (await res.json()) as { ok: boolean; result?: unknown };
+      reportThreadMiss(method, params, data.result);
+      return { ok: true, result: data.result };
+    }
+
+    if (res.status === 429) {
+      const data = (await res.json().catch(() => ({}))) as { parameters?: { retry_after?: number } };
+      const wait = (data.parameters?.retry_after ?? 5) * 1000;
+      const left = deadline - Date.now();
+      if (left <= 0) return { ok: false, errorBody: `telegramUpload 429 deadline exceeded (method: ${method})` };
+      channelLogger.warn({ method, wait, remaining: left }, "Telegram rate limit — retrying upload");
+      await Bun.sleep(Math.min(wait, left));
+      continue;
+    }
+
     if (res.status >= 500 && errorAttempt < MAX_ERROR_RETRIES) {
       await Bun.sleep(1000 * (errorAttempt + 1));
       errorAttempt++;
@@ -224,6 +313,57 @@ export async function sendTelegramPhoto(
     ...(caption ? { caption } : {}),
     ...extra,
   });
+  if (!res.ok) return { ok: false, messageId: null, errorBody: res.errorBody };
+  const result = res.result as { message_id?: number } | undefined;
+  return { ok: true, messageId: result?.message_id ?? null };
+}
+
+/**
+ * Send a local file as a Telegram **document** — the path a PDF needs.
+ *
+ * `sendPhoto` is for images. A PDF uploaded there is accepted and acknowledged
+ * with a message id, and the recipient still does not get a file they can
+ * open; the bytes land and nothing usable arrives. `sendDocument` carries the
+ * file's own base name, so what lands is `next-sprint-plan.pdf` rather than a
+ * nameless attachment.
+ *
+ * A missing or empty file is a failure here rather than an upload, so no
+ * caller ever reads "sent" for something Telegram received as zero bytes.
+ */
+export async function sendTelegramDocument(
+  token: string,
+  chatId: string,
+  documentPath: string,
+  caption?: string,
+  extra?: Record<string, unknown>,
+): Promise<{ ok: boolean; messageId: number | null; errorBody?: string }> {
+  // Telegram's media caption limit. Checked here rather than left to the API so
+  // the caller gets a reason instead of an opaque 400.
+  if (caption && caption.length > 1024) {
+    return {
+      ok: false,
+      messageId: null,
+      errorBody: `Caption is ${caption.length} characters; Telegram's limit for a document caption is 1024`,
+    };
+  }
+
+  const file = Bun.file(documentPath);
+  if (!(await file.exists())) {
+    return { ok: false, messageId: null, errorBody: `File not found: ${documentPath}` };
+  }
+  const bytes = await file.arrayBuffer();
+  if (bytes.byteLength === 0) {
+    return { ok: false, messageId: null, errorBody: `File is empty: ${documentPath}` };
+  }
+
+  const filename = documentPath.split("/").pop() || "document";
+  const res = await telegramUpload(
+    token,
+    "sendDocument",
+    "document",
+    { bytes, filename, mime: file.type || "application/octet-stream" },
+    { chat_id: Number(chatId), caption, ...extra },
+  );
   if (!res.ok) return { ok: false, messageId: null, errorBody: res.errorBody };
   const result = res.result as { message_id?: number } | undefined;
   return { ok: true, messageId: result?.message_id ?? null };

@@ -208,11 +208,27 @@ Edit a previously sent bot message. Attempts HTML parse mode first; falls back t
 
 Send a photo to a Telegram chat. Accepts a public image URL (Telegram downloads it directly) or an absolute local file path for locally downloaded images.
 
+This goes to Telegram's **`sendPhoto`** endpoint, which is for images only. A non-image sent this way is accepted and acknowledged with a message ID while nothing usable reaches the recipient — use `send_document` for a PDF, a CSV or an archive.
+
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `chat_id` | string | Yes | Telegram chat ID |
 | `url` | string | Yes | Public image URL (`https://…`) or absolute local file path (`/tmp/image.jpg`) |
 | `caption` | string | No | Optional caption text (supports Markdown) |
+
+### `send_document`
+
+Send an absolute local file path as a Telegram document, keeping the file's own base name — `next-sprint-plan.pdf` arrives as `next-sprint-plan.pdf` rather than as a nameless attachment.
+
+Uses Telegram's **`sendDocument`** endpoint and inherits the shared send contract: the cross-process rate budget, the 429/5xx retry shape, and the deleted-topic check that reports a message filed into General instead of the topic it named.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `chat_id` | string | Yes | Telegram chat ID |
+| `path` | string | Yes | Absolute local file path (`/tmp/report.pdf`) — must be inside the current project or `HOST_PROJECTS_DIR`/`HOME` |
+| `caption` | string | No | Optional caption text (supports Markdown, max 1024 characters) |
+
+A missing file, an empty file, or a caption over 1024 characters fails with a reason instead of uploading. Nothing is sent to Telegram in those cases.
 
 ### `send_poll`
 
@@ -351,6 +367,14 @@ The HTTP server exposes **19 tools**. 16 are shared with the stdio adapter; the 
 | `chat_id` | string | Yes | Telegram chat ID |
 | `url` | string | Yes | Public image URL (`https://…`) or absolute local file path (`/tmp/image.jpg`) |
 | `caption` | string | No | Optional caption text |
+
+#### `send_document`
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `chat_id` | string | Yes | Telegram chat ID |
+| `path` | string | Yes | Absolute local file path (`/tmp/report.pdf`) |
+| `caption` | string | No | Optional caption text (max 1024 characters) |
 
 #### `scan_project_knowledge`
 

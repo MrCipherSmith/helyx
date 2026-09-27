@@ -2,6 +2,49 @@
 
 ## Unreleased
 
+### feat(channel): a PDF finally arrives as a PDF — `send_document`
+
+The channel had exactly one way to put a file in front of the operator, and it
+was `sendPhoto`. A local path went to Telegram's image endpoint as multipart
+field `photo` with the filename hardcoded to `"photo"`, whatever the file
+actually was. Sending a PDF that way is not an error anyone can see: Telegram
+accepts it, allocates a `message_id`, and `send_photo` reports `Photo sent` —
+while what the recipient gets is not a file they can open. The failure is
+masked twice over, since `sendTelegramPhoto` returns `ok: true` on any HTTP
+response and ignores the `ok` field inside Telegram's JSON body, and
+`channel/tools.ts` treats that as the whole verdict.
+
+`sendTelegramDocument` (`channel/telegram.ts`) posts to **`sendDocument`**
+instead, carrying the file's own base name — `next-sprint-plan.pdf` arrives as
+`next-sprint-plan.pdf` — and its MIME type from `Bun.file().type`, falling back
+to `application/octet-stream`. The new `send_document` tool exposes it on the
+per-session MCP surface for both the stdio and HTTP transports, and `send_photo`
+and `send_document` now each say in their description which payloads they are
+for.
+
+Uploads go through a new `telegramUpload`, which is `telegramRequest`'s
+contract with a multipart body rather than JSON: the same cross-process rate
+budget (`acquireSendSlot`, flow 064), the same 429/5xx retry shape, and the same
+`reportThreadMiss` call that catches a send filed into General because the topic
+it named had been deleted. The `FormData` is rebuilt on every attempt, because a
+body is consumed by the fetch it is handed and a retry that re-sent the same one
+would upload nothing. Its per-fetch timeout is 120 s against a 300 s total,
+rather than the 10 s/60 s a JSON send uses — a large document on a slow uplink
+would otherwise time out while it was working.
+
+`send_document` applies the same guards `send_photo` does — the authorized-chat
+check, this project's forum topic with the held-back-rather-than-General
+refusal, and F-002b's path containment, now `isAllowedLocalFilePath` since two
+tools share it. Documents make that boundary matter more, not less: a leaked
+photo is embarrassing, a leaked config file arrives as an ordinary attachment
+with a name and a size. A missing file, an empty file, and a caption past
+Telegram's 1024-character limit each fail with a reason instead of uploading —
+zero bytes is the one document Telegram would accept and deliver as nothing.
+
+Not changed here: `sendTelegramPhoto`'s local-file branch still calls bare
+`fetch`, so photo uploads — unlike everything on `telegramRequest` — bypass the
+shared rate budget and the thread-miss check.
+
 ## v1.59.0
 
 ### feat(sessions): a reboot brings back one session, a restart brings back yours
