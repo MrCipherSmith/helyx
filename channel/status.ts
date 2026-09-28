@@ -390,6 +390,20 @@ export class StatusManager {
   private limitedSince: number | null = null;
   private readonly TYPING_TIMEOUT_MS = 30_000;
   private readonly RESPONSE_GUARD_MS = 5 * 60_000; // 5 min
+  /** How many silent RESPONSE_GUARD_MS cycles the guard tolerates before declaring a session stuck. */
+  private readonly RESPONSE_GUARD_MAX_REARMS = 6;
+  /**
+   * The same cap, widened for a provider that never streams (`providers.streams = false`).
+   *
+   * MiniMax answers in one block with no incremental output, so tmux sits
+   * silent for the whole turn — 20-30 minutes was observed, well past the
+   * default cap's 30-minute ceiling on its own. The streaming-shaped cap
+   * above was firing on ordinary, successful replies, deleting the status and
+   * requeuing a question that was never lost. 24 cycles is two hours:
+   * generous for a slow but working backend, still bounded for one that is
+   * actually dead.
+   */
+  private readonly RESPONSE_GUARD_MAX_REARMS_NO_STREAM = 24;
   /**
    * The edit floor in force for this manager.
    *
@@ -608,20 +622,24 @@ export class StatusManager {
       // Case 2: last known tmux state looked active but went quiet.
       // Claude is probably in a long thinking or tool phase — not stuck yet.
       // Edit the existing guard message in-place (silent update) to avoid spamming new messages.
-      // Cap at 6 re-arms (30 minutes total) to prevent indefinite re-arming.
+      // Cap at RESPONSE_GUARD_MAX_REARMS re-arms to prevent indefinite re-arming — wider for a
+      // provider that never streams (RESPONSE_GUARD_MAX_REARMS_NO_STREAM; see providerStreams).
       //
       // Exception: if newer messages are waiting in the queue for this chat AND it has been
       // more than 10 min, unblock immediately so the user's follow-ups are not deferred for
-      // the full 30-min re-arm cycle. This handles the case where Claude replied to a
+      // the full re-arm cycle. This handles the case where Claude replied to a
       // DIFFERENT chat in a multi-chat batch and never cleared this chat's status.
       let hasPendingQueue = false; // hoisted so Case 3 can use it
       if (looksActive) {
         const count = (this.responseGuardRearmCount.get(key) ?? 0) + 1;
         this.responseGuardRearmCount.set(key, count);
+        const maxRearms = (await this.providerStreams())
+          ? this.RESPONSE_GUARD_MAX_REARMS
+          : this.RESPONSE_GUARD_MAX_REARMS_NO_STREAM;
         const TEN_MIN_MS = 10 * 60_000;
         // If it's been more than 10 min, check whether newer messages are waiting. If so,
-        // unblock immediately instead of waiting for the full 30-min re-arm cycle.
-        if (count < 6 && silentMs >= TEN_MIN_MS) {
+        // unblock immediately instead of waiting for the full re-arm cycle.
+        if (count < maxRearms && silentMs >= TEN_MIN_MS) {
           const sid = this.ctx.sessionId();
           hasPendingQueue = (sid !== null) && await this.ctx.sql`
             SELECT 1 FROM message_queue
@@ -632,7 +650,7 @@ export class StatusManager {
             channelLogger.warn({ chatId, silentMs, rearmCount: count }, "response guard: pending queue blocked, unblocking chat immediately");
           }
         }
-        if (count < 6 && !hasPendingQueue) {
+        if (count < maxRearms && !hasPendingQueue) {
           channelLogger.warn({ chatId, silentMs, stage: stageText, rearmCount: count }, "response guard: long thinking, re-arming");
           // Deliberately left on the default "priority" lane (see the other
           // sends below in this method, and requeueUnansweredQuestion's send)
@@ -658,11 +676,11 @@ export class StatusManager {
           this.armResponseGuard(chatId);
           return;
         }
-        // count >= 6 OR pending queue blocked: fall through to Case 3
+        // count >= maxRearms OR pending queue blocked: fall through to Case 3
         if (hasPendingQueue) {
           channelLogger.warn({ chatId, silentMs, stage: stageText, rearmCount: count }, "response guard: unblocking for pending queue");
         } else {
-          channelLogger.warn({ chatId, silentMs, stage: stageText, rearmCount: count }, "response guard: rearm cap reached, treating as stuck");
+          channelLogger.warn({ chatId, silentMs, stage: stageText, rearmCount: count, maxRearms }, "response guard: rearm cap reached, treating as stuck");
         }
       }
 
@@ -815,6 +833,31 @@ export class StatusManager {
       return { chatId, threadId: topicId, extra: { message_thread_id: topicId } };
     }
     return null;
+  }
+
+  /**
+   * Whether this project's current provider is expected to stream its output.
+   *
+   * Read fresh on every guard cycle (at most once per RESPONSE_GUARD_MS)
+   * rather than cached at boot: a provider switch takes effect on the
+   * session's next restart, same as forum topic (see getForumTarget), and a
+   * value cached here across that restart would carry the wrong cap into the
+   * new session. Defaults to true — the stricter, streaming-shaped cap — on
+   * any lookup failure or when the project uses the default Anthropic
+   * endpoint, which has never been anything but streaming.
+   */
+  private async providerStreams(): Promise<boolean> {
+    if (!this.ctx.projectPath) return true;
+    try {
+      const rows = await this.ctx.sql`
+        SELECT pv.streams FROM projects pr
+        LEFT JOIN providers pv ON pv.id = pr.provider_id
+        WHERE pr.path = ${this.ctx.projectPath}
+      `;
+      return rows[0]?.streams ?? true;
+    } catch {
+      return true;
+    }
   }
 
   /** Map key for the activeStatus / stats maps. */

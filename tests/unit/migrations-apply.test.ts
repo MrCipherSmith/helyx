@@ -189,9 +189,16 @@ describeWithDb("applied to an empty database", () => {
 
     const autostartMigration = MIGRATIONS.find((m) => m.name.includes("session autostart"));
     expect(autostartMigration).toBeDefined();
-    await db.sql`DELETE FROM schema_versions WHERE version = ${autostartMigration!.version}`;
+    // runMigrations resumes from MAX(version) in schema_versions, not from the
+    // first gap — the same behaviour "a partially migrated database" below
+    // exercises. Deleting only this one row stopped being enough once a later
+    // migration existed to keep MAX(version) past it, so this deletes the
+    // autostart migration and everything recorded after it, and expects all of
+    // that tail to replay rather than autostart alone.
+    const tail = MIGRATIONS.slice(MIGRATIONS.indexOf(autostartMigration!));
+    await db.sql`DELETE FROM schema_versions WHERE version >= ${autostartMigration!.version}`;
     const run = await runMigrations(db.sql);
-    expect(run.applied).toEqual([autostartMigration!.name]);
+    expect(run.applied).toEqual(tail.map((m) => m.name));
 
     const flagged = await db.sql<{ name: string }[]>`SELECT name FROM projects WHERE autostart`;
     expect(flagged.map((r) => r.name)).toEqual(["seed-probe"]);

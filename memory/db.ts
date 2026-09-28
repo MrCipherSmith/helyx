@@ -1153,6 +1153,23 @@ const migrations: Migration[] = [
       await tx`ALTER TABLE projects DROP COLUMN IF EXISTS autostart`;
     },
   },
+  {
+    version: 57,
+    name: "providers.streams — the response guard's tmux-silence heuristic assumes every backend streams",
+    up: async (tx) => {
+      // MiniMax (and presumably other third-party backends) answer in one
+      // block with no incremental output, so tmux sits silent for the whole
+      // turn — sometimes 20-30 minutes. The response guard in channel/status.ts
+      // reads that silence as a hung session and escalates to a "stuck" alert
+      // that deletes the status and requeues an answer that was never lost.
+      // Defaulting true keeps every existing provider (all genuinely
+      // streaming today) on the current, tighter guard behaviour.
+      await tx`ALTER TABLE providers ADD COLUMN IF NOT EXISTS streams BOOLEAN NOT NULL DEFAULT true`;
+    },
+    down: async (tx) => {
+      await tx`ALTER TABLE providers DROP COLUMN IF EXISTS streams`;
+    },
+  },
 ];
 
 // --- Public API ---
