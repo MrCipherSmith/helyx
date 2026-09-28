@@ -2,6 +2,68 @@
 
 ## Unreleased
 
+## v1.59.1
+
+### fix(channel): the response guard's stuck cap assumed every provider streams
+
+MiniMax answers in one block with no incremental output, so tmux sat silent for
+the whole turn — 20-30 minutes was observed in production on ARENA and olimpyx.
+The guard's rearm cap (6 cycles, 30 minutes) was built around a streaming
+assumption every provider in use actually held; against MiniMax it fired on
+ordinary, successful replies, deleting the status and requeuing a question that
+had already been answered.
+
+`providers.streams` (migration v57, default `true` — no change for any existing
+provider) lets a provider opt out of that assumption. The guard reads it fresh
+each cycle and widens the cap to 24 cycles (2 hours) rather than disabling the
+check outright, so a genuinely dead session on a non-streaming provider is still
+caught, just later. MiniMax's own provider row is flagged `streams = false`.
+
+Root cause for the MiniMax auth failures underneath this (fixed earlier, same
+investigation): Claude Code's interactive mode prefers an already-logged-in
+Claude Max OAuth session over `ANTHROPIC_API_KEY`, but not over
+`ANTHROPIC_AUTH_TOKEN` — undocumented, found by intercepting traffic. Every
+other third-party provider already used `bearer`; MiniMax was the first
+`api_key` case and the first where the choice mattered.
+
+Also fixes `migrations-apply.test.ts`'s autostart-replay test, which deleted
+migration 56's `schema_versions` row by version number and expected it alone to
+reapply — that only worked while 56 was the registry's last migration, and
+`runMigrations` resumes from `MAX(version)`, so once 57 existed above it the
+row was never backfilled.
+
+PR #121.
+
+### fix(install): harden the installer against seven found gaps
+
+Found by reading `install.sh` and `cli.ts`'s `setup()` end to end. Seven
+defects, fixed in the order found:
+
+1. **Update path was broken** — re-running `install.sh` on an already-configured
+   install always ended in `helyx setup` refusing the existing `.env` and
+   exiting 1. Now detects `UPDATE_MODE`, skips the wizard, and prints how to
+   apply the update.
+2. **Docker image not version-pinned** — `docker pull` always took `:latest`
+   regardless of the resolved `$VERSION`. Now pulls `:$VERSION` with a logged
+   fallback to `:latest`.
+3. **MCP/hooks not resynced on update** — `helyx mcp-register` existed but was
+   never called after a pull. Wired into the new update path.
+4. **Misleading "no sudo" on macOS** — the systemd step now checks
+   `process.platform` first and says which OS it is.
+5. **Silent fallback to `v1.0.0`** — version resolution used to fall back to
+   the very first tagged release with no warning if the GitHub API was
+   unreachable. Now fails loudly and says why.
+6. **`helyx.service` ignored `HELYX_DIR`** — the static template hardcodes
+   `/home/%i/bots/helyx`; a custom install directory (which `install.sh`
+   itself advertises) got a systemd unit pointing at the wrong path. Now
+   template-substituted with the real `BOT_DIR`.
+7. **No CLI-level combined restart** — `restart` only rebuilds the container,
+   `bounce` only restarts sessions; the combined sequence only existed as the
+   Telegram `full_restart` admin command. Added `helyx full-restart`, reusing
+   `bounce`'s lease-handling pattern.
+
+PR #114.
+
 ## v1.59.0
 
 ### feat(sessions): a reboot brings back one session, a restart brings back yours
