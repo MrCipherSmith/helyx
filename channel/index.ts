@@ -12,7 +12,7 @@ import { z } from "zod";
 import postgres from "postgres";
 import { basename } from "path";
 
-import { SessionManager } from "./session.ts";
+import { SessionManager, LiveOwnerExistsError } from "./session.ts";
 import { StatusManager } from "./status.ts";
 import { PermissionHandler } from "./permissions.ts";
 import { MessageQueuePoller } from "./poller.ts";
@@ -333,6 +333,15 @@ async function main() {
 }
 
 main().catch(async (err) => {
+  if (err instanceof LiveOwnerExistsError) {
+    // Not a failure: this process never held the lease, so there is nothing
+    // to mark disconnected and no notification queue it was ever polling.
+    // Exiting quietly here — rather than falling through to the fatal path —
+    // is the fix; the loud "force-stealing lease" this replaces was the bug.
+    channelLogger.info({ sessionId: err.sessionId }, "exiting without becoming channel owner — a live one already exists");
+    await sql.end().catch(() => {});
+    process.exit(0);
+  }
   channelLogger.fatal({ err }, "channel fatal error");
   await Promise.race([
     (async () => {
