@@ -23,6 +23,30 @@ export interface SessionContext {
 const LEASE_TTL = "3 minutes";
 const LEASE_RETRY_DELAY_MS = 1000;
 const LEASE_MAX_ATTEMPTS = 5;
+/**
+ * How stale `last_active` must be before a contended lease is treated as
+ * abandoned rather than merely busy. `renewLease()`'s heartbeat runs every
+ * 60s (`HEARTBEAT_INTERVAL_MS` in channel/index.ts), so anything fresher than
+ * that is a session that is, right now, actively renewing — 1.5x gives one
+ * heartbeat's slack for scheduling jitter before calling it dead.
+ */
+const OWNER_STALE_AFTER_MS = 90_000;
+
+/**
+ * Thrown by `resolve()` when a `remote` session's lease is held by a process
+ * whose heartbeat is still fresh. The caller (a stray or nested invocation —
+ * a subagent, `keryx shell`, a manual one-shot `claude -p` — that happened to
+ * load this MCP server and land on the same project) must not become this
+ * session's channel: there is already a live owner, and stealing from it is
+ * exactly the incident this class exists to prevent (see channel/index.ts's
+ * catch site).
+ */
+export class LiveOwnerExistsError extends Error {
+  constructor(readonly sessionId: number) {
+    super(`session ${sessionId}'s lease is held by a live owner — refusing to steal it`);
+    this.name = "LiveOwnerExistsError";
+  }
+}
 
 export class SessionManager {
   sessionId: number | null = null;
@@ -131,10 +155,34 @@ export class SessionManager {
           await new Promise((r) => setTimeout(r, LEASE_RETRY_DELAY_MS));
         }
       }
-      // Lease held by another process (e.g. stale subprocess from previous bounce).
-      // Force-steal the lease on the existing session — creating a new row would
-      // violate the idx_sessions_project_remote unique constraint anyway.
-      channelLogger.warn({ existingId: existing[0].id }, "remote session lease held after max attempts — force-stealing lease");
+      // Lease held by another process for the whole retry window. That alone
+      // does not mean it is dead — acquireLease()'s own WHERE clause only ever
+      // succeeds against an expired lease, so five straight failures just as
+      // easily mean a live owner is renewing it every heartbeat as they mean a
+      // stale subprocess from a previous bounce. last_active (touched by the
+      // same heartbeat, every 60s) tells the two apart: fresh means someone is
+      // genuinely home right now, and stealing from that owner is the 2026-09
+      // incident — a nested claude invocation (subagent, `keryx shell`, a
+      // one-shot `claude -p`) landed on the same project via the global MCP
+      // registration, contended for five seconds, then force-stole the lease
+      // out from under the session actually serving the operator.
+      const [ownerRow] = await sql`
+        SELECT last_active FROM sessions WHERE id = ${existing[0].id}
+      `;
+      const lastActiveMs = ownerRow?.last_active ? new Date(ownerRow.last_active as string).getTime() : 0;
+      if (Date.now() - lastActiveMs < OWNER_STALE_AFTER_MS) {
+        channelLogger.info(
+          { existingId: existing[0].id, lastActive: ownerRow?.last_active },
+          "remote session lease held by a live owner — not stealing it",
+        );
+        throw new LiveOwnerExistsError(existing[0].id as number);
+      }
+
+      // The owner's heartbeat has gone quiet well past one cycle — genuinely
+      // abandoned, not merely busy. Force-steal the lease on the existing
+      // session; creating a new row would violate the
+      // idx_sessions_project_remote unique constraint anyway.
+      channelLogger.warn({ existingId: existing[0].id, lastActive: ownerRow?.last_active }, "remote session lease held after max attempts, owner heartbeat stale — force-stealing lease");
       await sql`
         UPDATE sessions
         SET lease_owner = ${this.leaseOwner},
