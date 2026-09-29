@@ -4,6 +4,7 @@ dist/
 .env.*
 !.env.example
 .mcp.json
+.helyx-channel.mcp.json
 bun.lock
 *.log
 .claude/

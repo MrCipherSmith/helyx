@@ -31,6 +31,7 @@ import {
   HOST_STATE_SNAPSHOT,
 } from "./sessions/restore-plan.ts";
 import { parseFlags, flagValue } from "./utils/cli-flags.ts";
+import { channelMcpConfig } from "./utils/channel-mcp-config.ts";
 import { resolveMemoryMb, presetsThatFit } from "./utils/host-memory.ts";
 import { dashboardEnvLines } from "./utils/dashboard-readiness.ts";
 import { classifyCheckout, pruneStaleStopHooks } from "./utils/stop-hook.ts";
@@ -48,6 +49,33 @@ const c = {
 };
 
 const BOT_DIR = import.meta.dir;
+
+/**
+ * Where the helyx-channel MCP server's config lives once it stops being
+ * registered at Claude Code's global (`-s user`) scope.
+ *
+ * That global scope is the 2026-09 keryx incident's root cause: any `claude`
+ * process on the machine — a subagent, `keryx shell`, a one-shot `claude -p`
+ * for something unrelated — inherits the environment of whatever spawned it,
+ * finds this server in ~/.claude.json regardless of project, and can land on
+ * a live session's lease (channel/session.ts now refuses to steal from a
+ * live one, but the stray registration itself is still waste and still a
+ * risk for whatever gap that mitigation doesn't cover). Writing the config to
+ * a file next to the repo and loading it only via `--mcp-config` in
+ * run-cli.sh's own invocation means a process that was not launched by
+ * run-cli.sh — which never passes that flag for itself — does not have this
+ * server at all, CLI flags being unlike environment variables in exactly the
+ * way that matters here: a child process does not inherit its parent's
+ * argv.
+ *
+ * Not in the repo: it carries TELEGRAM_BOT_TOKEN and DATABASE_URL, so it is
+ * `.gitignore`d the same as `.env`.
+ */
+const CHANNEL_MCP_CONFIG_PATH = `${BOT_DIR}/.helyx-channel.mcp.json`;
+
+async function writeChannelMcpConfig(dbUrl: string, ollamaUrl: string, botToken: string): Promise<void> {
+  await Bun.write(CHANNEL_MCP_CONFIG_PATH, JSON.stringify(channelMcpConfig(BOT_DIR, dbUrl, ollamaUrl, botToken), null, 2));
+}
 
 // --- Helpers ---
 
@@ -757,21 +785,14 @@ async function setup() {
   // Register MCP servers
   step("Registering MCP servers in Claude Code");
   await run(["claude", "mcp", "remove", "helyx", "-s", "user"], { silent: true });
+  // Old global registration — removed on every setup/update so a machine that
+  // configured helyx before this file existed does not keep the stray entry
+  // (see CHANNEL_MCP_CONFIG_PATH's comment for why global scope is the bug).
   await run(["claude", "mcp", "remove", "helyx-channel", "-s", "user"], { silent: true });
 
   await run(["claude", "mcp", "add", "--transport", "http", "-s", "user", "helyx", `http://localhost:${port}/mcp`]);
 
-  const channelConfig = JSON.stringify({
-    type: "stdio",
-    command: "bun",
-    args: [`${BOT_DIR}/channel.ts`],
-    env: {
-      DATABASE_URL: dbUrl,
-      OLLAMA_URL: "http://localhost:11434",
-      TELEGRAM_BOT_TOKEN: botToken,
-    },
-  });
-  await run(["claude", "mcp", "add-json", "-s", "user", "helyx-channel", channelConfig]);
+  await writeChannelMcpConfig(dbUrl, "http://localhost:11434", botToken);
   done();
 
   await installMcpSharedServices();
@@ -1183,7 +1204,7 @@ async function start(dir?: string) {
   // Local session: spawn claude directly with CHANNEL_SOURCE=local so channel.ts creates
   // a temporary DB session (summarized and deleted on exit), not a persistent remote session.
   const proc = Bun.spawn(
-    ["claude", "--dangerously-load-development-channels", "server:helyx-channel"],
+    ["claude", "--mcp-config", CHANNEL_MCP_CONFIG_PATH, "--dangerously-load-development-channels", "server:helyx-channel"],
     {
       stdout: "inherit", stderr: "inherit", stdin: "inherit", cwd: projectDir,
       env: { ...process.env, CHANNEL_SOURCE: "local" },
@@ -1201,6 +1222,12 @@ async function stop() {
   result.ok ? done() : fail();
 }
 
+/**
+ * Regenerate CHANNEL_MCP_CONFIG_PATH from .env, so a rotated TELEGRAM_BOT_TOKEN
+ * or changed DATABASE_URL reaches the file run-cli.sh's `--mcp-config` reads —
+ * without that, a rebuild after either changed would leave every session's
+ * channel authenticating with a stale token until a manual `mcp-register`.
+ */
 async function syncChannelToken() {
   const envPath = resolve(BOT_DIR, ".env");
   if (!existsSync(envPath)) return;
@@ -1212,15 +1239,10 @@ async function syncChannelToken() {
   );
   const botToken = env.TELEGRAM_BOT_TOKEN ?? "";
   if (!botToken) return;
+  if (!existsSync(CHANNEL_MCP_CONFIG_PATH)) return; // nothing to sync until mcp-register has run once
 
-  const claudeJson = resolve(homedir(), ".claude.json");
-  if (!existsSync(claudeJson)) return;
-  const data = JSON.parse(readFileSync(claudeJson, "utf8"));
-  if (data?.mcpServers?.["helyx-channel"]?.env) {
-    data.mcpServers["helyx-channel"].env.TELEGRAM_BOT_TOKEN = botToken;
-    writeFileSync(claudeJson, JSON.stringify(data, null, 4));
-    console.log(`  ${c.dim("channel token synced from .env")}`);
-  }
+  await writeChannelMcpConfig(env.DATABASE_URL ?? "", env.OLLAMA_URL ?? "http://localhost:11434", botToken);
+  console.log(`  ${c.dim("channel token synced from .env")}`);
 }
 
 async function restart() {
@@ -2091,7 +2113,7 @@ async function connect(dir?: string) {
     console.log(`  Starting ${c.cyan(name)} in tmux (full Telegram monitoring)...\n`);
     await run(["tmux", "new-session", "-d", "-s", name, "-c", projectDir]);
     await run(["tmux", "send-keys", "-t", name,
-      "claude --dangerously-load-development-channels server:helyx-channel", "Enter"]);
+      `claude --mcp-config ${CHANNEL_MCP_CONFIG_PATH} --dangerously-load-development-channels server:helyx-channel`, "Enter"]);
 
     // Wait for channel confirmation prompt and auto-confirm
     console.log(`  Waiting for Claude to start...`);
@@ -2116,7 +2138,7 @@ async function connect(dir?: string) {
     console.log(`  Connecting ${c.cyan(name)} to Telegram bot...`);
     console.log(`  ${c.dim("Tip: use --tmux for full progress monitoring in Telegram")}\n`);
     const proc = Bun.spawn(
-      ["claude", "--dangerously-load-development-channels", "server:helyx-channel"],
+      ["claude", "--mcp-config", CHANNEL_MCP_CONFIG_PATH, "--dangerously-load-development-channels", "server:helyx-channel"],
       { cwd: projectDir, stdout: "inherit", stderr: "inherit", stdin: "inherit" },
     );
     await proc.exited;
@@ -2227,6 +2249,9 @@ async function mcpRegister() {
 
   step("Removing old MCP registrations");
   await run(["claude", "mcp", "remove", "helyx", "-s", "user"], { silent: true });
+  // Old global registration — removed on every setup/update so a machine that
+  // configured helyx before this file existed does not keep the stray entry
+  // (see CHANNEL_MCP_CONFIG_PATH's comment for why global scope is the bug).
   await run(["claude", "mcp", "remove", "helyx-channel", "-s", "user"], { silent: true });
   done();
 
@@ -2234,14 +2259,8 @@ async function mcpRegister() {
   await run(["claude", "mcp", "add", "--transport", "http", "-s", "user", "helyx", `http://localhost:${port}/mcp`]);
   done();
 
-  step("Registering stdio channel adapter");
-  const config = JSON.stringify({
-    type: "stdio",
-    command: "bun",
-    args: [`${BOT_DIR}/channel.ts`],
-    env: { DATABASE_URL: dbUrl, OLLAMA_URL: ollamaUrl, TELEGRAM_BOT_TOKEN: botToken },
-  });
-  await run(["claude", "mcp", "add-json", "-s", "user", "helyx-channel", config]);
+  step("Writing stdio channel adapter config");
+  await writeChannelMcpConfig(dbUrl, ollamaUrl, botToken);
   done();
 
   await installMcpSharedServices();
