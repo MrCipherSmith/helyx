@@ -148,10 +148,20 @@ while true; do
   CHANNEL_LOG_FILE="/tmp/channel-${PROJECT_NAME}.log"
   export CHANNEL_LOG_FILE
 
+  # helyx-channel is loaded here, and only here, via --mcp-config rather than
+  # Claude Code's global (-s user) registration. Anything else that happens to
+  # run `claude` on this host — a subagent, `keryx shell`, a one-shot
+  # `claude -p` — does not pass this flag and does not get this server, so it
+  # cannot land on a project's remote session at all. That was the 2026-09
+  # keryx incident: a stray invocation found this server globally, contended
+  # for the live session's lease, and (before channel/session.ts's own fix)
+  # force-stole it. `helyx mcp-register` / `setup` write this file from .env.
+  _channel_mcp_config="$HELYX_DIR/.helyx-channel.mcp.json"
+
   if [ -z "$IN_TMUX" ]; then
     # Outside tmux: capture terminal output via script for monitoring
     > "$OUTPUT_FILE"  # truncate
-    script -qfc "CHANNEL_SOURCE=remote claude $CONTINUE_FLAG --dangerously-load-development-channels server:helyx-channel" "$OUTPUT_FILE"
+    script -qfc "CHANNEL_SOURCE=remote claude $CONTINUE_FLAG --mcp-config '$_channel_mcp_config' --dangerously-load-development-channels server:helyx-channel" "$OUTPUT_FILE"
     EXIT_CODE=$?
   else
     # Inside tmux: watch for the "development channels" warning prompt and auto-confirm.
@@ -173,7 +183,7 @@ while true; do
       done
     ) &
     CONFIRM_PID=$!
-    CHANNEL_SOURCE=remote claude $CONTINUE_FLAG --dangerously-load-development-channels server:helyx-channel
+    CHANNEL_SOURCE=remote claude $CONTINUE_FLAG --mcp-config "$_channel_mcp_config" --dangerously-load-development-channels server:helyx-channel
     EXIT_CODE=$?
     # Clean up the confirm watcher if Claude exited before it finished
     kill "$CONFIRM_PID" 2>/dev/null
