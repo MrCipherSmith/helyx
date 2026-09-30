@@ -15,6 +15,10 @@
  *  4. Status broadcast    — every 5 min (delete old + send new for notification)
  *  5. Idle auto-compact   — sessions idle >IDLE_COMPACT_MIN min with ≥10 msgs → summarize + clear
  *  6. Gemma health analyst — every 10 min, holistic snapshot → Gemma → digest if problems found
+ *  12. Channel heartbeat  — sessions.lease_expires_at stale >CHANNEL_STALE_GRACE_MS past its own TTL →
+ *                           alert with restart button, no auto-restart. Catches a dead MCP channel
+ *                           (channel.ts killed, claude left running) that Loop 1 cannot see: no status
+ *                           message and no pane spinner for its staleness checks to measure.
  *
  * Alerting: Telegram topic SUPERVISOR_CHAT_ID / SUPERVISOR_TOPIC_ID (from .env).
  *           JOINBOX_TOPIC_ID (optional) — preferred fallback for stuck-message forwarding.
@@ -2724,6 +2728,119 @@ export async function checkBotAlive(
   await logIncident(sql, "bot_down", null, null, "alert", "pending", "");
 }
 
+// --- Loop 12: the channel that stopped renewing its lease ---
+
+/**
+ * How long a remote session's lease may sit expired before its channel is
+ * called dead rather than merely between heartbeats.
+ *
+ * `channel/session.ts`'s `renewLease()` pushes `lease_expires_at` to
+ * `now() + 3 minutes` every 60s while the channel process is alive. A channel
+ * killed without a graceful shutdown — the 2026-09-29 incident: the kernel's
+ * *global* OOM killer picked keryx's `bun` process (10.9GB anon-rss, the
+ * largest on the whole host at that moment, `constraint=CONSTRAINT_NONE` —
+ * not a per-pane cgroup ceiling breach) — stops renewing and leaves
+ * `lease_expires_at` stuck in the past forever. `claude` itself survives that
+ * kill; only its MCP child dies. `run-cli.sh`'s restart loop watches `claude`'s
+ * own exit code, so it never fires — the session sits alive but bridge-less
+ * for as long as nothing else notices.
+ *
+ * Nothing else in this file catches that gap: `checkHungSessions` needs either
+ * a status-message row or an active pane spinner, and a session idling at its
+ * prompt with a dead channel produces neither — no turn ever starts, so there
+ * is nothing for that loop's staleness check to measure.
+ *
+ * One heartbeat's grace past the lease's own TTL, not zero: `now()` on the DB
+ * side and the channel's `setInterval` tick are two different clocks, and the
+ * last legitimate renewal can leave `lease_expires_at` a few seconds behind by
+ * the time this loop's query runs.
+ */
+const CHANNEL_STALE_GRACE_MS = 60_000;
+
+export async function checkChannelHeartbeat(sql: postgres.Sql, runShell?: RunShell): Promise<void> {
+  try {
+    await refreshAcks(sql);
+
+    const rows = await sql`
+      SELECT
+        s.id AS session_id,
+        s.project,
+        s.project_path,
+        p.id AS project_id,
+        s.lease_expires_at
+      FROM sessions s
+      JOIN projects p ON p.id = s.project_id AND p.tmux_session_name = 'bots'
+      WHERE s.status = 'active'
+        AND s.source = 'remote'
+        AND s.lease_expires_at IS NOT NULL
+        AND s.lease_expires_at < NOW() - (${Math.floor(CHANNEL_STALE_GRACE_MS / 1000)} * INTERVAL '1 second')
+    `;
+
+    for (const row of rows) {
+      const project = String(row.project ?? "unknown");
+      const sessionId = Number(row.session_id);
+      const projectId = Number(row.project_id);
+      const staleSinceMs = new Date(row.lease_expires_at).getTime();
+      const elapsedSec = Math.max(0, Math.round((Date.now() - staleSinceMs) / 1000));
+      const dedupKey = sessionProblemKey(project);
+
+      console.log(`[supervisor] channel heartbeat dead: ${project} (lease expired ${elapsedSec}s ago)`);
+
+      let pane: string[] = [];
+      if (runShell) {
+        const paneRaw = await runShell(`tmux capture-pane -p -t "bots:${project}" 2>/dev/null || true`);
+        pane = paneLines(paneRaw.output, 5);
+      }
+
+      if (!shouldAlert(dedupKey)) {
+        // Loop 1 or Loop 2 may already have an alert up for this project —
+        // append rather than send a second message about the same session.
+        const existing = activeAlerts.get(dedupKey);
+        if (existing?.messageId && existing.text) {
+          const additionalInfo = `⚠️ Также: канал (MCP-мост) не продлевает лизу ${Math.round(elapsedSec / 60)}m ${elapsedSec % 60}s — claude может быть жив, но недоступен из Telegram.`;
+          await tgPost("editMessageText", {
+            chat_id: SUPERVISOR_CHAT_ID,
+            message_id: existing.messageId,
+            text: existing.text + "\n\n" + additionalInfo,
+            parse_mode: "HTML",
+          }).catch(() => {});
+        }
+        continue;
+      }
+
+      const logPath = tmuxLogPath();
+      const msgParts = [
+        `⚠️ <b>Supervisor: канал не продлевает лизу</b>`,
+        `Проект: <code>${project}</code>  Путь: <code>${row.project_path ?? "?"}</code>`,
+        `Не продлевается: ${Math.round(elapsedSec / 60)}m ${elapsedSec % 60}s`,
+        `Claude может быть жив (процесс не упал) — MCP-мост к Telegram мёртв, обычная проверка на зависание этого не видит.`,
+      ];
+      if (pane.length > 0) {
+        msgParts.push(`Пане (последние 5 строк):\n<pre>${escapeHtml(pane.join("\n"))}</pre>`);
+      }
+      msgParts.push(`📁 Лог: ${logPath}`);
+      const msg = msgParts.join("\n");
+
+      const messageId = await sendAlertWithButtons(msg, [
+        [
+          { text: "📋 Показать лог", callback_data: paneCallbackData(projectId) },
+          { text: "🔄 Перезапустить", callback_data: restartCallbackData(projectId) },
+        ],
+        [
+          { text: "🔇 Заглушить на 1 ч", callback_data: ackCallbackData(project, projectId) },
+        ],
+      ]);
+      if (messageId) {
+        activeAlerts.set(dedupKey, { messageId, chatId: SUPERVISOR_CHAT_ID, sentAt: Date.now(), text: msg });
+      }
+
+      await logIncident(sql, "channel_dead", project, sessionId, "alerted_user", "pending", "");
+    }
+  } catch (err: any) {
+    console.error(`[supervisor] checkChannelHeartbeat error: ${err?.message}`);
+  }
+}
+
 // --- Main entry point ---
 
 export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
@@ -2740,6 +2857,7 @@ export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
   let idleCheckRunning       = false;
   let contextCheckRunning    = false;
   let unansweredCheckRunning = false;
+  let channelCheckRunning    = false;
 
   // Loop 1: Session heartbeat — every 60s.
   //
@@ -2788,6 +2906,20 @@ export function startSupervisor(sql: postgres.Sql, runShell: RunShell): void {
     sendStatusBroadcast(sql, runShell).catch(() => {}).finally(() => { broadcastRunning = false; });
   }, 5 * 60_000);
   statusTimer.unref?.();
+
+  // Loop 12: Channel heartbeat — every 60s (offset 30s from the session loop).
+  setTimeout(() => {
+    if (!channelCheckRunning) {
+      channelCheckRunning = true;
+      checkChannelHeartbeat(sql, runShell).catch(() => {}).finally(() => { channelCheckRunning = false; });
+    }
+    const channelTimer = setInterval(() => {
+      if (channelCheckRunning) return;
+      channelCheckRunning = true;
+      checkChannelHeartbeat(sql, runShell).catch(() => {}).finally(() => { channelCheckRunning = false; });
+    }, 60_000);
+    channelTimer.unref?.();
+  }, 30_000);
 
   // Heartbeat to process_health — every 30s
   const healthTimer = setInterval(() => updateProcessHealth(sql).catch(() => {}), 30_000);
