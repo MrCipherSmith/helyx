@@ -1,7 +1,7 @@
 /**
  * The inventory: which loops the supervisor actually starts.
  *
- * Eleven loops now share one daemon and one database, and every one of them was
+ * Twelve loops now share one daemon and one database, and every one of them was
  * added by writing a function and then remembering to register it. A function
  * written and never registered is a monitor that exists in the source and not in
  * the process — which is precisely the outage Loop 8's own comment describes,
@@ -105,7 +105,7 @@ describe("what startSupervisor registers", () => {
 
   const AFTER_OFFSETS: Array<[ms: number, count: number, what: string]> = [
     [30_000, 1, "process_health heartbeat"],
-    [60_000, 3, "session heartbeat, stuck queue, recovery check"],
+    [60_000, 4, "session heartbeat, stuck queue, recovery check, channel heartbeat"],
     [90_000, 1, "error stream"],
     [2 * 60_000, 2, "unanswered messages and context pressure"],
     [5 * 60_000, 2, "voice cleanup and the status broadcast"],
