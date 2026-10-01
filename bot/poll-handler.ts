@@ -109,9 +109,19 @@ export async function handlePollSubmit(ctx: Context, pollSessionId: number): Pro
     const chatId = String(session.chat_id);
     const sessionId = session.session_id as number;
 
+    // `idx_queue_msgid_dedup` (memory/db.ts:478-488) is UNIQUE on
+    // (chat_id, message_id). A bare 'poll_submit' literal here collides with
+    // every other poll ever submitted in this chat — across every project
+    // sharing it, not just this session — so only the first submission after
+    // each ~24h message_queue cleanup sweep actually reaches the queue; every
+    // other one throws, is swallowed by the catch below, and the poll sits
+    // marked 'submitted' with its answers never delivered. Scoped to this
+    // poll session, which is unique forever, the index does what it was
+    // meant to: stop a double-tap of this one "Готово" button from queuing
+    // the same answers twice.
     await sql`
       INSERT INTO message_queue (session_id, chat_id, from_user, content, message_id)
-      VALUES (${sessionId}, ${chatId}, 'user', ${formattedAnswers}, ${'poll_submit'})
+      VALUES (${sessionId}, ${chatId}, 'user', ${formattedAnswers}, ${`poll_submit:${pollSessionId}`})
     `;
 
     appendLog(sessionId, chatId, "poll", `answers submitted for session ${pollSessionId}`);
