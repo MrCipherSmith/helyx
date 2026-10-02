@@ -231,13 +231,19 @@ async function normalizeForSpeech(text: string, isRussian: boolean): Promise<str
     // `reasoning_effort: none` is required, not optional: without it qwen spends
     // its whole token budget narrating the rules back to itself and returns an
     // empty completion. gpt-oss-20b fails the same way and is not used.
+    //
+    // qwen3.6-27b was retired from Groq's catalog (404 model_not_found) without
+    // notice; qwen3.8-27b is its direct successor, same behavior confirmed
+    // live. Every voice reply fell through to the OpenRouter fallback below for
+    // as long as this pointed at the dead name — worth a periodic sanity check
+    // against Groq's /models endpoint rather than waiting for a report.
     if (GROQ_API_KEY) {
       const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${GROQ_API_KEY}` },
         signal: controller.signal,
         body: JSON.stringify({
-          model: "qwen/qwen3.6-27b",
+          model: "qwen/qwen3.8-27b",
           reasoning_effort: "none",
           messages,
           temperature: 0.1,
@@ -264,6 +270,14 @@ async function normalizeForSpeech(text: string, isRussian: boolean): Promise<str
   }
 
   // OpenRouter fallback (Gemma 31B — slower ~7-12s but higher quality)
+  //
+  // This deployment points OPENROUTER_MODEL at deepseek-v4-flash, a reasoning
+  // model exactly like the Groq one above — and it hit the identical bug: no
+  // `reasoning_effort`, so it spent its whole 500-token budget on hidden
+  // reasoning and returned an empty completion, every single time, regardless
+  // of input length. Confirmed live before this was added. Since the Groq
+  // model name above had also gone stale, every voice reply was silently
+  // falling through this broken path to the raw, un-normalized text.
   if (CONFIG.OPENROUTER_API_KEY) {
     const controller2 = new AbortController();
     const timeout2 = setTimeout(() => controller2.abort(), 15000);
@@ -272,7 +286,7 @@ async function normalizeForSpeech(text: string, isRussian: boolean): Promise<str
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${CONFIG.OPENROUTER_API_KEY}` },
         signal: controller2.signal,
-        body: JSON.stringify({ model: CONFIG.OPENROUTER_MODEL, messages, temperature: 0.1, max_tokens: 500 }),
+        body: JSON.stringify({ model: CONFIG.OPENROUTER_MODEL, reasoning_effort: "none", messages, temperature: 0.1, max_tokens: 500 }),
       });
       if (res.ok) {
         const data = await res.json() as { choices?: { message?: { content?: string } }[] };
