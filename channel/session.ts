@@ -22,7 +22,26 @@ export interface SessionContext {
 
 const LEASE_TTL = "3 minutes";
 const LEASE_RETRY_DELAY_MS = 1000;
-const LEASE_MAX_ATTEMPTS = 5;
+/**
+ * 20 attempts at 1s apart — 20 seconds of retrying before falling through to
+ * the stale-or-live decision below.
+ *
+ * Was 5 (5 seconds) until the 2026-10-08/09 vantage-frontend incident: when
+ * run-cli.sh restarts `claude` for this same project, the new channel.ts's
+ * very first acquire attempts race against its own dying predecessor, whose
+ * `releaseLease()` (a DB round trip on its own shutdown path) hadn't
+ * completed yet. Five seconds wasn't enough margin, so `acquireLease()` kept
+ * failing, the loop fell through to the OWNER_STALE_AFTER_MS check below
+ * with the predecessor's heartbeat still looking fresh (it was 4 seconds
+ * old), concluded a live owner held it, and exited — leaving `claude` alive
+ * with no channel for the next 5.5 hours, because nothing watching this host
+ * restarts `claude` itself; only a dead *channel* gets flagged, and only a
+ * human pressing the alert's restart button fixes it. Twenty seconds is
+ * still a fifth of OWNER_STALE_AFTER_MS, so a genuine stray foreign process
+ * is still correctly left alone — it just gives this project's own previous
+ * instance realistic time to finish dying first.
+ */
+const LEASE_MAX_ATTEMPTS = 20;
 /**
  * How stale `last_active` must be before a contended lease is treated as
  * abandoned rather than merely busy. `renewLease()`'s heartbeat runs every
