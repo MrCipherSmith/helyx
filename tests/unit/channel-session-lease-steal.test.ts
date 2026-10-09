@@ -49,7 +49,7 @@ describe("resolve() contending for an existing remote session's lease", () => {
 
     expect(db.queries.some((q) => isForceStealUpdate(q.text))).toBe(false);
     expect(mgr.sessionId).toBeNull();
-  }, 10_000);
+  }, 25_000);
 
   test("an abandoned owner (stale last_active) is still stolen from", async () => {
     const db = new FakeSql();
@@ -64,7 +64,29 @@ describe("resolve() contending for an existing remote session's lease", () => {
     expect(sessionId).toBe(14);
     expect(mgr.sessionId).toBe(14);
     expect(db.queries.some((q) => isForceStealUpdate(q.text))).toBe(true);
-  }, 10_000);
+  }, 25_000);
+
+  test("a predecessor that finishes releasing mid-retry is acquired, not treated as a live owner", async () => {
+    // The 2026-10-08/09 incident this constant was raised for: run-cli.sh
+    // restarts claude for the same project, and the new channel.ts's first
+    // few acquire attempts race its own dying predecessor's releaseLease()
+    // DB round trip. Ten failed attempts is twice what the old 5-attempt
+    // budget allowed — this would have fallen through to the live-owner
+    // check (and likely exited via LiveOwnerExistsError) before the fix.
+    const db = new FakeSql();
+    db.program(EXISTING_QUERY, { rows: [{ id: 14 }] });
+    db.programSequence(ACQUIRE_QUERY, [
+      ...Array.from({ length: 10 }, () => ({ rows: [] })),
+      { rows: [{ id: 14 }] },
+    ]);
+    db.program(PROJECT_QUERY, { rows: [{ id: 5 }] });
+
+    const mgr = managerWith(db);
+    const sessionId = await mgr.resolve();
+
+    expect(sessionId).toBe(14);
+    expect(db.queries.some((q) => isForceStealUpdate(q.text))).toBe(false);
+  }, 20_000);
 
   test("no contention at all: the first attempt just succeeds", async () => {
     const db = new FakeSql();
