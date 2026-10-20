@@ -197,6 +197,12 @@ export async function waitForAnswers(
    * question being delivered at all.
    */
   clientGone: () => boolean = () => false,
+  /**
+   * Called once when the deadline passes with the client still connected. The
+   * only path that reports it: a withdrawn, cancelled or vanished request is
+   * not a timeout and stays silent.
+   */
+  onTimeout?: () => void,
 ): Promise<Answer[] | null> {
   const now = deps.now ?? Date.now;
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
@@ -249,6 +255,7 @@ export async function waitForAnswers(
   // Stopped waiting. The messages say so and lose their buttons, rather than
   // sitting there looking live until someone taps one and is told otherwise.
   await expireRequest(deps, requestId);
+  onTimeout?.();
   return null;
 }
 
@@ -640,6 +647,12 @@ export interface ExchangeLimits {
   clientGone: () => boolean;
   /** Poll interval; the default is a second. */
   pollMs?: number;
+  /**
+   * Called when a question that was posted to Telegram went unanswered for the
+   * whole window and the client was still connected. Not called for any other
+   * way of returning null.
+   */
+  onTimeout?: () => void;
 }
 
 /**
@@ -674,6 +687,7 @@ export async function runQuestionExchange(
     limits.timeoutMs,
     limits.pollMs ?? 1_000,
     limits.clientGone,
+    limits.onTimeout,
   );
 }
 

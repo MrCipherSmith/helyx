@@ -16,6 +16,7 @@ import {
   questionMessage,
   formatAnswers,
   denyWithAnswers,
+  denyOnTimeout,
   allAnswered,
   MAX_CALLBACK_BYTES,
   type Question,
@@ -260,6 +261,17 @@ describe("what Claude is told", () => {
     expect(decision.hookSpecificOutput.hookEventName).toBe("PreToolUse");
     expect(decision.hookSpecificOutput.permissionDecision).toBe("deny");
     expect(decision.hookSpecificOutput.permissionDecisionReason).toContain("0.20.0");
+  });
+
+  test("a timed-out question is withdrawn, and the model is told to ask another way", () => {
+    // Silence here would draw the native selector in a terminal nobody reads.
+    const decision = JSON.parse(denyOnTimeout());
+    expect(decision.hookSpecificOutput.hookEventName).toBe("PreToolUse");
+    expect(decision.hookSpecificOutput.permissionDecision).toBe("deny");
+    const reason: string = decision.hookSpecificOutput.permissionDecisionReason;
+    expect(reason).toContain("did not answer");
+    expect(reason).toContain("send_poll");
+    expect(reason).toContain("Do not ask it again with AskUserQuestion");
   });
 });
 

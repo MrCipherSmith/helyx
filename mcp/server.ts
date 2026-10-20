@@ -12,7 +12,7 @@ import { getForumChatId } from "../bot/forum-cache.ts";
 import { escapeHtml } from "../bot/format.ts";
 import { CONFIG } from "../config.ts";
 import { sql } from "../memory/db.ts";
-import { parseHookInput, denyWithAnswers, ANSWER_TIMEOUT_MS, type Answer } from "../utils/ask-question.ts";
+import { parseHookInput, denyWithAnswers, denyOnTimeout, ANSWER_TIMEOUT_MS, type Answer } from "../utils/ask-question.ts";
 
 import { readOrCreateToken, tokenMatches } from "../utils/hook-token.ts";
 import { summaryFor } from "../utils/turn-summary.ts";
@@ -731,10 +731,12 @@ export async function handleMcpRequest(
       res.on("close", onGone);
 
       let answers: Answer[] | null = null;
+      let timedOut = false;
       try {
         answers = await mcpDeps.runQuestionExchange(deps, input, {
           timeoutMs: ANSWER_TIMEOUT_MS,
           clientGone: () => clientGone,
+          onTimeout: () => { timedOut = true; },
         });
       } finally {
         askQuestionWaiters--;
@@ -742,8 +744,17 @@ export async function handleMcpRequest(
         res.off("close", onGone);
       }
 
+      if (!answers && timedOut && !clientGone) {
+        // The question reached the operator and went unanswered. Handing the
+        // terminal its selector back would park the session on a menu nobody
+        // is looking at, so the model is told to ask another way.
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(denyOnTimeout());
+        return;
+      }
+
       if (!answers) {
-        // Timed out, or withdrawn. The hook prints nothing, Claude Code
+        // Withdrawn, or never placed. The hook prints nothing, Claude Code
         // proceeds as if it had not run, and the selector appears in the
         // terminal as it always did.
         res.writeHead(204);

@@ -16,6 +16,11 @@
 # Every failure path here is silence. A hook that cannot reach the bot, or times
 # out, must leave the terminal exactly as it was: this feature can add a way to
 # answer, but it must never take one away.
+#
+# One deliberate exception: a question that WAS posted to Telegram and went
+# unanswered for the whole window comes back as a deny that tells the model to
+# ask another way. Silence there would draw the native selector in a terminal
+# nobody reads, and the session would hang on it indefinitely.
 
 set -uo pipefail
 
