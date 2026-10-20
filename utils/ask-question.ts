@@ -344,6 +344,28 @@ export function denyWithAnswers(questions: Question[], choices: readonly Answer[
 }
 
 /**
+ * The deny a PreToolUse hook prints when a question that reached Telegram went
+ * unanswered for the whole window.
+ *
+ * Silence here would hand the session Claude Code's own selector, drawn in a
+ * terminal nobody reads, and the session would sit on it for good. The reason
+ * is addressed to the model: it must not ask the same way again.
+ */
+export function denyOnTimeout(): string {
+  return JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: "deny",
+      permissionDecisionReason:
+        "The operator did not answer this question in Telegram within the time window, and nobody reads the terminal, " +
+        "so the question is withdrawn. Do not ask it again with AskUserQuestion. " +
+        "If the helyx-channel send_poll tool is available, send the question with it and wait for the reply; " +
+        "otherwise continue with a default you state in your reply.",
+    },
+  });
+}
+
+/**
  * Whether every question has been answered.
  *
  * All of them, because the tool is one call: answering the first of three and

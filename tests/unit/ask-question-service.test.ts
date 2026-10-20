@@ -746,6 +746,69 @@ describe("runQuestionExchange — the ordering that was wrong twice", () => {
     expect(world.db.count(SELECT_ANSWERS)).toBe(0);
     expect(world.db.count("SET expired_at = NOW()")).toBe(0);
   });
+
+  test("a posted question left unanswered for the whole window reports a timeout", async () => {
+    const world = makeWorld();
+    withChat(world);
+    world.db.program(SELECT_ANSWERS, { rows: [{ answers: [null, null], expired_at: null }] });
+    let t = 0;
+    let timeouts = 0;
+
+    const answers = await runQuestionExchange(
+      { ...world.deps, now: () => t, sleep: async (ms: number) => { t += ms; } },
+      hookInput(),
+      { timeoutMs: 5_000, pollMs: 1_000, clientGone: () => false, onTimeout: () => { timeouts++; } },
+    );
+
+    expect(answers).toBeNull();
+    expect(timeouts).toBe(1);
+  });
+
+  test("a client that leaves mid-wait is not a timeout", async () => {
+    const world = makeWorld();
+    withChat(world);
+    world.db.program(SELECT_ANSWERS, { rows: [{ answers: [null, null], expired_at: null }] });
+    let polls = 0;
+    let t = 0;
+    let timeouts = 0;
+
+    await runQuestionExchange(
+      { ...world.deps, now: () => t, sleep: async (ms: number) => { t += ms; polls++; } },
+      hookInput(),
+      { timeoutMs: 600_000, pollMs: 1_000, clientGone: () => polls >= 2, onTimeout: () => { timeouts++; } },
+    );
+
+    expect(timeouts).toBe(0);
+  });
+
+  test("nowhere to send is not a timeout", async () => {
+    const world = makeWorld();
+    world.db.program(SELECT_TARGET, { rows: [] });
+    let timeouts = 0;
+
+    await runQuestionExchange(world.deps, hookInput(), {
+      timeoutMs: 600_000,
+      clientGone: () => false,
+      onTimeout: () => { timeouts++; },
+    });
+
+    expect(timeouts).toBe(0);
+  });
+
+  test("a request expired elsewhere is not a timeout", async () => {
+    const world = makeWorld();
+    withChat(world);
+    world.db.program(SELECT_ANSWERS, { rows: [{ answers: [null, null], expired_at: new Date() }] });
+    let timeouts = 0;
+
+    await runQuestionExchange(world.deps, hookInput(), {
+      timeoutMs: 600_000,
+      clientGone: () => false,
+      onTimeout: () => { timeouts++; },
+    });
+
+    expect(timeouts).toBe(0);
+  });
 });
 
 

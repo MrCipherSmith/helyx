@@ -43,6 +43,8 @@ let db: FakeSql;
 let restore: (() => void) | undefined;
 /** What the question exchange hands back — set per test. */
 let answers: unknown[] | null;
+/** Whether the stubbed exchange reports that the wait ran out on a posted question. */
+let timesOut = false;
 
 interface Answer {
   status: number;
@@ -100,6 +102,7 @@ beforeEach(() => {
   seen = { summarized: [], registered: [], expected: [], facts: [], summaries: [], asked: 0 };
   db = new FakeSql();
   answers = null;
+  timesOut = false;
   registerFails = false;
 
   const stubs: Partial<McpDeps> = {
@@ -122,8 +125,9 @@ beforeEach(() => {
     deliverTurnSummary: (async (transcript: string, project: string) => {
       seen.summaries.push({ transcript, project });
     }) as unknown as McpDeps["deliverTurnSummary"],
-    runQuestionExchange: (async () => {
+    runQuestionExchange: (async (_deps: unknown, _input: unknown, limits: { onTimeout?: () => void }) => {
       seen.asked++;
+      if (timesOut) limits.onTimeout?.();
       return answers;
     }) as unknown as McpDeps["runQuestionExchange"],
   };
@@ -298,6 +302,18 @@ describe("the ask-question hook", () => {
     const body = JSON.parse(answer.body);
     expect(body.hookSpecificOutput.permissionDecision).toBe("deny");
     expect(body.hookSpecificOutput.permissionDecisionReason).toContain("Yes");
+  });
+
+  test("a posted question that timed out is a deny, so the terminal never draws a selector", async () => {
+    answers = null;
+    timesOut = true;
+
+    const answer = await answerTo(ask(question));
+
+    expect(answer.status).toBe(200);
+    const body = JSON.parse(answer.body);
+    expect(body.hookSpecificOutput.permissionDecision).toBe("deny");
+    expect(body.hookSpecificOutput.permissionDecisionReason).toContain("send_poll");
   });
 
   test("no answer is 204, so the terminal keeps the question", async () => {
